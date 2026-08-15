@@ -34,6 +34,7 @@ test("stale polling cannot render or restart after a new run or pagehide", async
   const elapsedOutput = element();
   const historyBody = element();
   const requestError = element();
+  const topologyDescription = element();
   const selectors = new Map([
     ['[data-testid="run-workflow"]', runButton],
     ['[data-testid="run-status"]', statusOutput],
@@ -41,6 +42,7 @@ test("stale polling cannot render or restart after a new run or pagehide", async
     ["#elapsed-summary", elapsedOutput],
     ["#run-history", historyBody],
     ["#request-error", requestError],
+    ["#topology-desc", topologyDescription],
   ]);
   const document = {
     querySelector(selector) { return selectors.get(selector); },
@@ -94,6 +96,10 @@ test("stale polling cannot render or restart after a new run or pagehide", async
   pending[2].resolve(response(freshState));
   await startPromise;
   assert.equal(window.workflowState, freshState);
+  assert.equal(
+    topologyDescription.textContent,
+    "Running. Current node: choose_route. Current edge: prepare-to-choose. Traversed route: prepare.",
+  );
   assert.equal(timers.filter((timer) => timer.active).length, 1);
 
   const timer = timers.find((candidate) => candidate.active);

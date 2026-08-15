@@ -6,6 +6,7 @@ const routeOutput = document.querySelector('[data-testid="route-summary"]');
 const elapsedOutput = document.querySelector("#elapsed-summary");
 const historyBody = document.querySelector("#run-history");
 const requestError = document.querySelector("#request-error");
+const topologyDescription = document.querySelector("#topology-desc");
 const nodeElements = [...document.querySelectorAll("[data-node-id]")];
 const edgeElements = [...document.querySelectorAll("[data-edge-id]")];
 
@@ -57,6 +58,12 @@ const setGraphState = (element, state) => {
 
 const renderTopology = (run) => {
   const running = run?.status === "Running";
+  const traversedRoute = run?.traversed_nodes.length ? run.traversed_nodes.join(" to ") : "none";
+  topologyDescription.textContent = !run
+    ? "No run selected. All workflow nodes and edges are idle."
+    : running
+      ? `Running. Current node: ${run.current_node || "none"}. Current edge: ${run.current_edge || "none"}. Traversed route: ${traversedRoute}.`
+      : `${run.status}. Traversed route: ${traversedRoute}.`;
   for (const element of nodeElements) {
     const id = element.dataset.nodeId;
     const state = running && id === run.current_node
