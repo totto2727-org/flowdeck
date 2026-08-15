@@ -7,6 +7,7 @@ use std::{sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use graph_flow::{Context, GraphBuilder, NextAction, Task, TaskResult};
+use serde::Serialize;
 use uuid::Uuid;
 
 use crate::WorkflowError;
@@ -16,7 +17,7 @@ const BRANCH_KEY: &str = "branch_yes";
 const STEP_DELAY: Duration = Duration::from_millis(350);
 
 /// A code-defined graph node retained independently from graph-flow.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[non_exhaustive]
 pub struct NodeSpec {
     /// Stable task ID.
@@ -26,7 +27,7 @@ pub struct NodeSpec {
 }
 
 /// A code-defined graph edge retained independently from graph-flow.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[non_exhaustive]
 pub struct EdgeSpec {
     /// Stable edge ID.

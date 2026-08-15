@@ -1,44 +1,25 @@
-//! Local-only Topcoat bootstrap for the workflow console experiment.
+//! Local Topcoat workflow console server.
 
-use serde::Serialize;
+mod web;
+mod web_page;
+
+use std::error::Error;
+
 use topcoat::{
-    Result,
-    router::{Router, RouterBuilderDiscoverExt, content::Json, page, route},
-    view::view,
+    asset::{AssetBundle, RouterBuilderAssetExt},
+    router::{Router, RouterBuilderDiscoverExt},
 };
-
-#[derive(Debug, Serialize)]
-struct Health {
-    status: &'static str,
-}
+use workflow_console_experiment::WorkflowService;
 
 #[tokio::main]
-async fn main() -> std::io::Result<()> {
-    topcoat::start(Router::builder().discover().build()).await
-}
-
-#[page("/")]
-async fn home() -> Result {
-    view! {
-        <!DOCTYPE html>
-        <html lang="en">
-            <head>
-                <meta charset="utf-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1">
-                <meta name="description" content="Local workflow console experiment">
-                <title>"Workflow Console"</title>
-            </head>
-            <body>
-                <main>
-                    <h1>"Workflow Console"</h1>
-                    <p>"Local Topcoat runtime is ready."</p>
-                </main>
-            </body>
-        </html>
-    }
-}
-
-#[route(GET "/api/health")]
-async fn health() -> Result<Json<Health>> {
-    Ok(Json(Health { status: "ok" }))
+async fn main() -> Result<(), Box<dyn Error>> {
+    let service = WorkflowService::new()?;
+    let assets = AssetBundle::load()?;
+    let router = Router::builder()
+        .discover()
+        .app_context(service)
+        .assets(assets)
+        .build();
+    topcoat::start(router).await?;
+    Ok(())
 }

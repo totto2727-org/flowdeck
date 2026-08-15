@@ -2,13 +2,15 @@
 
 ## Current Objective
 
-Bootstrap the local Topcoat application and lock the design contract without implementing workflow UI.
+Deliver the local Topcoat workflow dashboard and its state/start API over the existing in-memory workflow service.
 
 ## Locked Decisions
 
 - Topcoat 0.5.0 at commit `88859796d88fac504be1b8e40a70d6f0dbacaaaa` on Rust 1.95.
 - Operational Sentry-inspired dark direction; design dials 3/2/8.
-- No graph flow, workflow behavior, external service, or persistence in this phase.
+- The immutable six-node branch/converge topology is visualized from domain IDs; workflow authoring is excluded.
+- The document owns vertical scroll; topology and history independently own horizontal scroll.
+- Polling is 120ms while any run is active and 1000ms while idle, with stable selection across refreshes.
 
 ## Source Inputs
 
@@ -17,7 +19,7 @@ Bootstrap the local Topcoat application and lock the design contract without imp
 
 ## Design Brief
 
-Future work should make concurrent workflow state quickly scannable while keeping failures and recovery paths explicit. The bootstrap page intentionally provides only runtime identity.
+The console makes in-memory workflow state quickly scannable while keeping failures and request recovery explicit. It exposes the single code-defined workflow and preserves run history for the server process lifetime.
 
 ## Inclusive Personas
 
@@ -30,8 +32,8 @@ Support reduced motion, 200% zoom, increased text size, keyboard-only operation,
 
 ## Verification Matrix
 
-- Bootstrap: Rust format, check, test, Clippy, and HTTP route checks.
-- Future visual UI: real-browser visual QA at narrow, mid, and desktop widths before design review.
+- Implementation: Rust format, check, test, Clippy, build, JavaScript syntax, and real HTTP route checks.
+- Visual UI: parent-owned browser QA at narrow, mid, and desktop widths before design review.
 
 ## Design Debt Register
 
@@ -39,4 +41,4 @@ None accepted.
 
 ## Evidence Index
 
-Existing RED evidence remains under `.omo/evidence/`; this bootstrap does not modify it.
+Evidence is captured by the parent task; this worker does not modify `.omo/evidence/`.

@@ -4,7 +4,7 @@
 
 - Embedded references: shortlisted Sentry, PostHog, and ClickHouse for a data-dense operational console; selected the neutral operational Layer A direction and Sentry Layer B because its warm dark surfaces, explicit status colors, compact labels, and tactile depth fit long-running workflow inspection.
 - Topcoat constraints: the fixed Topcoat 0.5.0 runtime is server-rendered, routes are Rust functions, and future components must fit its `view!` markup, component, asset, and optional client-runtime model.
-- Lazyweb and Imagen: skipped to honor the bounded local experiment and the repository no-overengineering rule; no workflow UI is being designed or implemented in this bootstrap.
+- Lazyweb and Imagen: skipped to honor the bounded local experiment and the repository no-overengineering rule; the Sentry reference already supplies the requested concrete direction.
 
 ## 1. Atmosphere & Identity
 
@@ -63,13 +63,34 @@ All future CSS spacing, radii, widths, and layout tokens must be declared here b
 | `--radius-control` | `0.375rem` | Inputs and compact controls |
 | `--radius-panel` | `0.75rem` | Panels and cards |
 | `--content-max` | `72rem` | Main content width |
+| `--control-min` | `2.75rem` | Minimum keyboard and touch target |
+| `--graph-min` | `42.5rem` | Topology canvas inside its scroll owner |
+| `--table-min` | `40rem` | History table inside its scroll owner |
+| `--border-width` | `0.0625rem` | Dense structural dividers |
 
-- Future shell: one readable column at 375px, two-pane layout only when content supports it, and no primary horizontal scrolling.
-- Dense regions own their scrolling; the document must not hide status or controls.
+- The document owns vertical scrolling. The topology and history wrappers alone own horizontal scrolling.
+- The page uses one readable column at 375px and a workflow rail plus inspection region above 60rem. Primary content never scrolls horizontally.
 
 ## 5. Components
 
-No workflow components are authorized in this bootstrap. The initial page is semantic server-rendered HTML, not a reusable primitive. Future components must document structure, variants, default/hover/focus/active/disabled/loading/empty/error states, keyboard behavior, token usage, and scroll ownership here before implementation.
+### Workflow card
+
+- Structure: article with workflow identity, code-defined note, and one semantic run button.
+- States: default, hover, focus, active, disabled/loading, request error.
+- Accessibility: stable button location, explicit action label, visible focus, and minimum control size.
+
+### Run inspector
+
+- Structure: status summary, route summary, legend, and accessible inline SVG driven only by immutable topology IDs.
+- States: empty, loading, running, completed, failed, and request error. State words remain visible so color is never the only cue.
+- Layout: the graph wrapper exclusively owns horizontal scrolling; selected run details remain outside that region.
+
+### Run history
+
+- Structure: table with one button per row for selection and columns for run ID, status, route, and elapsed time.
+- States: empty row, running values, completed values, failed values, selected row, hover, and focus.
+- Accessibility: table headings identify data; row buttons provide keyboard selection; `aria-current` identifies the inspected run.
+- Layout: the table wrapper exclusively owns horizontal scrolling.
 
 ## 6. Motion & Interaction
 
@@ -82,6 +103,7 @@ No workflow components are authorized in this bootstrap. The initial page is sem
 - Motion communicates state or spatial relationship only; decorative motion is prohibited.
 - Animate only `transform`, `opacity`, or `filter` and respect `prefers-reduced-motion`.
 - Full keyboard operation and visible focus are required for every future interaction.
+- Polling changes status, history, and topology without moving controls. The status message uses `aria-live="polite"`; request errors use an alert.
 
 ## 7. Depth & Surface
 
@@ -92,4 +114,4 @@ The strategy is mixed tonal shift plus restrained borders. `--color-canvas`, `--
 - Target WCAG 2.2 AA: 4.5:1 body contrast, 3:1 large text and non-text controls, visible focus, semantic landmarks, keyboard reachability, reduced-motion support, and usable reflow at 200% zoom.
 - Primary persona: an engineer monitoring many concurrent operations who needs dense status scanning without losing location or recovery context.
 - Cognitive constraints: stable labels and locations, explicit state names, plain-language errors, and recovery actions adjacent to failures.
-- Accepted debt: none. No interactive workflow surface exists yet; accessibility claims beyond the semantic bootstrap page remain unmade.
+- Accepted debt: none. Browser visual QA is intentionally owned by the parent task; this implementation phase proves the HTTP surface and automatic gates only.
