@@ -1,0 +1,108 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import test from "node:test";
+import vm from "node:vm";
+
+const deferred = () => {
+  let resolve;
+  const promise = new Promise((done) => { resolve = done; });
+  return { promise, resolve };
+};
+
+const response = (body) => ({ ok: true, status: 200, json: async () => body });
+
+const element = () => ({
+  dataset: {},
+  hidden: false,
+  disabled: false,
+  textContent: "",
+  listeners: {},
+  addEventListener(type, listener) { this.listeners[type] = listener; },
+  append() {},
+  querySelector() { return null; },
+  replaceChildren() {},
+  setAttribute() {},
+});
+
+const flush = () => new Promise(setImmediate);
+
+test("stale polling cannot render or restart after a new run or pagehide", async () => {
+  const runButton = element();
+  runButton.dataset.workflowId = "demo-workflow";
+  const statusOutput = element();
+  const routeOutput = element();
+  const elapsedOutput = element();
+  const historyBody = element();
+  const requestError = element();
+  const selectors = new Map([
+    ['[data-testid="run-workflow"]', runButton],
+    ['[data-testid="run-status"]', statusOutput],
+    ['[data-testid="route-summary"]', routeOutput],
+    ["#elapsed-summary", elapsedOutput],
+    ["#run-history", historyBody],
+    ["#request-error", requestError],
+  ]);
+  const document = {
+    querySelector(selector) { return selectors.get(selector); },
+    querySelectorAll() { return []; },
+    createElement() { return element(); },
+  };
+  const pending = [];
+  const fetch = (_url, options) => {
+    const request = deferred();
+    pending.push({ ...request, signal: options.signal });
+    return request.promise;
+  };
+  const timers = [];
+  const window = {
+    listeners: {},
+    addEventListener(type, listener) { this.listeners[type] = listener; },
+    clearTimeout(timer) { if (timer) timer.active = false; },
+    setTimeout(callback) {
+      const timer = { active: true, callback };
+      timers.push(timer);
+      return timer;
+    },
+  };
+  const source = await readFile(new URL("../src/app.js", import.meta.url), "utf8");
+  vm.runInNewContext(source, { AbortController, document, Error, fetch, window });
+
+  assert.equal(pending.length, 1);
+  const staleState = pending[0];
+  const startPromise = runButton.listeners.click({ preventDefault() {} });
+  assert.equal(staleState.signal.aborted, true);
+  assert.equal(pending.length, 2);
+
+  pending[1].resolve(response({ outcome: "accepted", run: { run_id: "new-run" } }));
+  await flush();
+  assert.equal(pending.length, 3);
+  staleState.resolve(response({ runs: [{ run_id: "old-run", status: "Completed" }] }));
+  await flush();
+  assert.equal(window.workflowState, undefined);
+
+  const freshState = { runs: [{
+    run_id: "new-run",
+    status: "Running",
+    error: null,
+    current_node: "choose_route",
+    current_edge: "prepare-to-choose",
+    traversed_nodes: ["prepare"],
+    traversed_edges: ["prepare-to-choose"],
+    route_summary: "prepare -> choose_route",
+    elapsed_ms: 400,
+  }] };
+  pending[2].resolve(response(freshState));
+  await startPromise;
+  assert.equal(window.workflowState, freshState);
+  assert.equal(timers.filter((timer) => timer.active).length, 1);
+
+  const timer = timers.find((candidate) => candidate.active);
+  timer.active = false;
+  timer.callback();
+  assert.equal(pending.length, 4);
+  window.listeners.pagehide();
+  pending[3].resolve(response({ runs: [] }));
+  await flush();
+  assert.equal(window.workflowState, freshState);
+  assert.equal(timers.filter((candidate) => candidate.active).length, 0);
+});

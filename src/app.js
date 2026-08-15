@@ -11,6 +11,29 @@ const edgeElements = [...document.querySelectorAll("[data-edge-id]")];
 
 let selectedRunId = null;
 let pollTimer = null;
+let pollGeneration = 0;
+let activeController = null;
+let stopped = false;
+
+const resetPolling = () => {
+  pollGeneration += 1;
+  window.clearTimeout(pollTimer);
+  pollTimer = null;
+  activeController?.abort();
+  activeController = null;
+  return pollGeneration;
+};
+
+const schedulePoll = (generation, delay) => {
+  if (stopped || generation !== pollGeneration) {
+    return;
+  }
+  window.clearTimeout(pollTimer);
+  pollTimer = window.setTimeout(() => {
+    pollTimer = null;
+    loadState(generation);
+  }, delay);
+};
 
 const setRequestError = (message) => {
   requestError.textContent = message;
@@ -122,28 +145,49 @@ const renderState = (state) => {
   renderSelectedRun(state.runs.find((run) => run.run_id === selectedRunId));
 };
 
-const loadState = async () => {
+const loadState = async (generation = pollGeneration) => {
+  if (stopped || generation !== pollGeneration) {
+    return;
+  }
+  const controller = new AbortController();
+  activeController?.abort();
+  activeController = controller;
   try {
-    const response = await fetch("/api/state", { headers: { Accept: "application/json" } });
+    const response = await fetch("/api/state", {
+      headers: { Accept: "application/json" },
+      signal: controller.signal,
+    });
     if (!response.ok) {
       throw new Error(`State request failed with HTTP ${response.status}.`);
     }
     const state = await response.json();
+    if (stopped || generation !== pollGeneration) {
+      return;
+    }
     setRequestError("");
     renderState(state);
     const running = state.runs.some((run) => run.status === "Running");
-    pollTimer = window.setTimeout(loadState, running ? 120 : 1000);
+    schedulePoll(generation, running ? 120 : 1000);
   } catch (error) {
+    if (stopped || generation !== pollGeneration || error?.name === "AbortError") {
+      return;
+    }
     statusOutput.textContent = "Request error";
     statusOutput.dataset.status = "error";
     setRequestError(error instanceof Error ? error.message : "Unable to load workflow state.");
-    pollTimer = window.setTimeout(loadState, 1000);
+    schedulePoll(generation, 1000);
+  } finally {
+    if (activeController === controller) {
+      activeController = null;
+    }
   }
 };
 
 const startRun = async (event) => {
   event.preventDefault();
-  window.clearTimeout(pollTimer);
+  const generation = resetPolling();
+  const controller = new AbortController();
+  activeController = controller;
   runButton.disabled = true;
   statusOutput.textContent = "Loading";
   statusOutput.dataset.status = "loading";
@@ -153,22 +197,44 @@ const startRun = async (event) => {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify({ workflow_id: runButton.dataset.workflowId }),
+      signal: controller.signal,
     });
     const result = await response.json();
     if (!response.ok || result.outcome !== "accepted") {
       throw new Error(result.error || `Run request failed with HTTP ${response.status}.`);
     }
+    if (stopped || generation !== pollGeneration) {
+      return;
+    }
     selectedRunId = result.run.run_id;
-    await loadState();
+    activeController = null;
+    await loadState(generation);
   } catch (error) {
+    if (stopped || generation !== pollGeneration || error?.name === "AbortError") {
+      return;
+    }
     statusOutput.textContent = "Request error";
     statusOutput.dataset.status = "error";
     setRequestError(error instanceof Error ? error.message : "Unable to start the workflow.");
   } finally {
-    runButton.disabled = false;
+    if (activeController === controller) {
+      activeController = null;
+    }
+    if (!stopped && generation === pollGeneration) {
+      runButton.disabled = false;
+    }
   }
 };
 
 runButton.addEventListener("click", startRun);
-window.addEventListener("pagehide", () => window.clearTimeout(pollTimer));
+window.addEventListener("pagehide", () => {
+  stopped = true;
+  resetPolling();
+});
+window.addEventListener("pageshow", (event) => {
+  if (event.persisted) {
+    stopped = false;
+    loadState(resetPolling());
+  }
+});
 loadState();
