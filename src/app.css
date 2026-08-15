@@ -31,7 +31,7 @@
   --content-max: 72rem;
   --control-min: 2.75rem;
   --graph-min: 42.5rem;
-  --table-min: 40rem;
+  --table-min: 56rem;
   --border-width: 0.0625rem;
   --motion-micro: 120ms;
   --motion-standard: 220ms;
@@ -52,11 +52,11 @@ body {
   font: 400 var(--type-body)/1.5 Rubik, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
-button, code { font: inherit; }
+button, code, input { font: inherit; }
 
 button { min-block-size: var(--control-min); }
 
-button:focus-visible, [tabindex="0"]:focus-visible {
+button:focus-visible, input:focus-visible, [tabindex="0"]:focus-visible {
   outline: calc(var(--border-width) * 2) solid var(--color-focus);
   outline-offset: var(--space-1);
 }
@@ -129,8 +129,24 @@ h3 { font-size: var(--type-body); line-height: 1.5; }
 
 .muted { color: var(--color-text-muted); font-size: var(--type-body-compact); }
 
+.run-form { display: grid; gap: var(--space-3); padding-block-start: var(--space-2); }
+.field { display: grid; gap: var(--space-1); color: var(--color-text-secondary); font-size: var(--type-body-compact); font-weight: 600; }
+.field input {
+  min-inline-size: 0;
+  min-block-size: var(--control-min);
+  inline-size: 100%;
+  padding-inline: var(--space-3);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-control);
+  color: var(--color-text-primary);
+  background: var(--color-canvas);
+  box-shadow: var(--shadow-inset);
+}
+
+.schedule-summary { display: grid; gap: var(--space-1); padding-block-start: var(--space-3); border-block-start: var(--border-width) solid var(--color-border); }
+.schedule-summary code { overflow-wrap: anywhere; color: var(--color-status-healthy); }
+
 [data-testid="run-workflow"] {
-  margin-block-start: var(--space-2);
   padding-inline: var(--space-4);
   border: var(--border-width) solid var(--color-accent-hover);
   border-radius: var(--radius-control);
@@ -174,6 +190,7 @@ h3 { font-size: var(--type-body); line-height: 1.5; }
 .summary-grid div { min-inline-size: 0; }
 .summary-grid dt { color: var(--color-text-muted); font-size: var(--type-label); font-weight: 600; }
 .summary-grid dd { margin: var(--space-1) 0 0; overflow-wrap: anywhere; font: 400 var(--type-code)/1.5 Monaco, Menlo, monospace; }
+[data-testid="route-summary"] { overflow-wrap: normal; }
 
 .request-error {
   margin-block-end: var(--space-4);

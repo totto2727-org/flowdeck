@@ -7,7 +7,8 @@ use topcoat::{
     router::{StatusCode, content::Json, route},
 };
 use workflow_console_experiment::{
-    EdgeSpec, NodeSpec, RunSnapshot, RunStatus, WorkflowService, workflow_id, workflow_topology,
+    EdgeSpec, NodeSpec, RunInput, RunSnapshot, RunStatus, RunTrigger, ScheduleSpec,
+    WorkflowService, workflow_id, workflow_schedules, workflow_topology,
 };
 
 #[derive(Debug, Serialize)]
@@ -21,6 +22,7 @@ struct WorkflowDto {
     workflow_id: &'static str,
     name: &'static str,
     topology: TopologyDto,
+    schedules: &'static [ScheduleSpec],
 }
 
 #[derive(Debug, Serialize)]
@@ -33,6 +35,9 @@ struct TopologyDto {
 struct RunDto {
     run_id: String,
     workflow_id: String,
+    input: RunInputDto,
+    trigger: &'static str,
+    schedule_id: Option<String>,
     status: &'static str,
     error: Option<String>,
     current_node: Option<String>,
@@ -48,6 +53,13 @@ struct RunDto {
 #[derive(Debug, Deserialize)]
 struct StartRequest {
     workflow_id: String,
+    input: RunInputDto,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+struct RunInputDto {
+    label: String,
+    step_delay_ms: u64,
 }
 
 #[derive(Debug, Serialize)]
@@ -69,7 +81,16 @@ async fn start_run(
     Json(request): Json<StartRequest>,
 ) -> Result<(StatusCode, Json<StartResponse>)> {
     let service = app_context::<WorkflowService>(cx);
-    match service.start(&request.workflow_id).await {
+    let input = RunInput::new(&request.input.label, request.input.step_delay_ms);
+    let result = match input {
+        Ok(input) => {
+            service
+                .start(&request.workflow_id, input, RunTrigger::Manual)
+                .await
+        }
+        Err(error) => Err(error),
+    };
+    match result {
         Ok(snapshot) => Ok((
             StatusCode::CREATED,
             Json(StartResponse::Accepted {
@@ -94,6 +115,7 @@ async fn state_response(service: &WorkflowService) -> StateResponse {
             workflow_id: workflow_id(),
             name: "Branch and converge",
             topology: TopologyDto { nodes, edges },
+            schedules: workflow_schedules(),
         }],
         runs: runs.into_iter().map(RunDto::from).collect(),
     }
@@ -112,9 +134,21 @@ impl From<RunSnapshot> for RunDto {
             RunStatus::Failed { message } => ("Failed", Some(message)),
             _ => ("Failed", Some("Unsupported run status".to_owned())),
         };
+        let input = RunInputDto {
+            label: snapshot.input.label().to_owned(),
+            step_delay_ms: snapshot.input.step_delay_ms(),
+        };
+        let (trigger, schedule_id) = match snapshot.trigger {
+            RunTrigger::Manual => ("Manual", None),
+            RunTrigger::Cron { schedule_id } => ("Cron", Some(schedule_id)),
+            _ => ("Unknown", None),
+        };
         Self {
             run_id: snapshot.run_id.to_string(),
             workflow_id: snapshot.workflow_id,
+            input,
+            trigger,
+            schedule_id,
             status,
             error,
             current_node: snapshot.current_node,

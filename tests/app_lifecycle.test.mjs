@@ -29,7 +29,14 @@ const flush = () => new Promise(setImmediate);
 test("stale polling cannot render or restart after a new run or pagehide", async () => {
   const runButton = element();
   runButton.dataset.workflowId = "demo-workflow";
+  const runForm = element();
+  const runLabel = element();
+  runLabel.value = "manual browser run";
+  const stepDelay = element();
+  stepDelay.value = "240";
   const statusOutput = element();
+  const triggerOutput = element();
+  const inputOutput = element();
   const routeOutput = element();
   const elapsedOutput = element();
   const historyBody = element();
@@ -37,7 +44,12 @@ test("stale polling cannot render or restart after a new run or pagehide", async
   const topologyDescription = element();
   const selectors = new Map([
     ['[data-testid="run-workflow"]', runButton],
+    ['[data-testid="run-form"]', runForm],
+    ['[data-testid="run-label"]', runLabel],
+    ['[data-testid="step-delay"]', stepDelay],
     ['[data-testid="run-status"]', statusOutput],
+    ["#trigger-summary", triggerOutput],
+    ["#input-summary", inputOutput],
     ['[data-testid="route-summary"]', routeOutput],
     ["#elapsed-summary", elapsedOutput],
     ["#run-history", historyBody],
@@ -50,9 +62,9 @@ test("stale polling cannot render or restart after a new run or pagehide", async
     createElement() { return element(); },
   };
   const pending = [];
-  const fetch = (_url, options) => {
+  const fetch = (url, options) => {
     const request = deferred();
-    pending.push({ ...request, signal: options.signal });
+    pending.push({ ...request, url, ...options, signal: options.signal });
     return request.promise;
   };
   const timers = [];
@@ -66,14 +78,22 @@ test("stale polling cannot render or restart after a new run or pagehide", async
       return timer;
     },
   };
-  const source = await readFile(new URL("../src/app.js", import.meta.url), "utf8");
-  vm.runInNewContext(source, { AbortController, document, Error, fetch, window });
+  const renderSource = await readFile(new URL("../src/app_render.js", import.meta.url), "utf8");
+  const lifecycleSource = await readFile(new URL("../src/app.js", import.meta.url), "utf8");
+  vm.runInNewContext(`${renderSource}\n${lifecycleSource}`, { AbortController, document, Error, fetch, window });
 
   assert.equal(pending.length, 1);
   const staleState = pending[0];
-  const startPromise = runButton.listeners.click({ preventDefault() {} });
+  const startPromise = runForm.listeners.submit({ preventDefault() {} });
   assert.equal(staleState.signal.aborted, true);
   assert.equal(pending.length, 2);
+  assert.deepEqual(
+    JSON.parse(pending[1].body),
+    {
+      workflow_id: "demo-workflow",
+      input: { label: "manual browser run", step_delay_ms: 240 },
+    },
+  );
 
   pending[1].resolve(response({ outcome: "accepted", run: { run_id: "new-run" } }));
   await flush();
@@ -84,6 +104,9 @@ test("stale polling cannot render or restart after a new run or pagehide", async
 
   const freshState = { runs: [{
     run_id: "new-run",
+    input: { label: "manual browser run", step_delay_ms: 240 },
+    trigger: "Manual",
+    schedule_id: null,
     status: "Running",
     error: null,
     current_node: "choose_route",

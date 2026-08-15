@@ -4,14 +4,16 @@ use topcoat::{
     router::page,
     view::view,
 };
-use workflow_console_experiment::workflow_topology;
+use workflow_console_experiment::{workflow_schedules, workflow_topology};
 
 const APP_CSS: Asset = asset!("./app.css");
+const APP_RENDER_JS: Asset = asset!("./app_render.js");
 const APP_JS: Asset = asset!("./app.js");
 
 #[page("/")]
 async fn home() -> Result {
     let (nodes, edges) = workflow_topology();
+    let schedules = workflow_schedules();
     view! {
         <!DOCTYPE html>
         <html lang="en">
@@ -20,6 +22,7 @@ async fn home() -> Result {
                 <meta name="viewport" content="width=device-width, initial-scale=1">
                 <meta name="description" content="Inspect and run the local code-defined workflow">
                 <link rel="stylesheet" href=(APP_CSS)>
+                <script src=(APP_RENDER_JS) defer="defer"></script>
                 <script src=(APP_JS) defer="defer"></script>
                 <title>"Workflow Console"</title>
             </head>
@@ -36,7 +39,18 @@ async fn home() -> Result {
                             <h3>"Branch and converge"</h3>
                             <p class="muted">"Six fixed tasks with one conditional route."</p>
                             <code>"demo-workflow"</code>
-                            <button type="button" data-testid="run-workflow" data-workflow-id="demo-workflow">"Run workflow"</button>
+                            <form class="run-form" data-testid="run-form">
+                                <label class="field" for="run-label"><span>"Run label"</span><input id="run-label" data-testid="run-label" name="label" type="text" value="manual run" required="required" maxlength="80"></label>
+                                <label class="field" for="step-delay"><span>"Step delay (ms)"</span><input id="step-delay" data-testid="step-delay" name="step_delay_ms" type="number" value="350" min="100" max="2000" step="10" required="required"></label>
+                                <button type="submit" data-testid="run-workflow" data-workflow-id="demo-workflow">"Run workflow"</button>
+                            </form>
+                            for schedule in schedules {
+                                <div class="schedule-summary">
+                                    <p class="eyebrow">"Cron schedule"</p>
+                                    <code>(schedule.cron_expression)</code>
+                                    <p class="muted">(format!("{} · {} ms steps", schedule.input_label, schedule.step_delay_ms))</p>
+                                </div>
+                            }
                         </article>
                     </aside>
                     <div class="inspection-stack">
@@ -46,6 +60,8 @@ async fn home() -> Result {
                                 <p class="status-line" data-testid="run-status" role="status" aria-live="polite">"Loading"</p>
                             </div>
                             <dl class="summary-grid">
+                                <div><dt>"Trigger"</dt><dd id="trigger-summary">"—"</dd></div>
+                                <div><dt>"Input"</dt><dd id="input-summary">"—"</dd></div>
                                 <div><dt>"Route"</dt><dd data-testid="route-summary">"Waiting for state"</dd></div>
                                 <div><dt>"Elapsed"</dt><dd id="elapsed-summary">"—"</dd></div>
                             </dl>
@@ -80,8 +96,8 @@ async fn home() -> Result {
                             <div class="panel-heading"><div><p class="eyebrow">"Process lifetime"</p><h2 id="history-title">"Run history"</h2></div></div>
                             <div class="history-scroll" tabindex="0" aria-label="Run history, horizontally scrollable">
                                 <table>
-                                    <thead><tr><th scope="col">"Run ID"</th><th scope="col">"Status"</th><th scope="col">"Route"</th><th scope="col">"Elapsed"</th></tr></thead>
-                                    <tbody id="run-history"><tr id="empty-history"><td colspan="4">"No runs yet. Start the code-defined workflow to inspect it here."</td></tr></tbody>
+                                    <thead><tr><th scope="col">"Run ID"</th><th scope="col">"Trigger"</th><th scope="col">"Input"</th><th scope="col">"Status"</th><th scope="col">"Route"</th><th scope="col">"Elapsed"</th></tr></thead>
+                                    <tbody id="run-history"><tr id="empty-history"><td colspan="6">"No runs yet. Start the code-defined workflow to inspect it here."</td></tr></tbody>
                                 </table>
                             </div>
                         </section>

@@ -65,7 +65,7 @@ All future CSS spacing, radii, widths, and layout tokens must be declared here b
 | `--content-max` | `72rem` | Main content width |
 | `--control-min` | `2.75rem` | Minimum keyboard and touch target |
 | `--graph-min` | `42.5rem` | Topology canvas inside its scroll owner |
-| `--table-min` | `40rem` | History table inside its scroll owner |
+| `--table-min` | `56rem` | History table with trigger and input columns inside its scroll owner |
 | `--border-width` | `0.0625rem` | Dense structural dividers |
 
 - The document owns vertical scrolling. The topology and history wrappers alone own horizontal scrolling.
@@ -75,19 +75,19 @@ All future CSS spacing, radii, widths, and layout tokens must be declared here b
 
 ### Workflow card
 
-- Structure: article with workflow identity, code-defined note, and one semantic run button.
-- States: default, hover, focus, active, disabled/loading, request error.
-- Accessibility: stable button location, explicit action label, visible focus, and minimum control size.
+- Structure: article with workflow identity, a workflow-specific parameter form, one semantic run button, and a read-only code-defined cron schedule summary.
+- States: default, field focus, native invalid input, button hover/focus/active, disabled/loading, and request error.
+- Accessibility: explicit labels and bounds for every input, stable button location, explicit action label, visible focus, and minimum control size.
 
 ### Run inspector
 
-- Structure: status summary, route summary, legend, and accessible inline SVG driven only by immutable topology IDs.
+- Structure: status, trigger, initial input, route, elapsed summary, legend, and accessible inline SVG driven only by immutable topology IDs.
 - States: empty, loading, running, completed, failed, and request error. State words remain visible so color is never the only cue.
 - Layout: the graph wrapper exclusively owns horizontal scrolling; selected run details remain outside that region.
 
 ### Run history
 
-- Structure: table with one button per row for selection and columns for run ID, status, route, and elapsed time.
+- Structure: table with one button per row for selection and columns for run ID, trigger, input, status, route, and elapsed time.
 - States: empty row, running values, completed values, failed values, selected row, hover, and focus.
 - Accessibility: table headings identify data; row buttons provide keyboard selection; `aria-current` identifies the inspected run.
 - Layout: the table wrapper exclusively owns horizontal scrolling.
