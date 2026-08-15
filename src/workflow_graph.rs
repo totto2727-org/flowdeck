@@ -6,7 +6,7 @@
 use std::{sync::Arc, time::Duration};
 
 use async_trait::async_trait;
-use graph_flow::{Context, GraphBuilder, NextAction, Task, TaskResult};
+use graph_flow::{Context, GraphBuilder, GraphError, NextAction, Task, TaskResult};
 use serde::Serialize;
 use uuid::Uuid;
 
@@ -14,7 +14,8 @@ use crate::WorkflowError;
 
 pub(super) const WORKFLOW_ID: &str = "demo-workflow";
 const BRANCH_KEY: &str = "branch_yes";
-const STEP_DELAY: Duration = Duration::from_millis(350);
+const INPUT_LABEL_KEY: &str = "run_label";
+const STEP_DELAY_KEY: &str = "step_delay_ms";
 
 /// A code-defined graph node retained independently from graph-flow.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -177,7 +178,13 @@ impl Task for SleepTask {
     }
 
     async fn run(&self, context: Context) -> graph_flow::Result<TaskResult> {
-        tokio::time::sleep(STEP_DELAY).await;
+        let step_delay_ms = context
+            .get::<u64>(STEP_DELAY_KEY)
+            .ok_or_else(|| GraphError::ContextError("missing step_delay_ms".to_owned()))?;
+        let run_label = context
+            .get::<String>(INPUT_LABEL_KEY)
+            .ok_or_else(|| GraphError::ContextError("missing run_label".to_owned()))?;
+        tokio::time::sleep(Duration::from_millis(step_delay_ms)).await;
         let token = Uuid::new_v4();
         context.set(format!("task_token:{}", self.kind.id()), token.to_string())?;
         if matches!(self.kind, TaskKind::Choose) {
@@ -193,7 +200,10 @@ impl Task for SleepTask {
             | TaskKind::Converge => NextAction::Continue,
         };
         Ok(TaskResult::new(
-            Some(format!("{} complete: {token}", self.kind.id())),
+            Some(format!(
+                "{} complete for {run_label}: {token}",
+                self.kind.id()
+            )),
             action,
         ))
     }

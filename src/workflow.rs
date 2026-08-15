@@ -5,8 +5,12 @@ use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use crate::{
-    EDGES, EdgeSpec, NODES, RunId, RunSnapshot, RunStatus, WORKFLOW_ID, WorkflowError, build_graph,
+    EDGES, EdgeSpec, NODES, RunId, RunInput, RunSnapshot, RunStatus, RunTrigger, WORKFLOW_ID,
+    WorkflowError, build_graph,
 };
+
+const INPUT_LABEL_KEY: &str = "run_label";
+const STEP_DELAY_KEY: &str = "step_delay_ms";
 
 /// Cloneable local boundary for workflow starts, listing, and polling.
 #[derive(Clone)]
@@ -45,7 +49,12 @@ impl WorkflowService {
     }
 
     /// Validate a workflow ID, retain its first snapshot, and start a driver.
-    pub async fn start(&self, workflow_id: &str) -> Result<RunSnapshot, WorkflowError> {
+    pub async fn start(
+        &self,
+        workflow_id: &str,
+        input: RunInput,
+        trigger: RunTrigger,
+    ) -> Result<RunSnapshot, WorkflowError> {
         if workflow_id != WORKFLOW_ID {
             return Err(WorkflowError::UnknownWorkflow {
                 workflow_id: workflow_id.to_owned(),
@@ -54,6 +63,14 @@ impl WorkflowService {
         let run_id = RunId(Uuid::new_v4().to_string());
         let session =
             Session::new_from_task(run_id.0.clone(), NODES[0].id).with_graph_id(WORKFLOW_ID);
+        session
+            .context
+            .set(INPUT_LABEL_KEY, input.label())
+            .map_err(|error| session_error(&error))?;
+        session
+            .context
+            .set(STEP_DELAY_KEY, input.step_delay_ms())
+            .map_err(|error| session_error(&error))?;
         self.inner
             .storage
             .save(session)
@@ -62,6 +79,8 @@ impl WorkflowService {
         let snapshot = RunSnapshot {
             run_id: run_id.clone(),
             workflow_id: WORKFLOW_ID.to_owned(),
+            input,
+            trigger,
             status: RunStatus::Running,
             current_node: Some(NODES[0].id.to_owned()),
             current_edge: None,
