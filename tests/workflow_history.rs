@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 use workflow_console_experiment::{
-    RunInput, RunStatus, RunTrigger, WorkflowError, WorkflowService, workflow_id,
+    RunInput, RunStatus, RunTrigger, StepTraceStatus, WorkflowError, WorkflowService, workflow_id,
 };
 
 #[tokio::test]
@@ -87,6 +87,33 @@ async fn workflow_reaches_terminal_after_observable_steps() {
     assert!(terminal.route_summary.contains("choose_route"));
     assert!(terminal.finished_at.is_some());
     assert!(terminal.duration.is_some());
+
+    assert_eq!(terminal.steps.len(), 5);
+    assert!(
+        terminal
+            .steps
+            .iter()
+            .all(|step| step.status == StepTraceStatus::Completed)
+    );
+    assert!(terminal.steps.iter().all(|step| step.duration.is_some()));
+    assert!(terminal.steps.iter().all(|step| step.output.is_some()));
+    let first_step = terminal.steps.first().expect("prepare trace should exist");
+    assert_eq!(first_step.node_id, "prepare");
+    assert_eq!(
+        first_step.selected_edge.as_deref(),
+        Some("prepare-to-choose")
+    );
+    assert_eq!(first_step.state.run_label, "terminal check");
+    assert_eq!(first_step.state.step_delay_ms, 350);
+    assert!(first_step.state.task_token.is_some());
+
+    let choose = terminal
+        .steps
+        .iter()
+        .find(|step| step.node_id == "choose_route")
+        .expect("route selection trace should be retained");
+    assert!(choose.state.branch_selected.is_some());
+    assert!(choose.state.branch_token.is_some());
 }
 
 #[tokio::test]

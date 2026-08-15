@@ -3,6 +3,7 @@
 mod workflow;
 mod workflow_graph;
 mod workflow_scheduler;
+pub(crate) mod workflow_trace;
 
 use std::{
     error::Error,
@@ -14,6 +15,7 @@ pub use workflow::WorkflowService;
 use workflow_graph::{EDGES, NODES, WORKFLOW_ID, build_graph};
 pub use workflow_graph::{EdgeSpec, NodeSpec, workflow_topology};
 pub use workflow_scheduler::{ScheduleSpec, workflow_schedules};
+pub use workflow_trace::{StepState, StepTrace, StepTraceStatus};
 
 /// Return the only workflow ID accepted by this local experiment.
 pub const fn workflow_id() -> &'static str {
@@ -116,6 +118,8 @@ pub struct RunSnapshot {
     pub finished_at: Option<SystemTime>,
     /// Duration recorded at terminal state.
     pub duration: Option<Duration>,
+    /// Per-node execution traces retained for debugging and performance inspection.
+    pub steps: Vec<StepTrace>,
 }
 
 /// Opaque ID assigned to one background run.

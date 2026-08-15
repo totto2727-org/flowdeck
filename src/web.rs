@@ -7,8 +7,8 @@ use topcoat::{
     router::{StatusCode, content::Json, route},
 };
 use workflow_console_experiment::{
-    EdgeSpec, NodeSpec, RunInput, RunSnapshot, RunStatus, RunTrigger, ScheduleSpec,
-    WorkflowService, workflow_id, workflow_schedules, workflow_topology,
+    EdgeSpec, NodeSpec, RunInput, RunSnapshot, RunStatus, RunTrigger, ScheduleSpec, StepTrace,
+    StepTraceStatus, WorkflowService, workflow_id, workflow_schedules, workflow_topology,
 };
 
 #[derive(Debug, Serialize)]
@@ -48,6 +48,30 @@ struct RunDto {
     started_at_ms: u128,
     finished_at_ms: Option<u128>,
     elapsed_ms: u128,
+    steps: Vec<StepTraceDto>,
+}
+
+#[derive(Debug, Serialize)]
+struct StepTraceDto {
+    sequence: usize,
+    node_id: String,
+    selected_edge: Option<String>,
+    status: &'static str,
+    error: Option<String>,
+    state: StepStateDto,
+    output: Option<String>,
+    started_at_ms: u128,
+    finished_at_ms: Option<u128>,
+    elapsed_ms: u128,
+}
+
+#[derive(Debug, Serialize)]
+struct StepStateDto {
+    run_label: String,
+    step_delay_ms: u64,
+    task_token: Option<String>,
+    branch_selected: Option<bool>,
+    branch_token: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -158,6 +182,40 @@ impl From<RunSnapshot> for RunDto {
             route_summary: snapshot.route_summary,
             started_at_ms: epoch_millis(snapshot.started_at),
             finished_at_ms: snapshot.finished_at.map(epoch_millis),
+            elapsed_ms: elapsed.as_millis(),
+            steps: snapshot.steps.into_iter().map(StepTraceDto::from).collect(),
+        }
+    }
+}
+
+impl From<StepTrace> for StepTraceDto {
+    fn from(step: StepTrace) -> Self {
+        let elapsed = step
+            .duration
+            .or_else(|| SystemTime::now().duration_since(step.started_at).ok())
+            .unwrap_or(Duration::ZERO);
+        let (status, error) = match step.status {
+            StepTraceStatus::Running => ("Running", None),
+            StepTraceStatus::Completed => ("Completed", None),
+            StepTraceStatus::Failed { message } => ("Failed", Some(message)),
+            _ => ("Failed", Some("Unsupported step trace status".to_owned())),
+        };
+        Self {
+            sequence: step.sequence,
+            node_id: step.node_id,
+            selected_edge: step.selected_edge,
+            status,
+            error,
+            state: StepStateDto {
+                run_label: step.state.run_label,
+                step_delay_ms: step.state.step_delay_ms,
+                task_token: step.state.task_token,
+                branch_selected: step.state.branch_selected,
+                branch_token: step.state.branch_token,
+            },
+            output: step.output,
+            started_at_ms: epoch_millis(step.started_at),
+            finished_at_ms: step.finished_at.map(epoch_millis),
             elapsed_ms: elapsed.as_millis(),
         }
     }
