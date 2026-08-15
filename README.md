@@ -1,6 +1,6 @@
 # Workflow Console Experiment
 
-Local-only Topcoat 0.5.0 workflow dashboard pinned to upstream commit `88859796d88fac504be1b8e40a70d6f0dbacaaaa` and Rust 1.95. It exposes one code-defined branch/converge workflow, accepts workflow-specific input as the initial graph-flow context, runs manual and cron-triggered executions through the same in-memory service, and retains run history until the server process exits.
+Local-only workflow dashboard built with the crates.io releases Topcoat 0.5.0 and graph-flow 0.6.0 on Rust 1.95. It exposes one code-defined branch/converge workflow, accepts workflow-specific input as the initial graph-flow context, runs manual and cron-triggered executions through the same in-memory service, and retains run history until the server process exits.
 
 ## Surface
 
@@ -22,11 +22,10 @@ curl -i -X POST http://127.0.0.1:3000/api/runs \
   --data '{"workflow_id":"demo-workflow","input":{"label":"local check","step_delay_ms":350}}'
 ```
 
-Install the pinned asset CLI if `topcoat` is unavailable:
+Install the matching asset CLI if `topcoat` is unavailable:
 
 ```bash
-cargo install --git https://github.com/tokio-rs/topcoat \
-  --rev 88859796d88fac504be1b8e40a70d6f0dbacaaaa topcoat-cli
+cargo install --version '=0.5.0' topcoat-cli
 ```
 
 ```bash
@@ -40,9 +39,9 @@ node --check src/app.js
 
 ## Topcoat references
 
-- [Asset bundling at the pinned revision](https://github.com/tokio-rs/topcoat/blob/88859796d88fac504be1b8e40a70d6f0dbacaaaa/crates/topcoat/docs/asset.md)
-- [Application context at the pinned revision](https://github.com/tokio-rs/topcoat/blob/88859796d88fac504be1b8e40a70d6f0dbacaaaa/crates/topcoat/docs/app_context.md)
-- [JSON request and response example at the pinned revision](https://github.com/tokio-rs/topcoat/blob/88859796d88fac504be1b8e40a70d6f0dbacaaaa/examples/request-response/src/main.rs)
+- [Topcoat 0.5.0 on crates.io](https://crates.io/crates/topcoat/0.5.0)
+- [Topcoat getting started](https://github.com/tokio-rs/topcoat/blob/main/crates/topcoat/docs/getting_started.md)
+- [graph-flow 0.6.0 on crates.io](https://crates.io/crates/graph-flow/0.6.0)
 
 ## Cron reference
 
