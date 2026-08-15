@@ -2,11 +2,12 @@ use topcoat::{
     Result,
     asset::{Asset, asset},
     router::page,
-    view::view,
+    view::{component, view},
 };
 use workflow_console_experiment::{workflow_schedules, workflow_topology};
 
 const APP_CSS: Asset = asset!("./app.css");
+const APP_TRACE_JS: Asset = asset!("./app_trace.js");
 const APP_RENDER_JS: Asset = asset!("./app_render.js");
 const APP_JS: Asset = asset!("./app.js");
 
@@ -22,6 +23,7 @@ async fn home() -> Result {
                 <meta name="viewport" content="width=device-width, initial-scale=1">
                 <meta name="description" content="Inspect and run the local code-defined workflow">
                 <link rel="stylesheet" href=(APP_CSS)>
+                <script src=(APP_TRACE_JS) defer="defer"></script>
                 <script src=(APP_RENDER_JS) defer="defer"></script>
                 <script src=(APP_JS) defer="defer"></script>
                 <title>"Workflow Console"</title>
@@ -72,18 +74,19 @@ async fn home() -> Result {
                                 <span><i data-legend="traversed"></i>"Traversed"</span>
                             </div>
                             <div class="topology-scroll" tabindex="0" aria-label="Workflow topology, horizontally scrollable">
-                                <svg class="topology" viewBox="0 0 760 300" role="img" aria-labelledby="topology-title topology-desc">
+                                <svg class="topology" viewBox="0 0 760 300" role="group" aria-labelledby="topology-title topology-desc">
                                     <title id="topology-title">"Branch and converge workflow topology"</title>
                                     <desc id="topology-desc">"Prepare flows to route selection, branches to yes or fallback, then converges and completes."</desc>
                                     <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"></path></marker></defs>
                                     for edge in edges {
-                                        <g data-edge-id=(edge.id) data-state="idle" role="group" aria-label=(format!("{} to {}", edge.from, edge.to))>
+                                        <g class="graph-target" data-edge-id=(edge.id) data-state="idle" data-selected="false" tabindex="0" role="button" aria-pressed="false" aria-label=(format!("Inspect edge from {} to {}", edge.from, edge.to))>
+                                            <path class="edge-hit" d=(edge_path(edge.id))></path>
                                             <path class="edge" d=(edge_path(edge.id)) marker-end="url(#arrow)"></path>
                                             <text class="edge-state" x=(edge_label_x(edge.id)) y=(edge_label_y(edge.id))>"Idle"</text>
                                         </g>
                                     }
                                     for node in nodes {
-                                        <g data-node-id=(node.id) data-state="idle" role="group" transform=(node_transform(node.id)) aria-label=(node.label)>
+                                        <g class="graph-target" data-node-id=(node.id) data-state="idle" data-selected="false" tabindex="0" role="button" transform=(node_transform(node.id)) aria-pressed="false" aria-label=(format!("Inspect {} node", node.label))>
                                             <rect class="node" width="120" height="54" rx="6"></rect>
                                             <text class="node-label" x="60" y="23" text-anchor="middle">(node.label)</text>
                                             <text class="node-state" x="60" y="41" text-anchor="middle">"Idle"</text>
@@ -91,6 +94,7 @@ async fn home() -> Result {
                                     }
                                 </svg>
                             </div>
+                            trace_detail()
                         </section>
                         <section class="panel" aria-labelledby="history-title">
                             <div class="panel-heading"><div><p class="eyebrow">"Process lifetime"</p><h2 id="history-title">"Run history"</h2></div></div>
@@ -105,6 +109,22 @@ async fn home() -> Result {
                 </main>
             </body>
         </html>
+    }
+}
+
+#[component]
+async fn trace_detail() -> Result {
+    view! {
+        <section class="trace-detail" aria-labelledby="trace-title">
+            <div class="trace-heading"><div><p class="eyebrow">"Step trace"</p><h3 id="trace-title">"No graph item selected"</h3></div><span class="trace-status" data-testid="trace-status">"Unavailable"</span></div>
+            <dl class="trace-meta">
+                <div><dt>"Started"</dt><dd id="trace-started">"—"</dd></div>
+                <div><dt>"Finished"</dt><dd id="trace-finished">"—"</dd></div>
+                <div><dt>"Duration"</dt><dd id="trace-duration">"—"</dd></div>
+                <div><dt>"Selected edge"</dt><dd id="trace-edge">"—"</dd></div>
+            </dl>
+            <div class="trace-data"><div><p class="eyebrow">"State after node"</p><pre data-testid="trace-state">"No state captured"</pre></div><div><p class="eyebrow">"Output / error"</p><pre data-testid="trace-output">"No output captured"</pre></div></div>
+        </section>
     }
 }
 

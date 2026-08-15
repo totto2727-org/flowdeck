@@ -5,8 +5,9 @@ Local-only Topcoat 0.5.0 workflow dashboard pinned to upstream commit `88859796d
 ## Surface
 
 - `GET /` renders the operational dashboard.
-- `GET /api/state` returns the workflow topology and all retained runs, newest first.
+- `GET /api/state` returns the workflow topology and all retained runs, newest first. Each run includes per-node traces with typed state, start/finish timestamps, elapsed time, output or error, and the selected edge.
 - `POST /api/runs` accepts a workflow ID plus `label` and `step_delay_ms` input, then returns the new manual run. Invalid inputs and unknown IDs return HTTP 400 and are not retained.
+- Select any node or edge in the SVG with a pointer, Enter, or Space to inspect its retained trace. Polling preserves that selection while the run progresses.
 - The code-defined `*/10 * * * * *` schedule starts the same workflow every ten seconds with its own initial input. Schedule state and history remain in memory and stop with the server.
 
 ## Local commands

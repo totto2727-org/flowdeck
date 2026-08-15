@@ -12,6 +12,7 @@ const deferred = () => {
 const response = (body) => ({ ok: true, status: 200, json: async () => body });
 
 const element = () => ({
+  attributes: {},
   dataset: {},
   hidden: false,
   disabled: false,
@@ -21,7 +22,7 @@ const element = () => ({
   append() {},
   querySelector() { return null; },
   replaceChildren() {},
-  setAttribute() {},
+  setAttribute(name, value) { this.attributes[name] = value; },
 });
 
 const flush = () => new Promise(setImmediate);
@@ -42,6 +43,10 @@ test("stale polling cannot render or restart after a new run or pagehide", async
   const historyBody = element();
   const requestError = element();
   const topologyDescription = element();
+  const traceTitle = element();
+  const traceStatus = element();
+  const traceState = element();
+  const traceOutput = element();
   const selectors = new Map([
     ['[data-testid="run-workflow"]', runButton],
     ['[data-testid="run-form"]', runForm],
@@ -55,6 +60,14 @@ test("stale polling cannot render or restart after a new run or pagehide", async
     ["#run-history", historyBody],
     ["#request-error", requestError],
     ["#topology-desc", topologyDescription],
+    ["#trace-title", traceTitle],
+    ['[data-testid="trace-status"]', traceStatus],
+    ['[data-testid="trace-state"]', traceState],
+    ['[data-testid="trace-output"]', traceOutput],
+    ["#trace-started", element()],
+    ["#trace-finished", element()],
+    ["#trace-duration", element()],
+    ["#trace-edge", element()],
   ]);
   const document = {
     querySelector(selector) { return selectors.get(selector); },
@@ -78,9 +91,10 @@ test("stale polling cannot render or restart after a new run or pagehide", async
       return timer;
     },
   };
+  const traceSource = await readFile(new URL("../src/app_trace.js", import.meta.url), "utf8");
   const renderSource = await readFile(new URL("../src/app_render.js", import.meta.url), "utf8");
   const lifecycleSource = await readFile(new URL("../src/app.js", import.meta.url), "utf8");
-  vm.runInNewContext(`${renderSource}\n${lifecycleSource}`, { AbortController, document, Error, fetch, window });
+  vm.runInNewContext(`${traceSource}\n${renderSource}\n${lifecycleSource}`, { AbortController, Date, document, Error, fetch, window });
 
   assert.equal(pending.length, 1);
   const staleState = pending[0];
@@ -115,6 +129,7 @@ test("stale polling cannot render or restart after a new run or pagehide", async
     traversed_edges: ["prepare-to-choose"],
     route_summary: "prepare -> choose_route",
     elapsed_ms: 400,
+    steps: [],
   }] };
   pending[2].resolve(response(freshState));
   await startPromise;
@@ -134,4 +149,70 @@ test("stale polling cannot render or restart after a new run or pagehide", async
   await flush();
   assert.equal(window.workflowState, freshState);
   assert.equal(timers.filter((candidate) => candidate.active).length, 0);
+});
+
+test("graph selection renders the retained node trace", async () => {
+  const node = element();
+  node.dataset.nodeId = "choose_route";
+  const traceTitle = element();
+  const traceStatus = element();
+  const traceState = element();
+  const traceOutput = element();
+  const selectors = new Map([
+    ["#trace-title", traceTitle],
+    ['[data-testid="trace-status"]', traceStatus],
+    ['[data-testid="trace-state"]', traceState],
+    ['[data-testid="trace-output"]', traceOutput],
+  ]);
+  const document = {
+    querySelector(selector) { return selectors.get(selector) ?? element(); },
+    querySelectorAll(selector) { return selector === "[data-node-id]" ? [node] : []; },
+    createElement() { return element(); },
+  };
+  const window = {};
+  const renderSource = await readFile(new URL("../src/app_render.js", import.meta.url), "utf8");
+  const traceSource = await readFile(new URL("../src/app_trace.js", import.meta.url), "utf8");
+  const context = vm.createContext({ document, window });
+  vm.runInContext(`${traceSource}\n${renderSource}`, context);
+  window.workflowState = { runs: [{
+    run_id: "trace-run",
+    input: { label: "inspect me", step_delay_ms: 240 },
+    trigger: "Manual",
+    schedule_id: null,
+    status: "Running",
+    error: null,
+    current_node: "choose_route",
+    current_edge: "prepare-to-choose",
+    traversed_nodes: ["prepare"],
+    traversed_edges: ["prepare-to-choose"],
+    route_summary: "prepare -> choose_route",
+    elapsed_ms: 400,
+    steps: [{
+      sequence: 1,
+      node_id: "choose_route",
+      selected_edge: null,
+      status: "Running",
+      error: null,
+      state: {
+        run_label: "inspect me",
+        step_delay_ms: 240,
+        task_token: null,
+        branch_selected: null,
+        branch_token: null,
+      },
+      output: null,
+      started_at_ms: 100,
+      finished_at_ms: null,
+      elapsed_ms: 300,
+    }],
+  }] };
+
+  vm.runInContext("renderState(window.workflowState)", context);
+  node.listeners.click();
+
+  assert.equal(traceTitle.textContent, "Node · choose_route");
+  assert.equal(traceStatus.textContent, "Running");
+  assert.match(traceState.textContent, /\"run_label\": \"inspect me\"/);
+  assert.equal(traceOutput.textContent, "Pending");
+  assert.equal(node.attributes["aria-pressed"], "true");
 });

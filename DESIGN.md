@@ -81,9 +81,16 @@ All future CSS spacing, radii, widths, and layout tokens must be declared here b
 
 ### Run inspector
 
-- Structure: status, trigger, initial input, route, elapsed summary, legend, and accessible inline SVG driven only by immutable topology IDs.
+- Structure: status, trigger, initial input, route, elapsed summary, legend, accessible inline SVG driven only by immutable topology IDs, and a stable step-trace detail region below the graph.
 - States: empty, loading, running, completed, failed, and request error. State words remain visible so color is never the only cue.
 - Layout: the graph wrapper exclusively owns horizontal scrolling; selected run details remain outside that region.
+
+### Graph trace selection
+
+- Structure: every SVG node and edge is a real keyboard-focusable button target. Selection opens no overlay; it updates the adjacent detail region with node status, state, start/finish times, duration, output, and selected edge.
+- States: unavailable, running, completed, failed, hover, focus, and selected. `aria-pressed` identifies the selected graph element, and the detail heading names the selected node or edge.
+- Interaction reference: adapts the explicit selected-state and mounted-content contract from the beui.dev tabs pattern without importing a motion dependency. The existing micro-duration color transition is the only selection motion, and reduced-motion disables it.
+- Cognitive accessibility: polling must preserve an explicit user selection. Changing the selected run resets to that run's current or latest trace so details never silently describe another run.
 
 ### Run history
 
@@ -104,6 +111,7 @@ All future CSS spacing, radii, widths, and layout tokens must be declared here b
 - Animate only `transform`, `opacity`, or `filter` and respect `prefers-reduced-motion`.
 - Full keyboard operation and visible focus are required for every future interaction.
 - Polling changes status, history, and topology without moving controls. The status message uses `aria-live="polite"`; request errors use an alert.
+- Graph selection uses click, Enter, or Space and keeps the trace panel mounted. Selection feedback uses color plus `aria-pressed` and a visible detail heading.
 
 ## 7. Depth & Surface
 

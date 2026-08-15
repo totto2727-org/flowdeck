@@ -12,8 +12,6 @@ const elapsedOutput = document.querySelector("#elapsed-summary");
 const historyBody = document.querySelector("#run-history");
 const requestError = document.querySelector("#request-error");
 const topologyDescription = document.querySelector("#topology-desc");
-const nodeElements = [...document.querySelectorAll("[data-node-id]")];
-const edgeElements = [...document.querySelectorAll("[data-edge-id]")];
 
 let selectedRunId = null;
 
@@ -43,6 +41,12 @@ const setGraphState = (element, state) => {
   }
 };
 
+const setGraphSelection = (element, kind, id) => {
+  const selected = selectedTraceTarget?.kind === kind && selectedTraceTarget.id === id;
+  element.dataset.selected = String(selected);
+  element.setAttribute("aria-pressed", String(selected));
+};
+
 const renderTopology = (run) => {
   const running = run?.status === "Running";
   const traversedRoute = run?.traversed_nodes.length ? run.traversed_nodes.join(" to ") : "none";
@@ -57,6 +61,7 @@ const renderTopology = (run) => {
       ? "active"
       : run?.traversed_nodes.includes(id) ? "traversed" : "idle";
     setGraphState(element, state);
+    setGraphSelection(element, "node", id);
   }
   for (const element of edgeElements) {
     const id = element.dataset.edgeId;
@@ -64,6 +69,7 @@ const renderTopology = (run) => {
       ? "active"
       : run?.traversed_edges.includes(id) ? "traversed" : "idle";
     setGraphState(element, state);
+    setGraphSelection(element, "edge", id);
   }
 };
 
@@ -76,7 +82,9 @@ const renderSelectedRun = (run) => {
     inputOutput.textContent = "—";
     elapsedOutput.textContent = "—";
     setRequestError("");
+    synchronizeTraceSelection(null);
     renderTopology(null);
+    renderTrace(null);
     return;
   }
   statusOutput.textContent = run.status;
@@ -86,7 +94,9 @@ const renderSelectedRun = (run) => {
   inputOutput.textContent = formatInput(run);
   elapsedOutput.textContent = formatElapsed(run.elapsed_ms);
   setRequestError(run.status === "Failed" ? run.error || "The workflow failed without an error message." : "");
+  synchronizeTraceSelection(run);
   renderTopology(run);
+  renderTrace(run);
 };
 
 const historyCell = (text) => {
