@@ -8,9 +8,12 @@ license = "MIT"
 publish = false
 
 [dependencies]
+async-trait = "0.1"
+graph-flow = { git = "https://github.com/a-agmon/rs-graph-llm.git", rev = "f18bf6a197fda9ee47f2ad21a625e985740e0cbb" }
 serde = { version = "1", features = ["derive"] }
-tokio = { version = "1.51.1", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.51.1", features = ["macros", "rt-multi-thread", "sync", "time"] }
 topcoat = { version = "0.5.0", git = "https://github.com/tokio-rs/topcoat", rev = "88859796d88fac504be1b8e40a70d6f0dbacaaaa" }
+uuid = { version = "1", features = ["v4"] }
 
 [lints.rust]
 unsafe_code = "deny"
