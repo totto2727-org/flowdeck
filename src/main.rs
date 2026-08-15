@@ -5,6 +5,7 @@ mod web_page;
 
 use std::error::Error;
 
+use tokio::net::TcpListener;
 use topcoat::{
     asset::{AssetBundle, RouterBuilderAssetExt},
     router::{Router, RouterBuilderDiscoverExt},
@@ -20,6 +21,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .app_context(service)
         .assets(assets)
         .build();
-    topcoat::start(router).await?;
+    let listener = TcpListener::bind("127.0.0.1:3000").await?;
+    topcoat::serve(listener, router).await?;
     Ok(())
 }
