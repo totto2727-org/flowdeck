@@ -1,94 +1,66 @@
+mod console;
+mod presentation;
+mod topology;
+mod trace;
+
+use serde::Serialize;
+use serde_json::Value;
 use topcoat::{
     Result,
     asset::{Asset, asset},
+    context::{Cx, app_context},
     router::page,
     view::{component, view},
 };
 use workflow_console_experiment::{
-    workflow_definitions, workflow_id, workflow_input_form, workflow_schedules,
+    RunSnapshot, WorkflowService, workflow_default_input, workflow_definitions, workflow_id,
+    workflow_input_form, workflow_schedules,
 };
 
-const APP_CSS: Asset = asset!("./app.css");
-const APP_TRACE_JS: Asset = asset!("./app_trace.js");
-const APP_RENDER_JS: Asset = asset!("./app_render.js");
-const APP_JS: Asset = asset!("./app.js");
+use self::console::{console_content, run_history, run_inspector, selected_inspector_host};
+
+const DATASTAR_JS: Asset =
+    asset!("https://cdn.jsdelivr.net/gh/starfederation/datastar@1.0.2/bundles/datastar.js");
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct InitialSignals {
+    selected_workflow_id: String,
+    selected_run_id: String,
+    selected_trace_kind: &'static str,
+    selected_trace_id: String,
+    input: Value,
+    request_message: &'static str,
+}
 
 #[page("/")]
-async fn home() -> Result {
-    let definitions = workflow_definitions();
+async fn home(cx: &Cx) -> Result {
+    let service = app_context::<WorkflowService>(cx);
+    let mut runs = service.list_runs().await;
+    runs.reverse();
+    let signals = initial_signals(&runs);
+    let signals_json = serde_json::to_string(&signals)?;
     view! {
         <!DOCTYPE html>
         <html lang="en">
             <head>
                 <meta charset="utf-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1">
-                <meta name="description" content="Inspect and run the local code-defined workflow">
-                <link rel="stylesheet" href=(APP_CSS)>
-                <script src=(APP_TRACE_JS) defer="defer"></script>
-                <script src=(APP_RENDER_JS) defer="defer"></script>
-                <script src=(APP_JS) defer="defer"></script>
+                <meta name="description" content="Inspect and run local code-defined workflows">
+                <link rel="stylesheet" href=(topcoat::tailwind::stylesheet!())>
+                <script type="module" src=(DATASTAR_JS)></script>
                 <title>"Workflow Console"</title>
             </head>
-            <body>
-                <header class="topbar">
-                    <div><p class="eyebrow">"Local operations"</p><h1>"Workflow Console"</h1></div>
-                    <span class="environment">"In-memory"</span>
+            <body data-signals=(signals_json) data-init="@get('/events')">
+                <header class="flex items-start justify-between gap-4 border-b border-border bg-surface px-4 py-4 sm:items-center sm:px-8">
+                    <div><p class="text-xs font-semibold uppercase tracking-[0.04em] text-text-muted">"Local operations"</p><h1 class="text-3xl font-semibold leading-tight tracking-[-0.01em]">"Workflow Console"</h1></div>
+                    <span class="rounded-control border border-border px-2 py-1 font-mono text-[0.8125rem] text-text-secondary">"In-memory"</span>
                 </header>
-                <main class="shell">
+                <main class="mx-auto grid max-w-[72rem] min-w-0 grid-cols-1 gap-4 p-4 lg:grid-cols-[minmax(14rem,18rem)_minmax(0,1fr)] lg:p-6">
                     workflow_rail()
-                    <div class="inspection-stack">
-                        <section class="panel inspector" aria-labelledby="inspector-title">
-                            <div class="panel-heading">
-                                <div><p class="eyebrow">"Selected run"</p><h2 id="inspector-title">"Execution route"</h2></div>
-                                <p class="status-line" data-testid="run-status" role="status" aria-live="polite">"Loading"</p>
-                            </div>
-                            <dl class="summary-grid">
-                                <div><dt>"Workflow"</dt><dd id="workflow-summary">"—"</dd></div>
-                                <div><dt>"Trigger"</dt><dd id="trigger-summary">"—"</dd></div>
-                                <div><dt>"Input"</dt><dd id="input-summary">"—"</dd></div>
-                                <div><dt>"Route"</dt><dd data-testid="route-summary">"Waiting for state"</dd></div>
-                                <div><dt>"Elapsed"</dt><dd id="elapsed-summary">"—"</dd></div>
-                            </dl>
-                            <p id="request-error" class="request-error" role="alert" hidden="hidden"></p>
-                            <div class="legend" aria-label="Topology state legend">
-                                <span><i data-legend="idle"></i>"Idle"</span>
-                                <span><i data-legend="active"></i>"Active"</span>
-                                <span><i data-legend="traversed"></i>"Traversed"</span>
-                            </div>
-                            <div class="topology-scroll" tabindex="0" aria-label="Workflow topology, horizontally scrollable">
-                                for definition in definitions {
-                                    <svg class="topology" data-topology-workflow=(definition.workflow_id) data-active=(if definition.workflow_id == workflow_id() { "true" } else { "false" }) viewBox="0 0 760 300" role="group" aria-labelledby=(format!("topology-title-{} topology-desc-{}", definition.workflow_id, definition.workflow_id))>
-                                        <title id=(format!("topology-title-{}", definition.workflow_id))>(format!("{} workflow topology", definition.name))</title>
-                                        <desc id=(format!("topology-desc-{}", definition.workflow_id)) data-topology-desc="">(definition.description)</desc>
-                                        <defs><marker id=(format!("arrow-{}", definition.workflow_id)) viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"></path></marker></defs>
-                                        for edge in definition.edges {
-                                            <g class="graph-target" data-edge-id=(edge.id) data-workflow-id=(definition.workflow_id) data-state="idle" data-selected="false" tabindex="0" role="button" aria-pressed="false" aria-label=(format!("Inspect edge from {} to {}", edge.from, edge.to))>
-                                                <path class="edge-hit" d=(edge_path(edge.id))></path>
-                                                <path class="edge" d=(edge_path(edge.id)) marker-end=(format!("url(#arrow-{})", definition.workflow_id))></path>
-                                                <text class="edge-state" x=(edge_label_x(edge.id)) y=(edge_label_y(edge.id))>"Idle"</text>
-                                            </g>
-                                        }
-                                        for node in definition.nodes {
-                                            <g class="graph-target" data-node-id=(node.id) data-workflow-id=(definition.workflow_id) data-state="idle" data-selected="false" tabindex="0" role="button" transform=(node_transform(node.id)) aria-pressed="false" aria-label=(format!("Inspect {} node", node.label))>
-                                                <rect class="node" width="120" height="54" rx="6"></rect>
-                                                <text class="node-label" x="60" y="23" text-anchor="middle">(node.label)</text>
-                                                <text class="node-state" x="60" y="41" text-anchor="middle">"Idle"</text>
-                                            </g>
-                                        }
-                                    </svg>
-                                }
-                            </div>
-                            trace_detail()
-                        </section>
-                        <section class="panel" aria-labelledby="history-title">
-                            <div class="panel-heading"><div><p class="eyebrow">"Process lifetime"</p><h2 id="history-title">"Run history"</h2></div></div>
-                            <div class="history-scroll" tabindex="0" aria-label="Run history, horizontally scrollable">
-                                <table>
-                                    <thead><tr><th scope="col">"Run ID"</th><th scope="col">"Workflow"</th><th scope="col">"Trigger"</th><th scope="col">"Input"</th><th scope="col">"Status"</th><th scope="col">"Route"</th><th scope="col">"Elapsed"</th></tr></thead>
-                                    <tbody id="run-history"><tr id="empty-history"><td colspan="7">"No runs yet. Select and start a code-defined workflow to inspect it here."</td></tr></tbody>
-                                </table>
-                            </div>
-                        </section>
+                    <div class="min-w-0">
+                        <p id="request-message" class="mb-4 border-l-[3px] border-status-error bg-surface-elevated p-3" data-show="$requestMessage !== ''" data-text="$requestMessage" role="alert"></p>
+                        console_content(runs: runs)
                     </div>
                 </main>
             </body>
@@ -98,103 +70,105 @@ async fn home() -> Result {
 
 #[component]
 async fn workflow_rail() -> Result {
-    let definitions = workflow_definitions();
     let schedules = workflow_schedules();
     view! {
-        <aside class="workflow-rail" aria-labelledby="workflows-title">
-            <h2 id="workflows-title">"Workflows"</h2>
-            <div class="workflow-options" role="group" aria-label="Code-defined workflows">
-                for definition in definitions {
-                    <button type="button" class="workflow-card workflow-option" data-workflow-option="" data-workflow-id=(definition.workflow_id) aria-pressed=(if definition.workflow_id == workflow_id() { "true" } else { "false" })>
-                        <span class="eyebrow">"Code-defined"</span>
-                        <strong>(definition.name)</strong>
-                        <span class="muted">(definition.description)</span>
-                        <code>(definition.workflow_id)</code>
+        <aside class="min-w-0 self-start rounded-panel border border-border bg-surface p-4 shadow-panel lg:sticky lg:top-6" aria-labelledby="workflows-title">
+            <h2 id="workflows-title" class="text-xl font-semibold">"Workflows"</h2>
+            <div class="mt-4 grid gap-3" role="group" aria-label="Code-defined workflows">
+                for definition in workflow_definitions() {
+                    <button type="button" class="grid w-full gap-2 rounded-control border border-border bg-surface-elevated p-4 text-left text-text-primary shadow-inset transition-[filter] duration-150 hover:brightness-110 aria-[pressed=true]:border-focus aria-[pressed=true]:shadow-[0_0_0_0.0625rem_var(--color-focus)]" data-attr:aria-pressed=(format!("$selectedWorkflowId === '{}'", definition.workflow_id)) data-on:click=(selection_expression(definition.workflow_id)?)>
+                        <span class="text-xs font-semibold uppercase tracking-[0.04em] text-text-muted">"Code-defined"</span>
+                        <strong>(definition.name)</strong><span class="text-sm text-text-muted">(definition.description)</span><code class="font-mono text-[0.8125rem]">(definition.workflow_id)</code>
                         for schedule in schedules.iter().filter(|schedule| schedule.workflow_id == definition.workflow_id) {
-                            <span class="schedule-summary"><span class="eyebrow">"Cron schedule"</span><code>(schedule.cron_expression)</code><span class="muted">(schedule.input_summary)</span></span>
+                            <span class="grid gap-1 border-t border-border pt-3"><span class="text-xs font-semibold uppercase tracking-[0.04em] text-text-muted">"Cron schedule"</span><code class="break-anywhere font-mono text-[0.8125rem] text-status-healthy">(schedule.cron_expression)</code><span class="text-sm text-text-muted">(schedule.input_summary)</span></span>
                         }
                     </button>
                 }
             </div>
-            for definition in definitions {
-                workflow_input_form(
-                    workflow_id: definition.workflow_id,
-                    active: definition.workflow_id == workflow_id(),
-                )
+            for definition in workflow_definitions() {
+                workflow_input_form(workflow_id: definition.workflow_id, active: definition.workflow_id == workflow_id())
             }
         </aside>
     }
 }
 
-#[component]
-async fn trace_detail() -> Result {
-    view! {
-        <section class="trace-detail" aria-labelledby="trace-title">
-            <div class="trace-heading"><div><p class="eyebrow">"Step trace"</p><h3 id="trace-title">"No graph item selected"</h3></div><span class="trace-status" data-testid="trace-status">"Unavailable"</span></div>
-            <dl class="trace-meta">
-                <div><dt>"Started"</dt><dd id="trace-started">"—"</dd></div>
-                <div><dt>"Finished"</dt><dd id="trace-finished">"—"</dd></div>
-                <div><dt>"Duration"</dt><dd id="trace-duration">"—"</dd></div>
-                <div><dt>"Selected edge"</dt><dd id="trace-edge">"—"</dd></div>
-            </dl>
-            <div class="trace-data"><div><p class="eyebrow">"State after node"</p><pre data-testid="trace-state">"No state captured"</pre></div><div><p class="eyebrow">"Output / error"</p><pre data-testid="trace-output">"No output captured"</pre></div></div>
-        </section>
+#[allow(
+    clippy::redundant_pub_crate,
+    reason = "The route sibling renders this otherwise private page fragment."
+)]
+pub(crate) async fn render_history(service: &WorkflowService) -> Result<String> {
+    let mut runs = service.list_runs().await;
+    runs.reverse();
+    let cx = topcoat::context::CxTestBuilder::new().build();
+    let __cx = &cx;
+    let rendered = view! { run_history(runs: runs) }?;
+    Ok(rendered.render(&cx))
+}
+
+#[allow(
+    clippy::redundant_pub_crate,
+    reason = "The route sibling renders this otherwise private page fragment."
+)]
+pub(crate) async fn render_selected_host(
+    service: &WorkflowService,
+    run_id: &str,
+) -> Result<String> {
+    let run = find_run(service, run_id).await;
+    let cx = topcoat::context::CxTestBuilder::new().build();
+    let __cx = &cx;
+    let rendered = view! { selected_inspector_host(run: run) }?;
+    Ok(rendered.render(&cx))
+}
+
+#[allow(
+    clippy::redundant_pub_crate,
+    reason = "The route sibling renders this otherwise private page fragment."
+)]
+pub(crate) async fn render_run_inspector(
+    service: &WorkflowService,
+    run_id: &str,
+) -> Result<Option<String>> {
+    let Some(run) = find_run(service, run_id).await else {
+        return Ok(None);
+    };
+    let cx = topcoat::context::CxTestBuilder::new().build();
+    let __cx = &cx;
+    let rendered = view! { run_inspector(run: run) }?;
+    Ok(Some(rendered.render(&cx)))
+}
+
+async fn find_run(service: &WorkflowService, run_id: &str) -> Option<RunSnapshot> {
+    service
+        .list_runs()
+        .await
+        .into_iter()
+        .find(|run| run.run_id.as_str() == run_id)
+}
+
+fn initial_signals(runs: &[RunSnapshot]) -> InitialSignals {
+    let selected = runs.first();
+    let workflow_id =
+        selected.map_or_else(|| workflow_id().to_owned(), |run| run.workflow_id.clone());
+    let trace_id = selected
+        .and_then(|run| {
+            run.current_node
+                .clone()
+                .or_else(|| run.steps.last().map(|step| step.node_id.clone()))
+        })
+        .unwrap_or_default();
+    InitialSignals {
+        selected_workflow_id: workflow_id.clone(),
+        selected_run_id: selected.map_or_else(String::new, |run| run.run_id.to_string()),
+        selected_trace_kind: "node",
+        selected_trace_id: trace_id,
+        input: workflow_default_input(&workflow_id),
+        request_message: "",
     }
 }
 
-fn node_transform(id: &str) -> &'static str {
-    match id {
-        "prepare" => "translate(20 123)",
-        "choose_route" => "translate(170 123)",
-        "yes_path" => "translate(330 42)",
-        "fallback_path" => "translate(330 204)",
-        "converge" => "translate(490 123)",
-        "complete" => "translate(640 123)",
-        "receive" => "translate(50 123)",
-        "inspect" => "translate(230 123)",
-        "approve" => "translate(410 123)",
-        "archive" => "translate(590 123)",
-        _ => "translate(0 0)",
-    }
-}
-
-fn edge_path(id: &str) -> &'static str {
-    match id {
-        "prepare-to-choose" => "M 140 150 L 170 150",
-        "choose-to-yes" => "M 290 144 C 305 144 305 69 330 69",
-        "choose-to-fallback" => "M 290 156 C 305 156 305 231 330 231",
-        "yes-to-converge" => "M 450 69 C 475 69 475 144 490 144",
-        "fallback-to-converge" => "M 450 231 C 475 231 475 156 490 156",
-        "converge-to-complete" => "M 610 150 L 640 150",
-        "receive-to-inspect" => "M 170 150 L 230 150",
-        "inspect-to-approve" => "M 350 150 L 410 150",
-        "approve-to-archive" => "M 530 150 L 590 150",
-        _ => "M 0 0",
-    }
-}
-
-fn edge_label_x(id: &str) -> &'static str {
-    match id {
-        "prepare-to-choose" => "142",
-        "choose-to-yes" | "choose-to-fallback" => "294",
-        "yes-to-converge" | "fallback-to-converge" => "452",
-        "converge-to-complete" => "612",
-        "receive-to-inspect" => "180",
-        "inspect-to-approve" => "360",
-        "approve-to-archive" => "540",
-        _ => "0",
-    }
-}
-
-fn edge_label_y(id: &str) -> &'static str {
-    match id {
-        "choose-to-yes" | "yes-to-converge" => "94",
-        "choose-to-fallback" | "fallback-to-converge" => "218",
-        "prepare-to-choose"
-        | "converge-to-complete"
-        | "receive-to-inspect"
-        | "inspect-to-approve"
-        | "approve-to-archive" => "173",
-        _ => "0",
-    }
+fn selection_expression(workflow_id: &str) -> Result<String> {
+    let input = serde_json::to_string(&workflow_default_input(workflow_id))?;
+    Ok(format!(
+        "$selectedWorkflowId = '{workflow_id}'; $selectedRunId = ''; $selectedTraceKind = 'node'; $selectedTraceId = ''; $input = {input}; $requestMessage = ''"
+    ))
 }

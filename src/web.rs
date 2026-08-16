@@ -1,225 +1,142 @@
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
-
+use futures_core::Stream;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use tokio::sync::broadcast::error::RecvError;
 use topcoat::{
     Result,
     context::{Cx, app_context},
-    router::{StatusCode, content::Json, route},
+    datastar::{PatchElements, PatchSignals, Signals},
+    router::{
+        content::sse::{Event, KeepAlive, Sse},
+        route,
+    },
 };
-use workflow_console_experiment::{
-    EdgeSpec, NodeSpec, RunSnapshot, RunStatus, RunTrigger, ScheduleSpec, StepTrace,
-    StepTraceStatus, WorkflowService, workflow_definitions, workflow_schedules,
-};
+use workflow_console_experiment::{RunTrigger, WorkflowEvent, WorkflowService};
 
-#[derive(Debug, Serialize)]
-struct StateResponse {
-    workflows: Vec<WorkflowDto>,
-    runs: Vec<RunDto>,
-}
+use crate::web_page::{render_history, render_run_inspector, render_selected_host};
 
-#[derive(Debug, Serialize)]
-struct WorkflowDto {
-    workflow_id: &'static str,
-    name: &'static str,
-    description: &'static str,
-    topology: TopologyDto,
-    schedules: Vec<ScheduleSpec>,
-}
-
-#[derive(Debug, Serialize)]
-struct TopologyDto {
-    nodes: &'static [NodeSpec],
-    edges: &'static [EdgeSpec],
-}
-
-#[derive(Debug, Serialize)]
-struct RunDto {
-    run_id: String,
-    workflow_id: String,
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StartSignals {
+    selected_workflow_id: String,
     input: Value,
-    input_summary: String,
-    trigger: &'static str,
-    schedule_id: Option<String>,
-    status: &'static str,
-    error: Option<String>,
-    current_node: Option<String>,
-    current_edge: Option<String>,
-    traversed_nodes: Vec<String>,
-    traversed_edges: Vec<String>,
-    route_summary: String,
-    started_at_ms: u128,
-    finished_at_ms: Option<u128>,
-    elapsed_ms: u128,
-    steps: Vec<StepTraceDto>,
-}
-
-#[derive(Debug, Serialize)]
-struct StepTraceDto {
-    sequence: usize,
-    node_id: String,
-    selected_edge: Option<String>,
-    status: &'static str,
-    error: Option<String>,
-    state: StepStateDto,
-    output: Option<String>,
-    started_at_ms: u128,
-    finished_at_ms: Option<u128>,
-    elapsed_ms: u128,
-}
-
-#[derive(Debug, Serialize)]
-struct StepStateDto {
-    input: Value,
-    task_token: Option<String>,
-    branch_selected: Option<bool>,
-    branch_token: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
-struct StartRequest {
-    workflow_id: String,
-    input: Value,
+#[serde(rename_all = "camelCase")]
+struct SelectionSignals {
+    selected_run_id: String,
 }
 
 #[derive(Debug, Serialize)]
-#[serde(tag = "outcome", rename_all = "snake_case")]
-enum StartResponse {
-    Accepted { run: Box<RunDto> },
-    Rejected { error: String },
+#[serde(rename_all = "camelCase")]
+struct StartPatch {
+    selected_workflow_id: String,
+    selected_run_id: String,
+    selected_trace_kind: &'static str,
+    selected_trace_id: String,
+    request_message: String,
 }
 
-#[route(GET "/api/state")]
-async fn state(cx: &Cx) -> Result<Json<StateResponse>> {
-    let service = app_context::<WorkflowService>(cx);
-    Ok(Json(state_response(service).await))
-}
-
-#[route(POST "/api/runs")]
+#[route(POST "/actions/runs")]
 async fn start_run(
     cx: &Cx,
-    Json(request): Json<StartRequest>,
-) -> Result<(StatusCode, Json<StartResponse>)> {
+    Signals(signals): Signals<StartSignals>,
+) -> Result<Sse<impl Stream<Item = Result<Event>> + use<>>> {
     let service = app_context::<WorkflowService>(cx);
+    let workflow_id = signals.selected_workflow_id;
     let result = service
-        .start(&request.workflow_id, request.input, RunTrigger::Manual)
+        .start(&workflow_id, signals.input, RunTrigger::Manual)
         .await;
-    match result {
-        Ok(snapshot) => Ok((
-            StatusCode::CREATED,
-            Json(StartResponse::Accepted {
-                run: Box::new(RunDto::from(snapshot)),
-            }),
-        )),
-        Err(error) => Ok((
-            StatusCode::BAD_REQUEST,
-            Json(StartResponse::Rejected {
-                error: error.to_string(),
-            }),
-        )),
-    }
-}
-
-async fn state_response(service: &WorkflowService) -> StateResponse {
-    let mut runs = service.list_runs().await;
-    runs.reverse();
-    StateResponse {
-        workflows: workflow_definitions()
-            .iter()
-            .map(|definition| WorkflowDto {
-                workflow_id: definition.workflow_id,
-                name: definition.name,
-                description: definition.description,
-                topology: TopologyDto {
-                    nodes: definition.nodes,
-                    edges: definition.edges,
-                },
-                schedules: workflow_schedules()
-                    .iter()
-                    .filter(|schedule| schedule.workflow_id == definition.workflow_id)
-                    .copied()
-                    .collect(),
-            })
-            .collect(),
-        runs: runs.into_iter().map(RunDto::from).collect(),
-    }
-}
-
-impl From<RunSnapshot> for RunDto {
-    fn from(snapshot: RunSnapshot) -> Self {
-        let now = SystemTime::now();
-        let elapsed = snapshot
-            .duration
-            .or_else(|| now.duration_since(snapshot.started_at).ok())
-            .unwrap_or(Duration::ZERO);
-        let (status, error) = match snapshot.status {
-            RunStatus::Running => ("Running", None),
-            RunStatus::Completed => ("Completed", None),
-            RunStatus::Failed { message } => ("Failed", Some(message)),
-            _ => ("Failed", Some("Unsupported run status".to_owned())),
-        };
-        let input = snapshot.input.state().clone();
-        let input_summary = snapshot.input.summary().to_owned();
-        let (trigger, schedule_id) = match snapshot.trigger {
-            RunTrigger::Manual => ("Manual", None),
-            RunTrigger::Cron { schedule_id } => ("Cron", Some(schedule_id)),
-            _ => ("Unknown", None),
-        };
-        Self {
-            run_id: snapshot.run_id.to_string(),
-            workflow_id: snapshot.workflow_id,
-            input,
-            input_summary,
-            trigger,
-            schedule_id,
-            status,
-            error,
-            current_node: snapshot.current_node,
-            current_edge: snapshot.current_edge,
-            traversed_nodes: snapshot.traversed_nodes,
-            traversed_edges: snapshot.traversed_edges,
-            route_summary: snapshot.route_summary,
-            started_at_ms: epoch_millis(snapshot.started_at),
-            finished_at_ms: snapshot.finished_at.map(epoch_millis),
-            elapsed_ms: elapsed.as_millis(),
-            steps: snapshot.steps.into_iter().map(StepTraceDto::from).collect(),
+    let (signal_patch, host) = match result {
+        Ok(run) => {
+            let run_id = run.run_id.to_string();
+            let patch = PatchSignals::json(&StartPatch {
+                selected_workflow_id: run.workflow_id,
+                selected_run_id: run_id.clone(),
+                selected_trace_kind: "node",
+                selected_trace_id: run.current_node.unwrap_or_default(),
+                request_message: String::new(),
+            })?;
+            (patch, Some(render_selected_host(service, &run_id).await?))
         }
-    }
+        Err(error) => (
+            PatchSignals::json(&StartPatch {
+                selected_workflow_id: workflow_id,
+                selected_run_id: String::new(),
+                selected_trace_kind: "node",
+                selected_trace_id: String::new(),
+                request_message: error.to_string(),
+            })?,
+            None,
+        ),
+    };
+    let stream = async_stream::stream! {
+        yield Ok(signal_patch.into());
+        if let Some(host) = host { yield Ok(PatchElements::new(host).into()); }
+    };
+    Ok(Sse::new(stream))
 }
 
-impl From<StepTrace> for StepTraceDto {
-    fn from(step: StepTrace) -> Self {
-        let elapsed = step
-            .duration
-            .or_else(|| SystemTime::now().duration_since(step.started_at).ok())
-            .unwrap_or(Duration::ZERO);
-        let (status, error) = match step.status {
-            StepTraceStatus::Running => ("Running", None),
-            StepTraceStatus::Completed => ("Completed", None),
-            StepTraceStatus::Failed { message } => ("Failed", Some(message)),
-            _ => ("Failed", Some("Unsupported step trace status".to_owned())),
-        };
-        Self {
-            sequence: step.sequence,
-            node_id: step.node_id,
-            selected_edge: step.selected_edge,
-            status,
-            error,
-            state: StepStateDto {
-                input: step.state.input,
-                task_token: step.state.task_token,
-                branch_selected: step.state.branch_selected,
-                branch_token: step.state.branch_token,
-            },
-            output: step.output,
-            started_at_ms: epoch_millis(step.started_at),
-            finished_at_ms: step.finished_at.map(epoch_millis),
-            elapsed_ms: elapsed.as_millis(),
+#[route(GET "/actions/select-run")]
+async fn select_run(cx: &Cx, Signals(signals): Signals<SelectionSignals>) -> Result<PatchElements> {
+    let service = app_context::<WorkflowService>(cx);
+    Ok(PatchElements::new(
+        render_selected_host(service, &signals.selected_run_id).await?,
+    ))
+}
+
+#[route(GET "/events")]
+#[allow(
+    clippy::collapsible_if,
+    reason = "async-stream expands under an edition that cannot parse Rust 2024 let chains."
+)]
+async fn events(
+    cx: &Cx,
+    Signals(signals): Signals<SelectionSignals>,
+) -> Result<Sse<impl Stream<Item = Result<Event>> + use<>>> {
+    let service = app_context::<WorkflowService>(cx).clone();
+    let mut receiver = service.subscribe();
+    let selected_run_id = signals.selected_run_id;
+    let stream = async_stream::stream! {
+        yield history_event(&service).await;
+        yield selected_host_event(&service, &selected_run_id).await;
+        loop {
+            match receiver.recv().await {
+                Ok(event) => {
+                    yield history_event(&service).await;
+                    if let Some(run_id) = event_run_id(&event) {
+                        if let Some(html) = render_run_inspector(&service, run_id).await? {
+                            yield Ok(PatchElements::new(html).into());
+                        }
+                    }
+                }
+                Err(RecvError::Lagged(_)) => {
+                    yield history_event(&service).await;
+                    yield selected_host_event(&service, &selected_run_id).await;
+                }
+                Err(RecvError::Closed) => break,
+            }
         }
-    }
+    };
+    Ok(Sse::new(stream).keep_alive(KeepAlive::new()))
 }
 
-fn epoch_millis(time: SystemTime) -> u128 {
-    time.duration_since(UNIX_EPOCH)
-        .map_or(0, |duration| duration.as_millis())
+async fn history_event(service: &WorkflowService) -> Result<Event> {
+    Ok(PatchElements::new(render_history(service).await?).into())
+}
+
+async fn selected_host_event(service: &WorkflowService, run_id: &str) -> Result<Event> {
+    Ok(PatchElements::new(render_selected_host(service, run_id).await?).into())
+}
+
+fn event_run_id(event: &WorkflowEvent) -> Option<&str> {
+    match event {
+        WorkflowEvent::RunStarted { run_id, .. }
+        | WorkflowEvent::NodeStarted { run_id, .. }
+        | WorkflowEvent::NodeCompleted { run_id, .. }
+        | WorkflowEvent::RunCompleted { run_id, .. }
+        | WorkflowEvent::RunFailed { run_id, .. } => Some(run_id.as_str()),
+        _ => None,
+    }
 }

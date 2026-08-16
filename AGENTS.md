@@ -10,7 +10,7 @@
 ```text
 src/                         Rust application, workflow engine integration, web routes, and browser assets
 src/workflows/               Code-defined workflow registry, definitions, and shared tasks
-tests/                       Rust integration tests and browser lifecycle test fixtures
+tests/                       Rust integration tests for workflow execution and lifecycle events
 Cargo.toml                   Rust package metadata, dependencies, and lint policy
 rust-toolchain.toml          Rust 1.95 toolchain, rustfmt, Clippy, and rust-src
 package.nix                  Installable Rust binary package
@@ -59,7 +59,7 @@ Justfile                     Canonical development task entry points
 ### Web surface
 
 - Topcoat serves the dashboard and JSON API on `127.0.0.1:3000`.
-- Browser JavaScript polls state, renders topology and history, and preserves accessible node and edge selection.
+- Rust components render topology, history, and trace fragments; Datastar actions and SSE patches preserve accessible node and edge selection without application-specific JavaScript.
 - Only the topology and history regions own horizontal overflow at narrow viewport widths.
 
 ### Packaging and automation

@@ -3,7 +3,7 @@
 ## 0. Research Log
 
 - Embedded references: shortlisted Sentry, PostHog, and ClickHouse for a data-dense operational console; selected the neutral operational Layer A direction and Sentry Layer B because its warm dark surfaces, explicit status colors, compact labels, and tactile depth fit long-running workflow inspection.
-- Topcoat constraints: the fixed Topcoat 0.5.0 runtime is server-rendered, routes are Rust functions, and future components must fit its `view!` markup, component, asset, and optional client-runtime model.
+- Topcoat constraints: the Topcoat 0.5-compatible runtime is server-rendered, routes are Rust functions, and future components must fit its `view!`, component, Datastar, Tailwind, and asset model.
 - Lazyweb and Imagen: skipped to honor the bounded local experiment and the repository no-overengineering rule; the Sentry reference already supplies the requested concrete direction.
 
 ## 1. Atmosphere & Identity
@@ -91,7 +91,7 @@ All future CSS spacing, radii, widths, and layout tokens must be declared here b
 - Structure: every SVG node and edge is a real keyboard-focusable button target. Selection opens no overlay; it updates the adjacent detail region with node status, state, start/finish times, duration, output, and selected edge.
 - States: unavailable, running, completed, failed, hover, focus, and selected. `aria-pressed` identifies the selected graph element, and the detail heading names the selected node or edge.
 - Interaction reference: adapts the explicit selected-state and mounted-content contract from the beui.dev tabs pattern without importing a motion dependency. The existing micro-duration color transition is the only selection motion, and reduced-motion disables it.
-- Cognitive accessibility: polling must preserve an explicit user selection. Changing the selected run resets to that run's current or latest trace so details never silently describe another run.
+- Cognitive accessibility: SSE patches preserve an explicit Datastar selection signal. Changing the selected run resets to that run's current or latest trace so details never silently describe another run.
 
 ### Run history
 
@@ -111,7 +111,7 @@ All future CSS spacing, radii, widths, and layout tokens must be declared here b
 - Motion communicates state or spatial relationship only; decorative motion is prohibited.
 - Animate only `transform`, `opacity`, or `filter` and respect `prefers-reduced-motion`.
 - Full keyboard operation and visible focus are required for every future interaction.
-- Polling changes status, history, and topology without moving controls. The status message uses `aria-live="polite"`; request errors use an alert.
+- Server-sent snapshot patches change status, history, and topology without moving controls. The status message uses `aria-live="polite"`; request errors use an alert.
 - Workflow selection changes the visible workflow-owned form and idle topology. Starting or inspecting a run binds the inspector to the run's immutable `workflow_id`.
 - Graph selection uses click, Enter, or Space and keeps the trace panel mounted. Selection feedback uses color plus `aria-pressed` and a visible detail heading.
 
