@@ -10,7 +10,7 @@
 ```text
 src/                         Rust application, workflow engine integration, web routes, and browser assets
 src/workflows/               Code-defined workflow registry, definitions, and shared tasks
-tests/                       Rust integration tests and package-free Node browser lifecycle tests
+tests/                       Rust integration tests and browser lifecycle test fixtures
 Cargo.toml                   Rust package metadata, dependencies, and lint policy
 rust-toolchain.toml          Rust 1.95 toolchain, rustfmt, Clippy, and rust-src
 package.nix                  Installable Rust binary package
@@ -26,18 +26,19 @@ Justfile                     Canonical development task entry points
 - Run every command from the repository root.
 - Enter the pinned environment with `nix develop` or allow `.envrc` with `direnv allow`.
 - Use the `Justfile` tasks as the canonical command interface.
-- Run `topcoat asset bundle` before starting the server. `topcoat-cli` is intentionally not part of the Nix package or development shell yet.
+- Use `just prebuild` to run `topcoat asset bundle`; `build` and `run` depend on it automatically. `topcoat-cli` is intentionally not part of the Nix package or development shell yet.
 - The Nix package currently builds the Rust binary without the runtime Topcoat asset bundle; use `just run` for the complete local application surface.
 - Keep FlakeHub publication changes scoped to `.github/workflows/flakehub-publish-rolling.yml` and the root flake.
 
 ### Standard tasks
 
 - `just fix` — Format Rust code and apply Clippy fixes.
-- `just check` — Check Rust formatting and lints, then syntax-check browser JavaScript.
-- `just build` — Build with Cargo and Nix.
-- `just test` — Run Rust integration tests and package-free Node tests.
+- `just check` — Check Rust formatting and lints.
+- `just prebuild` — Bundle Topcoat browser assets.
+- `just build` — Bundle assets and build the application with Cargo.
+- `just test` — Run Rust integration tests.
 - `just ci` — Run the complete local CI-equivalent suite.
-- `just run` — Bundle Topcoat assets and start the loopback-only server.
+- `just run` — Bundle assets and start the loopback-only server.
 
 ## Architecture
 
@@ -63,8 +64,8 @@ Justfile                     Canonical development task entry points
 ### Packaging and automation
 
 - `package.nix` builds the Cargo binary from `Cargo.lock` through `rustPlatform.buildRustPackage`.
-- `flake.nix` exposes the default package, overlay, and a development shell containing rustup, Just, and Node.js 24.
-- `.github/workflows/ci.yml` enters the flake environment and runs `just ci` for pull requests and pushes to `main`.
+- `flake.nix` exposes the default package, overlay, and a development shell containing rustup and Just.
+- `.github/workflows/ci.yml` enters the flake environment, installs Topcoat CLI 0.5, and runs `just ci` for pull requests and pushes to `main`.
 - `.github/workflows/flakehub-publish-rolling.yml` publishes the root flake as a public rolling release after pushes to `main`.
 
 ## Development tools
@@ -73,7 +74,6 @@ Justfile                     Canonical development task entry points
 - **rustfmt and Clippy**: Enforce Rust formatting and lint policy.
 - **Topcoat**: Render and serve the local dashboard and bundle browser assets.
 - **graph-flow**: Execute the code-defined workflow graphs.
-- **Node.js 24**: Syntax-check browser modules and run package-free lifecycle tests.
 - **Nix flakes**: Pin the development environment and build the installable Rust package.
 - **Just**: Provide the canonical local task interface used by CI.
 - **direnv**: Load the default flake development shell from `.envrc`.

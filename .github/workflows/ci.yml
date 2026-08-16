@@ -18,4 +18,5 @@ jobs:
       - name: Verify workflow console
         run: |
           eval "$(nix print-dev-env "$GITHUB_WORKSPACE#default")"
+          cargo install --version '0.5' topcoat-cli
           just ci

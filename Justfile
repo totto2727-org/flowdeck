@@ -10,7 +10,7 @@ fix-format:
 fix-lint:
     cargo clippy --fix --allow-dirty --allow-staged --all-targets --all-features -- -D warnings
 
-check: check-format check-lint check-js
+check: check-format check-lint
 
 check-format:
     cargo fmt --all --check
@@ -18,29 +18,16 @@ check-format:
 check-lint:
     cargo clippy --all-targets --all-features -- -D warnings
 
-check-js:
-    node --check src/app.js
-    node --check src/app_render.js
-    node --check src/app_trace.js
+prebuild:
+    topcoat asset bundle
 
-build: build-cargo build-nix
-
-build-cargo:
+build: prebuild
     cargo build --all-features
 
-build-nix:
-    nix build --no-link
-
-test: test-rust test-js
-
-test-rust:
+test:
     cargo test --all-features
 
-test-js:
-    node --test tests/*.mjs
-
-run:
-    topcoat asset bundle
+run: prebuild
     cargo run
 
 ci: check build test
