@@ -13,6 +13,7 @@ use topcoat::{
 };
 use workflow_console_experiment::{RunTrigger, WorkflowEvent, WorkflowService};
 
+use crate::history_filter::{HistoryFilterValues, HistoryFilters};
 use crate::web_page::{
     render_history, render_recovery_host, render_run_inspector, render_selected_host, workflow_url,
 };
@@ -28,6 +29,14 @@ struct StartSignals {
 #[serde(rename_all = "camelCase")]
 struct SelectionSignals {
     selected_run_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EventsSignals {
+    selected_run_id: String,
+    #[serde(flatten)]
+    history: HistoryFilterValues,
 }
 
 #[derive(Debug, Serialize)]
@@ -107,18 +116,20 @@ async fn select_run(cx: &Cx, Signals(signals): Signals<SelectionSignals>) -> Res
 )]
 async fn events(
     cx: &Cx,
-    Signals(signals): Signals<SelectionSignals>,
+    Signals(signals): Signals<EventsSignals>,
 ) -> Result<Sse<impl Stream<Item = Result<Event>> + use<>>> {
     let service = app_context::<WorkflowService>(cx).clone();
     let mut receiver = service.subscribe();
     let selected_run_id = signals.selected_run_id;
+    let filters = HistoryFilters::from_values(&signals.history);
+    filters.store_in_cookies(cx);
     let stream = async_stream::stream! {
-        yield history_event(&service).await;
+        yield history_event(&service, &filters).await;
         yield selected_host_event(&service, &selected_run_id).await;
         loop {
             match receiver.recv().await {
                 Ok(event) => {
-                    yield history_event(&service).await;
+                    yield history_event(&service, &filters).await;
                     if let Some(run_id) = event_run_id(&event) {
                         if let Some(html) = render_run_inspector(&service, run_id).await? {
                             yield Ok(PatchElements::new(html).into());
@@ -126,7 +137,7 @@ async fn events(
                     }
                 }
                 Err(RecvError::Lagged(_)) => {
-                    yield history_event(&service).await;
+                    yield history_event(&service, &filters).await;
                     yield recovery_host_event(&service).await;
                 }
                 Err(RecvError::Closed) => break,
@@ -136,8 +147,8 @@ async fn events(
     Ok(Sse::new(stream).keep_alive(KeepAlive::new()))
 }
 
-async fn history_event(service: &WorkflowService) -> Result<Event> {
-    Ok(PatchElements::new(render_history(service).await?).into())
+async fn history_event(service: &WorkflowService, filters: &HistoryFilters) -> Result<Event> {
+    Ok(PatchElements::new(render_history(service, filters).await?).into())
 }
 
 async fn selected_host_event(service: &WorkflowService, run_id: &str) -> Result<Event> {

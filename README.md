@@ -20,6 +20,8 @@ curl -i -X POST http://127.0.0.1:3000/actions/runs \
   --data '{"selectedWorkflowId":"demo-workflow","input":{"label":"local check","step_delay_ms":350}}'
 ```
 
+Run-history filters are applied on the server before each HTML patch is rendered. Changing a filter reconnects the `/events` stream with the new Datastar signals, stores the normalized workflow, trigger, and status filters in local-only HTTP-only cookies, and restores those values after a reload.
+
 ## Key features
 
 - Two code-defined workflows with branching, convergence, and observable sleep tasks.
@@ -27,6 +29,7 @@ curl -i -X POST http://127.0.0.1:3000/actions/runs \
 - A code-defined cron schedule that uses the same in-memory execution service.
 - SVG topology with active, traversed, and selected node and edge states.
 - Per-node and per-edge traces with timestamps, elapsed time, state, output, and errors.
+- Server-rendered run-history filtering with SSE reconnection and cookie-backed reload restoration.
 
 ## Prerequisites
 
@@ -58,6 +61,7 @@ For repository structure, development commands, CI, Nix, and FlakeHub operation,
 
 - [Topcoat 0.5.0 on crates.io](https://crates.io/crates/topcoat/0.5.0)
 - [Topcoat Datastar integration](https://github.com/tokio-rs/topcoat/blob/371c7403fcbf4d40bbacb2f87eb98d9ce00e76c8/crates/topcoat/docs/datastar.md)
+- [Topcoat cookie integration](https://github.com/tokio-rs/topcoat/blob/371c7403fcbf4d40bbacb2f87eb98d9ce00e76c8/crates/topcoat/docs/cookie.md)
 - [Topcoat Tailwind integration](https://github.com/tokio-rs/topcoat/blob/371c7403fcbf4d40bbacb2f87eb98d9ce00e76c8/crates/topcoat/docs/tailwind.md)
 - [graph-flow 0.6.0 on crates.io](https://crates.io/crates/graph-flow/0.6.0)
 - [garde 0.23.0 documentation](https://docs.rs/garde/0.23.0/garde/)

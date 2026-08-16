@@ -7,7 +7,7 @@ use topcoat::{
     Result,
     view::{component, view},
 };
-use workflow_console_experiment::{RunSnapshot, RunStatus, RunTrigger, workflow_definitions};
+use workflow_console_experiment::{RunSnapshot, RunStatus, workflow_definitions};
 
 use super::{
     presentation::{elapsed, run_status, trigger},
@@ -19,11 +19,12 @@ use super::{
 pub(super) async fn console_content(
     runs: Vec<RunSnapshot>,
     selected: Option<RunSnapshot>,
+    history_filters_active: bool,
 ) -> Result {
     view! {
         <div id="console-content" class="grid min-w-0 gap-4">
             selected_inspector_host(run: selected)
-            run_history(runs: runs)
+            run_history(runs: runs, filters_active: history_filters_active)
         </div>
     }
 }
@@ -217,7 +218,7 @@ pub(super) async fn run_inspector(run: RunSnapshot) -> Result {
 }
 
 #[component]
-pub(super) async fn run_history(runs: Vec<RunSnapshot>) -> Result {
+pub(super) async fn run_history(runs: Vec<RunSnapshot>, filters_active: bool) -> Result {
     view! {
         <section
             id="run-history-region"
@@ -251,6 +252,7 @@ pub(super) async fn run_history(runs: Vec<RunSnapshot>) -> Result {
                         id="history-workflow-filter"
                         class="min-h-[var(--control-min)] min-w-0 w-full rounded-control border border-border bg-canvas px-3 text-text-primary shadow-inset"
                         data-bind="historyWorkflowFilter"
+                        data-on:change="$historyWorkflowFilter = evt.target.value; @get('/events')"
                     >
                         <option value="all">"All workflows"</option>
                         for definition in workflow_definitions() {
@@ -269,6 +271,7 @@ pub(super) async fn run_history(runs: Vec<RunSnapshot>) -> Result {
                         id="history-trigger-filter"
                         class="min-h-[var(--control-min)] min-w-0 w-full rounded-control border border-border bg-canvas px-3 text-text-primary shadow-inset"
                         data-bind="historyTriggerFilter"
+                        data-on:change="$historyTriggerFilter = evt.target.value; @get('/events')"
                     >
                         <option value="all">"All triggers"</option>
                         <option value="manual">"Manual"</option>
@@ -284,6 +287,7 @@ pub(super) async fn run_history(runs: Vec<RunSnapshot>) -> Result {
                         id="history-status-filter"
                         class="min-h-[var(--control-min)] min-w-0 w-full rounded-control border border-border bg-canvas px-3 text-text-primary shadow-inset"
                         data-bind="historyStatusFilter"
+                        data-on:change="$historyStatusFilter = evt.target.value; @get('/events')"
                     >
                         <option value="all">"All statuses"</option>
                         <option value="running">"Running"</option>
@@ -295,7 +299,7 @@ pub(super) async fn run_history(runs: Vec<RunSnapshot>) -> Result {
                     type="button"
                     class="min-h-[var(--control-min)] self-end rounded-control border border-accent-hover bg-accent px-4 font-semibold text-text-primary shadow-inset transition-[filter,transform] duration-[var(--motion-micro)] ease-[var(--ease-standard)] hover:brightness-110 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50"
                     data-attr:disabled="$historyWorkflowFilter === 'all' && $historyTriggerFilter === 'all' && $historyStatusFilter === 'all'"
-                    data-on:click="$historyWorkflowFilter = 'all'; $historyTriggerFilter = 'all'; $historyStatusFilter = 'all'"
+                    data-on:click="$historyWorkflowFilter = 'all'; $historyTriggerFilter = 'all'; $historyStatusFilter = 'all'; @get('/events')"
                 >
                     "Reset filters"
                 </button>
@@ -330,14 +334,17 @@ pub(super) async fn run_history(runs: Vec<RunSnapshot>) -> Result {
                         if runs.is_empty() {
                             <tr>
                                 <td class="border-b border-border p-3" colspan="7">
-                                    "No runs yet. Select and start a code-defined workflow to inspect it here."
+                                    if filters_active {
+                                        "No runs match the current history filters."
+                                    } else {
+                                        "No runs yet. Select and start a code-defined workflow to inspect it here."
+                                    }
                                 </td>
                             </tr>
                         }
                         for run in runs {
                             let run_id = run.run_id.to_string();
                             <tr
-                                data-show=(history_visibility_expression(&run))
                                 data-attr:aria-current=(format!("$selectedRunId === '{run_id}' ? 'true' : 'false'"))
                                 class="aria-[current=true]:bg-surface-elevated"
                             >
@@ -377,28 +384,4 @@ pub(super) async fn run_history(runs: Vec<RunSnapshot>) -> Result {
             </div>
         </section>
     }
-}
-
-fn history_visibility_expression(run: &RunSnapshot) -> String {
-    let trigger_filter = match &run.trigger {
-        RunTrigger::Manual => "manual",
-        RunTrigger::Cron { .. } => "cron",
-        trigger => {
-            tracing::warn!(?trigger, "unsupported run trigger in history filter");
-            "other"
-        }
-    };
-    let status_filter = match &run.status {
-        RunStatus::Running => "running",
-        RunStatus::Completed => "completed",
-        RunStatus::Failed { .. } => "failed",
-        status => {
-            tracing::warn!(?status, "unsupported run status in history filter");
-            "other"
-        }
-    };
-    format!(
-        "($historyWorkflowFilter === 'all' || $historyWorkflowFilter === '{}') && ($historyTriggerFilter === 'all' || $historyTriggerFilter === '{trigger_filter}') && ($historyStatusFilter === 'all' || $historyStatusFilter === '{status_filter}')",
-        run.workflow_id
-    )
 }

@@ -109,7 +109,7 @@ All future CSS spacing, radii, widths, and layout tokens must be declared here b
 - States: filters inactive, filters active, filters reset, empty row, running values, completed values, failed values, selected row, hover, and focus.
 - Accessibility: every filter has a visible label, the reset control has a minimum target size, table headings identify data, run links provide native keyboard navigation, and `aria-current` identifies the inspected run.
 - Layout: the table wrapper exclusively owns horizontal scrolling.
-- Live updates: filter signals remain browser-owned while SSE replaces the server-rendered history fragment, so newly received rows obey the current filters without reconnecting or losing the inspected run.
+- Live updates: changing a filter reconnects the SSE stream with the current browser signals, persists the normalized filter values in HTTP-only cookies, and replaces the history fragment with server-filtered HTML without losing the inspected run. Reloading restores those cookie-backed values as the initial signals.
 
 ## 6. Motion & Interaction
 

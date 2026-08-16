@@ -24,6 +24,7 @@ use workflow_console_experiment::{
 use self::console::{
     console_content, recovery_inspector_host, run_history, run_inspector, selected_inspector_host,
 };
+use crate::history_filter::{HistoryFilterValues, HistoryFilters};
 
 const DATASTAR_JS: Asset =
     asset!("https://cdn.jsdelivr.net/gh/starfederation/datastar@1.0.2/bundles/datastar.js");
@@ -44,9 +45,8 @@ struct InitialSignals {
     selected_run_id: String,
     selected_trace_kind: &'static str,
     selected_trace_id: String,
-    history_workflow_filter: &'static str,
-    history_trigger_filter: &'static str,
-    history_status_filter: &'static str,
+    #[serde(flatten)]
+    history: HistoryFilterValues,
     input: Value,
     request_message: &'static str,
 }
@@ -68,6 +68,7 @@ async fn workflow_page(cx: &Cx) -> Result {
 
     let query = query_params::<WorkflowQuery>(cx)?;
     let service = app_context::<WorkflowService>(cx);
+    let filters = HistoryFilters::from_cookies(cx);
     let mut runs = service.list_runs().await;
     runs.reverse();
     let selected_run = query.run.as_deref().and_then(|run_id| {
@@ -78,8 +79,9 @@ async fn workflow_page(cx: &Cx) -> Result {
     if query.run.is_some() && selected_run.is_none() {
         return Err(redirect(&workflow_url(selected_workflow_id, None)).into());
     }
+    runs.retain(|run| filters.matches(run));
 
-    render_console_page(cx, selected_workflow_id, selected_run, runs).await
+    render_console_page(cx, selected_workflow_id, selected_run, runs, &filters).await
 }
 
 #[layout("/")]
@@ -102,9 +104,10 @@ async fn render_console_page(
     selected_workflow_id: &str,
     selected_run: Option<RunSnapshot>,
     runs: Vec<RunSnapshot>,
+    filters: &HistoryFilters,
 ) -> Result {
     let __cx = cx;
-    let signals = initial_signals(selected_workflow_id, selected_run.as_ref());
+    let signals = initial_signals(selected_workflow_id, selected_run.as_ref(), filters);
     let signals_json = serde_json::to_string(&signals)?;
     view! {
         <!DOCTYPE html>
@@ -152,7 +155,11 @@ async fn render_console_page(
                             data-text="$requestMessage"
                             role="alert"
                         ></p>
-                        console_content(runs: runs, selected: selected_run.clone())
+                        console_content(
+                            runs: runs,
+                            selected: selected_run.clone(),
+                            history_filters_active: filters.is_active()
+                        )
                     </div>
                 </main>
             </body>
@@ -277,12 +284,18 @@ async fn workflow_rail(selected_workflow_id: &str) -> Result {
     clippy::redundant_pub_crate,
     reason = "The route sibling renders this otherwise private page fragment."
 )]
-pub(crate) async fn render_history(service: &WorkflowService) -> Result<String> {
+pub(crate) async fn render_history(
+    service: &WorkflowService,
+    filters: &HistoryFilters,
+) -> Result<String> {
     let mut runs = service.list_runs().await;
     runs.reverse();
+    runs.retain(|run| filters.matches(run));
     let cx = topcoat::context::CxTestBuilder::new().build();
     let __cx = &cx;
-    let rendered = view! { run_history(runs: runs) }?;
+    let rendered = view! {
+        run_history(runs: runs, filters_active: filters.is_active())
+    }?;
     Ok(rendered.render(&cx))
 }
 
@@ -342,6 +355,7 @@ async fn find_run(service: &WorkflowService, run_id: &str) -> Option<RunSnapshot
 fn initial_signals(
     selected_workflow_id: &str,
     selected_run: Option<&RunSnapshot>,
+    filters: &HistoryFilters,
 ) -> InitialSignals {
     let trace_id = selected_run
         .and_then(|run| {
@@ -355,9 +369,7 @@ fn initial_signals(
         selected_run_id: selected_run.map_or_else(String::new, |run| run.run_id.to_string()),
         selected_trace_kind: "node",
         selected_trace_id: trace_id,
-        history_workflow_filter: "all",
-        history_trigger_filter: "all",
-        history_status_filter: "all",
+        history: filters.values(),
         input: workflow_default_input(selected_workflow_id),
         request_message: "",
     }
@@ -379,12 +391,14 @@ mod tests {
     use serde_json::json;
     use workflow_console_experiment::{RunTrigger, WorkflowService, workflow_id};
 
+    use crate::history_filter::{HistoryFilterValues, HistoryFilters};
+
     use super::{initial_signals, render_history, render_recovery_host, workflow_rail};
 
     #[tokio::test]
     async fn run_history_exposes_reactive_filter_controls_and_rows() {
         let service = WorkflowService::new().expect("code-defined workflows should build");
-        let run = service
+        let demo = service
             .start(
                 workflow_id(),
                 json!({ "label": "filterable", "step_delay_ms": 100 }),
@@ -392,20 +406,33 @@ mod tests {
             )
             .await
             .expect("demo workflow should start");
+        let review = service
+            .start(
+                "review-pipeline",
+                json!({ "subject": "filterable", "reviewer": "qa" }),
+                RunTrigger::Manual,
+            )
+            .await
+            .expect("review workflow should start");
+        let filters = HistoryFilters::from_values(&HistoryFilterValues {
+            workflow: "review-pipeline".to_owned(),
+            trigger: "all".to_owned(),
+            status: "all".to_owned(),
+        });
 
-        let html = render_history(&service)
+        let html = render_history(&service, &filters)
             .await
             .expect("history fragment should render");
 
         assert!(html.contains("data-bind=\"historyWorkflowFilter\""));
         assert!(html.contains("data-bind=\"historyTriggerFilter\""));
         assert!(html.contains("data-bind=\"historyStatusFilter\""));
-        assert!(html.contains("$historyWorkflowFilter === 'demo-workflow'"));
-        assert!(html.contains("$historyTriggerFilter === 'manual'"));
-        assert!(html.contains("$historyStatusFilter === 'running'"));
+        assert_eq!(html.matches("@get('/events')").count(), 4);
+        assert!(!html.contains("data-show"));
+        assert!(!html.contains(&demo.run_id.to_string()));
         assert!(html.contains(&format!(
-            "href=\"/workflows/demo-workflow?run={}\"",
-            run.run_id
+            "href=\"/workflows/review-pipeline?run={}\"",
+            review.run_id
         )));
     }
 
@@ -421,10 +448,18 @@ mod tests {
             .await
             .expect("review workflow should start");
 
-        let signals = initial_signals("review-pipeline", Some(&run));
+        let filters = HistoryFilters::from_values(&HistoryFilterValues {
+            workflow: "review-pipeline".to_owned(),
+            trigger: "manual".to_owned(),
+            status: "running".to_owned(),
+        });
+        let signals = initial_signals("review-pipeline", Some(&run), &filters);
 
         assert_eq!(signals.selected_workflow_id, "review-pipeline");
         assert_eq!(signals.selected_run_id, run.run_id.to_string());
+        assert_eq!(signals.history.workflow, "review-pipeline");
+        assert_eq!(signals.history.trigger, "manual");
+        assert_eq!(signals.history.status, "running");
     }
 
     #[tokio::test]
