@@ -63,8 +63,19 @@ const loadState = async (generation = pollGeneration) => {
   }
 };
 
+const serializeWorkflowInput = (form) => Object.fromEntries(
+  Array.from(form.elements)
+    .filter((control) => control.name)
+    .map((control) => [
+      control.name,
+      control.dataset.jsonType === "number" ? Number(control.value) : control.value,
+    ]),
+);
+
 const startRun = async (event) => {
   event.preventDefault();
+  const form = event.currentTarget;
+  const runButton = form.querySelector("[data-run-workflow]");
   const generation = resetPolling();
   const controller = new AbortController();
   activeController = controller;
@@ -78,10 +89,7 @@ const startRun = async (event) => {
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify({
         workflow_id: selectedWorkflowId,
-        input: {
-          label: runLabelInput.value,
-          step_delay_ms: Number(stepDelayInput.value),
-        },
+        input: serializeWorkflowInput(form),
       }),
       signal: controller.signal,
     });
@@ -112,7 +120,9 @@ const startRun = async (event) => {
   }
 };
 
-runForm.addEventListener("submit", startRun);
+for (const form of workflowForms) {
+  form.addEventListener("submit", startRun);
+}
 window.addEventListener("pagehide", () => {
   stopped = true;
   resetPolling();

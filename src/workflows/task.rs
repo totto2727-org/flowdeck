@@ -2,11 +2,12 @@ use std::{sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use graph_flow::{Context, GraphError, NextAction, Task, TaskResult};
+use serde_json::Value;
 use uuid::Uuid;
 
+use super::{INPUT_SUMMARY_KEY, WORKFLOW_INPUT_KEY};
+
 const BRANCH_KEY: &str = "branch_yes";
-const INPUT_LABEL_KEY: &str = "run_label";
-const STEP_DELAY_KEY: &str = "step_delay_ms";
 
 #[derive(Clone, Copy)]
 pub(super) enum TaskBehavior {
@@ -15,13 +16,28 @@ pub(super) enum TaskBehavior {
     End,
 }
 
-pub(super) fn task(id: &'static str, behavior: TaskBehavior) -> Arc<WorkflowTask> {
-    Arc::new(WorkflowTask { id, behavior })
+#[derive(Clone, Copy)]
+pub(super) enum TaskDelay {
+    FixedMilliseconds(u64),
+    InputMilliseconds(&'static str),
+}
+
+pub(super) fn task(
+    id: &'static str,
+    behavior: TaskBehavior,
+    delay: TaskDelay,
+) -> Arc<WorkflowTask> {
+    Arc::new(WorkflowTask {
+        id,
+        behavior,
+        delay,
+    })
 }
 
 pub(super) struct WorkflowTask {
     id: &'static str,
     behavior: TaskBehavior,
+    delay: TaskDelay,
 }
 
 #[async_trait]
@@ -31,12 +47,18 @@ impl Task for WorkflowTask {
     }
 
     async fn run(&self, context: Context) -> graph_flow::Result<TaskResult> {
-        let step_delay_ms = context
-            .get::<u64>(STEP_DELAY_KEY)
-            .ok_or_else(|| GraphError::ContextError("missing step_delay_ms".to_owned()))?;
-        let run_label = context
-            .get::<String>(INPUT_LABEL_KEY)
-            .ok_or_else(|| GraphError::ContextError("missing run_label".to_owned()))?;
+        let step_delay_ms = match self.delay {
+            TaskDelay::FixedMilliseconds(value) => value,
+            TaskDelay::InputMilliseconds(field) => context
+                .get::<Value>(WORKFLOW_INPUT_KEY)
+                .and_then(|input| input.get(field).and_then(Value::as_u64))
+                .ok_or_else(|| {
+                    GraphError::ContextError(format!("missing numeric input field: {field}"))
+                })?,
+        };
+        let input_summary = context
+            .get::<String>(INPUT_SUMMARY_KEY)
+            .ok_or_else(|| GraphError::ContextError("missing input summary".to_owned()))?;
         tokio::time::sleep(Duration::from_millis(step_delay_ms)).await;
         let token = Uuid::new_v4();
         context.set(format!("task_token:{}", self.id), token.to_string())?;
@@ -49,7 +71,7 @@ impl Task for WorkflowTask {
             TaskBehavior::End => NextAction::End,
         };
         Ok(TaskResult::new(
-            Some(format!("{} complete for {run_label}: {token}", self.id)),
+            Some(format!("{} complete for {input_summary}: {token}", self.id)),
             action,
         ))
     }

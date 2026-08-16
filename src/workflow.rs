@@ -1,21 +1,22 @@
 use std::{collections::HashMap, fmt, sync::Arc, time::SystemTime};
 
 use graph_flow::{FlowRunner, InMemorySessionStorage, Session, SessionStorage};
+use serde_json::Value;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use crate::{
-    RunId, RunInput, RunSnapshot, RunStatus, RunTrigger, WorkflowDefinition, WorkflowError,
-    workflows::{build_graph, definition, workflow_definitions},
+    RunId, RunSnapshot, RunStatus, RunTrigger, WorkflowDefinition, WorkflowError,
+    workflows::{
+        INPUT_SUMMARY_KEY, WORKFLOW_INPUT_KEY, build_graph, definition, parse_input,
+        workflow_definitions,
+    },
 };
 
 #[path = "workflow/driver.rs"]
 mod driver;
 
 use driver::drive;
-
-const INPUT_LABEL_KEY: &str = "run_label";
-const STEP_DELAY_KEY: &str = "step_delay_ms";
 
 /// Cloneable local boundary for workflow starts, listing, and polling.
 #[derive(Clone)]
@@ -72,7 +73,7 @@ impl WorkflowService {
     pub async fn start(
         &self,
         workflow_id: &str,
-        input: RunInput,
+        raw_input: Value,
         trigger: RunTrigger,
     ) -> Result<RunSnapshot, WorkflowError> {
         let definition = definition(workflow_id).ok_or_else(|| WorkflowError::UnknownWorkflow {
@@ -85,16 +86,17 @@ impl WorkflowService {
                 .ok_or_else(|| WorkflowError::UnknownWorkflow {
                     workflow_id: workflow_id.to_owned(),
                 })?;
+        let input = parse_input(workflow_id, raw_input)?;
         let run_id = RunId(Uuid::new_v4().to_string());
         let session = Session::new_from_task(run_id.0.clone(), definition.start_node)
             .with_graph_id(definition.workflow_id);
         session
             .context
-            .set(INPUT_LABEL_KEY, input.label())
+            .set(WORKFLOW_INPUT_KEY, input.state())
             .map_err(|error| session_error(&error))?;
         session
             .context
-            .set(STEP_DELAY_KEY, input.step_delay_ms())
+            .set(INPUT_SUMMARY_KEY, input.summary())
             .map_err(|error| session_error(&error))?;
         runtime
             .storage

@@ -1,9 +1,6 @@
 "use strict";
 
-const runButton = document.querySelector('[data-testid="run-workflow"]');
-const runForm = document.querySelector('[data-testid="run-form"]');
-const runLabelInput = document.querySelector('[data-testid="run-label"]');
-const stepDelayInput = document.querySelector('[data-testid="step-delay"]');
+const workflowForms = [...document.querySelectorAll("[data-workflow-run-form]")];
 const statusOutput = document.querySelector('[data-testid="run-status"]');
 const triggerOutput = document.querySelector("#trigger-summary");
 const workflowOutput = document.querySelector("#workflow-summary");
@@ -12,7 +9,6 @@ const routeOutput = document.querySelector('[data-testid="route-summary"]');
 const elapsedOutput = document.querySelector("#elapsed-summary");
 const historyBody = document.querySelector("#run-history");
 const requestError = document.querySelector("#request-error");
-const runFormTitle = document.querySelector("#run-form-title");
 const workflowOptions = [...document.querySelectorAll("[data-workflow-option]")];
 const topologies = [...document.querySelectorAll("[data-topology-workflow]")];
 const topologyDescriptions = [...document.querySelectorAll("[data-topology-desc]")];
@@ -36,7 +32,7 @@ const formatTrigger = (run) => run.trigger === "Cron"
   ? `Cron · ${run.schedule_id}`
   : "Manual";
 
-const formatInput = (run) => `${run.input.label} · ${run.input.step_delay_ms} ms`;
+const formatInput = (run) => run.input_summary;
 
 const setGraphState = (element, state) => {
   element.dataset.state = state;
@@ -98,17 +94,13 @@ const applyWorkflowSelection = (state, resetInputs) => {
   for (const option of workflowOptions) {
     option.setAttribute("aria-pressed", String(option.dataset.workflowId === selectedWorkflowId));
   }
-  if (!workflow) {
-    runButton.disabled = true;
-    return;
-  }
-  runButton.disabled = false;
-  runFormTitle.textContent = workflow.name || workflow.workflow_id;
-  if (resetInputs) {
-    runLabelInput.value = workflow.input.default_label;
-    stepDelayInput.value = String(workflow.input.default_step_delay_ms);
-    stepDelayInput.setAttribute("min", String(workflow.input.min_step_delay_ms));
-    stepDelayInput.setAttribute("max", String(workflow.input.max_step_delay_ms));
+  for (const form of workflowForms) {
+    const active = Boolean(workflow) && form.dataset.workflowId === selectedWorkflowId;
+    form.dataset.active = String(active);
+    form.hidden = !active;
+    if (active && resetInputs) {
+      form.reset();
+    }
   }
 };
 

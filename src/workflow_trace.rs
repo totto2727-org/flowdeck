@@ -1,22 +1,20 @@
 use std::time::{Duration, SystemTime};
 
 use graph_flow::Context;
+use serde::Serialize;
+use serde_json::Value;
 
-use crate::{RunSnapshot, StepTraceStatus::Running};
+use crate::{RunSnapshot, StepTraceStatus::Running, workflows::WORKFLOW_INPUT_KEY};
 
-const INPUT_LABEL_KEY: &str = "run_label";
-const STEP_DELAY_KEY: &str = "step_delay_ms";
 const BRANCH_KEY: &str = "branch_yes";
 const BRANCH_TOKEN_KEY: &str = "branch_token";
 
 /// Typed graph state retained immediately after one node executes.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[non_exhaustive]
 pub struct StepState {
-    /// Run label from the initial graph context.
-    pub run_label: String,
-    /// Per-node delay from the initial graph context.
-    pub step_delay_ms: u64,
+    /// Workflow-owned input state from the initial graph context.
+    pub input: Value,
     /// Random token produced by this node, when available.
     pub task_token: Option<String>,
     /// Branch decision after the route-selection node executes.
@@ -72,8 +70,7 @@ impl RunSnapshot {
             selected_edge: None,
             status: Running,
             state: StepState {
-                run_label: self.input.label().to_owned(),
-                step_delay_ms: self.input.step_delay_ms(),
+                input: self.input.state().clone(),
                 task_token: None,
                 branch_selected: None,
                 branch_token: None,
@@ -131,8 +128,7 @@ impl StepState {
     pub(crate) fn after(context: &Context, node_id: &str) -> Option<Self> {
         let task_token_key = format!("task_token:{node_id}");
         Some(Self {
-            run_label: context.get(INPUT_LABEL_KEY)?,
-            step_delay_ms: context.get(STEP_DELAY_KEY)?,
+            input: context.get(WORKFLOW_INPUT_KEY)?,
             task_token: context.get(&task_token_key),
             branch_selected: context.get(BRANCH_KEY),
             branch_token: context.get(BRANCH_TOKEN_KEY),

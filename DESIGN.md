@@ -75,7 +75,7 @@ All future CSS spacing, radii, widths, and layout tokens must be declared here b
 
 ### Workflow card
 
-- Structure: one button card per code-defined workflow, followed by a shared parameter form whose defaults and bounds come from the selected workflow definition. Code-defined cron schedules remain read-only inside their owning workflow card.
+- Structure: one button card per code-defined workflow, followed by that workflow's own server-rendered input form. Each workflow module owns its fields, defaults, validation, and initial-state conversion. Code-defined cron schedules remain read-only inside their owning workflow card.
 - States: default, selected, card hover/focus/active, field focus, native invalid input, run-button disabled/loading, and request error.
 - Accessibility: `aria-pressed` identifies the selected workflow, every input has explicit labels and bounds, and all controls retain a visible focus state and minimum target size.
 
@@ -112,7 +112,7 @@ All future CSS spacing, radii, widths, and layout tokens must be declared here b
 - Animate only `transform`, `opacity`, or `filter` and respect `prefers-reduced-motion`.
 - Full keyboard operation and visible focus are required for every future interaction.
 - Polling changes status, history, and topology without moving controls. The status message uses `aria-live="polite"`; request errors use an alert.
-- Workflow selection changes only the form defaults and visible idle topology. Starting or inspecting a run binds the inspector to the run's immutable `workflow_id`.
+- Workflow selection changes the visible workflow-owned form and idle topology. Starting or inspecting a run binds the inspector to the run's immutable `workflow_id`.
 - Graph selection uses click, Enter, or Space and keeps the trace panel mounted. Selection feedback uses color plus `aria-pressed` and a visible detail heading.
 
 ## 7. Depth & Surface

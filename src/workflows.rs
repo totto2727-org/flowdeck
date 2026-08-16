@@ -1,6 +1,8 @@
 #![allow(
     clippy::redundant_pub_crate,
-    reason = "Private registry functions are shared with sibling service modules."
+    clippy::exhaustive_structs,
+    unreachable_pub,
+    reason = "Private registry functions and Topcoat-generated props cross sibling and package crate boundaries."
 )]
 
 #[path = "workflows/demo/definition.rs"]
@@ -12,8 +14,16 @@ mod task;
 
 use graph_flow::{Graph, GraphError};
 use serde::Serialize;
+use serde_json::Value;
+use topcoat::{
+    Result,
+    view::{component, view},
+};
 
-use crate::WorkflowError;
+use crate::{RunInput, ScheduleSpec, WorkflowError};
+
+pub(crate) const INPUT_SUMMARY_KEY: &str = "input_summary";
+pub(crate) const WORKFLOW_INPUT_KEY: &str = "workflow_input";
 
 /// A code-defined graph node retained independently from graph-flow.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -37,20 +47,6 @@ pub struct EdgeSpec {
     pub to: &'static str,
 }
 
-/// Input defaults and bounds owned by one workflow definition.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
-#[non_exhaustive]
-pub struct WorkflowInputDefinition {
-    /// Initial label shown in the run form.
-    pub default_label: &'static str,
-    /// Initial per-node delay shown in the run form.
-    pub default_step_delay_ms: u64,
-    /// Minimum allowed per-node delay.
-    pub min_step_delay_ms: u64,
-    /// Maximum allowed per-node delay.
-    pub max_step_delay_ms: u64,
-}
-
 /// One workflow definition compiled into the local application.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[non_exhaustive]
@@ -63,8 +59,6 @@ pub struct WorkflowDefinition {
     pub description: &'static str,
     /// First graph task.
     pub start_node: &'static str,
-    /// Workflow-owned run-form defaults and bounds.
-    pub input: WorkflowInputDefinition,
     /// Immutable topology nodes.
     pub nodes: &'static [NodeSpec],
     /// Immutable topology edges.
@@ -76,6 +70,16 @@ const DEFINITIONS: [WorkflowDefinition; 2] = [demo::DEFINITION, review::DEFINITI
 /// Return every workflow compiled into the local application.
 pub const fn workflow_definitions() -> &'static [WorkflowDefinition] {
     &DEFINITIONS
+}
+
+#[component]
+/// Render the input form owned by one registered workflow.
+pub async fn workflow_input_form(workflow_id: &str, active: bool) -> Result {
+    match workflow_id {
+        demo::WORKFLOW_ID => view! { demo::input_form(active: active) },
+        review::WORKFLOW_ID => view! { review::input_form(active: active) },
+        _ => view! { <p class="request-error">"Workflow input form is unavailable."</p> },
+    }
 }
 
 pub(crate) const fn default_definition() -> &'static WorkflowDefinition {
@@ -92,6 +96,35 @@ pub(crate) fn build_graph(workflow_id: &str) -> Result<Graph, WorkflowError> {
     match workflow_id {
         demo::WORKFLOW_ID => demo::build_graph(),
         review::WORKFLOW_ID => review::build_graph(),
+        _ => Err(WorkflowError::UnknownWorkflow {
+            workflow_id: workflow_id.to_owned(),
+        }),
+    }
+}
+
+pub(crate) fn parse_input(workflow_id: &str, input: Value) -> Result<RunInput, WorkflowError> {
+    match workflow_id {
+        demo::WORKFLOW_ID => demo::parse_input(input),
+        review::WORKFLOW_ID => review::parse_input(input),
+        _ => Err(WorkflowError::UnknownWorkflow {
+            workflow_id: workflow_id.to_owned(),
+        }),
+    }
+}
+
+pub(crate) const fn schedules() -> &'static [ScheduleSpec] {
+    &demo::SCHEDULES
+}
+
+pub(crate) fn scheduled_input(
+    workflow_id: &str,
+    schedule_id: &str,
+) -> Result<Value, WorkflowError> {
+    match workflow_id {
+        demo::WORKFLOW_ID => demo::scheduled_input(schedule_id),
+        review::WORKFLOW_ID => Err(WorkflowError::UnknownSchedule {
+            schedule_id: schedule_id.to_owned(),
+        }),
         _ => Err(WorkflowError::UnknownWorkflow {
             workflow_id: workflow_id.to_owned(),
         }),

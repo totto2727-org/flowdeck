@@ -20,21 +20,31 @@ const response = (body, status = 200) => ({
 const flush = () => new Promise(setImmediate);
 
 test("selecting a workflow sends its ID and workflow-owned input defaults", async () => {
-  const runButton = element();
-  const runForm = element();
-  const runLabel = element();
-  const stepDelay = element();
   const demo = element();
   demo.dataset.workflowId = "demo-workflow";
   const review = element();
   review.dataset.workflowId = "review-pipeline";
+  const demoButton = element();
+  const demoForm = element();
+  demoForm.dataset.workflowId = "demo-workflow";
+  demoForm.elements = [
+    { dataset: {}, name: "label", value: "manual branch run" },
+    { dataset: { jsonType: "number" }, name: "step_delay_ms", value: "350" },
+  ];
+  demoForm.querySelector = () => demoButton;
+  demoForm.reset = () => {};
+  const reviewButton = element();
+  const reviewForm = element();
+  reviewForm.dataset.workflowId = "review-pipeline";
+  reviewForm.elements = [
+    { dataset: {}, name: "subject", value: "release candidate" },
+    { dataset: {}, name: "reviewer", value: "local operator" },
+  ];
+  reviewForm.querySelector = () => reviewButton;
+  reviewForm.reset = () => {};
   const selectors = new Map([
-    ['[data-testid="run-workflow"]', runButton],
-    ['[data-testid="run-form"]', runForm],
-    ['[data-testid="run-label"]', runLabel],
-    ['[data-testid="step-delay"]', stepDelay],
     ['[data-testid="run-status"]', element()],
-    ["#workflow-summary", element()], ["#run-form-title", element()],
+    ["#workflow-summary", element()],
     ["#trigger-summary", element()], ["#input-summary", element()],
     ['[data-testid="route-summary"]', element()], ["#elapsed-summary", element()],
     ["#run-history", element()], ["#request-error", element()],
@@ -46,15 +56,17 @@ test("selecting a workflow sends its ID and workflow-owned input defaults", asyn
   const document = {
     querySelector(selector) { return selectors.get(selector); },
     querySelectorAll(selector) {
-      return selector === "[data-workflow-option]" ? [demo, review] : [];
+      if (selector === "[data-workflow-option]") return [demo, review];
+      if (selector === "[data-workflow-run-form]") return [demoForm, reviewForm];
+      return [];
     },
     createElement() { return element(); },
   };
   const requests = [];
   const state = {
     workflows: [
-      { workflow_id: "demo-workflow", input: { default_label: "manual branch run", default_step_delay_ms: 350, min_step_delay_ms: 100, max_step_delay_ms: 2000 } },
-      { workflow_id: "review-pipeline", input: { default_label: "manual review run", default_step_delay_ms: 250, min_step_delay_ms: 100, max_step_delay_ms: 2000 } },
+      { workflow_id: "demo-workflow", name: "Branch and converge" },
+      { workflow_id: "review-pipeline", name: "Review pipeline" },
     ],
     runs: [],
   };
@@ -76,14 +88,14 @@ test("selecting a workflow sends its ID and workflow-owned input defaults", asyn
   await flush();
 
   review.listeners.click();
-  assert.equal(runLabel.value, "manual review run");
-  assert.equal(stepDelay.value, "250");
-  await runForm.listeners.submit({ preventDefault() {} });
+  assert.equal(reviewForm.hidden, false);
+  assert.equal(demoForm.hidden, true);
+  await reviewForm.listeners.submit({ preventDefault() {}, currentTarget: reviewForm });
 
   const startRequest = requests.find((request) => request.method === "POST");
   assert.deepEqual(JSON.parse(startRequest.body), {
     workflow_id: "review-pipeline",
-    input: { label: "manual review run", step_delay_ms: 250 },
+    input: { subject: "release candidate", reviewer: "local operator" },
   });
   assert.equal(review.attributes["aria-pressed"], "true");
   assert.equal(demo.attributes["aria-pressed"], "false");

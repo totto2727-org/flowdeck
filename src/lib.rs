@@ -3,7 +3,8 @@
 mod workflow;
 mod workflow_scheduler;
 pub(crate) mod workflow_trace;
-pub(crate) mod workflows;
+#[doc(hidden)]
+pub mod workflows;
 
 use std::{
     error::Error,
@@ -15,7 +16,7 @@ pub use workflow::WorkflowService;
 pub use workflow_scheduler::{ScheduleSpec, workflow_schedules};
 pub use workflow_trace::{StepState, StepTrace, StepTraceStatus};
 pub use workflows::{
-    EdgeSpec, NodeSpec, WorkflowDefinition, WorkflowInputDefinition, workflow_definitions,
+    EdgeSpec, NodeSpec, WorkflowDefinition, workflow_definitions, workflow_input_form,
 };
 
 /// Return the only workflow ID accepted by this local experiment.
@@ -38,41 +39,26 @@ pub enum RunStatus {
     },
 }
 
-/// Parsed parameters placed into graph-flow's initial context.
+/// Validated workflow-specific parameters placed into graph-flow's initial context.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RunInput {
-    label: String,
-    step_delay_ms: u64,
+    state: serde_json::Value,
+    summary: String,
 }
 
 impl RunInput {
-    /// Parse one workflow-specific input payload.
-    pub fn new(label: &str, step_delay_ms: u64) -> Result<Self, WorkflowError> {
-        let label = label.trim().to_owned();
-        if label.is_empty() || label.chars().count() > 80 {
-            return Err(WorkflowError::InvalidInput {
-                message: "label must contain between 1 and 80 characters".to_owned(),
-            });
-        }
-        if !(100..=2_000).contains(&step_delay_ms) {
-            return Err(WorkflowError::InvalidInput {
-                message: "step_delay_ms must be between 100 and 2000".to_owned(),
-            });
-        }
-        Ok(Self {
-            label,
-            step_delay_ms,
-        })
+    pub(crate) const fn new(state: serde_json::Value, summary: String) -> Self {
+        Self { state, summary }
     }
 
-    /// Return the run label supplied at the boundary.
-    pub fn label(&self) -> &str {
-        &self.label
+    /// Return the workflow-owned state accepted at the boundary.
+    pub const fn state(&self) -> &serde_json::Value {
+        &self.state
     }
 
-    /// Return the per-node delay supplied at the boundary.
-    pub const fn step_delay_ms(&self) -> u64 {
-        self.step_delay_ms
+    /// Return the workflow-owned display summary.
+    pub fn summary(&self) -> &str {
+        &self.summary
     }
 }
 

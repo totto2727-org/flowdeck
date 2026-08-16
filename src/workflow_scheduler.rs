@@ -2,7 +2,10 @@ use chrono::Utc;
 use croner::parser::{CronParser, Seconds};
 use serde::Serialize;
 
-use crate::{RunInput, RunSnapshot, RunTrigger, WorkflowError, WorkflowService};
+use crate::{
+    RunSnapshot, RunTrigger, WorkflowError, WorkflowService,
+    workflows::{scheduled_input, schedules},
+};
 
 /// One cron schedule declared directly in the application.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -14,35 +17,25 @@ pub struct ScheduleSpec {
     pub workflow_id: &'static str,
     /// Six-field cron expression including seconds.
     pub cron_expression: &'static str,
-    /// Label inserted into the initial graph context.
-    pub input_label: &'static str,
-    /// Per-node delay inserted into the initial graph context.
-    pub step_delay_ms: u64,
+    /// Workflow-owned input summary shown in schedule metadata.
+    pub input_summary: &'static str,
 }
-
-const SCHEDULES: [ScheduleSpec; 1] = [ScheduleSpec {
-    schedule_id: "demo-every-10-seconds",
-    workflow_id: "demo-workflow",
-    cron_expression: "*/10 * * * * *",
-    input_label: "scheduled heartbeat",
-    step_delay_ms: 250,
-}];
 
 /// Return every code-defined local schedule.
 pub const fn workflow_schedules() -> &'static [ScheduleSpec] {
-    &SCHEDULES
+    schedules()
 }
 
 impl WorkflowService {
     /// Dispatch one schedule immediately through the shared run boundary.
     pub async fn trigger_schedule(&self, schedule_id: &str) -> Result<RunSnapshot, WorkflowError> {
-        let schedule = SCHEDULES
+        let schedule = workflow_schedules()
             .iter()
             .find(|schedule| schedule.schedule_id == schedule_id)
             .ok_or_else(|| WorkflowError::UnknownSchedule {
                 schedule_id: schedule_id.to_owned(),
             })?;
-        let input = RunInput::new(schedule.input_label, schedule.step_delay_ms)?;
+        let input = scheduled_input(schedule.workflow_id, schedule.schedule_id)?;
         self.start(
             schedule.workflow_id,
             input,
@@ -55,9 +48,11 @@ impl WorkflowService {
 
     /// Run the code-defined cron dispatcher until its owning server stops.
     pub async fn run_scheduler(&self) -> Result<(), WorkflowError> {
-        let schedule = SCHEDULES.first().ok_or_else(|| WorkflowError::Schedule {
-            message: "no schedules configured".to_owned(),
-        })?;
+        let schedule = workflow_schedules()
+            .first()
+            .ok_or_else(|| WorkflowError::Schedule {
+                message: "no schedules configured".to_owned(),
+            })?;
         let cron = CronParser::builder()
             .seconds(Seconds::Required)
             .build()

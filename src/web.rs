@@ -1,15 +1,15 @@
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use topcoat::{
     Result,
     context::{Cx, app_context},
     router::{StatusCode, content::Json, route},
 };
 use workflow_console_experiment::{
-    EdgeSpec, NodeSpec, RunInput, RunSnapshot, RunStatus, RunTrigger, ScheduleSpec, StepTrace,
-    StepTraceStatus, WorkflowInputDefinition, WorkflowService, workflow_definitions,
-    workflow_schedules,
+    EdgeSpec, NodeSpec, RunSnapshot, RunStatus, RunTrigger, ScheduleSpec, StepTrace,
+    StepTraceStatus, WorkflowService, workflow_definitions, workflow_schedules,
 };
 
 #[derive(Debug, Serialize)]
@@ -23,7 +23,6 @@ struct WorkflowDto {
     workflow_id: &'static str,
     name: &'static str,
     description: &'static str,
-    input: WorkflowInputDefinition,
     topology: TopologyDto,
     schedules: Vec<ScheduleSpec>,
 }
@@ -38,7 +37,8 @@ struct TopologyDto {
 struct RunDto {
     run_id: String,
     workflow_id: String,
-    input: RunInputDto,
+    input: Value,
+    input_summary: String,
     trigger: &'static str,
     schedule_id: Option<String>,
     status: &'static str,
@@ -70,8 +70,7 @@ struct StepTraceDto {
 
 #[derive(Debug, Serialize)]
 struct StepStateDto {
-    run_label: String,
-    step_delay_ms: u64,
+    input: Value,
     task_token: Option<String>,
     branch_selected: Option<bool>,
     branch_token: Option<String>,
@@ -80,13 +79,7 @@ struct StepStateDto {
 #[derive(Debug, Deserialize)]
 struct StartRequest {
     workflow_id: String,
-    input: RunInputDto,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-struct RunInputDto {
-    label: String,
-    step_delay_ms: u64,
+    input: Value,
 }
 
 #[derive(Debug, Serialize)]
@@ -108,15 +101,9 @@ async fn start_run(
     Json(request): Json<StartRequest>,
 ) -> Result<(StatusCode, Json<StartResponse>)> {
     let service = app_context::<WorkflowService>(cx);
-    let input = RunInput::new(&request.input.label, request.input.step_delay_ms);
-    let result = match input {
-        Ok(input) => {
-            service
-                .start(&request.workflow_id, input, RunTrigger::Manual)
-                .await
-        }
-        Err(error) => Err(error),
-    };
+    let result = service
+        .start(&request.workflow_id, request.input, RunTrigger::Manual)
+        .await;
     match result {
         Ok(snapshot) => Ok((
             StatusCode::CREATED,
@@ -143,7 +130,6 @@ async fn state_response(service: &WorkflowService) -> StateResponse {
                 workflow_id: definition.workflow_id,
                 name: definition.name,
                 description: definition.description,
-                input: definition.input,
                 topology: TopologyDto {
                     nodes: definition.nodes,
                     edges: definition.edges,
@@ -172,10 +158,8 @@ impl From<RunSnapshot> for RunDto {
             RunStatus::Failed { message } => ("Failed", Some(message)),
             _ => ("Failed", Some("Unsupported run status".to_owned())),
         };
-        let input = RunInputDto {
-            label: snapshot.input.label().to_owned(),
-            step_delay_ms: snapshot.input.step_delay_ms(),
-        };
+        let input = snapshot.input.state().clone();
+        let input_summary = snapshot.input.summary().to_owned();
         let (trigger, schedule_id) = match snapshot.trigger {
             RunTrigger::Manual => ("Manual", None),
             RunTrigger::Cron { schedule_id } => ("Cron", Some(schedule_id)),
@@ -185,6 +169,7 @@ impl From<RunSnapshot> for RunDto {
             run_id: snapshot.run_id.to_string(),
             workflow_id: snapshot.workflow_id,
             input,
+            input_summary,
             trigger,
             schedule_id,
             status,
@@ -221,8 +206,7 @@ impl From<StepTrace> for StepTraceDto {
             status,
             error,
             state: StepStateDto {
-                run_label: step.state.run_label,
-                step_delay_ms: step.state.step_delay_ms,
+                input: step.state.input,
                 task_token: step.state.task_token,
                 branch_selected: step.state.branch_selected,
                 branch_token: step.state.branch_token,

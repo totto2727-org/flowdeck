@@ -3284,6 +3284,7 @@ dependencies = [
  "croner",
  "graph-flow",
  "serde",
+ "serde_json",
  "tokio",
  "topcoat",
  "uuid",

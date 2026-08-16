@@ -2,9 +2,10 @@
 
 use std::time::Duration;
 
+use serde_json::json;
 use workflow_console_experiment::{
-    RunInput, RunStatus, RunTrigger, StepTraceStatus, WorkflowError, WorkflowService,
-    workflow_definitions, workflow_id,
+    RunStatus, RunTrigger, StepTraceStatus, WorkflowError, WorkflowService, workflow_definitions,
+    workflow_id,
 };
 
 #[tokio::test]
@@ -14,7 +15,7 @@ async fn workflow_history_when_duplicate_or_malformed_request() {
     let first = service
         .start(
             workflow_id(),
-            RunInput::new("manual check", 350).expect("valid input"),
+            json!({ "label": "manual check", "step_delay_ms": 350 }),
             RunTrigger::Manual,
         )
         .await
@@ -22,7 +23,7 @@ async fn workflow_history_when_duplicate_or_malformed_request() {
     let second = service
         .start(
             workflow_id(),
-            RunInput::new("second check", 350).expect("valid input"),
+            json!({ "label": "second check", "step_delay_ms": 350 }),
             RunTrigger::Manual,
         )
         .await
@@ -33,7 +34,7 @@ async fn workflow_history_when_duplicate_or_malformed_request() {
         service
             .start(
                 "not-a-workflow",
-                RunInput::new("rejected", 350).expect("valid input"),
+                json!({ "label": "rejected", "step_delay_ms": 350 }),
                 RunTrigger::Manual,
             )
             .await,
@@ -55,7 +56,7 @@ async fn workflow_reaches_terminal_after_observable_steps() {
     let started = service
         .start(
             workflow_id(),
-            RunInput::new("terminal check", 350).expect("valid input"),
+            json!({ "label": "terminal check", "step_delay_ms": 350 }),
             RunTrigger::Manual,
         )
         .await
@@ -104,8 +105,14 @@ async fn workflow_reaches_terminal_after_observable_steps() {
         first_step.selected_edge.as_deref(),
         Some("prepare-to-choose")
     );
-    assert_eq!(first_step.state.run_label, "terminal check");
-    assert_eq!(first_step.state.step_delay_ms, 350);
+    assert_eq!(
+        first_step.state.input.get("label"),
+        Some(&json!("terminal check"))
+    );
+    assert_eq!(
+        first_step.state.input.get("step_delay_ms"),
+        Some(&json!(350))
+    );
     assert!(first_step.state.task_token.is_some());
 
     let choose = terminal
@@ -120,14 +127,15 @@ async fn workflow_reaches_terminal_after_observable_steps() {
 #[tokio::test]
 async fn run_input_becomes_initial_state_when_manual_run_starts() {
     let service = WorkflowService::new().expect("the code-defined workflow should build");
-    let input = RunInput::new("release candidate", 240).expect("valid input");
+    let input = json!({ "label": "release candidate", "step_delay_ms": 240 });
 
     let started = service
         .start(workflow_id(), input.clone(), RunTrigger::Manual)
         .await
         .expect("manual workflow starts");
 
-    assert_eq!(started.input, input);
+    assert_eq!(started.input.state(), &input);
+    assert_eq!(started.input.summary(), "release candidate · 240 ms");
     assert_eq!(started.trigger, RunTrigger::Manual);
 }
 
@@ -140,8 +148,11 @@ async fn cron_schedule_uses_configured_input_when_dispatched() {
         .await
         .expect("code-defined schedule dispatches");
 
-    assert_eq!(started.input.label(), "scheduled heartbeat");
-    assert_eq!(started.input.step_delay_ms(), 250);
+    assert_eq!(
+        started.input.state(),
+        &json!({ "label": "scheduled heartbeat", "step_delay_ms": 250 })
+    );
+    assert_eq!(started.input.summary(), "scheduled heartbeat · 250 ms");
     assert_eq!(
         started.trigger,
         RunTrigger::Cron {
@@ -169,7 +180,7 @@ async fn every_code_defined_workflow_can_be_selected_and_completed() {
     let started = service
         .start(
             review.workflow_id,
-            RunInput::new("select the review pipeline", 100).expect("valid input"),
+            json!({ "subject": "release candidate", "reviewer": "local operator" }),
             RunTrigger::Manual,
         )
         .await
@@ -200,4 +211,28 @@ async fn every_code_defined_workflow_can_be_selected_and_completed() {
         Some("archive")
     );
     assert_eq!(terminal.traversed_nodes.len(), 4);
+    assert_eq!(
+        terminal.input.state(),
+        &json!({ "subject": "release candidate", "reviewer": "local operator" })
+    );
+    assert_eq!(
+        terminal.input.summary(),
+        "release candidate · reviewer local operator"
+    );
+}
+
+#[tokio::test]
+async fn workflow_specific_input_rejects_another_workflows_fields() {
+    let service = WorkflowService::new().expect("every code-defined workflow should build");
+
+    let result = service
+        .start(
+            "review-pipeline",
+            json!({ "label": "wrong form", "step_delay_ms": 350 }),
+            RunTrigger::Manual,
+        )
+        .await;
+
+    assert!(matches!(result, Err(WorkflowError::InvalidInput { .. })));
+    assert!(service.list_runs().await.is_empty());
 }

@@ -4,7 +4,9 @@ use topcoat::{
     router::page,
     view::{component, view},
 };
-use workflow_console_experiment::{workflow_definitions, workflow_id, workflow_schedules};
+use workflow_console_experiment::{
+    workflow_definitions, workflow_id, workflow_input_form, workflow_schedules,
+};
 
 const APP_CSS: Asset = asset!("./app.css");
 const APP_TRACE_JS: Asset = asset!("./app_trace.js");
@@ -98,14 +100,6 @@ async fn home() -> Result {
 async fn workflow_rail() -> Result {
     let definitions = workflow_definitions();
     let schedules = workflow_schedules();
-    let default_input = definitions
-        .iter()
-        .find(|definition| definition.workflow_id == workflow_id())
-        .map(|definition| definition.input);
-    let default_label = default_input.map_or("manual run", |input| input.default_label);
-    let default_delay = default_input.map_or(350, |input| input.default_step_delay_ms);
-    let min_delay = default_input.map_or(100, |input| input.min_step_delay_ms);
-    let max_delay = default_input.map_or(2_000, |input| input.max_step_delay_ms);
     view! {
         <aside class="workflow-rail" aria-labelledby="workflows-title">
             <h2 id="workflows-title">"Workflows"</h2>
@@ -117,17 +111,17 @@ async fn workflow_rail() -> Result {
                         <span class="muted">(definition.description)</span>
                         <code>(definition.workflow_id)</code>
                         for schedule in schedules.iter().filter(|schedule| schedule.workflow_id == definition.workflow_id) {
-                            <span class="schedule-summary"><span class="eyebrow">"Cron schedule"</span><code>(schedule.cron_expression)</code><span class="muted">(format!("{} · {} ms steps", schedule.input_label, schedule.step_delay_ms))</span></span>
+                            <span class="schedule-summary"><span class="eyebrow">"Cron schedule"</span><code>(schedule.cron_expression)</code><span class="muted">(schedule.input_summary)</span></span>
                         }
                     </button>
                 }
             </div>
-            <form class="run-form" data-testid="run-form" aria-labelledby="run-form-title">
-                <div><p class="eyebrow">"Run selected"</p><h3 id="run-form-title">"Branch and converge"</h3></div>
-                <label class="field" for="run-label"><span>"Run label"</span><input id="run-label" data-testid="run-label" name="label" type="text" value=(default_label) required="required" maxlength="80"></label>
-                <label class="field" for="step-delay"><span>"Step delay (ms)"</span><input id="step-delay" data-testid="step-delay" name="step_delay_ms" type="number" value=(default_delay) min=(min_delay) max=(max_delay) step="10" required="required"></label>
-                <button type="submit" data-testid="run-workflow">"Run workflow"</button>
-            </form>
+            for definition in definitions {
+                workflow_input_form(
+                    workflow_id: definition.workflow_id,
+                    active: definition.workflow_id == workflow_id(),
+                )
+            }
         </aside>
     }
 }

@@ -32,10 +32,17 @@ test("stale polling cannot render or restart after a new run or pagehide", async
   const workflowOption = element();
   workflowOption.dataset.workflowId = "demo-workflow";
   const runForm = element();
+  runForm.dataset.workflowId = "demo-workflow";
   const runLabel = element();
+  runLabel.name = "label";
   runLabel.value = "manual browser run";
   const stepDelay = element();
+  stepDelay.name = "step_delay_ms";
+  stepDelay.dataset.jsonType = "number";
   stepDelay.value = "240";
+  runForm.elements = [runLabel, stepDelay];
+  runForm.querySelector = () => runButton;
+  runForm.reset = () => {};
   const statusOutput = element();
   const triggerOutput = element();
   const inputOutput = element();
@@ -52,10 +59,6 @@ test("stale polling cannot render or restart after a new run or pagehide", async
   const traceState = element();
   const traceOutput = element();
   const selectors = new Map([
-    ['[data-testid="run-workflow"]', runButton],
-    ['[data-testid="run-form"]', runForm],
-    ['[data-testid="run-label"]', runLabel],
-    ['[data-testid="step-delay"]', stepDelay],
     ['[data-testid="run-status"]', statusOutput],
     ["#workflow-summary", element()],
     ["#trigger-summary", triggerOutput],
@@ -65,7 +68,6 @@ test("stale polling cannot render or restart after a new run or pagehide", async
     ["#run-history", historyBody],
     ["#request-error", requestError],
     ["#topology-desc", topologyDescription],
-    ["#run-form-title", element()],
     ["#trace-title", traceTitle],
     ['[data-testid="trace-status"]', traceStatus],
     ['[data-testid="trace-state"]', traceState],
@@ -79,6 +81,7 @@ test("stale polling cannot render or restart after a new run or pagehide", async
     querySelector(selector) { return selectors.get(selector); },
     querySelectorAll(selector) {
       if (selector === "[data-workflow-option]") return [workflowOption];
+      if (selector === "[data-workflow-run-form]") return [runForm];
       if (selector === "[data-topology-workflow]") return [topology];
       if (selector === "[data-topology-desc]") return [topologyDescription];
       return [];
@@ -109,7 +112,7 @@ test("stale polling cannot render or restart after a new run or pagehide", async
 
   assert.equal(pending.length, 1);
   const staleState = pending[0];
-  const startPromise = runForm.listeners.submit({ preventDefault() {} });
+  const startPromise = runForm.listeners.submit({ preventDefault() {}, currentTarget: runForm });
   assert.equal(staleState.signal.aborted, true);
   assert.equal(pending.length, 2);
   assert.deepEqual(
@@ -130,11 +133,11 @@ test("stale polling cannot render or restart after a new run or pagehide", async
   const freshState = { workflows: [{
     workflow_id: "demo-workflow",
     name: "Branch and converge",
-    input: { default_label: "manual branch run", default_step_delay_ms: 350, min_step_delay_ms: 100, max_step_delay_ms: 2000 },
   }], runs: [{
     run_id: "new-run",
     workflow_id: "demo-workflow",
     input: { label: "manual browser run", step_delay_ms: 240 },
+    input_summary: "manual browser run · 240 ms",
     trigger: "Manual",
     schedule_id: null,
     status: "Running",
@@ -178,7 +181,6 @@ test("graph selection renders the retained node trace", async () => {
   const selectors = new Map([
     ["#trace-title", traceTitle],
     ["#workflow-summary", element()],
-    ["#run-form-title", element()],
     ['[data-testid="trace-status"]', traceStatus],
     ['[data-testid="trace-state"]', traceState],
     ['[data-testid="trace-output"]', traceOutput],
@@ -196,11 +198,11 @@ test("graph selection renders the retained node trace", async () => {
   window.workflowState = { workflows: [{
     workflow_id: "demo-workflow",
     name: "Branch and converge",
-    input: { default_label: "manual branch run", default_step_delay_ms: 350, min_step_delay_ms: 100, max_step_delay_ms: 2000 },
   }], runs: [{
     run_id: "trace-run",
     workflow_id: "demo-workflow",
     input: { label: "inspect me", step_delay_ms: 240 },
+    input_summary: "inspect me · 240 ms",
     trigger: "Manual",
     schedule_id: null,
     status: "Running",
@@ -218,8 +220,7 @@ test("graph selection renders the retained node trace", async () => {
       status: "Running",
       error: null,
       state: {
-        run_label: "inspect me",
-        step_delay_ms: 240,
+        input: { label: "inspect me", step_delay_ms: 240 },
         task_token: null,
         branch_selected: null,
         branch_token: null,
@@ -236,7 +237,7 @@ test("graph selection renders the retained node trace", async () => {
 
   assert.equal(traceTitle.textContent, "Node · choose_route");
   assert.equal(traceStatus.textContent, "Running");
-  assert.match(traceState.textContent, /\"run_label\": \"inspect me\"/);
+  assert.match(traceState.textContent, /\"label\": \"inspect me\"/);
   assert.equal(traceOutput.textContent, "Pending");
   assert.equal(node.attributes["aria-pressed"], "true");
 });
