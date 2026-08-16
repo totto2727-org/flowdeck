@@ -24,11 +24,12 @@ pub(super) async fn workflow_topology(
         <div
             class="max-w-full min-w-0 overflow-x-auto"
             tabindex="0"
-            aria-label="Workflow topology, horizontally scrollable"
+            aria-label="Workflow topology, horizontally scrollable on narrow screens"
         >
             <svg
-                class="topology block h-auto w-full min-w-[var(--graph-min)]"
+                class="topology block h-auto max-h-[var(--graph-max-block-size)] w-full min-w-[var(--graph-min)]"
                 viewBox="0 0 760 300"
+                preserveAspectRatio="xMidYMid meet"
                 role="group"
                 aria-labelledby=(format!("topology-title-{run_id} topology-desc-{run_id}"))
             >
@@ -232,5 +233,32 @@ fn edge_label_y(id: &str) -> &'static str {
         | "inspect-to-approve"
         | "approve-to-archive" => "173",
         _ => "0",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use topcoat::view::view;
+    use workflow_console_experiment::workflow_definitions;
+
+    use super::workflow_topology;
+
+    #[tokio::test]
+    async fn topology_uses_fluid_width_with_a_viewport_height_cap() {
+        let cx = topcoat::context::CxTestBuilder::new().build();
+        let __cx = &cx;
+        let definition = workflow_definitions()
+            .first()
+            .expect("a code-defined workflow should exist");
+        let rendered = view! {
+            workflow_topology(definition: definition, run: None)
+        }
+        .expect("topology should render")
+        .render(&cx);
+
+        assert!(rendered.contains("max-h-[var(--graph-max-block-size)] w-full"));
+        assert!(rendered.contains("min-w-[var(--graph-min)]"));
+        assert!(rendered.contains("preserveAspectRatio=\"xMidYMid meet\""));
+        assert!(!rendered.contains("max-w-["));
     }
 }

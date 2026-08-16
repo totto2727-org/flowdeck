@@ -65,7 +65,8 @@ All future CSS spacing, radii, widths, and layout tokens must be declared here b
 | `--radius-control` | `0.375rem` | Inputs and compact controls |
 | `--radius-panel` | `0.75rem` | Panels and cards |
 | `--control-min` | `2.75rem` | Minimum keyboard and touch target |
-| `--graph-min` | `42.5rem` | Topology canvas inside its scroll owner |
+| `--graph-min` | `42.5rem` | Readable topology canvas floor without an inline-size ceiling |
+| `--graph-max-block-size` | `50dvh` | Maximum topology canvas height while width remains fluid |
 | `--table-min` | `56rem` | History table with trigger and input columns inside its scroll owner |
 | `--rail-min` | `14rem` | Workflow rail minimum width above the wide-layout breakpoint |
 | `--rail-max` | `18rem` | Workflow rail maximum width above the wide-layout breakpoint |
@@ -76,7 +77,7 @@ All future CSS spacing, radii, widths, and layout tokens must be declared here b
 | `--breakpoint-trace` | `30rem` | Trace metadata changes to one column below this width |
 | `--breakpoint-lg` | `60rem` | Rail and inspector change to the wide layout |
 
-- The document owns vertical scrolling. The topology and history wrappers alone own horizontal scrolling.
+- The document owns vertical scrolling. The topology has no maximum inline size and fills its available width; its wrapper owns horizontal scrolling only below the readable canvas floor, while the history wrapper owns its table overflow.
 - The page shell fills the available viewport width and has no page-level maximum inline size.
 - The page uses one readable column at 375px and a workflow rail plus inspection region above 60rem. Primary content never scrolls horizontally.
 
@@ -92,7 +93,7 @@ All future CSS spacing, radii, widths, and layout tokens must be declared here b
 
 - Structure: status, trigger, initial input, route, elapsed summary, legend, accessible inline SVG driven only by immutable topology IDs, and a stable step-trace detail region below the graph.
 - States: empty, loading, running, completed, failed, and request error. State words remain visible so color is never the only cue.
-- Layout: the graph wrapper exclusively owns horizontal scrolling; selected run details remain outside that region.
+- Layout: the graph has no maximum inline size, fills the inspector's available width, preserves its internal `viewBox` geometry, and caps its block size at `50dvh`; below the readable canvas floor, only its wrapper scrolls horizontally. Selected run details remain outside that region.
 - Workflow context: an idle inspector follows the workflow card selection, while selecting a history row switches the visible topology to that run's workflow without changing its retained trace.
 
 ### Graph trace selection

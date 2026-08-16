@@ -51,6 +51,7 @@
   --radius-panel: 0.75rem;
   --control-min: 2.75rem;
   --graph-min: 42.5rem;
+  --graph-max-block-size: 50dvh;
   --table-min: 56rem;
   --rail-min: 14rem;
   --rail-max: 18rem;
