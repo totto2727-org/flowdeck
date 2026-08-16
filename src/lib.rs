@@ -1,9 +1,9 @@
 //! Local workflow execution domain.
 
 mod workflow;
-mod workflow_graph;
 mod workflow_scheduler;
 pub(crate) mod workflow_trace;
+pub(crate) mod workflows;
 
 use std::{
     error::Error,
@@ -12,14 +12,21 @@ use std::{
 };
 
 pub use workflow::WorkflowService;
-use workflow_graph::{EDGES, NODES, WORKFLOW_ID, build_graph};
-pub use workflow_graph::{EdgeSpec, NodeSpec, workflow_topology};
 pub use workflow_scheduler::{ScheduleSpec, workflow_schedules};
 pub use workflow_trace::{StepState, StepTrace, StepTraceStatus};
+pub use workflows::{
+    EdgeSpec, NodeSpec, WorkflowDefinition, WorkflowInputDefinition, workflow_definitions,
+};
 
 /// Return the only workflow ID accepted by this local experiment.
 pub const fn workflow_id() -> &'static str {
-    WORKFLOW_ID
+    workflows::default_definition().workflow_id
+}
+
+/// Return the default workflow topology for compatibility with local callers.
+pub const fn workflow_topology() -> (&'static [NodeSpec], &'static [EdgeSpec]) {
+    let definition = workflows::default_definition();
+    (definition.nodes, definition.edges)
 }
 
 /// An observable workflow run state.

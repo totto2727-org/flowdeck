@@ -3,7 +3,8 @@
 use std::time::Duration;
 
 use workflow_console_experiment::{
-    RunInput, RunStatus, RunTrigger, StepTraceStatus, WorkflowError, WorkflowService, workflow_id,
+    RunInput, RunStatus, RunTrigger, StepTraceStatus, WorkflowError, WorkflowService,
+    workflow_definitions, workflow_id,
 };
 
 #[tokio::test]
@@ -147,4 +148,56 @@ async fn cron_schedule_uses_configured_input_when_dispatched() {
             schedule_id: "demo-every-10-seconds".to_owned(),
         }
     );
+}
+
+#[tokio::test]
+async fn every_code_defined_workflow_can_be_selected_and_completed() {
+    let service = WorkflowService::new().expect("every code-defined workflow should build");
+    let definitions = workflow_definitions();
+    let demo = definitions
+        .iter()
+        .find(|definition| definition.workflow_id == "demo-workflow")
+        .expect("demo workflow is registered");
+    let review = definitions
+        .iter()
+        .find(|definition| definition.workflow_id == "review-pipeline")
+        .expect("review workflow is registered");
+
+    assert_eq!(definitions.len(), 2);
+    assert_ne!(demo.nodes, review.nodes);
+
+    let started = service
+        .start(
+            review.workflow_id,
+            RunInput::new("select the review pipeline", 100).expect("valid input"),
+            RunTrigger::Manual,
+        )
+        .await
+        .expect("the selected workflow starts");
+
+    let terminal = tokio::time::timeout(Duration::from_secs(4), async {
+        loop {
+            let snapshot = service
+                .get_run(&started.run_id)
+                .await
+                .expect("started run remains in history");
+            if matches!(snapshot.status, RunStatus::Completed) {
+                break snapshot;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+    })
+    .await
+    .expect("the selected workflow should finish within its timing bound");
+
+    assert_eq!(terminal.workflow_id, "review-pipeline");
+    assert_eq!(
+        terminal.traversed_nodes.first().map(String::as_str),
+        Some("receive")
+    );
+    assert_eq!(
+        terminal.traversed_nodes.last().map(String::as_str),
+        Some("archive")
+    );
+    assert_eq!(terminal.traversed_nodes.len(), 4);
 }
