@@ -104,10 +104,11 @@ All future CSS spacing, radii, widths, and layout tokens must be declared here b
 
 ### Run history
 
-- Structure: table with one button per row for selection and columns for run ID, trigger, input, status, route, and elapsed time.
-- States: empty row, running values, completed values, failed values, selected row, hover, and focus.
-- Accessibility: table headings identify data; row buttons provide keyboard selection; `aria-current` identifies the inspected run.
+- Structure: a compact filter bar for workflow, trigger, and status followed by a table with one button per row for selection and columns for run ID, trigger, input, status, route, and elapsed time.
+- States: filters inactive, filters active, filters reset, empty row, running values, completed values, failed values, selected row, hover, and focus.
+- Accessibility: every filter has a visible label, the reset control has a minimum target size, table headings identify data, row buttons provide keyboard selection, and `aria-current` identifies the inspected run.
 - Layout: the table wrapper exclusively owns horizontal scrolling.
+- Live updates: filter signals remain browser-owned while SSE replaces the server-rendered history fragment, so newly received rows obey the current filters without reconnecting or losing the inspected run.
 
 ## 6. Motion & Interaction
 

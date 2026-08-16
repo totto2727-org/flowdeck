@@ -31,6 +31,9 @@ struct InitialSignals {
     selected_run_id: String,
     selected_trace_kind: &'static str,
     selected_trace_id: String,
+    history_workflow_filter: &'static str,
+    history_trigger_filter: &'static str,
+    history_status_filter: &'static str,
     input: Value,
     request_message: &'static str,
 }
@@ -176,6 +179,9 @@ fn initial_signals(runs: &[RunSnapshot]) -> InitialSignals {
         selected_run_id: selected.map_or_else(String::new, |run| run.run_id.to_string()),
         selected_trace_kind: "node",
         selected_trace_id: trace_id,
+        history_workflow_filter: "all",
+        history_trigger_filter: "all",
+        history_status_filter: "all",
         input: workflow_default_input(&workflow_id),
         request_message: "",
     }
@@ -193,7 +199,31 @@ mod tests {
     use serde_json::json;
     use workflow_console_experiment::{RunTrigger, WorkflowService, workflow_id};
 
-    use super::{render_recovery_host, selection_expression};
+    use super::{render_history, render_recovery_host, selection_expression};
+
+    #[tokio::test]
+    async fn run_history_exposes_reactive_filter_controls_and_rows() {
+        let service = WorkflowService::new().expect("code-defined workflows should build");
+        service
+            .start(
+                workflow_id(),
+                json!({ "label": "filterable", "step_delay_ms": 100 }),
+                RunTrigger::Manual,
+            )
+            .await
+            .expect("demo workflow should start");
+
+        let html = render_history(&service)
+            .await
+            .expect("history fragment should render");
+
+        assert!(html.contains("data-bind=\"historyWorkflowFilter\""));
+        assert!(html.contains("data-bind=\"historyTriggerFilter\""));
+        assert!(html.contains("data-bind=\"historyStatusFilter\""));
+        assert!(html.contains("$historyWorkflowFilter === 'demo-workflow'"));
+        assert!(html.contains("$historyTriggerFilter === 'manual'"));
+        assert!(html.contains("$historyStatusFilter === 'running'"));
+    }
 
     #[test]
     fn workflow_selection_requests_idle_inspector_after_run_is_cleared() {
