@@ -61,7 +61,7 @@ async fn home(cx: &Cx) -> Result {
                     <div><p class="text-xs font-semibold uppercase tracking-label text-text-muted">"Local operations"</p><h1 class="text-3xl font-semibold tracking-title">"Workflow Console"</h1></div>
                     <span class="rounded-control border border-border px-2 py-1 font-mono text-[length:var(--type-code)] text-text-secondary">"In-memory"</span>
                 </header>
-                <main class="mx-auto grid max-w-[var(--content-max)] min-w-0 grid-cols-1 gap-4 p-4 lg:grid-cols-[minmax(var(--rail-min),var(--rail-max))_minmax(0,1fr)] lg:p-6">
+                <main class="grid w-full min-w-0 grid-cols-1 gap-4 p-4 lg:grid-cols-[minmax(var(--rail-min),var(--rail-max))_minmax(0,1fr)] lg:p-6">
                     workflow_rail()
                     <div class="min-w-0">
                         <p id="request-message" class="mb-4 border-l-[var(--error-border)] border-status-error bg-surface-elevated p-3" data-show="$requestMessage !== ''" data-text="$requestMessage" role="alert"></p>

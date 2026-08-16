@@ -64,7 +64,6 @@ All future CSS spacing, radii, widths, and layout tokens must be declared here b
 | `--space-12` | `3rem` | Page separation |
 | `--radius-control` | `0.375rem` | Inputs and compact controls |
 | `--radius-panel` | `0.75rem` | Panels and cards |
-| `--content-max` | `72rem` | Main content width |
 | `--control-min` | `2.75rem` | Minimum keyboard and touch target |
 | `--graph-min` | `42.5rem` | Topology canvas inside its scroll owner |
 | `--table-min` | `56rem` | History table with trigger and input columns inside its scroll owner |
@@ -78,6 +77,7 @@ All future CSS spacing, radii, widths, and layout tokens must be declared here b
 | `--breakpoint-lg` | `60rem` | Rail and inspector change to the wide layout |
 
 - The document owns vertical scrolling. The topology and history wrappers alone own horizontal scrolling.
+- The page shell fills the available viewport width and has no page-level maximum inline size.
 - The page uses one readable column at 375px and a workflow rail plus inspection region above 60rem. Primary content never scrolls horizontally.
 
 ## 5. Components
