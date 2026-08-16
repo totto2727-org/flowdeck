@@ -4,7 +4,9 @@ A local-only workflow dashboard built with Topcoat, Datastar, Tailwind CSS, and 
 
 ## Usage
 
-Open <http://127.0.0.1:3000/> after starting the server. Choose a workflow, enter its run arguments, and select **Run workflow**. Select any node or edge in the graph with a pointer, Enter, or Space to inspect its retained state, timing, output, error, and selected route.
+Open <http://127.0.0.1:3000/> after starting the server. The root redirects to the first code-defined workflow. Choose a workflow, enter its run arguments, and select **Run workflow**. Select any node or edge in the graph with a pointer, Enter, or Space to inspect its retained state, timing, output, error, and selected route.
+
+Workflow selection is encoded as `/workflows/{workflow_id}`. Selecting or starting a retained run adds `?run={run_id}`, so reloading or bookmarking the page restores the same in-memory run while the server process remains alive. Unknown paths return an HTTP 404 recovery page and then return through `/` to the first workflow.
 
 The server emits `tracing` events for its listening URL and completed HTTP requests. Set `RUST_LOG=workflow_console_experiment=info` to enable these application logs when a broader environment filter is already configured.
 

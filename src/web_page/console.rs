@@ -16,8 +16,10 @@ use super::{
 };
 
 #[component]
-pub(super) async fn console_content(runs: Vec<RunSnapshot>) -> Result {
-    let selected = runs.first().cloned();
+pub(super) async fn console_content(
+    runs: Vec<RunSnapshot>,
+    selected: Option<RunSnapshot>,
+) -> Result {
     view! {
         <div id="console-content" class="grid min-w-0 gap-4">
             selected_inspector_host(run: selected)
@@ -340,13 +342,15 @@ pub(super) async fn run_history(runs: Vec<RunSnapshot>) -> Result {
                                 class="aria-[current=true]:bg-surface-elevated"
                             >
                                 <td class="border-b border-border p-3 align-top">
-                                    <button
-                                        class="border-0 bg-transparent p-0 font-mono text-[length:var(--type-code)] text-accent-hover underline"
-                                        type="button"
-                                        data-on:click=(history_expression(&run))
+                                    <a
+                                        class="font-mono text-[length:var(--type-code)] text-accent-hover underline"
+                                        href=(super::workflow_url(
+                                            &run.workflow_id,
+                                            Some(&run_id),
+                                        ))
                                     >
                                         (run_id)
-                                    </button>
+                                    </a>
                                 </td>
                                 <td class="border-b border-border p-3 align-top">
                                     (run.workflow_id.clone())
@@ -396,17 +400,5 @@ fn history_visibility_expression(run: &RunSnapshot) -> String {
     format!(
         "($historyWorkflowFilter === 'all' || $historyWorkflowFilter === '{}') && ($historyTriggerFilter === 'all' || $historyTriggerFilter === '{trigger_filter}') && ($historyStatusFilter === 'all' || $historyStatusFilter === '{status_filter}')",
         run.workflow_id
-    )
-}
-
-fn history_expression(run: &RunSnapshot) -> String {
-    let trace_id = run
-        .current_node
-        .as_deref()
-        .or_else(|| run.steps.last().map(|step| step.node_id.as_str()))
-        .unwrap_or("");
-    format!(
-        "$selectedRunId = '{}'; $selectedWorkflowId = '{}'; $selectedTraceKind = 'node'; $selectedTraceId = '{trace_id}'; $requestMessage = ''; @get('/actions/select-run')",
-        run.run_id, run.workflow_id
     )
 }

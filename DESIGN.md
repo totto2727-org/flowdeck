@@ -84,9 +84,9 @@ All future CSS spacing, radii, widths, and layout tokens must be declared here b
 
 ### Workflow card
 
-- Structure: one button card per code-defined workflow, followed by that workflow's own server-rendered input form. Each workflow module owns its fields, defaults, validation, and initial-state conversion. Code-defined cron schedules remain read-only inside their owning workflow card.
+- Structure: one native-link card per code-defined workflow, followed by that workflow's own server-rendered input form. Each workflow module owns its fields, defaults, validation, and initial-state conversion. Code-defined cron schedules remain read-only inside their owning workflow card.
 - States: default, selected, card hover/focus/active, field focus, native invalid input, run-button disabled/loading, and request error.
-- Accessibility: `aria-pressed` identifies the selected workflow, every input has explicit labels and bounds, and all controls retain a visible focus state and minimum target size.
+- Accessibility: `aria-current="page"` identifies the selected workflow, every input has explicit labels and bounds, and all controls retain a visible focus state and minimum target size.
 
 ### Run inspector
 
@@ -104,9 +104,9 @@ All future CSS spacing, radii, widths, and layout tokens must be declared here b
 
 ### Run history
 
-- Structure: a compact filter bar for workflow, trigger, and status followed by a table with one button per row for selection and columns for run ID, trigger, input, status, route, and elapsed time.
+- Structure: a compact filter bar for workflow, trigger, and status followed by a table with one bookmarkable run link per row and columns for run ID, trigger, input, status, route, and elapsed time.
 - States: filters inactive, filters active, filters reset, empty row, running values, completed values, failed values, selected row, hover, and focus.
-- Accessibility: every filter has a visible label, the reset control has a minimum target size, table headings identify data, row buttons provide keyboard selection, and `aria-current` identifies the inspected run.
+- Accessibility: every filter has a visible label, the reset control has a minimum target size, table headings identify data, run links provide native keyboard navigation, and `aria-current` identifies the inspected run.
 - Layout: the table wrapper exclusively owns horizontal scrolling.
 - Live updates: filter signals remain browser-owned while SSE replaces the server-rendered history fragment, so newly received rows obey the current filters without reconnecting or losing the inspected run.
 
@@ -123,6 +123,7 @@ All future CSS spacing, radii, widths, and layout tokens must be declared here b
 - Full keyboard operation and visible focus are required for every future interaction.
 - Server-sent snapshot patches change status, history, and topology without moving controls. The status message uses `aria-live="polite"`; request errors use an alert.
 - Workflow selection changes the visible workflow-owned form and idle topology. Starting or inspecting a run binds the inspector to the run's immutable `workflow_id`.
+- Navigation is server-addressable: `/` redirects to the first registered workflow, `/workflows/{workflow_id}` identifies the selected workflow, and the optional `run` query identifies the inspected in-memory run. Unknown paths retain an HTTP 404 while presenting a timed recovery through `/`.
 - Graph selection uses click, Enter, or Space and keeps the trace panel mounted. Selection feedback uses color plus `aria-pressed` and a visible detail heading.
 
 ## 7. Depth & Surface

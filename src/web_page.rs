@@ -9,7 +9,11 @@ use topcoat::{
     Result,
     asset::{Asset, asset},
     context::{Cx, app_context},
-    router::page,
+    router::{
+        StatusCode,
+        error::{NotFoundError, not_found as not_found_error, redirect},
+        layout, page, path_param, query_params,
+    },
     view::{component, view},
 };
 use workflow_console_experiment::{
@@ -23,6 +27,15 @@ use self::console::{
 
 const DATASTAR_JS: Asset =
     asset!("https://cdn.jsdelivr.net/gh/starfederation/datastar@1.0.2/bundles/datastar.js");
+const NOT_FOUND_REDIRECT_DELAY_SECONDS: u8 = 2;
+
+#[path_param]
+struct WorkflowPath(str);
+
+#[query_params(error = redirect("?"))]
+struct WorkflowQuery {
+    run: Option<String>,
+}
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -39,11 +52,59 @@ struct InitialSignals {
 }
 
 #[page("/")]
-async fn home(cx: &Cx) -> Result {
+async fn root_redirect() -> Result {
+    Err(redirect(&workflow_url(workflow_id(), None)).into())
+}
+
+#[page("/workflows/{workflow_path}")]
+async fn workflow_page(cx: &Cx) -> Result {
+    let selected_workflow_id = path_param::<WorkflowPath>(cx);
+    if !workflow_definitions()
+        .iter()
+        .any(|definition| definition.workflow_id == selected_workflow_id)
+    {
+        return Err(not_found_error().into());
+    }
+
+    let query = query_params::<WorkflowQuery>(cx)?;
     let service = app_context::<WorkflowService>(cx);
     let mut runs = service.list_runs().await;
     runs.reverse();
-    let signals = initial_signals(&runs);
+    let selected_run = query.run.as_deref().and_then(|run_id| {
+        runs.iter()
+            .find(|run| run.run_id.as_str() == run_id && run.workflow_id == selected_workflow_id)
+            .cloned()
+    });
+    if query.run.is_some() && selected_run.is_none() {
+        return Err(redirect(&workflow_url(selected_workflow_id, None)).into());
+    }
+
+    render_console_page(cx, selected_workflow_id, selected_run, runs).await
+}
+
+#[layout("/")]
+async fn root_layout(cx: &Cx, slot: Result) -> Result {
+    match slot {
+        Err(error) if error.downcast_ref::<NotFoundError>().is_some() => {
+            not_found_document(cx).await
+        }
+        content => content,
+    }
+}
+
+#[page("/{*missing_path}")]
+async fn missing_page() -> Result {
+    Err(not_found_error().into())
+}
+
+async fn render_console_page(
+    cx: &Cx,
+    selected_workflow_id: &str,
+    selected_run: Option<RunSnapshot>,
+    runs: Vec<RunSnapshot>,
+) -> Result {
+    let __cx = cx;
+    let signals = initial_signals(selected_workflow_id, selected_run.as_ref());
     let signals_json = serde_json::to_string(&signals)?;
     view! {
         <!DOCTYPE html>
@@ -82,7 +143,7 @@ async fn home(cx: &Cx) -> Result {
                 <main
                     class="grid w-full min-w-0 grid-cols-1 gap-4 p-4 lg:grid-cols-[minmax(var(--rail-min),var(--rail-max))_minmax(0,1fr)] lg:p-6"
                 >
-                    workflow_rail()
+                    workflow_rail(selected_workflow_id: selected_workflow_id)
                     <div class="min-w-0">
                         <p
                             id="request-message"
@@ -91,7 +152,7 @@ async fn home(cx: &Cx) -> Result {
                             data-text="$requestMessage"
                             role="alert"
                         ></p>
-                        console_content(runs: runs)
+                        console_content(runs: runs, selected: selected_run.clone())
                     </div>
                 </main>
             </body>
@@ -99,8 +160,50 @@ async fn home(cx: &Cx) -> Result {
     }
 }
 
+async fn not_found_document(cx: &Cx) -> Result {
+    let __cx = cx;
+    view! {
+        (StatusCode::NOT_FOUND)
+        <!DOCTYPE html>
+        <html lang="en">
+            <head>
+                <meta charset="utf-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1">
+                <meta
+                    http-equiv="refresh"
+                    content=(format!("{NOT_FOUND_REDIRECT_DELAY_SECONDS}; url=/"))
+                >
+                <link rel="stylesheet" href=(topcoat::tailwind::stylesheet!())>
+                <title>"Page not found · Workflow Console"</title>
+            </head>
+            <body class="grid min-h-screen place-items-center bg-canvas p-4 text-text-primary">
+                <main
+                    class="w-full max-w-xl rounded-panel border border-border bg-surface p-6 shadow-panel"
+                    aria-labelledby="not-found-title"
+                >
+                    <p class="text-xs font-semibold uppercase tracking-label text-status-error">
+                        "404"
+                    </p>
+                    <h1 id="not-found-title" class="mt-2 text-3xl font-semibold tracking-title">
+                        "Page not found"
+                    </h1>
+                    <p class="mt-4 text-text-secondary">
+                        "This route is not part of the local workflow console. Redirecting to the default workflow."
+                    </p>
+                    <a
+                        class="mt-6 inline-flex min-h-[var(--control-min)] items-center rounded-control border border-accent-hover bg-accent px-4 font-semibold text-text-primary shadow-inset"
+                        href="/"
+                    >
+                        "Return now"
+                    </a>
+                </main>
+            </body>
+        </html>
+    }
+}
+
 #[component]
-async fn workflow_rail() -> Result {
+async fn workflow_rail(selected_workflow_id: &str) -> Result {
     let schedules = workflow_schedules();
     view! {
         <aside
@@ -114,13 +217,13 @@ async fn workflow_rail() -> Result {
                 aria-label="Code-defined workflows"
             >
                 for definition in workflow_definitions() {
-                    <button
-                        type="button"
-                        class="grid w-full gap-2 rounded-control border border-border bg-surface-elevated p-4 text-left text-text-primary shadow-inset transition-[filter] duration-[var(--motion-micro)] ease-[var(--ease-standard)] hover:brightness-110 aria-[pressed=true]:border-focus"
-                        data-attr:aria-pressed=(format!(
-                            "$selectedWorkflowId === '{}'", definition.workflow_id
+                    <a
+                        href=(workflow_url(definition.workflow_id, None))
+                        class="grid w-full gap-2 rounded-control border border-border bg-surface-elevated p-4 text-left text-text-primary shadow-inset transition-[filter] duration-[var(--motion-micro)] ease-[var(--ease-standard)] hover:brightness-110 aria-[current=page]:border-focus"
+                        data-attr:aria-current=(format!(
+                            "$selectedWorkflowId === '{}' ? 'page' : 'false'",
+                            definition.workflow_id
                         ))
-                        data-on:click=(selection_expression(definition.workflow_id)?)
                     >
                         <span
                             class="text-xs font-semibold uppercase tracking-label text-text-muted"
@@ -155,13 +258,15 @@ async fn workflow_rail() -> Result {
                                 </span>
                             </span>
                         }
-                    </button>
+                    </a>
                 }
             </div>
-            for definition in workflow_definitions() {
+            for definition in workflow_definitions()
+                .iter()
+                .filter(|definition| definition.workflow_id == selected_workflow_id) {
                 workflow_input_form(
                     workflow_id: definition.workflow_id,
-                    active: definition.workflow_id == workflow_id()
+                    active: true
                 )
             }
         </aside>
@@ -234,11 +339,11 @@ async fn find_run(service: &WorkflowService, run_id: &str) -> Option<RunSnapshot
         .find(|run| run.run_id.as_str() == run_id)
 }
 
-fn initial_signals(runs: &[RunSnapshot]) -> InitialSignals {
-    let selected = runs.first();
-    let workflow_id =
-        selected.map_or_else(|| workflow_id().to_owned(), |run| run.workflow_id.clone());
-    let trace_id = selected
+fn initial_signals(
+    selected_workflow_id: &str,
+    selected_run: Option<&RunSnapshot>,
+) -> InitialSignals {
+    let trace_id = selected_run
         .and_then(|run| {
             run.current_node
                 .clone()
@@ -246,23 +351,27 @@ fn initial_signals(runs: &[RunSnapshot]) -> InitialSignals {
         })
         .unwrap_or_default();
     InitialSignals {
-        selected_workflow_id: workflow_id.clone(),
-        selected_run_id: selected.map_or_else(String::new, |run| run.run_id.to_string()),
+        selected_workflow_id: selected_workflow_id.to_owned(),
+        selected_run_id: selected_run.map_or_else(String::new, |run| run.run_id.to_string()),
         selected_trace_kind: "node",
         selected_trace_id: trace_id,
         history_workflow_filter: "all",
         history_trigger_filter: "all",
         history_status_filter: "all",
-        input: workflow_default_input(&workflow_id),
+        input: workflow_default_input(selected_workflow_id),
         request_message: "",
     }
 }
 
-fn selection_expression(workflow_id: &str) -> Result<String> {
-    let input = serde_json::to_string(&workflow_default_input(workflow_id))?;
-    Ok(format!(
-        "$selectedWorkflowId = '{workflow_id}'; $selectedRunId = ''; $selectedTraceKind = 'node'; $selectedTraceId = ''; $input = {input}; $requestMessage = ''; @get('/actions/select-run')"
-    ))
+#[allow(
+    clippy::redundant_pub_crate,
+    reason = "The route sibling also uses this private page URL formatter."
+)]
+pub(super) fn workflow_url(workflow_id: &str, run_id: Option<&str>) -> String {
+    run_id.map_or_else(
+        || format!("/workflows/{workflow_id}"),
+        |run_id| format!("/workflows/{workflow_id}?run={run_id}"),
+    )
 }
 
 #[cfg(test)]
@@ -270,12 +379,12 @@ mod tests {
     use serde_json::json;
     use workflow_console_experiment::{RunTrigger, WorkflowService, workflow_id};
 
-    use super::{render_history, render_recovery_host, selection_expression};
+    use super::{initial_signals, render_history, render_recovery_host, workflow_rail};
 
     #[tokio::test]
     async fn run_history_exposes_reactive_filter_controls_and_rows() {
         let service = WorkflowService::new().expect("code-defined workflows should build");
-        service
+        let run = service
             .start(
                 workflow_id(),
                 json!({ "label": "filterable", "step_delay_ms": 100 }),
@@ -294,24 +403,41 @@ mod tests {
         assert!(html.contains("$historyWorkflowFilter === 'demo-workflow'"));
         assert!(html.contains("$historyTriggerFilter === 'manual'"));
         assert!(html.contains("$historyStatusFilter === 'running'"));
+        assert!(html.contains(&format!(
+            "href=\"/workflows/demo-workflow?run={}\"",
+            run.run_id
+        )));
     }
 
-    #[test]
-    fn workflow_selection_requests_idle_inspector_after_run_is_cleared() {
-        // Given a workflow card selection expression.
-        let expression = selection_expression("review-pipeline")
-            .expect("the code-defined default input should serialize");
+    #[tokio::test]
+    async fn initial_signals_restore_the_workflow_and_run_from_the_url() {
+        let service = WorkflowService::new().expect("code-defined workflows should build");
+        let run = service
+            .start(
+                "review-pipeline",
+                json!({ "subject": "restore", "reviewer": "Lin" }),
+                RunTrigger::Manual,
+            )
+            .await
+            .expect("review workflow should start");
 
-        // When Datastar evaluates the expression, it must clear the retained run first.
-        let clear_run = expression
-            .find("$selectedRunId = ''")
-            .expect("workflow selection should clear the retained run");
+        let signals = initial_signals("review-pipeline", Some(&run));
 
-        // Then the server-rendered inspector must be refreshed using the cleared signal.
-        let refresh_inspector = expression
-            .find("@get('/actions/select-run')")
-            .expect("workflow selection should refresh the idle inspector");
-        assert!(clear_run < refresh_inspector);
+        assert_eq!(signals.selected_workflow_id, "review-pipeline");
+        assert_eq!(signals.selected_run_id, run.run_id.to_string());
+    }
+
+    #[tokio::test]
+    async fn workflow_rail_renders_only_the_selected_workflows_form() {
+        let cx = topcoat::context::CxTestBuilder::new().build();
+        let __cx = &cx;
+        let rendered = topcoat::view::view! {
+            workflow_rail(selected_workflow_id: "review-pipeline")
+        }
+        .expect("workflow rail should render")
+        .render(&cx);
+
+        assert_eq!(rendered.matches("data-on:submit").count(), 1);
     }
 
     #[tokio::test]

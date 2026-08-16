@@ -5,7 +5,7 @@ use tokio::sync::broadcast::error::RecvError;
 use topcoat::{
     Result,
     context::{Cx, app_context},
-    datastar::{PatchElements, PatchSignals, Signals},
+    datastar::{ExecuteScript, PatchElements, PatchSignals, Signals},
     router::{
         content::sse::{Event, KeepAlive, Sse},
         route,
@@ -14,7 +14,7 @@ use topcoat::{
 use workflow_console_experiment::{RunTrigger, WorkflowEvent, WorkflowService};
 
 use crate::web_page::{
-    render_history, render_recovery_host, render_run_inspector, render_selected_host,
+    render_history, render_recovery_host, render_run_inspector, render_selected_host, workflow_url,
 };
 
 #[derive(Debug, Deserialize)]
@@ -50,9 +50,10 @@ async fn start_run(
     let result = service
         .start(&workflow_id, signals.input, RunTrigger::Manual)
         .await;
-    let (signal_patch, host) = match result {
+    let (signal_patch, host, run_url) = match result {
         Ok(run) => {
             let run_id = run.run_id.to_string();
+            let run_url = workflow_url(&run.workflow_id, Some(&run_id));
             let patch = PatchSignals::json(&StartPatch {
                 selected_workflow_id: run.workflow_id,
                 selected_run_id: run_id.clone(),
@@ -60,7 +61,11 @@ async fn start_run(
                 selected_trace_id: run.current_node.unwrap_or_default(),
                 request_message: String::new(),
             })?;
-            (patch, Some(render_selected_host(service, &run_id).await?))
+            (
+                patch,
+                Some(render_selected_host(service, &run_id).await?),
+                Some(run_url),
+            )
         }
         Err(error) => (
             PatchSignals::json(&StartPatch {
@@ -71,11 +76,18 @@ async fn start_run(
                 request_message: error.to_string(),
             })?,
             None,
+            None,
         ),
     };
     let stream = async_stream::stream! {
         yield Ok(signal_patch.into());
         if let Some(host) = host { yield Ok(PatchElements::new(host).into()); }
+        if let Some(run_url) = run_url {
+            let run_url = serde_json::to_string(&run_url)?;
+            yield Ok(ExecuteScript::new(format!(
+                "window.history.replaceState(null, '', {run_url})"
+            )).into());
+        }
     };
     Ok(Sse::new(stream))
 }
