@@ -1,3 +1,7 @@
-target/
+/target/
+.direnv/
 .omo/evidence/
 .omo/ulw-loop/
+.DS_Store
+result
+result-*

@@ -1,59 +1,63 @@
 # Workflow Console Experiment
 
-Local-only workflow dashboard built with Topcoat 0.5-compatible and graph-flow 0.6-compatible crates.io releases on Rust 1.95. It exposes two code-defined workflows, accepts workflow-owned input defaults as the initial graph-flow context, runs manual and cron-triggered executions through the same in-memory service, and retains run history until the server process exits.
+A local-only workflow dashboard built with Topcoat and graph-flow. It runs code-defined workflows manually or on cron schedules, keeps execution history in memory, and exposes node and edge traces for debugging and performance analysis.
 
-## Surface
+## Usage
 
-- `GET /` renders the operational dashboard.
-- `GET /api/state` returns every workflow definition with its input configuration and topology, plus all retained runs newest first. Each run includes per-node traces with typed state, start/finish timestamps, elapsed time, output or error, and the selected edge.
-- `POST /api/runs` accepts a workflow ID plus `label` and `step_delay_ms` input, then returns the new manual run. Invalid inputs and unknown IDs return HTTP 400 and are not retained.
-- Select `Branch and converge` or `Review pipeline`, adjust that workflow's run input, and start it from the shared form. Select any node or edge in the active SVG with a pointer, Enter, or Space to inspect its retained trace.
-- The code-defined `*/10 * * * * *` schedule starts the same workflow every ten seconds with its own initial input. Schedule state and history remain in memory and stop with the server.
+Open <http://127.0.0.1:3000/> after starting the server. Choose a workflow, enter its run arguments, and select **Run workflow**. Select any node or edge in the graph with a pointer, Enter, or Space to inspect its retained state, timing, output, error, and selected route.
 
-## Local commands
+The same state is available over HTTP:
 
 ```bash
-topcoat asset bundle
-cargo run
-curl -i http://127.0.0.1:3000/
 curl -i http://127.0.0.1:3000/api/state
 curl -i -X POST http://127.0.0.1:3000/api/runs \
   -H 'content-type: application/json' \
   --data '{"workflow_id":"demo-workflow","input":{"label":"local check","step_delay_ms":350}}'
 ```
 
-Workflow-owned code is grouped by definition. The application and web layers import only the shared registry:
+## Key features
 
-```text
-src/workflows.rs
-src/workflows/demo/definition.rs
-src/workflows/review/definition.rs
-src/workflows/task.rs
-```
+- Two code-defined workflows with branching, convergence, and observable sleep tasks.
+- Manual arguments applied as the initial graph-flow context for each run.
+- A code-defined cron schedule that uses the same in-memory execution service.
+- SVG topology with active, traversed, and selected node and edge states.
+- Per-node and per-edge traces with timestamps, elapsed time, state, output, and errors.
 
-Install the matching asset CLI if `topcoat` is unavailable:
+## Prerequisites
+
+- **Rust 1.95**: Install the Rust toolchain selected by `rust-toolchain.toml`.
+- **Topcoat CLI 0.5**: Required locally to bundle the dashboard assets before startup.
+
+## Setup
+
+1. Install the matching Topcoat asset CLI.
 
 ```bash
 cargo install --version '0.5' topcoat-cli
 ```
 
+2. Bundle the assets and start the local server.
+
 ```bash
-cargo fmt --all -- --check
-cargo check
-cargo test
-cargo clippy --all-targets -- -D warnings
-cargo build
-node --check src/app.js
+topcoat asset bundle
+cargo run
 ```
 
-## Topcoat references
+3. Open <http://127.0.0.1:3000/>.
+
+## Development
+
+For repository structure, development commands, CI, Nix, and FlakeHub operation, see [AGENTS.md](./AGENTS.md).
+
+## Documentation
 
 - [Topcoat 0.5.0 on crates.io](https://crates.io/crates/topcoat/0.5.0)
 - [Topcoat getting started](https://github.com/tokio-rs/topcoat/blob/main/crates/topcoat/docs/getting_started.md)
 - [graph-flow 0.6.0 on crates.io](https://crates.io/crates/graph-flow/0.6.0)
+- [Croner 3.0.1 documentation](https://docs.rs/croner/3.0.1/croner/)
+- [share-artifact skill](https://raw.githubusercontent.com/totto2727-org/agent/refs/heads/main/plugins/totto2727-coding/skills/share-artifact/SKILL.md)
+- [README template](https://raw.githubusercontent.com/totto2727-org/agent/refs/heads/main/plugins/totto2727-coding/skills/share-artifact/readme/template.md)
 
-## Cron reference
+## License
 
-- [Croner 3.0.1 crate documentation](https://docs.rs/croner/3.0.1/croner/)
-- [Required seconds-field parser](https://docs.rs/croner/3.0.1/croner/parser/enum.Seconds.html)
-- [Next-occurrence API](https://docs.rs/croner/3.0.1/croner/struct.Cron.html#method.find_next_occurrence)
+MIT
