@@ -184,7 +184,7 @@ fn initial_signals(runs: &[RunSnapshot]) -> InitialSignals {
 fn selection_expression(workflow_id: &str) -> Result<String> {
     let input = serde_json::to_string(&workflow_default_input(workflow_id))?;
     Ok(format!(
-        "$selectedWorkflowId = '{workflow_id}'; $selectedRunId = ''; $selectedTraceKind = 'node'; $selectedTraceId = ''; $input = {input}; $requestMessage = ''"
+        "$selectedWorkflowId = '{workflow_id}'; $selectedRunId = ''; $selectedTraceKind = 'node'; $selectedTraceId = ''; $input = {input}; $requestMessage = ''; @get('/actions/select-run')"
     ))
 }
 
@@ -193,7 +193,25 @@ mod tests {
     use serde_json::json;
     use workflow_console_experiment::{RunTrigger, WorkflowService, workflow_id};
 
-    use super::render_recovery_host;
+    use super::{render_recovery_host, selection_expression};
+
+    #[test]
+    fn workflow_selection_requests_idle_inspector_after_run_is_cleared() {
+        // Given a workflow card selection expression.
+        let expression = selection_expression("review-pipeline")
+            .expect("the code-defined default input should serialize");
+
+        // When Datastar evaluates the expression, it must clear the retained run first.
+        let clear_run = expression
+            .find("$selectedRunId = ''")
+            .expect("workflow selection should clear the retained run");
+
+        // Then the server-rendered inspector must be refreshed using the cleared signal.
+        let refresh_inspector = expression
+            .find("@get('/actions/select-run')")
+            .expect("workflow selection should refresh the idle inspector");
+        assert!(clear_run < refresh_inspector);
+    }
 
     #[tokio::test]
     async fn recovery_host_contains_every_run_for_signal_owned_selection() {
