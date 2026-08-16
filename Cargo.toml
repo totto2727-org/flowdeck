@@ -75,23 +75,3 @@ empty_enums = "warn"
 exhaustive_enums = "warn"
 exhaustive_structs = "warn"
 multiple_crate_versions = "allow"
-
-[profile.release]
-opt-level = 3
-lto = "fat"
-codegen-units = 1
-strip = "symbols"
-panic = "abort"
-debug = "line-tables-only"
-
-[profile.dev]
-opt-level = 0
-debug = true
-incremental = true
-codegen-units = 256
-split-debuginfo = "unpacked"
-
-[profile.miri]
-inherits = "test"
-opt-level = 1
-overflow-checks = true
