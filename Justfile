@@ -2,20 +2,20 @@ set shell := ["bash", "-euo", "pipefail", "-c"]
 
 default: ci
 
-fix: fix-format fix-lint
+fix: fix-rustfmt fix-clippy
 
-fix-format:
+fix-rustfmt:
     cargo fmt --all
 
-fix-lint:
+fix-clippy:
     cargo clippy --fix --allow-dirty --allow-staged --all-targets --all-features -- -D warnings
 
-check: check-format check-lint
+check: check-rustfmt check-clippy
 
-check-format:
+check-rustfmt:
     cargo fmt --all --check
 
-check-lint:
+check-clippy:
     cargo clippy --all-targets --all-features -- -D warnings
 
 prebuild:
