@@ -13,6 +13,7 @@
       ];
       forEachSystem = nixpkgs.lib.genAttrs supportedSystems;
       overlay = final: _previous: {
+        topcoat-cli = final.callPackage ./topcoat.nix { };
         workflow-console-experiment = final.callPackage ./package.nix { };
       };
       mkPkgs =
@@ -31,7 +32,7 @@
           pkgs = mkPkgs system;
         in
         rec {
-          inherit (pkgs) workflow-console-experiment;
+          inherit (pkgs) topcoat-cli workflow-console-experiment;
           default = workflow-console-experiment;
         }
       );
@@ -46,6 +47,7 @@
             packages = [
               pkgs.just
               pkgs.rustup
+              pkgs.topcoat-cli
             ];
           };
         }

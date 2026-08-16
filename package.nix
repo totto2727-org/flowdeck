@@ -1,4 +1,8 @@
-{ lib, rustPlatform }:
+{
+  lib,
+  rustPlatform,
+  topcoat-cli,
+}:
 
 rustPlatform.buildRustPackage {
   pname = "workflow-console-experiment";
@@ -6,6 +10,14 @@ rustPlatform.buildRustPackage {
 
   src = lib.cleanSource ./.;
   cargoLock.lockFile = ./Cargo.lock;
+
+  postBuild = ''
+    ${topcoat-cli}/bin/topcoat asset bundle --release --out "$PWD/bundled-assets"
+  '';
+
+  postInstall = ''
+    cp -R bundled-assets "$out/assets"
+  '';
 
   meta = {
     description = "A local-only experiment for a workflow console built with Topcoat";

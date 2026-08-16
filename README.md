@@ -25,22 +25,22 @@ curl -i -X POST http://127.0.0.1:3000/api/runs \
 
 ## Prerequisites
 
-- **Rust 1.95**: Install the Rust toolchain selected by `rust-toolchain.toml`.
-- **Topcoat CLI 0.5**: Required locally to bundle the dashboard assets before startup.
+- **Nix**: Recommended for the packaged application and its bundled assets.
+- **Rust 1.95 and Topcoat CLI 0.5**: Required only when running directly through Cargo.
 
 ## Setup
 
-1. Install the matching Topcoat asset CLI.
+1. Run the packaged application with Nix.
+
+```bash
+nix run .
+```
+
+2. Alternatively, install the matching Topcoat asset CLI and run through Cargo.
 
 ```bash
 cargo install --version '0.5' topcoat-cli
-```
-
-2. Bundle the assets and start the local server.
-
-```bash
-topcoat asset bundle
-cargo run
+just run
 ```
 
 3. Open <http://127.0.0.1:3000/>.

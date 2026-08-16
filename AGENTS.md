@@ -14,6 +14,7 @@ tests/                       Rust integration tests and browser lifecycle test f
 Cargo.toml                   Rust package metadata, dependencies, and lint policy
 rust-toolchain.toml          Rust 1.95 toolchain, rustfmt, Clippy, and rust-src
 package.nix                  Installable Rust binary package
+topcoat.nix                  Reproducible Topcoat CLI 0.5 package
 flake.nix                    Nix package, overlay, and development shell
 Justfile                     Canonical development task entry points
 .github/workflows/           CI and FlakeHub publication workflows
@@ -26,8 +27,8 @@ Justfile                     Canonical development task entry points
 - Run every command from the repository root.
 - Enter the pinned environment with `nix develop` or allow `.envrc` with `direnv allow`.
 - Use the `Justfile` tasks as the canonical command interface.
-- Use `just prebuild` to run `topcoat asset bundle`; `build` and `run` depend on it automatically. `topcoat-cli` is intentionally not part of the Nix package or development shell yet.
-- The Nix package currently builds the Rust binary without the runtime Topcoat asset bundle; use `just run` for the complete local application surface.
+- Use `just prebuild` to run `topcoat asset bundle`; `build` and `run` depend on it automatically.
+- `package.nix` invokes the pinned Topcoat CLI directly when bundling release assets; Just remains the local development interface.
 - Keep FlakeHub publication changes scoped to `.github/workflows/flakehub-publish-rolling.yml` and the root flake.
 
 ### Standard tasks
@@ -64,8 +65,10 @@ Justfile                     Canonical development task entry points
 ### Packaging and automation
 
 - `package.nix` builds the Cargo binary from `Cargo.lock` through `rustPlatform.buildRustPackage`.
-- `flake.nix` exposes the default package, overlay, and a development shell containing rustup and Just.
-- `.github/workflows/ci.yml` enters the flake environment, installs Topcoat CLI 0.5, and runs `just ci` for pull requests and pushes to `main`.
+- `topcoat.nix` builds Topcoat CLI 0.5.0 from its crates.io release for development and application asset bundling.
+- `package.nix` invokes the release-profile Topcoat asset bundler after compiling and installs the resulting bundle beside the application binary.
+- `flake.nix` exposes the application and Topcoat CLI packages, the default overlay, and a development shell containing rustup, Just, and Topcoat CLI.
+- `.github/workflows/ci.yml` enters the flake environment and runs `just ci` for pull requests and pushes to `main`.
 - `.github/workflows/flakehub-publish-rolling.yml` publishes the root flake as a public rolling release after pushes to `main`.
 
 ## Development tools
