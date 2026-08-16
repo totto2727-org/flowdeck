@@ -6,6 +6,8 @@ A local-only workflow dashboard built with Topcoat, Datastar, Tailwind CSS, and 
 
 Open <http://127.0.0.1:3000/> after starting the server. Choose a workflow, enter its run arguments, and select **Run workflow**. Select any node or edge in the graph with a pointer, Enter, or Space to inspect its retained state, timing, output, error, and selected route.
 
+The server emits `tracing` events for its listening URL and completed HTTP requests. Set `RUST_LOG=workflow_console_experiment=info` to enable these application logs when a broader environment filter is already configured.
+
 Datastar sends the selected workflow and its workflow-owned input to the Rust action. A long-lived SSE response streams server-rendered snapshot patches, including cron-triggered runs, without browser polling:
 
 ```bash
