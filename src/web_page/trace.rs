@@ -50,18 +50,18 @@ async fn trace_panel(
     view! {
         <section class="grid gap-4 rounded-control border border-border bg-surface-elevated p-4" data-show=(visible) aria-labelledby=(format!("trace-title-{run_id}-{kind}-{target_id}"))>
             <div class="flex items-start justify-between gap-4">
-                <div><p class="text-xs font-semibold uppercase tracking-[0.04em] text-text-muted">"Step trace"</p><h3 class="text-lg font-semibold" id=(format!("trace-title-{run_id}-{kind}-{target_id}"))>(label)</h3></div>
+                <div><p class="text-xs font-semibold uppercase tracking-label text-text-muted">"Step trace"</p><h3 class="text-xl font-semibold" id=(format!("trace-title-{run_id}-{kind}-{target_id}"))>(label)</h3></div>
                 <span class="text-sm font-semibold text-text-secondary" data-testid="trace-status">(status)</span>
             </div>
-            <dl class="grid grid-cols-2 gap-3 max-[30rem]:grid-cols-1">
-                <div><dt class="text-xs font-semibold text-text-muted">"Started"</dt><dd class="mt-1 break-anywhere font-mono text-[0.8125rem]">(started)</dd></div>
-                <div><dt class="text-xs font-semibold text-text-muted">"Finished"</dt><dd class="mt-1 break-anywhere font-mono text-[0.8125rem]">(finished)</dd></div>
-                <div><dt class="text-xs font-semibold text-text-muted">"Duration"</dt><dd class="mt-1 font-mono text-[0.8125rem]">(duration)</dd></div>
-                <div><dt class="text-xs font-semibold text-text-muted">"Selected edge"</dt><dd class="mt-1 break-anywhere font-mono text-[0.8125rem]">(selected_edge)</dd></div>
+            <dl class="grid grid-cols-2 gap-3 max-trace:grid-cols-1">
+                <div><dt class="text-xs font-semibold text-text-muted">"Started"</dt><dd class="mt-1 break-anywhere font-mono text-[length:var(--type-code)]">(started)</dd></div>
+                <div><dt class="text-xs font-semibold text-text-muted">"Finished"</dt><dd class="mt-1 break-anywhere font-mono text-[length:var(--type-code)]">(finished)</dd></div>
+                <div><dt class="text-xs font-semibold text-text-muted">"Duration"</dt><dd class="mt-1 font-mono text-[length:var(--type-code)]">(duration)</dd></div>
+                <div><dt class="text-xs font-semibold text-text-muted">"Selected edge"</dt><dd class="mt-1 break-anywhere font-mono text-[length:var(--type-code)]">(selected_edge)</dd></div>
             </dl>
-            <div class="grid grid-cols-2 gap-3 max-[30rem]:grid-cols-1">
-                <div><p class="text-xs font-semibold uppercase tracking-[0.04em] text-text-muted">"State after node"</p><pre class="mt-2 min-h-28 overflow-auto whitespace-pre-wrap break-anywhere rounded-control bg-canvas p-3 font-mono text-[0.8125rem] text-text-secondary" data-testid="trace-state">(state)</pre></div>
-                <div><p class="text-xs font-semibold uppercase tracking-[0.04em] text-text-muted">"Output / error"</p><pre class="mt-2 min-h-28 overflow-auto whitespace-pre-wrap break-anywhere rounded-control bg-canvas p-3 font-mono text-[0.8125rem] text-text-secondary" data-testid="trace-output">(output)</pre></div>
+            <div class="grid grid-cols-2 gap-3 max-trace:grid-cols-1">
+                <div><p class="text-xs font-semibold uppercase tracking-label text-text-muted">"State after node"</p><pre class="mt-2 min-h-[var(--trace-output-min)] overflow-auto whitespace-pre-wrap break-anywhere rounded-control bg-canvas p-3 font-mono text-[length:var(--type-code)] text-text-secondary" data-testid="trace-state">(state)</pre></div>
+                <div><p class="text-xs font-semibold uppercase tracking-label text-text-muted">"Output / error"</p><pre class="mt-2 min-h-[var(--trace-output-min)] overflow-auto whitespace-pre-wrap break-anywhere rounded-control bg-canvas p-3 font-mono text-[length:var(--type-code)] text-text-secondary" data-testid="trace-output">(output)</pre></div>
             </div>
         </section>
     }

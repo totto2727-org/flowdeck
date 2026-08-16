@@ -17,7 +17,7 @@ pub(super) async fn workflow_topology(
     let description = topology_description(definition, run.as_ref());
     view! {
         <div class="max-w-full min-w-0 overflow-x-auto" tabindex="0" aria-label="Workflow topology, horizontally scrollable">
-            <svg class="topology block h-auto w-full min-w-[42.5rem]" viewBox="0 0 760 300" role="group" aria-labelledby=(format!("topology-title-{run_id} topology-desc-{run_id}"))>
+            <svg class="topology block h-auto w-full min-w-[var(--graph-min)]" viewBox="0 0 760 300" role="group" aria-labelledby=(format!("topology-title-{run_id} topology-desc-{run_id}"))>
                 <title id=(format!("topology-title-{run_id}"))>(format!("{} workflow topology", definition.name))</title>
                 <desc id=(format!("topology-desc-{run_id}"))>(description)</desc>
                 <defs><marker id=(format!("arrow-{run_id}")) viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"></path></marker></defs>

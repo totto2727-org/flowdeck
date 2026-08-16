@@ -17,7 +17,9 @@ use workflow_console_experiment::{
     workflow_input_form, workflow_schedules,
 };
 
-use self::console::{console_content, run_history, run_inspector, selected_inspector_host};
+use self::console::{
+    console_content, recovery_inspector_host, run_history, run_inspector, selected_inspector_host,
+};
 
 const DATASTAR_JS: Asset =
     asset!("https://cdn.jsdelivr.net/gh/starfederation/datastar@1.0.2/bundles/datastar.js");
@@ -52,14 +54,14 @@ async fn home(cx: &Cx) -> Result {
                 <title>"Workflow Console"</title>
             </head>
             <body data-signals=(signals_json) data-init="@get('/events')">
-                <header class="flex items-start justify-between gap-4 border-b border-border bg-surface px-4 py-4 sm:items-center sm:px-8">
-                    <div><p class="text-xs font-semibold uppercase tracking-[0.04em] text-text-muted">"Local operations"</p><h1 class="text-3xl font-semibold leading-tight tracking-[-0.01em]">"Workflow Console"</h1></div>
-                    <span class="rounded-control border border-border px-2 py-1 font-mono text-[0.8125rem] text-text-secondary">"In-memory"</span>
+                <header class="flex items-start justify-between gap-4 border-b border-border bg-surface px-4 py-4 lg:items-center lg:px-8">
+                    <div><p class="text-xs font-semibold uppercase tracking-label text-text-muted">"Local operations"</p><h1 class="text-3xl font-semibold tracking-title">"Workflow Console"</h1></div>
+                    <span class="rounded-control border border-border px-2 py-1 font-mono text-[length:var(--type-code)] text-text-secondary">"In-memory"</span>
                 </header>
-                <main class="mx-auto grid max-w-[72rem] min-w-0 grid-cols-1 gap-4 p-4 lg:grid-cols-[minmax(14rem,18rem)_minmax(0,1fr)] lg:p-6">
+                <main class="mx-auto grid max-w-[var(--content-max)] min-w-0 grid-cols-1 gap-4 p-4 lg:grid-cols-[minmax(var(--rail-min),var(--rail-max))_minmax(0,1fr)] lg:p-6">
                     workflow_rail()
                     <div class="min-w-0">
-                        <p id="request-message" class="mb-4 border-l-[3px] border-status-error bg-surface-elevated p-3" data-show="$requestMessage !== ''" data-text="$requestMessage" role="alert"></p>
+                        <p id="request-message" class="mb-4 border-l-[var(--error-border)] border-status-error bg-surface-elevated p-3" data-show="$requestMessage !== ''" data-text="$requestMessage" role="alert"></p>
                         console_content(runs: runs)
                     </div>
                 </main>
@@ -76,11 +78,11 @@ async fn workflow_rail() -> Result {
             <h2 id="workflows-title" class="text-xl font-semibold">"Workflows"</h2>
             <div class="mt-4 grid gap-3" role="group" aria-label="Code-defined workflows">
                 for definition in workflow_definitions() {
-                    <button type="button" class="grid w-full gap-2 rounded-control border border-border bg-surface-elevated p-4 text-left text-text-primary shadow-inset transition-[filter] duration-150 hover:brightness-110 aria-[pressed=true]:border-focus aria-[pressed=true]:shadow-[0_0_0_0.0625rem_var(--color-focus)]" data-attr:aria-pressed=(format!("$selectedWorkflowId === '{}'", definition.workflow_id)) data-on:click=(selection_expression(definition.workflow_id)?)>
-                        <span class="text-xs font-semibold uppercase tracking-[0.04em] text-text-muted">"Code-defined"</span>
-                        <strong>(definition.name)</strong><span class="text-sm text-text-muted">(definition.description)</span><code class="font-mono text-[0.8125rem]">(definition.workflow_id)</code>
+                    <button type="button" class="grid w-full gap-2 rounded-control border border-border bg-surface-elevated p-4 text-left text-text-primary shadow-inset transition-[filter] duration-[var(--motion-micro)] ease-[var(--ease-standard)] hover:brightness-110 aria-[pressed=true]:border-focus" data-attr:aria-pressed=(format!("$selectedWorkflowId === '{}'", definition.workflow_id)) data-on:click=(selection_expression(definition.workflow_id)?)>
+                        <span class="text-xs font-semibold uppercase tracking-label text-text-muted">"Code-defined"</span>
+                        <strong>(definition.name)</strong><span class="text-sm text-text-muted">(definition.description)</span><code class="font-mono text-[length:var(--type-code)]">(definition.workflow_id)</code>
                         for schedule in schedules.iter().filter(|schedule| schedule.workflow_id == definition.workflow_id) {
-                            <span class="grid gap-1 border-t border-border pt-3"><span class="text-xs font-semibold uppercase tracking-[0.04em] text-text-muted">"Cron schedule"</span><code class="break-anywhere font-mono text-[0.8125rem] text-status-healthy">(schedule.cron_expression)</code><span class="text-sm text-text-muted">(schedule.input_summary)</span></span>
+                            <span class="grid gap-1 border-t border-border pt-3"><span class="text-xs font-semibold uppercase tracking-label text-text-muted">"Cron schedule"</span><code class="break-anywhere font-mono text-[length:var(--type-code)] text-status-healthy">(schedule.cron_expression)</code><span class="text-sm text-text-muted">(schedule.input_summary)</span></span>
                         }
                     </button>
                 }
@@ -117,6 +119,19 @@ pub(crate) async fn render_selected_host(
     let cx = topcoat::context::CxTestBuilder::new().build();
     let __cx = &cx;
     let rendered = view! { selected_inspector_host(run: run) }?;
+    Ok(rendered.render(&cx))
+}
+
+#[allow(
+    clippy::redundant_pub_crate,
+    reason = "The route sibling renders this otherwise private page fragment."
+)]
+pub(crate) async fn render_recovery_host(service: &WorkflowService) -> Result<String> {
+    let mut runs = service.list_runs().await;
+    runs.reverse();
+    let cx = topcoat::context::CxTestBuilder::new().build();
+    let __cx = &cx;
+    let rendered = view! { recovery_inspector_host(runs: runs) }?;
     Ok(rendered.render(&cx))
 }
 
@@ -171,4 +186,41 @@ fn selection_expression(workflow_id: &str) -> Result<String> {
     Ok(format!(
         "$selectedWorkflowId = '{workflow_id}'; $selectedRunId = ''; $selectedTraceKind = 'node'; $selectedTraceId = ''; $input = {input}; $requestMessage = ''"
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+    use workflow_console_experiment::{RunTrigger, WorkflowService, workflow_id};
+
+    use super::render_recovery_host;
+
+    #[tokio::test]
+    async fn recovery_host_contains_every_run_for_signal_owned_selection() {
+        let service = WorkflowService::new().expect("code-defined workflows should build");
+        let demo = service
+            .start(
+                workflow_id(),
+                json!({ "label": "recovery", "step_delay_ms": 100 }),
+                RunTrigger::Manual,
+            )
+            .await
+            .expect("demo workflow should start");
+        let review = service
+            .start(
+                "review-pipeline",
+                json!({ "subject": "recovery", "reviewer": "qa" }),
+                RunTrigger::Manual,
+            )
+            .await
+            .expect("review workflow should start");
+
+        let html = render_recovery_host(&service)
+            .await
+            .expect("recovery fragment should render");
+
+        assert!(html.contains(&format!("run-{}-inspector", demo.run_id)));
+        assert!(html.contains(&format!("run-{}-inspector", review.run_id)));
+        assert!(html.contains("$selectedRunId ==="));
+    }
 }

@@ -42,6 +42,8 @@ All future CSS type values must be declared here before use.
 | Compact body | `--type-body-compact` | `0.875rem` | 400 | 1.45 | `0` |
 | Label | `--type-label` | `0.75rem` | 600 | 1.4 | `0.04em` |
 | Code | `--type-code` | `0.8125rem` | 400 | 1.5 | `0` |
+| Graph label | `--type-graph-label` | `0.75rem` | 700 | 1 | `0` |
+| Graph state | `--type-graph-state` | `0.625rem` | 400 | 1 | `0` |
 
 - UI stack: `Rubik, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`.
 - Mono stack: `Monaco, Menlo, "Ubuntu Mono", monospace`.
@@ -66,7 +68,14 @@ All future CSS spacing, radii, widths, and layout tokens must be declared here b
 | `--control-min` | `2.75rem` | Minimum keyboard and touch target |
 | `--graph-min` | `42.5rem` | Topology canvas inside its scroll owner |
 | `--table-min` | `56rem` | History table with trigger and input columns inside its scroll owner |
+| `--rail-min` | `14rem` | Workflow rail minimum width above the wide-layout breakpoint |
+| `--rail-max` | `18rem` | Workflow rail maximum width above the wide-layout breakpoint |
+| `--summary-min` | `7rem` | Compact metadata column minimum width |
+| `--trace-output-min` | `7rem` | State and output trace block minimum height |
+| `--error-border` | `0.1875rem` | Request and execution error accent border |
 | `--border-width` | `0.0625rem` | Dense structural dividers |
+| `--breakpoint-trace` | `30rem` | Trace metadata changes to one column below this width |
+| `--breakpoint-lg` | `60rem` | Rail and inspector change to the wide layout |
 
 - The document owns vertical scrolling. The topology and history wrappers alone own horizontal scrolling.
 - The page uses one readable column at 375px and a workflow rail plus inspection region above 60rem. Primary content never scrolls horizontally.

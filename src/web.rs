@@ -13,7 +13,9 @@ use topcoat::{
 };
 use workflow_console_experiment::{RunTrigger, WorkflowEvent, WorkflowService};
 
-use crate::web_page::{render_history, render_run_inspector, render_selected_host};
+use crate::web_page::{
+    render_history, render_recovery_host, render_run_inspector, render_selected_host,
+};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -113,7 +115,7 @@ async fn events(
                 }
                 Err(RecvError::Lagged(_)) => {
                     yield history_event(&service).await;
-                    yield selected_host_event(&service, &selected_run_id).await;
+                    yield recovery_host_event(&service).await;
                 }
                 Err(RecvError::Closed) => break,
             }
@@ -128,6 +130,10 @@ async fn history_event(service: &WorkflowService) -> Result<Event> {
 
 async fn selected_host_event(service: &WorkflowService, run_id: &str) -> Result<Event> {
     Ok(PatchElements::new(render_selected_host(service, run_id).await?).into())
+}
+
+async fn recovery_host_event(service: &WorkflowService) -> Result<Event> {
+    Ok(PatchElements::new(render_recovery_host(service).await?).into())
 }
 
 fn event_run_id(event: &WorkflowEvent) -> Option<&str> {
