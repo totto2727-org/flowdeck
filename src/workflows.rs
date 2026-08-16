@@ -82,6 +82,15 @@ pub async fn workflow_input_form(workflow_id: &str, active: bool) -> Result {
     }
 }
 
+/// Return the input defaults owned by one registered workflow.
+pub fn workflow_default_input(workflow_id: &str) -> Value {
+    match workflow_id {
+        demo::WORKFLOW_ID => demo::default_input(),
+        review::WORKFLOW_ID => review::default_input(),
+        _ => Value::Object(serde_json::Map::new()),
+    }
+}
+
 pub(crate) const fn default_definition() -> &'static WorkflowDefinition {
     &demo::DEFINITION
 }

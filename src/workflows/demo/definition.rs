@@ -1,3 +1,4 @@
+use garde::Validate;
 use graph_flow::GraphBuilder;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -15,10 +16,12 @@ use crate::{RunInput, ScheduleSpec, WorkflowError};
 pub(super) const WORKFLOW_ID: &str = "demo-workflow";
 const BRANCH_KEY: &str = "branch_yes";
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Validate)]
 #[serde(deny_unknown_fields)]
 struct DemoInput {
+    #[garde(custom(validate_non_blank), length(chars, max = 80))]
     label: String,
+    #[garde(range(min = 100, max = 2_000))]
     step_delay_ms: u64,
 }
 
@@ -100,14 +103,19 @@ pub(super) const SCHEDULES: [ScheduleSpec; 1] = [ScheduleSpec {
 
 #[component]
 pub(super) async fn input_form(active: bool) -> Result {
+    let _ = active;
     view! {
-        <form class="run-form" data-workflow-run-form="" data-workflow-id=(WORKFLOW_ID) data-active=(active.to_string()) aria-labelledby="demo-run-form-title">
-            <div><p class="eyebrow">"Run selected"</p><h3 id="demo-run-form-title">"Branch and converge"</h3></div>
-            <label class="field" for="demo-run-label"><span>"Run label"</span><input id="demo-run-label" name="label" type="text" value="manual branch run" required="required" maxlength="80"></label>
-            <label class="field" for="demo-step-delay"><span>"Step delay (ms)"</span><input id="demo-step-delay" name="step_delay_ms" data-json-type="number" type="number" value="350" min="100" max="2000" step="10" required="required"></label>
-            <button type="submit" data-run-workflow="">"Run workflow"</button>
+        <form class="mt-4 grid gap-3 border-t border-border pt-4" data-show=(format!("$selectedWorkflowId === '{WORKFLOW_ID}'")) data-workflow-id=(WORKFLOW_ID) data-on:submit="@post('/actions/runs')" data-indicator="_requesting" aria-labelledby="demo-run-form-title">
+            <div><p class="text-xs font-semibold uppercase tracking-[0.04em] text-text-muted">"Run selected"</p><h3 class="text-lg font-semibold" id="demo-run-form-title">"Branch and converge"</h3></div>
+            <label class="grid gap-1 text-sm font-semibold text-text-secondary" for="demo-run-label"><span>"Run label"</span><input class="min-h-11 min-w-0 w-full rounded-control border border-border bg-canvas px-3 text-text-primary shadow-inset" id="demo-run-label" name="label" type="text" data-bind="input.label" required="required" maxlength="80"></label>
+            <label class="grid gap-1 text-sm font-semibold text-text-secondary" for="demo-step-delay"><span>"Step delay (ms)"</span><input class="min-h-11 min-w-0 w-full rounded-control border border-border bg-canvas px-3 text-text-primary shadow-inset" id="demo-step-delay" name="step_delay_ms" type="number" data-bind="input.step_delay_ms" min="100" max="2000" step="10" required="required"></label>
+            <button class="min-h-11 rounded-control border border-accent-hover bg-accent px-4 font-semibold text-text-primary shadow-inset transition-[filter,transform] duration-150 hover:brightness-110 active:translate-y-px disabled:cursor-wait disabled:opacity-65" type="submit" data-attr:disabled="$_requesting">"Run workflow"</button>
         </form>
     }
+}
+
+pub(super) fn default_input() -> Value {
+    json!({ "label": "manual branch run", "step_delay_ms": 350 })
 }
 
 pub(super) fn parse_input(value: Value) -> Result<RunInput, WorkflowError> {
@@ -116,22 +124,28 @@ pub(super) fn parse_input(value: Value) -> Result<RunInput, WorkflowError> {
             message: format!("{WORKFLOW_ID}: {error}"),
         }
     })?;
+    input
+        .validate()
+        .map_err(|error| WorkflowError::InvalidInput {
+            message: format!("{WORKFLOW_ID}: {error}"),
+        })?;
     let label = input.label.trim().to_owned();
-    if label.is_empty() || label.chars().count() > 80 {
-        return Err(WorkflowError::InvalidInput {
-            message: format!("{WORKFLOW_ID}: label must contain between 1 and 80 characters"),
-        });
-    }
-    if !(100..=2_000).contains(&input.step_delay_ms) {
-        return Err(WorkflowError::InvalidInput {
-            message: format!("{WORKFLOW_ID}: step_delay_ms must be between 100 and 2000"),
-        });
-    }
     let summary = format!("{label} · {} ms", input.step_delay_ms);
     Ok(RunInput::new(
         json!({ "label": label, "step_delay_ms": input.step_delay_ms }),
         summary,
     ))
+}
+
+#[allow(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "Garde custom validators receive their context by reference."
+)]
+fn validate_non_blank(value: &str, _: &()) -> garde::Result {
+    if value.trim().is_empty() {
+        return Err(garde::Error::new("must not be blank"));
+    }
+    Ok(())
 }
 
 pub(super) fn scheduled_input(schedule_id: &str) -> Result<Value, WorkflowError> {

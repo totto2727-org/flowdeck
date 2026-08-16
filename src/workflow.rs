@@ -2,7 +2,7 @@ use std::{collections::HashMap, fmt, sync::Arc, time::SystemTime};
 
 use graph_flow::{FlowRunner, InMemorySessionStorage, Session, SessionStorage};
 use serde_json::Value;
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, broadcast};
 use uuid::Uuid;
 
 use crate::{
@@ -15,10 +15,13 @@ use crate::{
 
 #[path = "workflow/driver.rs"]
 mod driver;
+#[path = "workflow/events.rs"]
+mod events;
 
 use driver::drive;
+pub use events::WorkflowEvent;
 
-/// Cloneable local boundary for workflow starts, listing, and polling.
+/// Cloneable local boundary for workflow starts, listing, and event subscription.
 #[derive(Clone)]
 pub struct WorkflowService {
     inner: Arc<Inner>,
@@ -35,6 +38,7 @@ impl fmt::Debug for WorkflowService {
 struct Inner {
     runtimes: HashMap<&'static str, WorkflowRuntime>,
     runs: RwLock<Vec<RunSnapshot>>,
+    events: broadcast::Sender<WorkflowEvent>,
 }
 
 struct WorkflowRuntime {
@@ -61,10 +65,12 @@ impl WorkflowService {
                 },
             );
         }
+        let (events, _) = broadcast::channel(128);
         Ok(Self {
             inner: Arc::new(Inner {
                 runtimes,
                 runs: RwLock::new(Vec::new()),
+                events,
             }),
         })
     }
@@ -119,10 +125,21 @@ impl WorkflowService {
             duration: None,
             steps: Vec::new(),
         };
-        self.inner.runs.write().await.push(snapshot.clone());
+        {
+            self.inner.runs.write().await.push(snapshot.clone());
+        }
+        let _ = self.inner.events.send(WorkflowEvent::RunStarted {
+            run_id: run_id.clone(),
+            workflow_id: definition.workflow_id.to_owned(),
+        });
         let inner = Arc::clone(&self.inner);
         tokio::spawn(async move { drive(inner, run_id, definition.workflow_id).await });
         Ok(snapshot)
+    }
+
+    /// Subscribe to future workflow lifecycle notifications.
+    pub fn subscribe(&self) -> broadcast::Receiver<WorkflowEvent> {
+        self.inner.events.subscribe()
     }
 
     /// List all retained snapshots in start order.

@@ -12,11 +12,12 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-pub use workflow::WorkflowService;
+pub use workflow::{WorkflowEvent, WorkflowService};
 pub use workflow_scheduler::{ScheduleSpec, workflow_schedules};
 pub use workflow_trace::{StepState, StepTrace, StepTraceStatus};
 pub use workflows::{
-    EdgeSpec, NodeSpec, WorkflowDefinition, workflow_definitions, workflow_input_form,
+    EdgeSpec, NodeSpec, WorkflowDefinition, workflow_default_input, workflow_definitions,
+    workflow_input_form,
 };
 
 /// Return the only workflow ID accepted by this local experiment.
@@ -75,7 +76,7 @@ pub enum RunTrigger {
     },
 }
 
-/// Immutable state returned by workflow start, list, and polling calls.
+/// Immutable state returned by workflow start and list calls.
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub struct RunSnapshot {

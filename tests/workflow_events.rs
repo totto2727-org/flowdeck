@@ -1,0 +1,120 @@
+//! Integration coverage for workflow lifecycle notifications.
+
+use std::time::Duration;
+
+use serde_json::json;
+use workflow_console_experiment::{
+    RunStatus, RunTrigger, StepTraceStatus, WorkflowEvent, WorkflowService,
+};
+
+#[allow(
+    clippy::manual_let_else,
+    reason = "The explicit match keeps every non-exhaustive event variant mapped to its run ID."
+)]
+#[tokio::test]
+async fn workflow_events_when_run_executes_are_ordered_and_snapshot_consistent() {
+    // Given: a subscriber attached before a workflow begins.
+    let service = WorkflowService::new().expect("the code-defined workflows should build");
+    let mut events = service.subscribe();
+
+    // When: the workflow is started and driven to its terminal state.
+    let started = service
+        .start(
+            "review-pipeline",
+            json!({ "subject": "release candidate", "reviewer": "local operator" }),
+            RunTrigger::Manual,
+        )
+        .await
+        .expect("the linear workflow should start");
+    let mut received = Vec::new();
+    for _ in 0..10 {
+        let event = tokio::time::timeout(Duration::from_secs(3), events.recv())
+            .await
+            .expect("each lifecycle notification should arrive")
+            .expect("the subscribed receiver should not lag");
+        let run_id = match &event {
+            WorkflowEvent::RunStarted { run_id, .. }
+            | WorkflowEvent::NodeStarted { run_id, .. }
+            | WorkflowEvent::NodeCompleted { run_id, .. }
+            | WorkflowEvent::RunCompleted { run_id, .. }
+            | WorkflowEvent::RunFailed { run_id, .. } => run_id,
+            _ => panic!("unknown workflow event"),
+        };
+        let snapshot = service
+            .get_run(run_id)
+            .await
+            .expect("an emitted event must reference a retained snapshot");
+        match &event {
+            WorkflowEvent::RunStarted { workflow_id, .. } => {
+                assert_eq!(snapshot.workflow_id, *workflow_id);
+            }
+            WorkflowEvent::NodeStarted { node_id, .. } => {
+                assert!(snapshot.steps.iter().any(|step| step.node_id == *node_id));
+            }
+            WorkflowEvent::NodeCompleted {
+                node_id, edge_id, ..
+            } => {
+                let step = snapshot
+                    .steps
+                    .iter()
+                    .find(|step| step.node_id == *node_id)
+                    .expect("completed event must follow a retained step update");
+                assert_eq!(step.status, StepTraceStatus::Completed);
+                assert_eq!(step.selected_edge.as_deref(), edge_id.as_deref());
+            }
+            WorkflowEvent::RunCompleted { .. } => {
+                assert!(matches!(snapshot.status, RunStatus::Completed));
+            }
+            WorkflowEvent::RunFailed { .. } => panic!("the linear workflow should not fail"),
+            _ => panic!("unknown workflow event"),
+        }
+        received.push(event);
+    }
+
+    // Then: every lifecycle transition is observable after its snapshot mutation.
+    let [
+        started_event,
+        receive_started,
+        receive_completed,
+        inspect_started,
+        inspect_completed,
+        approve_started,
+        approve_completed,
+        archive_started,
+        archive_completed,
+        completed_event,
+    ] = received.as_slice()
+    else {
+        panic!("the workflow should emit ten ordered lifecycle notifications");
+    };
+    assert!(
+        matches!(started_event, WorkflowEvent::RunStarted { run_id, workflow_id } if *run_id == started.run_id && workflow_id == "review-pipeline")
+    );
+    assert!(
+        matches!(receive_started, WorkflowEvent::NodeStarted { node_id, .. } if node_id == "receive")
+    );
+    assert!(
+        matches!(receive_completed, WorkflowEvent::NodeCompleted { node_id, edge_id, .. } if node_id == "receive" && edge_id.as_deref() == Some("receive-to-inspect"))
+    );
+    assert!(
+        matches!(inspect_started, WorkflowEvent::NodeStarted { node_id, .. } if node_id == "inspect")
+    );
+    assert!(
+        matches!(inspect_completed, WorkflowEvent::NodeCompleted { node_id, edge_id, .. } if node_id == "inspect" && edge_id.as_deref() == Some("inspect-to-approve"))
+    );
+    assert!(
+        matches!(approve_started, WorkflowEvent::NodeStarted { node_id, .. } if node_id == "approve")
+    );
+    assert!(
+        matches!(approve_completed, WorkflowEvent::NodeCompleted { node_id, edge_id, .. } if node_id == "approve" && edge_id.as_deref() == Some("approve-to-archive"))
+    );
+    assert!(
+        matches!(archive_started, WorkflowEvent::NodeStarted { node_id, .. } if node_id == "archive")
+    );
+    assert!(
+        matches!(archive_completed, WorkflowEvent::NodeCompleted { node_id, edge_id, .. } if node_id == "archive" && edge_id.is_none())
+    );
+    assert!(
+        matches!(completed_event, WorkflowEvent::RunCompleted { run_id, .. } if *run_id == started.run_id)
+    );
+}

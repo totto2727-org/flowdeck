@@ -1,3 +1,4 @@
+use garde::Validate;
 use graph_flow::GraphBuilder;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -14,10 +15,12 @@ use crate::{RunInput, WorkflowError};
 
 pub(super) const WORKFLOW_ID: &str = "review-pipeline";
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Validate)]
 #[serde(deny_unknown_fields)]
 struct ReviewInput {
+    #[garde(custom(validate_non_blank), length(chars, max = 80))]
     subject: String,
+    #[garde(custom(validate_non_blank), length(chars, max = 80))]
     reviewer: String,
 }
 
@@ -69,14 +72,19 @@ pub(super) const DEFINITION: WorkflowDefinition = WorkflowDefinition {
 
 #[component]
 pub(super) async fn input_form(active: bool) -> Result {
+    let _ = active;
     view! {
-        <form class="run-form" data-workflow-run-form="" data-workflow-id=(WORKFLOW_ID) data-active=(active.to_string()) aria-labelledby="review-run-form-title">
-            <div><p class="eyebrow">"Run selected"</p><h3 id="review-run-form-title">"Review pipeline"</h3></div>
-            <label class="field" for="review-subject"><span>"Review subject"</span><input id="review-subject" name="subject" type="text" value="release candidate" required="required" maxlength="80"></label>
-            <label class="field" for="review-reviewer"><span>"Reviewer"</span><input id="review-reviewer" name="reviewer" type="text" value="local operator" required="required" maxlength="80"></label>
-            <button type="submit" data-run-workflow="">"Run workflow"</button>
+        <form class="mt-4 grid gap-3 border-t border-border pt-4" data-show=(format!("$selectedWorkflowId === '{WORKFLOW_ID}'")) data-workflow-id=(WORKFLOW_ID) data-on:submit="@post('/actions/runs')" data-indicator="_requesting" aria-labelledby="review-run-form-title">
+            <div><p class="text-xs font-semibold uppercase tracking-[0.04em] text-text-muted">"Run selected"</p><h3 class="text-lg font-semibold" id="review-run-form-title">"Review pipeline"</h3></div>
+            <label class="grid gap-1 text-sm font-semibold text-text-secondary" for="review-subject"><span>"Review subject"</span><input class="min-h-11 min-w-0 w-full rounded-control border border-border bg-canvas px-3 text-text-primary shadow-inset" id="review-subject" name="subject" type="text" data-bind="input.subject" required="required" maxlength="80"></label>
+            <label class="grid gap-1 text-sm font-semibold text-text-secondary" for="review-reviewer"><span>"Reviewer"</span><input class="min-h-11 min-w-0 w-full rounded-control border border-border bg-canvas px-3 text-text-primary shadow-inset" id="review-reviewer" name="reviewer" type="text" data-bind="input.reviewer" required="required" maxlength="80"></label>
+            <button class="min-h-11 rounded-control border border-accent-hover bg-accent px-4 font-semibold text-text-primary shadow-inset transition-[filter,transform] duration-150 hover:brightness-110 active:translate-y-px disabled:cursor-wait disabled:opacity-65" type="submit" data-attr:disabled="$_requesting">"Run workflow"</button>
         </form>
     }
+}
+
+pub(super) fn default_input() -> Value {
+    json!({ "subject": "release candidate", "reviewer": "local operator" })
 }
 
 pub(super) fn parse_input(value: Value) -> Result<RunInput, WorkflowError> {
@@ -85,8 +93,13 @@ pub(super) fn parse_input(value: Value) -> Result<RunInput, WorkflowError> {
             message: format!("{WORKFLOW_ID}: {error}"),
         }
     })?;
-    let subject = parse_text("subject", &input.subject)?;
-    let reviewer = parse_text("reviewer", &input.reviewer)?;
+    input
+        .validate()
+        .map_err(|error| WorkflowError::InvalidInput {
+            message: format!("{WORKFLOW_ID}: {error}"),
+        })?;
+    let subject = input.subject.trim().to_owned();
+    let reviewer = input.reviewer.trim().to_owned();
     let summary = format!("{subject} · reviewer {reviewer}");
     Ok(RunInput::new(
         json!({ "subject": subject, "reviewer": reviewer }),
@@ -94,14 +107,15 @@ pub(super) fn parse_input(value: Value) -> Result<RunInput, WorkflowError> {
     ))
 }
 
-fn parse_text(field: &str, value: &str) -> Result<String, WorkflowError> {
-    let value = value.trim().to_owned();
-    if value.is_empty() || value.chars().count() > 80 {
-        return Err(WorkflowError::InvalidInput {
-            message: format!("{WORKFLOW_ID}: {field} must contain between 1 and 80 characters"),
-        });
+#[allow(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "Garde custom validators receive their context by reference."
+)]
+fn validate_non_blank(value: &str, _: &()) -> garde::Result {
+    if value.trim().is_empty() {
+        return Err(garde::Error::new("must not be blank"));
     }
-    Ok(value)
+    Ok(())
 }
 
 pub(super) fn build_graph() -> Result<graph_flow::Graph, WorkflowError> {

@@ -236,3 +236,35 @@ async fn workflow_specific_input_rejects_another_workflows_fields() {
     assert!(matches!(result, Err(WorkflowError::InvalidInput { .. })));
     assert!(service.list_runs().await.is_empty());
 }
+
+#[tokio::test]
+async fn demo_input_rejects_label_longer_than_80_unicode_scalars_before_trim() {
+    let service = WorkflowService::new().expect("the code-defined workflow should build");
+    let label = format!(" {} ", "界".repeat(80));
+
+    let result = service
+        .start(
+            "demo-workflow",
+            json!({ "label": label, "step_delay_ms": 350 }),
+            RunTrigger::Manual,
+        )
+        .await;
+
+    assert!(matches!(result, Err(WorkflowError::InvalidInput { .. })));
+}
+
+#[tokio::test]
+async fn review_input_rejects_subject_longer_than_80_unicode_scalars_before_trim() {
+    let service = WorkflowService::new().expect("the code-defined workflow should build");
+    let subject = format!(" {} ", "界".repeat(80));
+
+    let result = service
+        .start(
+            "review-pipeline",
+            json!({ "subject": subject, "reviewer": "local operator" }),
+            RunTrigger::Manual,
+        )
+        .await;
+
+    assert!(matches!(result, Err(WorkflowError::InvalidInput { .. })));
+}

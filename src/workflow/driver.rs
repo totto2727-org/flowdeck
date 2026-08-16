@@ -3,7 +3,7 @@ use std::{sync::Arc, time::SystemTime};
 use graph_flow::{ExecutionStatus, SessionStorage};
 
 use super::{Inner, WorkflowRuntime};
-use crate::{EdgeSpec, RunId, RunSnapshot, RunStatus, StepState};
+use crate::{EdgeSpec, RunId, RunSnapshot, RunStatus, StepState, WorkflowEvent};
 
 struct StepCompletion<'a> {
     current: &'a str,
@@ -79,10 +79,21 @@ pub(super) async fn drive(inner: Arc<Inner>, run_id: RunId, workflow_id: &'stati
 }
 
 async fn record_step_start(inner: &Inner, run_id: &RunId, current: &str) {
-    let mut runs = inner.runs.write().await;
-    if let Some(snapshot) = runs.iter_mut().find(|snapshot| snapshot.run_id == *run_id) {
+    let event = {
+        let mut runs = inner.runs.write().await;
+        let Some(snapshot) = runs.iter_mut().find(|snapshot| snapshot.run_id == *run_id) else {
+            return;
+        };
         snapshot.begin_step(current);
-    }
+        let event = WorkflowEvent::NodeStarted {
+            run_id: run_id.clone(),
+            workflow_id: snapshot.workflow_id.clone(),
+            node_id: current.to_owned(),
+        };
+        drop(runs);
+        event
+    };
+    let _ = inner.events.send(event);
 }
 
 async fn current_node(inner: &Inner, run_id: &RunId) -> Option<String> {
@@ -101,48 +112,81 @@ async fn record_step(
     runtime: &WorkflowRuntime,
     completion: StepCompletion<'_>,
 ) {
-    let mut runs = inner.runs.write().await;
-    let Some(snapshot) = runs.iter_mut().find(|snapshot| snapshot.run_id == *run_id) else {
-        return;
+    let (node_completed, run_completed) = {
+        let mut runs = inner.runs.write().await;
+        let Some(snapshot) = runs.iter_mut().find(|snapshot| snapshot.run_id == *run_id) else {
+            return;
+        };
+        if snapshot
+            .traversed_nodes
+            .last()
+            .is_none_or(|node| node != completion.current)
+        {
+            snapshot.traversed_nodes.push(completion.current.to_owned());
+        }
+        let edge_id = matching_edge(runtime, completion.current, completion.next)
+            .map(|edge| edge.id.to_owned());
+        snapshot.finish_step(
+            completion.current,
+            edge_id.as_deref(),
+            completion.output,
+            completion.state,
+        );
+        if let Some(edge_id) = &edge_id {
+            snapshot.current_edge = Some(edge_id.clone());
+            snapshot.traversed_edges.push(edge_id.clone());
+        }
+        snapshot.current_node = Some(completion.next.to_owned());
+        snapshot.route_summary = route_summary(snapshot);
+        let node_completed = WorkflowEvent::NodeCompleted {
+            run_id: run_id.clone(),
+            workflow_id: snapshot.workflow_id.clone(),
+            node_id: completion.current.to_owned(),
+            edge_id,
+        };
+        let run_completed = if completion.terminal {
+            snapshot.status = RunStatus::Completed;
+            let finished_at = SystemTime::now();
+            snapshot.duration = finished_at.duration_since(snapshot.started_at).ok();
+            snapshot.finished_at = Some(finished_at);
+            Some(WorkflowEvent::RunCompleted {
+                run_id: run_id.clone(),
+                workflow_id: snapshot.workflow_id.clone(),
+            })
+        } else {
+            None
+        };
+        drop(runs);
+        (node_completed, run_completed)
     };
-    if snapshot
-        .traversed_nodes
-        .last()
-        .is_none_or(|node| node != completion.current)
-    {
-        snapshot.traversed_nodes.push(completion.current.to_owned());
+    let _ = inner.events.send(node_completed);
+    if let Some(run_completed) = run_completed {
+        let _ = inner.events.send(run_completed);
     }
-    let edge = matching_edge(runtime, completion.current, completion.next);
-    snapshot.finish_step(
-        completion.current,
-        edge.map(|edge| edge.id),
-        completion.output,
-        completion.state,
-    );
-    if let Some(edge) = edge {
-        snapshot.current_edge = Some(edge.id.to_owned());
-        snapshot.traversed_edges.push(edge.id.to_owned());
-    }
-    snapshot.current_node = Some(completion.next.to_owned());
-    snapshot.route_summary = route_summary(snapshot);
-    if completion.terminal {
-        snapshot.status = RunStatus::Completed;
-        let finished_at = SystemTime::now();
-        snapshot.duration = finished_at.duration_since(snapshot.started_at).ok();
-        snapshot.finished_at = Some(finished_at);
-    }
-    drop(runs);
 }
 
 async fn record_failure(inner: &Inner, run_id: &RunId, message: String) {
-    let mut runs = inner.runs.write().await;
-    if let Some(snapshot) = runs.iter_mut().find(|snapshot| snapshot.run_id == *run_id) {
+    let event = {
+        let mut runs = inner.runs.write().await;
+        let Some(snapshot) = runs.iter_mut().find(|snapshot| snapshot.run_id == *run_id) else {
+            return;
+        };
         let finished_at = SystemTime::now();
         snapshot.fail_step(&message, finished_at);
         snapshot.duration = finished_at.duration_since(snapshot.started_at).ok();
         snapshot.finished_at = Some(finished_at);
-        snapshot.status = RunStatus::Failed { message };
-    }
+        snapshot.status = RunStatus::Failed {
+            message: message.clone(),
+        };
+        let event = WorkflowEvent::RunFailed {
+            run_id: run_id.clone(),
+            workflow_id: snapshot.workflow_id.clone(),
+            message,
+        };
+        drop(runs);
+        event
+    };
+    let _ = inner.events.send(event);
 }
 
 fn matching_edge(
