@@ -51,20 +51,46 @@ async fn home(cx: &Cx) -> Result {
             <head>
                 <meta charset="utf-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1">
-                <meta name="description" content="Inspect and run local code-defined workflows">
+                <meta
+                    name="description"
+                    content="Inspect and run local code-defined workflows"
+                >
                 <link rel="stylesheet" href=(topcoat::tailwind::stylesheet!())>
                 <script type="module" src=(DATASTAR_JS)></script>
                 <title>"Workflow Console"</title>
             </head>
             <body data-signals=(signals_json) data-init="@get('/events')">
-                <header class="flex items-start justify-between gap-4 border-b border-border bg-surface px-4 py-4 lg:items-center lg:px-8">
-                    <div><p class="text-xs font-semibold uppercase tracking-label text-text-muted">"Local operations"</p><h1 class="text-3xl font-semibold tracking-title">"Workflow Console"</h1></div>
-                    <span class="rounded-control border border-border px-2 py-1 font-mono text-[length:var(--type-code)] text-text-secondary">"In-memory"</span>
+                <header
+                    class="flex items-start justify-between gap-4 border-b border-border bg-surface px-4 py-4 lg:items-center lg:px-8"
+                >
+                    <div>
+                        <p
+                            class="text-xs font-semibold uppercase tracking-label text-text-muted"
+                        >
+                            "Local operations"
+                        </p>
+                        <h1 class="text-3xl font-semibold tracking-title">
+                            "Workflow Console"
+                        </h1>
+                    </div>
+                    <span
+                        class="rounded-control border border-border px-2 py-1 font-mono text-[length:var(--type-code)] text-text-secondary"
+                    >
+                        "In-memory"
+                    </span>
                 </header>
-                <main class="grid w-full min-w-0 grid-cols-1 gap-4 p-4 lg:grid-cols-[minmax(var(--rail-min),var(--rail-max))_minmax(0,1fr)] lg:p-6">
+                <main
+                    class="grid w-full min-w-0 grid-cols-1 gap-4 p-4 lg:grid-cols-[minmax(var(--rail-min),var(--rail-max))_minmax(0,1fr)] lg:p-6"
+                >
                     workflow_rail()
                     <div class="min-w-0">
-                        <p id="request-message" class="mb-4 border-l-[var(--error-border)] border-status-error bg-surface-elevated p-3" data-show="$requestMessage !== ''" data-text="$requestMessage" role="alert"></p>
+                        <p
+                            id="request-message"
+                            class="mb-4 border-l-[var(--error-border)] border-status-error bg-surface-elevated p-3"
+                            data-show="$requestMessage !== ''"
+                            data-text="$requestMessage"
+                            role="alert"
+                        ></p>
                         console_content(runs: runs)
                     </div>
                 </main>
@@ -77,21 +103,66 @@ async fn home(cx: &Cx) -> Result {
 async fn workflow_rail() -> Result {
     let schedules = workflow_schedules();
     view! {
-        <aside class="min-w-0 self-start rounded-panel border border-border bg-surface p-4 shadow-panel lg:sticky lg:top-6" aria-labelledby="workflows-title">
+        <aside
+            class="min-w-0 self-start rounded-panel border border-border bg-surface p-4 shadow-panel lg:sticky lg:top-6"
+            aria-labelledby="workflows-title"
+        >
             <h2 id="workflows-title" class="text-xl font-semibold">"Workflows"</h2>
-            <div class="mt-4 grid gap-3" role="group" aria-label="Code-defined workflows">
+            <div
+                class="mt-4 grid gap-3"
+                role="group"
+                aria-label="Code-defined workflows"
+            >
                 for definition in workflow_definitions() {
-                    <button type="button" class="grid w-full gap-2 rounded-control border border-border bg-surface-elevated p-4 text-left text-text-primary shadow-inset transition-[filter] duration-[var(--motion-micro)] ease-[var(--ease-standard)] hover:brightness-110 aria-[pressed=true]:border-focus" data-attr:aria-pressed=(format!("$selectedWorkflowId === '{}'", definition.workflow_id)) data-on:click=(selection_expression(definition.workflow_id)?)>
-                        <span class="text-xs font-semibold uppercase tracking-label text-text-muted">"Code-defined"</span>
-                        <strong>(definition.name)</strong><span class="text-sm text-text-muted">(definition.description)</span><code class="font-mono text-[length:var(--type-code)]">(definition.workflow_id)</code>
-                        for schedule in schedules.iter().filter(|schedule| schedule.workflow_id == definition.workflow_id) {
-                            <span class="grid gap-1 border-t border-border pt-3"><span class="text-xs font-semibold uppercase tracking-label text-text-muted">"Cron schedule"</span><code class="break-anywhere font-mono text-[length:var(--type-code)] text-status-healthy">(schedule.cron_expression)</code><span class="text-sm text-text-muted">(schedule.input_summary)</span></span>
+                    <button
+                        type="button"
+                        class="grid w-full gap-2 rounded-control border border-border bg-surface-elevated p-4 text-left text-text-primary shadow-inset transition-[filter] duration-[var(--motion-micro)] ease-[var(--ease-standard)] hover:brightness-110 aria-[pressed=true]:border-focus"
+                        data-attr:aria-pressed=(format!(
+                            "$selectedWorkflowId === '{}'", definition.workflow_id
+                        ))
+                        data-on:click=(selection_expression(definition.workflow_id)?)
+                    >
+                        <span
+                            class="text-xs font-semibold uppercase tracking-label text-text-muted"
+                        >
+                            "Code-defined"
+                        </span>
+                        <strong>(definition.name)</strong>
+                        <span class="text-sm text-text-muted">
+                            (definition.description)
+                        </span>
+                        <code class="font-mono text-[length:var(--type-code)]">
+                            (definition.workflow_id)
+                        </code>
+                        for schedule in schedules
+                            .iter()
+                            .filter(|schedule| {
+                                schedule.workflow_id == definition.workflow_id
+                            }) {
+                            <span class="grid gap-1 border-t border-border pt-3">
+                                <span
+                                    class="text-xs font-semibold uppercase tracking-label text-text-muted"
+                                >
+                                    "Cron schedule"
+                                </span>
+                                <code
+                                    class="break-anywhere font-mono text-[length:var(--type-code)] text-status-healthy"
+                                >
+                                    (schedule.cron_expression)
+                                </code>
+                                <span class="text-sm text-text-muted">
+                                    (schedule.input_summary)
+                                </span>
+                            </span>
                         }
                     </button>
                 }
             </div>
             for definition in workflow_definitions() {
-                workflow_input_form(workflow_id: definition.workflow_id, active: definition.workflow_id == workflow_id())
+                workflow_input_form(
+                    workflow_id: definition.workflow_id,
+                    active: definition.workflow_id == workflow_id()
+                )
             }
         </aside>
     }

@@ -1,3 +1,8 @@
+#![allow(
+    clippy::too_many_lines,
+    reason = "Topcoat formatting expands declarative component markup without increasing behavior."
+)]
+
 use topcoat::{
     Result,
     view::{component, view},
@@ -16,31 +21,123 @@ pub(super) async fn workflow_topology(
         .map_or("idle", |snapshot| snapshot.run_id.as_str());
     let description = topology_description(definition, run.as_ref());
     view! {
-        <div class="max-w-full min-w-0 overflow-x-auto" tabindex="0" aria-label="Workflow topology, horizontally scrollable">
-            <svg class="topology block h-auto w-full min-w-[var(--graph-min)]" viewBox="0 0 760 300" role="group" aria-labelledby=(format!("topology-title-{run_id} topology-desc-{run_id}"))>
-                <title id=(format!("topology-title-{run_id}"))>(format!("{} workflow topology", definition.name))</title>
+        <div
+            class="max-w-full min-w-0 overflow-x-auto"
+            tabindex="0"
+            aria-label="Workflow topology, horizontally scrollable"
+        >
+            <svg
+                class="topology block h-auto w-full min-w-[var(--graph-min)]"
+                viewBox="0 0 760 300"
+                role="group"
+                aria-labelledby=(format!("topology-title-{run_id} topology-desc-{run_id}"))
+            >
+                <title id=(format!("topology-title-{run_id}"))>
+                    (format!("{} workflow topology", definition.name))
+                </title>
                 <desc id=(format!("topology-desc-{run_id}"))>(description)</desc>
-                <defs><marker id=(format!("arrow-{run_id}")) viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"></path></marker></defs>
+                <defs>
+                    <marker
+                        id=(format!("arrow-{run_id}"))
+                        viewBox="0 0 10 10"
+                        refX="9"
+                        refY="5"
+                        markerWidth="6"
+                        markerHeight="6"
+                        orient="auto-start-reverse"
+                    >
+                        <path d="M 0 0 L 10 5 L 0 10 z"></path>
+                    </marker>
+                </defs>
                 for edge in definition.edges {
-                    let active = run.as_ref().and_then(|snapshot| snapshot.current_edge.as_deref()) == Some(edge.id) && run.as_ref().is_some_and(|snapshot| matches!(snapshot.status, workflow_console_experiment::RunStatus::Running));
-                    let traversed = run.as_ref().is_some_and(|snapshot| snapshot.traversed_edges.iter().any(|id| id == edge.id));
+                    let active = run
+                        .as_ref()
+                        .and_then(|snapshot| snapshot.current_edge.as_deref())
+                        == Some(edge.id)
+                        && run
+                            .as_ref()
+                            .is_some_and(|snapshot| {
+                                matches!(
+                                    snapshot.status,
+                                    workflow_console_experiment::RunStatus::Running
+                                )
+                            });
+                    let traversed = run
+                        .as_ref()
+                        .is_some_and(|snapshot| {
+                            snapshot.traversed_edges.iter().any(|id| id == edge.id)
+                        });
                     let selection = selection_expression("edge", edge.id);
                     let pressed = pressed_expression("edge", edge.id);
-                    <g class="graph-target" data-edge-id=(edge.id) data-state=(state_value(active, traversed)) data-attr:data-selected=(pressed.clone()) data-attr:aria-pressed=(pressed) data-on:click=(selection) data-on:keydown=(keyboard_expression("edge", edge.id)) tabindex="0" role="button" aria-label=(format!("Inspect edge from {} to {}", edge.from, edge.to))>
+                    <g
+                        class="graph-target"
+                        data-edge-id=(edge.id)
+                        data-state=(state_value(active, traversed))
+                        data-attr:data-selected=(pressed.clone())
+                        data-attr:aria-pressed=(pressed)
+                        data-on:click=(selection)
+                        data-on:keydown=(keyboard_expression("edge", edge.id))
+                        tabindex="0"
+                        role="button"
+                        aria-label=(format!(
+                            "Inspect edge from {} to {}", edge.from, edge.to
+                        ))
+                    >
                         <path class="edge-hit" d=(edge_path(edge.id))></path>
-                        <path class="edge" d=(edge_path(edge.id)) marker-end=(format!("url(#arrow-{run_id})"))></path>
-                        <text class="edge-state" x=(edge_label_x(edge.id)) y=(edge_label_y(edge.id))>(state_label(active, traversed))</text>
+                        <path
+                            class="edge"
+                            d=(edge_path(edge.id))
+                            marker-end=(format!("url(#arrow-{run_id})"))
+                        ></path>
+                        <text
+                            class="edge-state"
+                            x=(edge_label_x(edge.id))
+                            y=(edge_label_y(edge.id))
+                        >
+                            (state_label(active, traversed))
+                        </text>
                     </g>
                 }
                 for node in definition.nodes {
-                    let active = run.as_ref().and_then(|snapshot| snapshot.current_node.as_deref()) == Some(node.id) && run.as_ref().is_some_and(|snapshot| matches!(snapshot.status, workflow_console_experiment::RunStatus::Running));
-                    let traversed = run.as_ref().is_some_and(|snapshot| snapshot.traversed_nodes.iter().any(|id| id == node.id));
+                    let active = run
+                        .as_ref()
+                        .and_then(|snapshot| snapshot.current_node.as_deref())
+                        == Some(node.id)
+                        && run
+                            .as_ref()
+                            .is_some_and(|snapshot| {
+                                matches!(
+                                    snapshot.status,
+                                    workflow_console_experiment::RunStatus::Running
+                                )
+                            });
+                    let traversed = run
+                        .as_ref()
+                        .is_some_and(|snapshot| {
+                            snapshot.traversed_nodes.iter().any(|id| id == node.id)
+                        });
                     let selection = selection_expression("node", node.id);
                     let pressed = pressed_expression("node", node.id);
-                    <g class="graph-target" data-node-id=(node.id) data-state=(state_value(active, traversed)) data-attr:data-selected=(pressed.clone()) data-attr:aria-pressed=(pressed) data-on:click=(selection) data-on:keydown=(keyboard_expression("node", node.id)) tabindex="0" role="button" transform=(node_transform(node.id)) aria-label=(format!("Inspect {} node", node.label))>
+                    <g
+                        class="graph-target"
+                        data-node-id=(node.id)
+                        data-state=(state_value(active, traversed))
+                        data-attr:data-selected=(pressed.clone())
+                        data-attr:aria-pressed=(pressed)
+                        data-on:click=(selection)
+                        data-on:keydown=(keyboard_expression("node", node.id))
+                        tabindex="0"
+                        role="button"
+                        transform=(node_transform(node.id))
+                        aria-label=(format!("Inspect {} node", node.label))
+                    >
                         <rect class="node" width="120" height="54" rx="6"></rect>
-                        <text class="node-label" x="60" y="23" text-anchor="middle">(node.label)</text>
-                        <text class="node-state" x="60" y="41" text-anchor="middle">(state_label(active, traversed))</text>
+                        <text class="node-label" x="60" y="23" text-anchor="middle">
+                            (node.label)
+                        </text>
+                        <text class="node-state" x="60" y="41" text-anchor="middle">
+                            (state_label(active, traversed))
+                        </text>
                     </g>
                 }
             </svg>

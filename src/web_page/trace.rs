@@ -12,22 +12,38 @@ pub(super) async fn run_traces(run: RunSnapshot) -> Result {
     let run_id = run.run_id.to_string();
     view! {
         <div class="mt-4">
-            for node in workflow_console_experiment::workflow_definitions().iter().find(|definition| definition.workflow_id == run.workflow_id).map_or(&[][..], |definition| definition.nodes) {
+            for node in workflow_console_experiment::workflow_definitions()
+                .iter()
+                .find(|definition| definition.workflow_id == run.workflow_id)
+                .map_or(&[][..], |definition| definition.nodes) {
                 trace_panel(
                     run_id: run_id.clone(),
                     kind: "node",
                     target_id: node.id,
                     label: format!("{} node", node.label),
-                    step: run.steps.iter().rev().find(|step| step.node_id == node.id).cloned(),
+                    step: run
+                        .steps
+                        .iter()
+                        .rev()
+                        .find(|step| step.node_id == node.id)
+                        .cloned()
                 )
             }
-            for edge in workflow_console_experiment::workflow_definitions().iter().find(|definition| definition.workflow_id == run.workflow_id).map_or(&[][..], |definition| definition.edges) {
+            for edge in workflow_console_experiment::workflow_definitions()
+                .iter()
+                .find(|definition| definition.workflow_id == run.workflow_id)
+                .map_or(&[][..], |definition| definition.edges) {
                 trace_panel(
                     run_id: run_id.clone(),
                     kind: "edge",
                     target_id: edge.id,
                     label: format!("{} → {} edge", edge.from, edge.to),
-                    step: run.steps.iter().rev().find(|step| step.selected_edge.as_deref() == Some(edge.id)).cloned(),
+                    step: run
+                        .steps
+                        .iter()
+                        .rev()
+                        .find(|step| step.selected_edge.as_deref() == Some(edge.id))
+                        .cloned()
                 )
             }
         </div>
@@ -48,20 +64,93 @@ async fn trace_panel(
     let (status, started, finished, duration, selected_edge, state, output) =
         trace_values(step.as_ref());
     view! {
-        <section class="grid gap-4 rounded-control border border-border bg-surface-elevated p-4" data-show=(visible) aria-labelledby=(format!("trace-title-{run_id}-{kind}-{target_id}"))>
+        <section
+            class="grid gap-4 rounded-control border border-border bg-surface-elevated p-4"
+            data-show=(visible)
+            aria-labelledby=(format!("trace-title-{run_id}-{kind}-{target_id}"))
+        >
             <div class="flex items-start justify-between gap-4">
-                <div><p class="text-xs font-semibold uppercase tracking-label text-text-muted">"Step trace"</p><h3 class="text-xl font-semibold" id=(format!("trace-title-{run_id}-{kind}-{target_id}"))>(label)</h3></div>
-                <span class="text-sm font-semibold text-text-secondary" data-testid="trace-status">(status)</span>
+                <div>
+                    <p
+                        class="text-xs font-semibold uppercase tracking-label text-text-muted"
+                    >
+                        "Step trace"
+                    </p>
+                    <h3
+                        class="text-xl font-semibold"
+                        id=(format!("trace-title-{run_id}-{kind}-{target_id}"))
+                    >
+                        (label)
+                    </h3>
+                </div>
+                <span
+                    class="text-sm font-semibold text-text-secondary"
+                    data-testid="trace-status"
+                >
+                    (status)
+                </span>
             </div>
             <dl class="grid grid-cols-2 gap-3 max-trace:grid-cols-1">
-                <div><dt class="text-xs font-semibold text-text-muted">"Started"</dt><dd class="mt-1 break-anywhere font-mono text-[length:var(--type-code)]">(started)</dd></div>
-                <div><dt class="text-xs font-semibold text-text-muted">"Finished"</dt><dd class="mt-1 break-anywhere font-mono text-[length:var(--type-code)]">(finished)</dd></div>
-                <div><dt class="text-xs font-semibold text-text-muted">"Duration"</dt><dd class="mt-1 font-mono text-[length:var(--type-code)]">(duration)</dd></div>
-                <div><dt class="text-xs font-semibold text-text-muted">"Selected edge"</dt><dd class="mt-1 break-anywhere font-mono text-[length:var(--type-code)]">(selected_edge)</dd></div>
+                <div>
+                    <dt class="text-xs font-semibold text-text-muted">"Started"</dt>
+                    <dd
+                        class="mt-1 break-anywhere font-mono text-[length:var(--type-code)]"
+                    >
+                        (started)
+                    </dd>
+                </div>
+                <div>
+                    <dt class="text-xs font-semibold text-text-muted">"Finished"</dt>
+                    <dd
+                        class="mt-1 break-anywhere font-mono text-[length:var(--type-code)]"
+                    >
+                        (finished)
+                    </dd>
+                </div>
+                <div>
+                    <dt class="text-xs font-semibold text-text-muted">"Duration"</dt>
+                    <dd class="mt-1 font-mono text-[length:var(--type-code)]">
+                        (duration)
+                    </dd>
+                </div>
+                <div>
+                    <dt class="text-xs font-semibold text-text-muted">
+                        "Selected edge"
+                    </dt>
+                    <dd
+                        class="mt-1 break-anywhere font-mono text-[length:var(--type-code)]"
+                    >
+                        (selected_edge)
+                    </dd>
+                </div>
             </dl>
             <div class="grid grid-cols-2 gap-3 max-trace:grid-cols-1">
-                <div><p class="text-xs font-semibold uppercase tracking-label text-text-muted">"State after node"</p><pre class="mt-2 min-h-[var(--trace-output-min)] overflow-auto whitespace-pre-wrap break-anywhere rounded-control bg-canvas p-3 font-mono text-[length:var(--type-code)] text-text-secondary" data-testid="trace-state">(state)</pre></div>
-                <div><p class="text-xs font-semibold uppercase tracking-label text-text-muted">"Output / error"</p><pre class="mt-2 min-h-[var(--trace-output-min)] overflow-auto whitespace-pre-wrap break-anywhere rounded-control bg-canvas p-3 font-mono text-[length:var(--type-code)] text-text-secondary" data-testid="trace-output">(output)</pre></div>
+                <div>
+                    <p
+                        class="text-xs font-semibold uppercase tracking-label text-text-muted"
+                    >
+                        "State after node"
+                    </p>
+                    <pre
+                        class="mt-2 min-h-[var(--trace-output-min)] overflow-auto whitespace-pre-wrap break-anywhere rounded-control bg-canvas p-3 font-mono text-[length:var(--type-code)] text-text-secondary"
+                        data-testid="trace-state"
+                    >
+                        (state)
+                    </pre>
+                </div>
+                <div>
+                    <p
+                        class="text-xs font-semibold uppercase tracking-label text-text-muted"
+                    >
+                        "Output / error"
+                    </p>
+                    <pre
+                        class="mt-2 min-h-[var(--trace-output-min)] overflow-auto whitespace-pre-wrap break-anywhere rounded-control bg-canvas p-3 font-mono text-[length:var(--type-code)] text-text-secondary"
+                        data-testid="trace-output"
+                    >
+                        (output)
+                    </pre>
+                </div>
             </div>
         </section>
     }

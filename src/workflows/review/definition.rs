@@ -74,11 +74,61 @@ pub(super) const DEFINITION: WorkflowDefinition = WorkflowDefinition {
 pub(super) async fn input_form(active: bool) -> Result {
     let _ = active;
     view! {
-        <form class="mt-4 grid gap-3 border-t border-border pt-4" data-show=(format!("$selectedWorkflowId === '{WORKFLOW_ID}'")) data-workflow-id=(WORKFLOW_ID) data-on:submit="@post('/actions/runs')" data-indicator="_requesting" aria-labelledby="review-run-form-title">
-            <div><p class="text-xs font-semibold uppercase tracking-label text-text-muted">"Run selected"</p><h3 class="text-xl font-semibold" id="review-run-form-title">"Review pipeline"</h3></div>
-            <label class="grid gap-1 text-sm font-semibold text-text-secondary" for="review-subject"><span>"Review subject"</span><input class="min-h-[var(--control-min)] min-w-0 w-full rounded-control border border-border bg-canvas px-3 text-text-primary shadow-inset" id="review-subject" name="subject" type="text" data-bind="input.subject" required="required" maxlength="80"></label>
-            <label class="grid gap-1 text-sm font-semibold text-text-secondary" for="review-reviewer"><span>"Reviewer"</span><input class="min-h-[var(--control-min)] min-w-0 w-full rounded-control border border-border bg-canvas px-3 text-text-primary shadow-inset" id="review-reviewer" name="reviewer" type="text" data-bind="input.reviewer" required="required" maxlength="80"></label>
-            <button class="min-h-[var(--control-min)] rounded-control border border-accent-hover bg-accent px-4 font-semibold text-text-primary shadow-inset transition-[filter,transform] duration-[var(--motion-micro)] ease-[var(--ease-standard)] hover:brightness-110 active:translate-y-[var(--border-width)] disabled:cursor-wait disabled:opacity-65" type="submit" data-attr:disabled="$_requesting">"Run workflow"</button>
+        <form
+            class="mt-4 grid gap-3 border-t border-border pt-4"
+            data-show=(format!("$selectedWorkflowId === '{WORKFLOW_ID}'"))
+            data-workflow-id=(WORKFLOW_ID)
+            data-on:submit="@post('/actions/runs')"
+            data-indicator="_requesting"
+            aria-labelledby="review-run-form-title"
+        >
+            <div>
+                <p
+                    class="text-xs font-semibold uppercase tracking-label text-text-muted"
+                >
+                    "Run selected"
+                </p>
+                <h3 class="text-xl font-semibold" id="review-run-form-title">
+                    "Review pipeline"
+                </h3>
+            </div>
+            <label
+                class="grid gap-1 text-sm font-semibold text-text-secondary"
+                for="review-subject"
+            >
+                <span>"Review subject"</span>
+                <input
+                    class="min-h-[var(--control-min)] min-w-0 w-full rounded-control border border-border bg-canvas px-3 text-text-primary shadow-inset"
+                    id="review-subject"
+                    name="subject"
+                    type="text"
+                    data-bind="input.subject"
+                    required="required"
+                    maxlength="80"
+                >
+            </label>
+            <label
+                class="grid gap-1 text-sm font-semibold text-text-secondary"
+                for="review-reviewer"
+            >
+                <span>"Reviewer"</span>
+                <input
+                    class="min-h-[var(--control-min)] min-w-0 w-full rounded-control border border-border bg-canvas px-3 text-text-primary shadow-inset"
+                    id="review-reviewer"
+                    name="reviewer"
+                    type="text"
+                    data-bind="input.reviewer"
+                    required="required"
+                    maxlength="80"
+                >
+            </label>
+            <button
+                class="min-h-[var(--control-min)] rounded-control border border-accent-hover bg-accent px-4 font-semibold text-text-primary shadow-inset transition-[filter,transform] duration-[var(--motion-micro)] ease-[var(--ease-standard)] hover:brightness-110 active:translate-y-[var(--border-width)] disabled:cursor-wait disabled:opacity-65"
+                type="submit"
+                data-attr:disabled="$_requesting"
+            >
+                "Run workflow"
+            </button>
         </form>
     }
 }
