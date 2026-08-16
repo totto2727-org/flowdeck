@@ -2,13 +2,14 @@
 
 ## Current Objective
 
-Expose per-node execution traces from the local Topcoat workflow dashboard for performance inspection and debugging.
+Select and execute multiple code-defined workflows while preserving per-node trace inspection.
 
 ## Locked Decisions
 
-- Topcoat 0.5.0 at commit `88859796d88fac504be1b8e40a70d6f0dbacaaaa` on Rust 1.95.
+- Topcoat 0.5-compatible crates.io releases on Rust 1.95.
 - Operational Sentry-inspired dark direction; design dials 3/2/8.
-- The immutable six-node branch/converge topology is visualized from domain IDs; workflow authoring is excluded.
+- Each workflow directory owns its input defaults, topology IDs, and graph-flow builder; browser authoring remains excluded.
+- The workflow rail exposes two keyboard-selectable definitions and switches the idle topology and shared run-form defaults without page navigation.
 - The document owns vertical scroll; topology and history independently own horizontal scroll.
 - Polling is 120ms while any run is active and 1000ms while idle, with stable selection across refreshes.
 - Graph nodes and edges are keyboard-selectable; trace details remain in a stable region below the graph and survive polling for the selected run.
@@ -20,7 +21,7 @@ Expose per-node execution traces from the local Topcoat workflow dashboard for p
 
 ## Design Brief
 
-The console makes in-memory workflow state quickly scannable while keeping failures and request recovery explicit. An engineer can select a node or traversed edge to inspect typed state, timing, output, and failure details without leaving the run.
+The console makes multiple in-memory workflow definitions and their run state quickly scannable. An engineer can choose a workflow, submit its configured input defaults, then select a node or traversed edge to inspect typed state, timing, output, and failure details without leaving the run.
 
 ## Inclusive Personas
 

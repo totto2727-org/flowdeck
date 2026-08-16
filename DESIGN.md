@@ -75,15 +75,16 @@ All future CSS spacing, radii, widths, and layout tokens must be declared here b
 
 ### Workflow card
 
-- Structure: article with workflow identity, a workflow-specific parameter form, one semantic run button, and a read-only code-defined cron schedule summary.
-- States: default, field focus, native invalid input, button hover/focus/active, disabled/loading, and request error.
-- Accessibility: explicit labels and bounds for every input, stable button location, explicit action label, visible focus, and minimum control size.
+- Structure: one button card per code-defined workflow, followed by a shared parameter form whose defaults and bounds come from the selected workflow definition. Code-defined cron schedules remain read-only inside their owning workflow card.
+- States: default, selected, card hover/focus/active, field focus, native invalid input, run-button disabled/loading, and request error.
+- Accessibility: `aria-pressed` identifies the selected workflow, every input has explicit labels and bounds, and all controls retain a visible focus state and minimum target size.
 
 ### Run inspector
 
 - Structure: status, trigger, initial input, route, elapsed summary, legend, accessible inline SVG driven only by immutable topology IDs, and a stable step-trace detail region below the graph.
 - States: empty, loading, running, completed, failed, and request error. State words remain visible so color is never the only cue.
 - Layout: the graph wrapper exclusively owns horizontal scrolling; selected run details remain outside that region.
+- Workflow context: an idle inspector follows the workflow card selection, while selecting a history row switches the visible topology to that run's workflow without changing its retained trace.
 
 ### Graph trace selection
 
@@ -111,6 +112,7 @@ All future CSS spacing, radii, widths, and layout tokens must be declared here b
 - Animate only `transform`, `opacity`, or `filter` and respect `prefers-reduced-motion`.
 - Full keyboard operation and visible focus are required for every future interaction.
 - Polling changes status, history, and topology without moving controls. The status message uses `aria-live="polite"`; request errors use an alert.
+- Workflow selection changes only the form defaults and visible idle topology. Starting or inspecting a run binds the inspector to the run's immutable `workflow_id`.
 - Graph selection uses click, Enter, or Space and keeps the trace panel mounted. Selection feedback uses color plus `aria-pressed` and a visible detail heading.
 
 ## 7. Depth & Surface

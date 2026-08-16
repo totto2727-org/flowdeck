@@ -23,12 +23,6 @@ pub const fn workflow_id() -> &'static str {
     workflows::default_definition().workflow_id
 }
 
-/// Return the default workflow topology for compatibility with local callers.
-pub const fn workflow_topology() -> (&'static [NodeSpec], &'static [EdgeSpec]) {
-    let definition = workflows::default_definition();
-    (definition.nodes, definition.edges)
-}
-
 /// An observable workflow run state.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]

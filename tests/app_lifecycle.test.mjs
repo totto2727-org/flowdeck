@@ -29,7 +29,8 @@ const flush = () => new Promise(setImmediate);
 
 test("stale polling cannot render or restart after a new run or pagehide", async () => {
   const runButton = element();
-  runButton.dataset.workflowId = "demo-workflow";
+  const workflowOption = element();
+  workflowOption.dataset.workflowId = "demo-workflow";
   const runForm = element();
   const runLabel = element();
   runLabel.value = "manual browser run";
@@ -43,6 +44,9 @@ test("stale polling cannot render or restart after a new run or pagehide", async
   const historyBody = element();
   const requestError = element();
   const topologyDescription = element();
+  const topology = element();
+  topology.dataset.topologyWorkflow = "demo-workflow";
+  topologyDescription.parentElement = topology;
   const traceTitle = element();
   const traceStatus = element();
   const traceState = element();
@@ -53,6 +57,7 @@ test("stale polling cannot render or restart after a new run or pagehide", async
     ['[data-testid="run-label"]', runLabel],
     ['[data-testid="step-delay"]', stepDelay],
     ['[data-testid="run-status"]', statusOutput],
+    ["#workflow-summary", element()],
     ["#trigger-summary", triggerOutput],
     ["#input-summary", inputOutput],
     ['[data-testid="route-summary"]', routeOutput],
@@ -60,6 +65,7 @@ test("stale polling cannot render or restart after a new run or pagehide", async
     ["#run-history", historyBody],
     ["#request-error", requestError],
     ["#topology-desc", topologyDescription],
+    ["#run-form-title", element()],
     ["#trace-title", traceTitle],
     ['[data-testid="trace-status"]', traceStatus],
     ['[data-testid="trace-state"]', traceState],
@@ -71,7 +77,12 @@ test("stale polling cannot render or restart after a new run or pagehide", async
   ]);
   const document = {
     querySelector(selector) { return selectors.get(selector); },
-    querySelectorAll() { return []; },
+    querySelectorAll(selector) {
+      if (selector === "[data-workflow-option]") return [workflowOption];
+      if (selector === "[data-topology-workflow]") return [topology];
+      if (selector === "[data-topology-desc]") return [topologyDescription];
+      return [];
+    },
     createElement() { return element(); },
   };
   const pending = [];
@@ -116,8 +127,13 @@ test("stale polling cannot render or restart after a new run or pagehide", async
   await flush();
   assert.equal(window.workflowState, undefined);
 
-  const freshState = { runs: [{
+  const freshState = { workflows: [{
+    workflow_id: "demo-workflow",
+    name: "Branch and converge",
+    input: { default_label: "manual branch run", default_step_delay_ms: 350, min_step_delay_ms: 100, max_step_delay_ms: 2000 },
+  }], runs: [{
     run_id: "new-run",
+    workflow_id: "demo-workflow",
     input: { label: "manual browser run", step_delay_ms: 240 },
     trigger: "Manual",
     schedule_id: null,
@@ -154,12 +170,15 @@ test("stale polling cannot render or restart after a new run or pagehide", async
 test("graph selection renders the retained node trace", async () => {
   const node = element();
   node.dataset.nodeId = "choose_route";
+  node.dataset.workflowId = "demo-workflow";
   const traceTitle = element();
   const traceStatus = element();
   const traceState = element();
   const traceOutput = element();
   const selectors = new Map([
     ["#trace-title", traceTitle],
+    ["#workflow-summary", element()],
+    ["#run-form-title", element()],
     ['[data-testid="trace-status"]', traceStatus],
     ['[data-testid="trace-state"]', traceState],
     ['[data-testid="trace-output"]', traceOutput],
@@ -174,8 +193,13 @@ test("graph selection renders the retained node trace", async () => {
   const traceSource = await readFile(new URL("../src/app_trace.js", import.meta.url), "utf8");
   const context = vm.createContext({ document, window });
   vm.runInContext(`${traceSource}\n${renderSource}`, context);
-  window.workflowState = { runs: [{
+  window.workflowState = { workflows: [{
+    workflow_id: "demo-workflow",
+    name: "Branch and converge",
+    input: { default_label: "manual branch run", default_step_delay_ms: 350, min_step_delay_ms: 100, max_step_delay_ms: 2000 },
+  }], runs: [{
     run_id: "trace-run",
+    workflow_id: "demo-workflow",
     input: { label: "inspect me", step_delay_ms: 240 },
     trigger: "Manual",
     schedule_id: null,

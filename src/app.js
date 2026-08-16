@@ -77,7 +77,7 @@ const startRun = async (event) => {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify({
-        workflow_id: runButton.dataset.workflowId,
+        workflow_id: selectedWorkflowId,
         input: {
           label: runLabelInput.value,
           step_delay_ms: Number(stepDelayInput.value),

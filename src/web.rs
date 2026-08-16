@@ -8,7 +8,8 @@ use topcoat::{
 };
 use workflow_console_experiment::{
     EdgeSpec, NodeSpec, RunInput, RunSnapshot, RunStatus, RunTrigger, ScheduleSpec, StepTrace,
-    StepTraceStatus, WorkflowService, workflow_id, workflow_schedules, workflow_topology,
+    StepTraceStatus, WorkflowInputDefinition, WorkflowService, workflow_definitions,
+    workflow_schedules,
 };
 
 #[derive(Debug, Serialize)]
@@ -21,8 +22,10 @@ struct StateResponse {
 struct WorkflowDto {
     workflow_id: &'static str,
     name: &'static str,
+    description: &'static str,
+    input: WorkflowInputDefinition,
     topology: TopologyDto,
-    schedules: &'static [ScheduleSpec],
+    schedules: Vec<ScheduleSpec>,
 }
 
 #[derive(Debug, Serialize)]
@@ -131,16 +134,27 @@ async fn start_run(
 }
 
 async fn state_response(service: &WorkflowService) -> StateResponse {
-    let (nodes, edges) = workflow_topology();
     let mut runs = service.list_runs().await;
     runs.reverse();
     StateResponse {
-        workflows: vec![WorkflowDto {
-            workflow_id: workflow_id(),
-            name: "Branch and converge",
-            topology: TopologyDto { nodes, edges },
-            schedules: workflow_schedules(),
-        }],
+        workflows: workflow_definitions()
+            .iter()
+            .map(|definition| WorkflowDto {
+                workflow_id: definition.workflow_id,
+                name: definition.name,
+                description: definition.description,
+                input: definition.input,
+                topology: TopologyDto {
+                    nodes: definition.nodes,
+                    edges: definition.edges,
+                },
+                schedules: workflow_schedules()
+                    .iter()
+                    .filter(|schedule| schedule.workflow_id == definition.workflow_id)
+                    .copied()
+                    .collect(),
+            })
+            .collect(),
         runs: runs.into_iter().map(RunDto::from).collect(),
     }
 }

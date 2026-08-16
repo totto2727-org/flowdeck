@@ -37,7 +37,9 @@ const synchronizeTraceSelection = (run) => {
     selectedTraceRunId = run.run_id;
     const current = [...run.steps].reverse().find((step) => step.node_id === run.current_node);
     const latest = current || run.steps.at(-1);
-    selectedTraceTarget = latest ? { kind: "node", id: latest.node_id } : null;
+    selectedTraceTarget = latest
+      ? { kind: "node", id: latest.node_id, workflowId: run.workflow_id }
+      : null;
   }
 };
 
@@ -59,7 +61,8 @@ const renderTrace = (run) => {
 
 const selectTraceTarget = (kind, id) => {
   selectedTraceRunId = selectedRunId;
-  selectedTraceTarget = { kind, id };
+  const run = window.workflowState?.runs.find((candidate) => candidate.run_id === selectedRunId);
+  selectedTraceTarget = { kind, id, workflowId: run?.workflow_id || selectedWorkflowId };
   renderState(window.workflowState);
 };
 

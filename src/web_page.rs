@@ -4,7 +4,7 @@ use topcoat::{
     router::page,
     view::{component, view},
 };
-use workflow_console_experiment::{workflow_schedules, workflow_topology};
+use workflow_console_experiment::{workflow_definitions, workflow_id, workflow_schedules};
 
 const APP_CSS: Asset = asset!("./app.css");
 const APP_TRACE_JS: Asset = asset!("./app_trace.js");
@@ -13,8 +13,7 @@ const APP_JS: Asset = asset!("./app.js");
 
 #[page("/")]
 async fn home() -> Result {
-    let (nodes, edges) = workflow_topology();
-    let schedules = workflow_schedules();
+    let definitions = workflow_definitions();
     view! {
         <!DOCTYPE html>
         <html lang="en">
@@ -34,27 +33,7 @@ async fn home() -> Result {
                     <span class="environment">"In-memory"</span>
                 </header>
                 <main class="shell">
-                    <aside class="workflow-rail" aria-labelledby="workflows-title">
-                        <h2 id="workflows-title">"Workflows"</h2>
-                        <article class="workflow-card">
-                            <p class="eyebrow">"Code-defined"</p>
-                            <h3>"Branch and converge"</h3>
-                            <p class="muted">"Six fixed tasks with one conditional route."</p>
-                            <code>"demo-workflow"</code>
-                            <form class="run-form" data-testid="run-form">
-                                <label class="field" for="run-label"><span>"Run label"</span><input id="run-label" data-testid="run-label" name="label" type="text" value="manual run" required="required" maxlength="80"></label>
-                                <label class="field" for="step-delay"><span>"Step delay (ms)"</span><input id="step-delay" data-testid="step-delay" name="step_delay_ms" type="number" value="350" min="100" max="2000" step="10" required="required"></label>
-                                <button type="submit" data-testid="run-workflow" data-workflow-id="demo-workflow">"Run workflow"</button>
-                            </form>
-                            for schedule in schedules {
-                                <div class="schedule-summary">
-                                    <p class="eyebrow">"Cron schedule"</p>
-                                    <code>(schedule.cron_expression)</code>
-                                    <p class="muted">(format!("{} · {} ms steps", schedule.input_label, schedule.step_delay_ms))</p>
-                                </div>
-                            }
-                        </article>
-                    </aside>
+                    workflow_rail()
                     <div class="inspection-stack">
                         <section class="panel inspector" aria-labelledby="inspector-title">
                             <div class="panel-heading">
@@ -62,6 +41,7 @@ async fn home() -> Result {
                                 <p class="status-line" data-testid="run-status" role="status" aria-live="polite">"Loading"</p>
                             </div>
                             <dl class="summary-grid">
+                                <div><dt>"Workflow"</dt><dd id="workflow-summary">"—"</dd></div>
                                 <div><dt>"Trigger"</dt><dd id="trigger-summary">"—"</dd></div>
                                 <div><dt>"Input"</dt><dd id="input-summary">"—"</dd></div>
                                 <div><dt>"Route"</dt><dd data-testid="route-summary">"Waiting for state"</dd></div>
@@ -74,25 +54,27 @@ async fn home() -> Result {
                                 <span><i data-legend="traversed"></i>"Traversed"</span>
                             </div>
                             <div class="topology-scroll" tabindex="0" aria-label="Workflow topology, horizontally scrollable">
-                                <svg class="topology" viewBox="0 0 760 300" role="group" aria-labelledby="topology-title topology-desc">
-                                    <title id="topology-title">"Branch and converge workflow topology"</title>
-                                    <desc id="topology-desc">"Prepare flows to route selection, branches to yes or fallback, then converges and completes."</desc>
-                                    <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"></path></marker></defs>
-                                    for edge in edges {
-                                        <g class="graph-target" data-edge-id=(edge.id) data-state="idle" data-selected="false" tabindex="0" role="button" aria-pressed="false" aria-label=(format!("Inspect edge from {} to {}", edge.from, edge.to))>
-                                            <path class="edge-hit" d=(edge_path(edge.id))></path>
-                                            <path class="edge" d=(edge_path(edge.id)) marker-end="url(#arrow)"></path>
-                                            <text class="edge-state" x=(edge_label_x(edge.id)) y=(edge_label_y(edge.id))>"Idle"</text>
-                                        </g>
-                                    }
-                                    for node in nodes {
-                                        <g class="graph-target" data-node-id=(node.id) data-state="idle" data-selected="false" tabindex="0" role="button" transform=(node_transform(node.id)) aria-pressed="false" aria-label=(format!("Inspect {} node", node.label))>
-                                            <rect class="node" width="120" height="54" rx="6"></rect>
-                                            <text class="node-label" x="60" y="23" text-anchor="middle">(node.label)</text>
-                                            <text class="node-state" x="60" y="41" text-anchor="middle">"Idle"</text>
-                                        </g>
-                                    }
-                                </svg>
+                                for definition in definitions {
+                                    <svg class="topology" data-topology-workflow=(definition.workflow_id) data-active=(if definition.workflow_id == workflow_id() { "true" } else { "false" }) viewBox="0 0 760 300" role="group" aria-labelledby=(format!("topology-title-{} topology-desc-{}", definition.workflow_id, definition.workflow_id))>
+                                        <title id=(format!("topology-title-{}", definition.workflow_id))>(format!("{} workflow topology", definition.name))</title>
+                                        <desc id=(format!("topology-desc-{}", definition.workflow_id)) data-topology-desc="">(definition.description)</desc>
+                                        <defs><marker id=(format!("arrow-{}", definition.workflow_id)) viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"></path></marker></defs>
+                                        for edge in definition.edges {
+                                            <g class="graph-target" data-edge-id=(edge.id) data-workflow-id=(definition.workflow_id) data-state="idle" data-selected="false" tabindex="0" role="button" aria-pressed="false" aria-label=(format!("Inspect edge from {} to {}", edge.from, edge.to))>
+                                                <path class="edge-hit" d=(edge_path(edge.id))></path>
+                                                <path class="edge" d=(edge_path(edge.id)) marker-end=(format!("url(#arrow-{})", definition.workflow_id))></path>
+                                                <text class="edge-state" x=(edge_label_x(edge.id)) y=(edge_label_y(edge.id))>"Idle"</text>
+                                            </g>
+                                        }
+                                        for node in definition.nodes {
+                                            <g class="graph-target" data-node-id=(node.id) data-workflow-id=(definition.workflow_id) data-state="idle" data-selected="false" tabindex="0" role="button" transform=(node_transform(node.id)) aria-pressed="false" aria-label=(format!("Inspect {} node", node.label))>
+                                                <rect class="node" width="120" height="54" rx="6"></rect>
+                                                <text class="node-label" x="60" y="23" text-anchor="middle">(node.label)</text>
+                                                <text class="node-state" x="60" y="41" text-anchor="middle">"Idle"</text>
+                                            </g>
+                                        }
+                                    </svg>
+                                }
                             </div>
                             trace_detail()
                         </section>
@@ -100,8 +82,8 @@ async fn home() -> Result {
                             <div class="panel-heading"><div><p class="eyebrow">"Process lifetime"</p><h2 id="history-title">"Run history"</h2></div></div>
                             <div class="history-scroll" tabindex="0" aria-label="Run history, horizontally scrollable">
                                 <table>
-                                    <thead><tr><th scope="col">"Run ID"</th><th scope="col">"Trigger"</th><th scope="col">"Input"</th><th scope="col">"Status"</th><th scope="col">"Route"</th><th scope="col">"Elapsed"</th></tr></thead>
-                                    <tbody id="run-history"><tr id="empty-history"><td colspan="6">"No runs yet. Start the code-defined workflow to inspect it here."</td></tr></tbody>
+                                    <thead><tr><th scope="col">"Run ID"</th><th scope="col">"Workflow"</th><th scope="col">"Trigger"</th><th scope="col">"Input"</th><th scope="col">"Status"</th><th scope="col">"Route"</th><th scope="col">"Elapsed"</th></tr></thead>
+                                    <tbody id="run-history"><tr id="empty-history"><td colspan="7">"No runs yet. Select and start a code-defined workflow to inspect it here."</td></tr></tbody>
                                 </table>
                             </div>
                         </section>
@@ -109,6 +91,44 @@ async fn home() -> Result {
                 </main>
             </body>
         </html>
+    }
+}
+
+#[component]
+async fn workflow_rail() -> Result {
+    let definitions = workflow_definitions();
+    let schedules = workflow_schedules();
+    let default_input = definitions
+        .iter()
+        .find(|definition| definition.workflow_id == workflow_id())
+        .map(|definition| definition.input);
+    let default_label = default_input.map_or("manual run", |input| input.default_label);
+    let default_delay = default_input.map_or(350, |input| input.default_step_delay_ms);
+    let min_delay = default_input.map_or(100, |input| input.min_step_delay_ms);
+    let max_delay = default_input.map_or(2_000, |input| input.max_step_delay_ms);
+    view! {
+        <aside class="workflow-rail" aria-labelledby="workflows-title">
+            <h2 id="workflows-title">"Workflows"</h2>
+            <div class="workflow-options" role="group" aria-label="Code-defined workflows">
+                for definition in definitions {
+                    <button type="button" class="workflow-card workflow-option" data-workflow-option="" data-workflow-id=(definition.workflow_id) aria-pressed=(if definition.workflow_id == workflow_id() { "true" } else { "false" })>
+                        <span class="eyebrow">"Code-defined"</span>
+                        <strong>(definition.name)</strong>
+                        <span class="muted">(definition.description)</span>
+                        <code>(definition.workflow_id)</code>
+                        for schedule in schedules.iter().filter(|schedule| schedule.workflow_id == definition.workflow_id) {
+                            <span class="schedule-summary"><span class="eyebrow">"Cron schedule"</span><code>(schedule.cron_expression)</code><span class="muted">(format!("{} · {} ms steps", schedule.input_label, schedule.step_delay_ms))</span></span>
+                        }
+                    </button>
+                }
+            </div>
+            <form class="run-form" data-testid="run-form" aria-labelledby="run-form-title">
+                <div><p class="eyebrow">"Run selected"</p><h3 id="run-form-title">"Branch and converge"</h3></div>
+                <label class="field" for="run-label"><span>"Run label"</span><input id="run-label" data-testid="run-label" name="label" type="text" value=(default_label) required="required" maxlength="80"></label>
+                <label class="field" for="step-delay"><span>"Step delay (ms)"</span><input id="step-delay" data-testid="step-delay" name="step_delay_ms" type="number" value=(default_delay) min=(min_delay) max=(max_delay) step="10" required="required"></label>
+                <button type="submit" data-testid="run-workflow">"Run workflow"</button>
+            </form>
+        </aside>
     }
 }
 
@@ -136,6 +156,10 @@ fn node_transform(id: &str) -> &'static str {
         "fallback_path" => "translate(330 204)",
         "converge" => "translate(490 123)",
         "complete" => "translate(640 123)",
+        "receive" => "translate(50 123)",
+        "inspect" => "translate(230 123)",
+        "approve" => "translate(410 123)",
+        "archive" => "translate(590 123)",
         _ => "translate(0 0)",
     }
 }
@@ -148,6 +172,9 @@ fn edge_path(id: &str) -> &'static str {
         "yes-to-converge" => "M 450 69 C 475 69 475 144 490 144",
         "fallback-to-converge" => "M 450 231 C 475 231 475 156 490 156",
         "converge-to-complete" => "M 610 150 L 640 150",
+        "receive-to-inspect" => "M 170 150 L 230 150",
+        "inspect-to-approve" => "M 350 150 L 410 150",
+        "approve-to-archive" => "M 530 150 L 590 150",
         _ => "M 0 0",
     }
 }
@@ -158,6 +185,9 @@ fn edge_label_x(id: &str) -> &'static str {
         "choose-to-yes" | "choose-to-fallback" => "294",
         "yes-to-converge" | "fallback-to-converge" => "452",
         "converge-to-complete" => "612",
+        "receive-to-inspect" => "180",
+        "inspect-to-approve" => "360",
+        "approve-to-archive" => "540",
         _ => "0",
     }
 }
@@ -166,7 +196,11 @@ fn edge_label_y(id: &str) -> &'static str {
     match id {
         "choose-to-yes" | "yes-to-converge" => "94",
         "choose-to-fallback" | "fallback-to-converge" => "218",
-        "prepare-to-choose" | "converge-to-complete" => "173",
+        "prepare-to-choose"
+        | "converge-to-complete"
+        | "receive-to-inspect"
+        | "inspect-to-approve"
+        | "approve-to-archive" => "173",
         _ => "0",
     }
 }

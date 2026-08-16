@@ -6,14 +6,19 @@ const runLabelInput = document.querySelector('[data-testid="run-label"]');
 const stepDelayInput = document.querySelector('[data-testid="step-delay"]');
 const statusOutput = document.querySelector('[data-testid="run-status"]');
 const triggerOutput = document.querySelector("#trigger-summary");
+const workflowOutput = document.querySelector("#workflow-summary");
 const inputOutput = document.querySelector("#input-summary");
 const routeOutput = document.querySelector('[data-testid="route-summary"]');
 const elapsedOutput = document.querySelector("#elapsed-summary");
 const historyBody = document.querySelector("#run-history");
 const requestError = document.querySelector("#request-error");
-const topologyDescription = document.querySelector("#topology-desc");
+const runFormTitle = document.querySelector("#run-form-title");
+const workflowOptions = [...document.querySelectorAll("[data-workflow-option]")];
+const topologies = [...document.querySelectorAll("[data-topology-workflow]")];
+const topologyDescriptions = [...document.querySelectorAll("[data-topology-desc]")];
 
-let selectedRunId = null;
+let selectedRunId;
+let selectedWorkflowId = workflowOptions[0]?.dataset.workflowId || null;
 
 const setRequestError = (message) => {
   requestError.textContent = message;
@@ -42,34 +47,68 @@ const setGraphState = (element, state) => {
 };
 
 const setGraphSelection = (element, kind, id) => {
-  const selected = selectedTraceTarget?.kind === kind && selectedTraceTarget.id === id;
+  const selected = selectedTraceTarget?.workflowId === element.dataset.workflowId
+    && selectedTraceTarget.kind === kind && selectedTraceTarget.id === id;
   element.dataset.selected = String(selected);
   element.setAttribute("aria-pressed", String(selected));
 };
 
 const renderTopology = (run) => {
+  const workflowId = run?.workflow_id || selectedWorkflowId;
   const running = run?.status === "Running";
   const traversedRoute = run?.traversed_nodes.length ? run.traversed_nodes.join(" to ") : "none";
-  topologyDescription.textContent = !run
+  const description = !run
     ? "No run selected. All workflow nodes and edges are idle."
     : running
       ? `Running. Current node: ${run.current_node || "none"}. Current edge: ${run.current_edge || "none"}. Traversed route: ${traversedRoute}.`
       : `${run.status}. Traversed route: ${traversedRoute}.`;
+  for (const topology of topologies) {
+    topology.dataset.active = String(topology.dataset.topologyWorkflow === workflowId);
+  }
+  for (const topologyDescription of topologyDescriptions) {
+    if (topologyDescription.parentElement?.dataset.topologyWorkflow === workflowId) {
+      topologyDescription.textContent = description;
+    }
+  }
   for (const element of nodeElements) {
     const id = element.dataset.nodeId;
-    const state = running && id === run.current_node
+    const isCurrentWorkflow = element.dataset.workflowId === workflowId;
+    const state = isCurrentWorkflow && running && id === run.current_node
       ? "active"
-      : run?.traversed_nodes.includes(id) ? "traversed" : "idle";
+      : isCurrentWorkflow && run?.traversed_nodes.includes(id) ? "traversed" : "idle";
     setGraphState(element, state);
     setGraphSelection(element, "node", id);
   }
   for (const element of edgeElements) {
     const id = element.dataset.edgeId;
-    const state = running && id === run.current_edge
+    const isCurrentWorkflow = element.dataset.workflowId === workflowId;
+    const state = isCurrentWorkflow && running && id === run.current_edge
       ? "active"
-      : run?.traversed_edges.includes(id) ? "traversed" : "idle";
+      : isCurrentWorkflow && run?.traversed_edges.includes(id) ? "traversed" : "idle";
     setGraphState(element, state);
     setGraphSelection(element, "edge", id);
+  }
+};
+
+const workflowById = (state, workflowId) => state.workflows
+  .find((workflow) => workflow.workflow_id === workflowId);
+
+const applyWorkflowSelection = (state, resetInputs) => {
+  const workflow = workflowById(state, selectedWorkflowId);
+  for (const option of workflowOptions) {
+    option.setAttribute("aria-pressed", String(option.dataset.workflowId === selectedWorkflowId));
+  }
+  if (!workflow) {
+    runButton.disabled = true;
+    return;
+  }
+  runButton.disabled = false;
+  runFormTitle.textContent = workflow.name || workflow.workflow_id;
+  if (resetInputs) {
+    runLabelInput.value = workflow.input.default_label;
+    stepDelayInput.value = String(workflow.input.default_step_delay_ms);
+    stepDelayInput.setAttribute("min", String(workflow.input.min_step_delay_ms));
+    stepDelayInput.setAttribute("max", String(workflow.input.max_step_delay_ms));
   }
 };
 
@@ -78,6 +117,7 @@ const renderSelectedRun = (run) => {
     statusOutput.textContent = "Empty";
     statusOutput.dataset.status = "empty";
     routeOutput.textContent = "No run selected";
+    workflowOutput.textContent = selectedWorkflowId || "—";
     triggerOutput.textContent = "—";
     inputOutput.textContent = "—";
     elapsedOutput.textContent = "—";
@@ -90,6 +130,7 @@ const renderSelectedRun = (run) => {
   statusOutput.textContent = run.status;
   statusOutput.dataset.status = run.status.toLowerCase();
   routeOutput.textContent = run.route_summary || "Route not available";
+  workflowOutput.textContent = run.workflow_id;
   triggerOutput.textContent = formatTrigger(run);
   inputOutput.textContent = formatInput(run);
   elapsedOutput.textContent = formatElapsed(run.elapsed_ms);
@@ -126,7 +167,7 @@ const renderHistory = (runs) => {
   if (runs.length === 0) {
     const row = document.createElement("tr");
     const cell = historyCell("No runs yet. Start the code-defined workflow to inspect it here.");
-    cell.colSpan = 6;
+    cell.colSpan = 7;
     row.append(cell);
     historyBody.append(row);
     return;
@@ -140,6 +181,7 @@ const renderHistory = (runs) => {
     statusCell.dataset.status = run.status.toLowerCase();
     row.append(
       idCell,
+      historyCell(run.workflow_id),
       historyCell(formatTrigger(run)),
       historyCell(formatInput(run)),
       statusCell,
@@ -152,10 +194,25 @@ const renderHistory = (runs) => {
 
 const renderState = (state) => {
   window.workflowState = state;
-  if (selectedRunId && !state.runs.some((run) => run.run_id === selectedRunId)) {
-    selectedRunId = null;
+  if (!workflowById(state, selectedWorkflowId)) {
+    selectedWorkflowId = state.workflows[0]?.workflow_id || null;
   }
-  selectedRunId ||= state.runs[0]?.run_id || null;
+  applyWorkflowSelection(state, false);
+  if (selectedRunId && !state.runs.some((run) => run.run_id === selectedRunId)) {
+    selectedRunId = undefined;
+  }
+  if (selectedRunId === undefined) {
+    selectedRunId = state.runs[0]?.run_id || null;
+  }
   renderHistory(state.runs);
   renderSelectedRun(state.runs.find((run) => run.run_id === selectedRunId));
 };
+
+for (const option of workflowOptions) {
+  option.addEventListener("click", () => {
+    selectedWorkflowId = option.dataset.workflowId;
+    selectedRunId = null;
+    applyWorkflowSelection(window.workflowState, true);
+    renderState(window.workflowState);
+  });
+}
