@@ -1,5 +1,6 @@
 mod console;
 mod presentation;
+mod routes;
 mod topology;
 mod trace;
 
@@ -8,35 +9,32 @@ use serde_json::Value;
 use topcoat::{
     Result,
     asset::{Asset, asset},
-    context::{Cx, app_context},
+    context::Cx,
     router::{
         StatusCode,
-        error::{NotFoundError, not_found as not_found_error, redirect},
-        layout, page, path_param, query_params,
+        error::{NotFoundError, not_found as not_found_error},
+        layout, page,
     },
     view::{component, view},
 };
 use workflow_console_experiment::{
-    RunSnapshot, WorkflowService, workflow_default_input, workflow_definitions, workflow_id,
+    RunSnapshot, WorkflowService, workflow_default_input, workflow_definitions,
     workflow_input_form, workflow_schedules,
 };
 
 use self::console::{
     console_content, recovery_inspector_host, run_history, run_inspector, selected_inspector_host,
 };
+#[allow(
+    clippy::redundant_pub_crate,
+    reason = "The route action sibling uses this private page URL formatter."
+)]
+pub(crate) use self::routes::workflow_url;
 use crate::history_filter::{HistoryFilterValues, HistoryFilters};
 
 const DATASTAR_JS: Asset =
     asset!("https://cdn.jsdelivr.net/gh/starfederation/datastar@1.0.2/bundles/datastar.js");
 const NOT_FOUND_REDIRECT_DELAY_SECONDS: u8 = 2;
-
-#[path_param]
-struct WorkflowPath(str);
-
-#[query_params(error = redirect("?"))]
-struct WorkflowQuery {
-    run: Option<String>,
-}
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -49,39 +47,6 @@ struct InitialSignals {
     history: HistoryFilterValues,
     input: Value,
     request_message: &'static str,
-}
-
-#[page("/")]
-async fn root_redirect() -> Result {
-    Err(redirect(&workflow_url(workflow_id(), None)).into())
-}
-
-#[page("/workflows/{workflow_path}")]
-async fn workflow_page(cx: &Cx) -> Result {
-    let selected_workflow_id = path_param::<WorkflowPath>(cx);
-    if !workflow_definitions()
-        .iter()
-        .any(|definition| definition.workflow_id == selected_workflow_id)
-    {
-        return Err(not_found_error().into());
-    }
-
-    let query = query_params::<WorkflowQuery>(cx)?;
-    let service = app_context::<WorkflowService>(cx);
-    let filters = HistoryFilters::from_cookies(cx);
-    let mut runs = service.list_runs().await;
-    runs.reverse();
-    let selected_run = query.run.as_deref().and_then(|run_id| {
-        runs.iter()
-            .find(|run| run.run_id.as_str() == run_id && run.workflow_id == selected_workflow_id)
-            .cloned()
-    });
-    if query.run.is_some() && selected_run.is_none() {
-        return Err(redirect(&workflow_url(selected_workflow_id, None)).into());
-    }
-    runs.retain(|run| filters.matches(run));
-
-    render_console_page(cx, selected_workflow_id, selected_run, runs, &filters).await
 }
 
 #[layout("/")]
@@ -375,17 +340,6 @@ fn initial_signals(
     }
 }
 
-#[allow(
-    clippy::redundant_pub_crate,
-    reason = "The route sibling also uses this private page URL formatter."
-)]
-pub(super) fn workflow_url(workflow_id: &str, run_id: Option<&str>) -> String {
-    run_id.map_or_else(
-        || format!("/workflows/{workflow_id}"),
-        |run_id| format!("/workflows/{workflow_id}?run={run_id}"),
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use serde_json::json;
@@ -393,7 +347,55 @@ mod tests {
 
     use crate::history_filter::{HistoryFilterValues, HistoryFilters};
 
-    use super::{initial_signals, render_history, render_recovery_host, workflow_rail};
+    use super::routes::latest_run_url;
+    use super::{
+        initial_signals, render_history, render_recovery_host, workflow_rail, workflow_url,
+    };
+
+    #[test]
+    fn workflow_url_nests_the_selected_run_under_its_workflow() {
+        assert_eq!(
+            workflow_url("review-pipeline", Some("run-123")),
+            "/workflows/review-pipeline/runs/run-123"
+        );
+    }
+
+    #[tokio::test]
+    async fn latest_run_url_uses_the_newest_run_for_the_selected_workflow() {
+        let service = WorkflowService::new().expect("code-defined workflows should build");
+        service
+            .start(
+                "review-pipeline",
+                json!({ "subject": "older", "reviewer": "qa" }),
+                RunTrigger::Manual,
+            )
+            .await
+            .expect("older review run should start");
+        service
+            .start(
+                workflow_id(),
+                json!({ "label": "unrelated", "step_delay_ms": 100 }),
+                RunTrigger::Manual,
+            )
+            .await
+            .expect("unrelated demo run should start");
+        let newest = service
+            .start(
+                "review-pipeline",
+                json!({ "subject": "newest", "reviewer": "qa" }),
+                RunTrigger::Manual,
+            )
+            .await
+            .expect("newest review run should start");
+
+        assert_eq!(
+            latest_run_url(&service.list_runs().await, "review-pipeline"),
+            Some(workflow_url(
+                "review-pipeline",
+                Some(newest.run_id.as_str())
+            ))
+        );
+    }
 
     #[tokio::test]
     async fn run_history_exposes_reactive_filter_controls_and_rows() {
@@ -431,7 +433,7 @@ mod tests {
         assert!(!html.contains("data-show"));
         assert!(!html.contains(&demo.run_id.to_string()));
         assert!(html.contains(&format!(
-            "href=\"/workflows/review-pipeline?run={}\"",
+            "href=\"/workflows/review-pipeline/runs/{}\"",
             review.run_id
         )));
     }

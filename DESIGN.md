@@ -124,7 +124,7 @@ All future CSS spacing, radii, widths, and layout tokens must be declared here b
 - Full keyboard operation and visible focus are required for every future interaction.
 - Server-sent snapshot patches change status, history, and topology without moving controls. The status message uses `aria-live="polite"`; request errors use an alert.
 - Workflow selection changes the visible workflow-owned form and idle topology. Starting or inspecting a run binds the inspector to the run's immutable `workflow_id`.
-- Navigation is server-addressable: `/` redirects to the first registered workflow, `/workflows/{workflow_id}` identifies the selected workflow, and the optional `run` query identifies the inspected in-memory run. Unknown paths retain an HTTP 404 while presenting a timed recovery through `/`.
+- Navigation is server-addressable: `/` resolves the first registered workflow, `/workflows/{workflow_id}` resolves that workflow's newest retained run, and both redirect to the exact `/workflows/{workflow_id}/runs/{run_id}` path when a run exists. A workflow with no runs retains its workflow-only page so the first run can be started. Unknown workflows, runs, and paths retain an HTTP 404 while presenting a timed recovery through `/`.
 - Graph selection uses click, Enter, or Space and keeps the trace panel mounted. Selection feedback uses color plus `aria-pressed` and a visible detail heading.
 
 ## 7. Depth & Surface
