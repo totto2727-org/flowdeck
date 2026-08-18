@@ -4,16 +4,7 @@
 )]
 
 use serde::{Deserialize, Serialize};
-use topcoat::{
-    context::Cx,
-    cookie::{Cookie, Cookies, SameSite, cookies, time::Duration},
-};
 use workflow_console_experiment::{RunSnapshot, RunStatus, RunTrigger, workflow_definitions};
-
-const WORKFLOW_COOKIE: &str = "workflow-console-history-workflow";
-const TRIGGER_COOKIE: &str = "workflow-console-history-trigger";
-const STATUS_COOKIE: &str = "workflow-console-history-status";
-const COOKIE_MAX_AGE_DAYS: i64 = 30;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(super) struct HistoryFilterValues {
@@ -23,6 +14,17 @@ pub(super) struct HistoryFilterValues {
     pub(super) trigger: String,
     #[serde(rename = "historyStatusFilter")]
     pub(super) status: String,
+}
+
+#[allow(
+    clippy::struct_field_names,
+    reason = "This query DTO mirrors the stable URL parameter names at the Serde boundary."
+)]
+#[derive(Debug, Clone, Default, Deserialize)]
+pub(super) struct HistoryFilterQuery {
+    pub(super) history_workflow: Option<String>,
+    pub(super) history_trigger: Option<String>,
+    pub(super) history_status: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -58,6 +60,14 @@ impl Default for HistoryFilters {
 }
 
 impl HistoryFilters {
+    pub(super) fn from_query(query: &HistoryFilterQuery) -> Self {
+        Self::from_values(&HistoryFilterValues {
+            workflow: query.history_workflow.clone().unwrap_or_default(),
+            trigger: query.history_trigger.clone().unwrap_or_default(),
+            status: query.history_status.clone().unwrap_or_default(),
+        })
+    }
+
     pub(super) fn from_values(values: &HistoryFilterValues) -> Self {
         let workflow = workflow_definitions()
             .iter()
@@ -81,27 +91,6 @@ impl HistoryFilters {
         }
     }
 
-    pub(super) fn from_cookies(cx: &Cx) -> Self {
-        let jar = cookies(cx);
-        Self::from_values(&HistoryFilterValues {
-            workflow: cookie_value(&jar, WORKFLOW_COOKIE),
-            trigger: cookie_value(&jar, TRIGGER_COOKIE),
-            status: cookie_value(&jar, STATUS_COOKIE),
-        })
-    }
-
-    pub(super) fn store_in_cookies(&self, cx: &Cx) {
-        let values = self.values();
-        let jar = cookies(cx)
-            .override_http_only(true)
-            .override_same_site(SameSite::Lax)
-            .override_path("/")
-            .override_max_age(Duration::days(COOKIE_MAX_AGE_DAYS));
-        jar.add(Cookie::new(WORKFLOW_COOKIE, values.workflow));
-        jar.add(Cookie::new(TRIGGER_COOKIE, values.trigger));
-        jar.add(Cookie::new(STATUS_COOKIE, values.status));
-    }
-
     pub(super) fn values(&self) -> HistoryFilterValues {
         HistoryFilterValues {
             workflow: self.workflow.as_deref().unwrap_or("all").to_owned(),
@@ -114,6 +103,24 @@ impl HistoryFilters {
         self.workflow.is_some()
             || self.trigger != TriggerFilter::All
             || self.status != StatusFilter::All
+    }
+
+    pub(super) fn query_suffix(&self) -> String {
+        let values = self.values();
+        let mut fields = Vec::with_capacity(3);
+        if values.workflow != "all" {
+            fields.push(format!("history_workflow={}", values.workflow));
+        }
+        if values.trigger != "all" {
+            fields.push(format!("history_trigger={}", values.trigger));
+        }
+        if values.status != "all" {
+            fields.push(format!("history_status={}", values.status));
+        }
+        fields
+            .is_empty()
+            .then(String::new)
+            .unwrap_or_else(|| format!("?{}", fields.join("&")))
     }
 
     pub(super) fn matches(&self, run: &RunSnapshot) -> bool {
@@ -157,57 +164,35 @@ impl StatusFilter {
     }
 }
 
-fn cookie_value(jar: &impl Cookies, name: &str) -> String {
-    jar.get(name)
-        .map_or_else(|| "all".to_owned(), |cookie| cookie.value().to_owned())
-}
-
 #[cfg(test)]
 mod tests {
-    use topcoat::{
-        context::{Cx, CxTestBuilder},
-        cookie::{CookieJarCell, write_cookies},
-        router::{Body, HeaderMap, Request, header},
-    };
-
-    use super::{HistoryFilterValues, HistoryFilters};
+    use super::{HistoryFilterQuery, HistoryFilters};
 
     #[test]
-    fn history_filters_round_trip_through_cookie_jar() {
-        let writer = cx_with_cookie(None);
-        let expected = HistoryFilters::from_values(&HistoryFilterValues {
-            workflow: "review-pipeline".to_owned(),
-            trigger: "manual".to_owned(),
-            status: "running".to_owned(),
+    fn history_filters_normalize_missing_and_invalid_query_values_to_all() {
+        let filters = HistoryFilters::from_query(&HistoryFilterQuery {
+            history_workflow: Some("unknown-workflow".to_owned()),
+            history_trigger: Some("webhook".to_owned()),
+            history_status: None,
         });
-        expected.store_in_cookies(&writer);
-        let mut headers = HeaderMap::new();
-        write_cookies(&writer, &mut headers);
-        let cookie_header = headers
-            .get_all(header::SET_COOKIE)
-            .iter()
-            .filter_map(|value| value.to_str().ok())
-            .filter_map(|value| value.split(';').next())
-            .collect::<Vec<_>>()
-            .join("; ");
-        let reader = cx_with_cookie(Some(&cookie_header));
 
-        assert_eq!(HistoryFilters::from_cookies(&reader), expected);
+        assert_eq!(filters.values().workflow, "all");
+        assert_eq!(filters.values().trigger, "all");
+        assert_eq!(filters.values().status, "all");
+        assert_eq!(filters.query_suffix(), "");
     }
 
-    fn cx_with_cookie(cookie: Option<&str>) -> Cx {
-        let mut request = Request::builder();
-        if let Some(cookie) = cookie {
-            request = request.header(header::COOKIE, cookie);
-        }
-        let parts = request
-            .body(Body::empty())
-            .expect("test request should build")
-            .into_parts()
-            .0;
-        CxTestBuilder::new()
-            .request_context(parts)
-            .request_context(CookieJarCell::new())
-            .build()
+    #[test]
+    fn history_filters_render_a_canonical_query_suffix_without_all_values() {
+        let filters = HistoryFilters::from_query(&HistoryFilterQuery {
+            history_workflow: Some("review-pipeline".to_owned()),
+            history_trigger: Some("all".to_owned()),
+            history_status: Some("completed".to_owned()),
+        });
+
+        assert_eq!(
+            filters.query_suffix(),
+            "?history_workflow=review-pipeline&history_status=completed"
+        );
     }
 }

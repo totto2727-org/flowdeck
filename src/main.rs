@@ -10,7 +10,6 @@ use tokio::net::TcpListener;
 use topcoat::{
     asset::{AssetBundle, RouterBuilderAssetExt},
     context::CxBuilder,
-    cookie::RouterBuilderCookieExt,
     router::{Body, Layer, LayerFuture, Next, Path, Router, RouterBuilderDiscoverExt, parts},
 };
 use tracing_subscriber::EnvFilter;
@@ -64,7 +63,6 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let assets = AssetBundle::load()?;
     let router = Router::builder()
         .layer(RequestLogging)
-        .cookies()
         .discover()
         .app_context(service)
         .assets(assets)

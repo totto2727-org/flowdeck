@@ -12,7 +12,9 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-pub use workflow::{WorkflowEvent, WorkflowService};
+pub use workflow::{
+    HistoryDelta, HistoryReplay, HistoryRevision, HistoryView, WorkflowEvent, WorkflowService,
+};
 pub use workflow_scheduler::{ScheduleSpec, workflow_schedules};
 pub use workflow_trace::{StepState, StepTrace, StepTraceStatus};
 pub use workflows::{

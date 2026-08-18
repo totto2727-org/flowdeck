@@ -4,9 +4,129 @@ use std::time::Duration;
 
 use serde_json::json;
 use workflow_console_experiment::{
-    RunStatus, RunTrigger, StepTraceStatus, WorkflowError, WorkflowService, workflow_definitions,
-    workflow_id,
+    HistoryReplay, HistoryRevision, RunStatus, RunTrigger, StepTraceStatus, WorkflowError,
+    WorkflowService, workflow_definitions, workflow_id,
 };
+
+#[tokio::test]
+async fn history_delta_when_run_starts_contains_atomic_before_and_after() {
+    // Given: a history subscriber attached before the first mutation.
+    let service = WorkflowService::new().expect("the code-defined workflow should build");
+    let mut deltas = service.subscribe_history();
+
+    // When: a valid workflow starts.
+    let started = service
+        .start(
+            "review-pipeline",
+            json!({ "subject": "history delta", "reviewer": "local operator" }),
+            RunTrigger::Manual,
+        )
+        .await
+        .expect("the workflow should start");
+    let delta = deltas
+        .recv()
+        .await
+        .expect("the start delta should be published");
+
+    // Then: the first revision describes the insertion without a partial snapshot.
+    assert_eq!(delta.revision, HistoryRevision::new(1));
+    assert_eq!(delta.run_id, started.run_id);
+    assert!(delta.before.is_none());
+    assert_eq!(
+        delta.after.as_ref().map(|run| &run.run_id),
+        Some(&started.run_id)
+    );
+}
+
+#[tokio::test]
+async fn history_replay_when_current_or_future_revision_is_requested() {
+    // Given: one retained start mutation and its revisioned view.
+    let service = WorkflowService::new().expect("the code-defined workflow should build");
+    service
+        .start(
+            "review-pipeline",
+            json!({ "subject": "history replay", "reviewer": "local operator" }),
+            RunTrigger::Manual,
+        )
+        .await
+        .expect("the workflow should start");
+    let view = service.history_view().await;
+
+    // When: replay is requested from the current and a future revision.
+    let current = service.history_since(view.revision).await;
+    let future = service
+        .history_since(HistoryRevision::new(
+            view.revision.value().saturating_add(1),
+        ))
+        .await;
+
+    // Then: current is empty while a future cursor is stale.
+    assert!(matches!(current, HistoryReplay::Changes(changes) if changes.is_empty()));
+    assert!(matches!(future, HistoryReplay::Stale { current } if current == view.revision));
+}
+
+#[tokio::test]
+async fn history_replay_when_mutations_follow_cursor_is_ordered() {
+    // Given: a subscriber is established before reading the empty revision.
+    let service = WorkflowService::new().expect("the code-defined workflow should build");
+    let mut subscriber = service.subscribe_history();
+    let cursor = service.history_view().await.revision;
+
+    // When: one linear run is inserted and reaches its terminal state.
+    let started = service
+        .start(
+            "review-pipeline",
+            json!({ "subject": "ordered replay", "reviewer": "local operator" }),
+            RunTrigger::Manual,
+        )
+        .await
+        .expect("the workflow should start");
+    let mut observed = Vec::new();
+    for _ in 0..9 {
+        observed.push(
+            tokio::time::timeout(Duration::from_secs(3), subscriber.recv())
+                .await
+                .expect("each history mutation should arrive")
+                .expect("the history subscriber should not lag"),
+        );
+    }
+    let replay = service.history_since(cursor).await;
+
+    // Then: start and every step mutation increment once in strict order.
+    assert_eq!(observed.len(), 9);
+    assert_eq!(
+        observed
+            .iter()
+            .map(|delta| delta.revision.value())
+            .collect::<Vec<_>>(),
+        (1..=9).collect::<Vec<_>>()
+    );
+    let terminal = observed.last().expect("the terminal delta should exist");
+    assert_eq!(terminal.run_id, started.run_id);
+    assert!(matches!(
+        terminal.before.as_ref().map(|run| &run.status),
+        Some(RunStatus::Running)
+    ));
+    assert!(matches!(
+        terminal.after.as_ref().map(|run| &run.status),
+        Some(RunStatus::Completed)
+    ));
+    let changes = match replay {
+        HistoryReplay::Changes(changes) => changes,
+        HistoryReplay::Stale { .. } => panic!("a retained cursor should be replayable"),
+        _ => panic!("an unknown replay result should not occur"),
+    };
+    assert_eq!(changes.len(), 9);
+    assert_eq!(
+        changes.first().map(|delta| delta.revision),
+        Some(HistoryRevision::new(1))
+    );
+    assert!(
+        changes.windows(2).all(
+            |pair| matches!(pair, [previous, current] if previous.revision < current.revision)
+        )
+    );
+}
 
 #[tokio::test]
 async fn workflow_history_when_duplicate_or_malformed_request() {

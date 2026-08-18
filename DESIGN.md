@@ -91,10 +91,10 @@ All future CSS spacing, radii, widths, and layout tokens must be declared here b
 
 ### Run inspector
 
-- Structure: status, trigger, initial input, route, elapsed summary, legend, accessible inline SVG driven only by immutable topology IDs, and a stable step-trace detail region below the graph.
+- Structure: the graph is a standalone workflow-topology component. When a run is selected, it is composed with status, trigger, initial input, route, elapsed summary, legend, and a stable step-trace detail region below the graph.
 - States: empty, loading, running, completed, failed, and request error. State words remain visible so color is never the only cue.
 - Layout: the graph has no maximum inline size, fills the inspector's available width, preserves its internal `viewBox` geometry, and caps its block size at `50dvh`; below the readable canvas floor, only its wrapper scrolls horizontally. Selected run details remain outside that region.
-- Workflow context: an idle inspector follows the workflow card selection, while selecting a history row switches the visible topology to that run's workflow without changing its retained trace.
+- Workflow context: the exact `/runs/` route renders only the selected workflow topology. Selecting a history row switches to that run's workflow and composes the topology with its retained trace.
 
 ### Graph trace selection
 
@@ -109,7 +109,7 @@ All future CSS spacing, radii, widths, and layout tokens must be declared here b
 - States: filters inactive, filters active, filters reset, empty row, running values, completed values, failed values, selected row, hover, and focus.
 - Accessibility: every filter has a visible label, the reset control has a minimum target size, table headings identify data, run links provide native keyboard navigation, and `aria-current` identifies the inspected run.
 - Layout: the table wrapper exclusively owns horizontal scrolling.
-- Live updates: changing a filter reconnects the SSE stream with the current browser signals, persists the normalized filter values in HTTP-only cookies, and replaces the history fragment with server-filtered HTML without losing the inspected run. Reloading restores those cookie-backed values as the initial signals.
+- Live updates: submitting the GET filter form navigates to a canonical URL with the normalized active filters. The history SSE uses that URL query and applies only history-row deltas; the selected run's SSE owns the graph, trace, and inspector. Reloading restores the same filters without cookies.
 
 ## 6. Motion & Interaction
 
@@ -124,7 +124,7 @@ All future CSS spacing, radii, widths, and layout tokens must be declared here b
 - Full keyboard operation and visible focus are required for every future interaction.
 - Server-sent snapshot patches change status, history, and topology without moving controls. The status message uses `aria-live="polite"`; request errors use an alert.
 - Workflow selection changes the visible workflow-owned form and idle topology. Starting or inspecting a run binds the inspector to the run's immutable `workflow_id`.
-- Navigation is server-addressable: `/` resolves the first registered workflow, `/workflows/{workflow_id}` resolves that workflow's newest retained run, and both redirect to the exact `/workflows/{workflow_id}/runs/{run_id}` path when a run exists. A workflow with no runs retains its workflow-only page so the first run can be started. Unknown workflows, runs, and paths retain an HTTP 404 while presenting a timed recovery through `/`.
+- Navigation is server-addressable: `/` resolves the first registered workflow and `/workflows/{workflow_id}` resolves that workflow's newest retained run. Both redirect to the exact `/workflows/{workflow_id}/runs/{run_id}` path when a run exists, or to `/workflows/{workflow_id}/runs/` when it does not. The runless route mounts only the standalone graph; the run route composes it with the trace and inspector. Unknown workflows, runs, and paths retain an HTTP 404 while presenting a timed recovery through `/`. History filters are URL query parameters and canonical paths omit all-valued filters.
 - Graph selection uses click, Enter, or Space and keeps the trace panel mounted. Selection feedback uses color plus `aria-pressed` and a visible detail heading.
 
 ## 7. Depth & Surface

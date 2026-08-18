@@ -17,9 +17,13 @@ use crate::{
 mod driver;
 #[path = "workflow/events.rs"]
 mod events;
+#[path = "workflow/history.rs"]
+mod history;
 
 use driver::drive;
 pub use events::WorkflowEvent;
+use history::{HISTORY_JOURNAL_CAPACITY, HistoryState};
+pub use history::{HistoryDelta, HistoryReplay, HistoryRevision, HistoryView};
 
 /// Cloneable local boundary for workflow starts, listing, and event subscription.
 #[derive(Clone)]
@@ -37,8 +41,9 @@ impl fmt::Debug for WorkflowService {
 
 struct Inner {
     runtimes: HashMap<&'static str, WorkflowRuntime>,
-    runs: RwLock<Vec<RunSnapshot>>,
+    history: RwLock<HistoryState>,
     events: broadcast::Sender<WorkflowEvent>,
+    history_events: broadcast::Sender<HistoryDelta>,
 }
 
 struct WorkflowRuntime {
@@ -66,11 +71,13 @@ impl WorkflowService {
             );
         }
         let (events, _) = broadcast::channel(128);
+        let (history_events, _) = broadcast::channel(HISTORY_JOURNAL_CAPACITY);
         Ok(Self {
             inner: Arc::new(Inner {
                 runtimes,
-                runs: RwLock::new(Vec::new()),
+                history: RwLock::new(HistoryState::new()),
                 events,
+                history_events,
             }),
         })
     }
@@ -125,9 +132,8 @@ impl WorkflowService {
             duration: None,
             steps: Vec::new(),
         };
-        {
-            self.inner.runs.write().await.push(snapshot.clone());
-        }
+        let delta = self.inner.history.write().await.insert(snapshot.clone());
+        let _ = self.inner.history_events.send(delta);
         let _ = self.inner.events.send(WorkflowEvent::RunStarted {
             run_id: run_id.clone(),
             workflow_id: definition.workflow_id.to_owned(),
@@ -142,20 +148,35 @@ impl WorkflowService {
         self.inner.events.subscribe()
     }
 
+    /// Subscribe to future atomic history changes.
+    pub fn subscribe_history(&self) -> broadcast::Receiver<HistoryDelta> {
+        self.inner.history_events.subscribe()
+    }
+
+    /// Read every retained run and its shared revision atomically.
+    pub async fn history_view(&self) -> HistoryView {
+        self.inner.history.read().await.view()
+    }
+
+    /// Replay retained changes after a previously observed revision.
+    pub async fn history_since(&self, after: HistoryRevision) -> HistoryReplay {
+        self.inner.history.read().await.replay(after)
+    }
+
+    /// Read the current view and its replay boundary under one history lock.
+    pub async fn history_view_since(&self, after: HistoryRevision) -> (HistoryView, HistoryReplay) {
+        let history = self.inner.history.read().await;
+        (history.view(), history.replay(after))
+    }
+
     /// List all retained snapshots in start order.
     pub async fn list_runs(&self) -> Vec<RunSnapshot> {
-        self.inner.runs.read().await.clone()
+        self.inner.history.read().await.view().runs
     }
 
     /// Poll one retained snapshot by its opaque run ID.
     pub async fn get_run(&self, run_id: &RunId) -> Option<RunSnapshot> {
-        self.inner
-            .runs
-            .read()
-            .await
-            .iter()
-            .find(|snapshot| snapshot.run_id == *run_id)
-            .cloned()
+        self.inner.history.read().await.get(run_id)
     }
 }
 
