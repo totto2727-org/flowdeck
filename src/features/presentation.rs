@@ -1,8 +1,3 @@
-#![allow(
-    clippy::redundant_pub_crate,
-    reason = "Run history consumes shared presentation formatting without owning it."
-)]
-
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use workflow_console_experiment::{RunSnapshot, RunStatus, RunTrigger, StepTrace, StepTraceStatus};

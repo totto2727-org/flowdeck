@@ -13,8 +13,8 @@ use topcoat::{
 use workflow_console_experiment::{RunTrigger, WorkflowService};
 
 use crate::{
+    app::workflow_url,
     features::run_history::{HistoryFilterValues, HistoryFilters},
-    web_page::workflow_url,
 };
 
 #[derive(Debug, Deserialize)]

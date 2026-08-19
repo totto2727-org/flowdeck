@@ -1,15 +1,21 @@
 use serde::Serialize;
 use serde_json::Value;
-use topcoat::{Result, context::Cx, router::StatusCode, view::view};
+use topcoat::{
+    Result,
+    asset::{Asset, asset},
+    context::Cx,
+    view::view,
+};
 use workflow_console_experiment::{HistoryView, RunSnapshot, workflow_default_input};
 
-use super::{
-    DATASTAR_JS, NOT_FOUND_REDIRECT_DELAY_SECONDS, console::console_content, routes::workflow_url,
-};
+use super::{console::console_content, navigation::workflow_url};
 use crate::features::{
     run_history::{HistoryFilterValues, HistoryFilters, HistoryPanelState},
     workflow_launcher::workflow_rail,
 };
+
+const DATASTAR_JS: Asset =
+    asset!("https://cdn.jsdelivr.net/gh/starfederation/datastar@1.0.2/bundles/datastar.js");
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -73,31 +79,6 @@ pub(super) async fn render_console_page(
                             )
                         )
                     </div>
-                </main>
-            </body>
-        </html>
-    }
-}
-
-pub(super) async fn not_found_document(cx: &Cx) -> Result {
-    let __cx = cx;
-    view! {
-        (StatusCode::NOT_FOUND)
-        <!DOCTYPE html>
-        <html lang="en">
-            <head>
-                <meta charset="utf-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1">
-                <meta http-equiv="refresh" content=(format!("{NOT_FOUND_REDIRECT_DELAY_SECONDS}; url=/"))>
-                <link rel="stylesheet" href=(topcoat::tailwind::stylesheet!())>
-                <title>"Page not found · Workflow Console"</title>
-            </head>
-            <body class="grid min-h-screen place-items-center bg-canvas p-4 text-text-primary">
-                <main class="w-full max-w-xl rounded-panel border border-border bg-surface p-6 shadow-panel" aria-labelledby="not-found-title">
-                    <p class="text-xs font-semibold uppercase tracking-label text-status-error">"404"</p>
-                    <h1 id="not-found-title" class="mt-2 text-3xl font-semibold tracking-title">"Page not found"</h1>
-                    <p class="mt-4 text-text-secondary">"This route is not part of the local workflow console. Redirecting to the default workflow."</p>
-                    <a class="mt-6 inline-flex min-h-[var(--control-min)] items-center rounded-control border border-accent-hover bg-accent px-4 font-semibold text-text-primary shadow-inset" href="/">"Return now"</a>
                 </main>
             </body>
         </html>

@@ -13,7 +13,7 @@ use super::{
         history_transition, replay_cursor, revision_action,
     },
 };
-use crate::web_page::workflow_url;
+use crate::app::workflow_url;
 
 #[test]
 fn history_transition_classifies_all_filter_membership_changes() {

@@ -12,8 +12,9 @@ use workflow_console_experiment::{
 };
 
 use crate::{
+    app::workflow_url,
+    features::presentation::{elapsed, run_status, trigger},
     features::run_history::HistoryFilters,
-    web_page::{elapsed, run_status, trigger, workflow_url},
 };
 
 pub(crate) struct HistoryPanelState {

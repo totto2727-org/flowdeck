@@ -9,7 +9,7 @@ use topcoat::{
 };
 use workflow_console_experiment::{EdgeSpec, NodeSpec, RunSnapshot, RunStatus, WorkflowDefinition};
 
-use crate::web_page::presentation::{run_status, state_label, state_value};
+use crate::features::presentation::{run_status, state_label, state_value};
 
 use super::geometry::{edge_label_x, edge_label_y, edge_path, node_transform};
 

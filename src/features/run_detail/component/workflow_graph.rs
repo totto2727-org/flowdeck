@@ -4,7 +4,7 @@ use topcoat::{
 };
 use workflow_console_experiment::{RunSnapshot, RunStatus, WorkflowDefinition};
 
-use crate::web_page::presentation::{elapsed, run_status, trigger};
+use crate::features::presentation::{elapsed, run_status, trigger};
 
 use super::topology::workflow_topology;
 
