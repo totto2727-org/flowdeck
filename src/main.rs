@@ -74,3 +74,15 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn discovered_routes_have_unique_asset_paths() -> Result<(), Box<dyn Error + Send + Sync>> {
+        let assets = AssetBundle::load()?;
+        let _router = Router::builder().discover().assets(assets).build();
+        Ok(())
+    }
+}

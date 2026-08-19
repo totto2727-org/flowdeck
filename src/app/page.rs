@@ -8,7 +8,7 @@ use topcoat::{
 };
 use workflow_console_experiment::{HistoryView, RunSnapshot, workflow_default_input};
 
-use super::{console::console_content, navigation::workflow_url};
+use super::{assets::STYLESHEET, console::console_content, navigation::workflow_url};
 use crate::features::{
     run_history::{HistoryFilterValues, HistoryFilters, HistoryPanelState},
     workflow_launcher::workflow_rail,
@@ -50,7 +50,7 @@ pub(super) async fn render_console_page(
                 <meta charset="utf-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1">
                 <meta name="description" content="Inspect and run local code-defined workflows">
-                <link rel="stylesheet" href=(topcoat::tailwind::stylesheet!())>
+                <link rel="stylesheet" href=(STYLESHEET)>
                 <script type="module" src=(DATASTAR_JS)></script>
                 <title>"Workflow Console"</title>
             </head>

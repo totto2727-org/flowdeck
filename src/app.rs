@@ -3,6 +3,7 @@
     reason = "Feature modules use the private application navigation entrypoint."
 )]
 
+mod assets;
 mod console;
 mod document;
 mod navigation;

@@ -5,6 +5,8 @@ use topcoat::{
     view::view,
 };
 
+use super::assets::STYLESHEET;
+
 const NOT_FOUND_REDIRECT_DELAY_SECONDS: u8 = 2;
 
 #[layout("/")]
@@ -27,7 +29,7 @@ async fn not_found_document(cx: &Cx) -> Result {
                 <meta charset="utf-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1">
                 <meta http-equiv="refresh" content=(format!("{NOT_FOUND_REDIRECT_DELAY_SECONDS}; url=/"))>
-                <link rel="stylesheet" href=(topcoat::tailwind::stylesheet!())>
+                <link rel="stylesheet" href=(STYLESHEET)>
                 <title>"Page not found · Workflow Console"</title>
             </head>
             <body class="grid min-h-screen place-items-center bg-canvas p-4 text-text-primary">
