@@ -31,6 +31,61 @@ Run-history filters are applied on the server using `history_workflow`, `history
 - Per-node and per-edge traces with timestamps, elapsed time, state, output, and errors.
 - URL-addressable server-rendered run-history filtering with separate run and history SSE streams.
 
+## Architecture
+
+### Feature boundaries
+
+The web surface is organized by feature. Each feature keeps its transport entrypoint next to the component or fragment that it updates, so an SSE endpoint can be traced to its rendered target without crossing a horizontal `web`/`web_page` split.
+
+No `mod.rs` files are used. Self-named module files such as `features.rs`, `run_detail.rs`, and `component.rs` only declare child modules and expose the minimum feature entrypoints; rendering, transport, and state logic lives in the named child modules.
+
+| Feature | API boundary | Component and fragment boundary |
+| --- | --- | --- |
+| `workflow_launcher` | `POST /actions/runs` in `features/workflow_launcher/action.rs` | `features/workflow_launcher/component.rs` owns the workflow selector, workflow-owned input form, and run action surface. |
+| `run_detail` | `GET /events/runs/{run_id}` in `features/run_detail/sse.rs` | `component/inspector.rs` composes the selected run or runless view; `workflow_graph.rs` renders the graph panel; `step_trace.rs` renders trace details; `component/topology/renderer.rs` renders SVG and `geometry.rs` computes node and edge geometry; `fragments.rs` produces the SSE patch. |
+| `run_history` | `GET /events/history` in `features/run_history/sse.rs` | `component.rs` owns the panel; `fragments.rs` renders rows and empty state; `filter.rs` parses and normalizes URL filters; `membership.rs` derives insert, replace, and remove transitions. |
+
+The module tree is intentionally feature-oriented and uses Rust self-named module files instead of `mod.rs`:
+
+```text
+src/
+├── app.rs
+├── app/
+│   ├── routes.rs       # SSR routes and canonical redirects
+│   ├── navigation.rs   # workflow and run URL construction
+│   ├── page.rs         # document and initial signal composition
+│   ├── console.rs      # feature component composition
+│   └── document.rs     # 404 document layout
+├── features.rs         # feature declarations and shared presentation exports
+└── features/
+    ├── workflow_launcher.rs
+    ├── workflow_launcher/
+    │   ├── action.rs
+    │   └── component.rs
+    ├── run_detail.rs
+    ├── run_detail/
+    │   ├── sse.rs
+    │   ├── fragments.rs
+    │   ├── component.rs
+    │   └── component/
+    │       ├── inspector.rs
+    │       ├── workflow_graph.rs
+    │       ├── step_trace.rs
+    │       ├── topology.rs
+    │       └── topology/
+    │           ├── renderer.rs
+    │           └── geometry.rs
+    ├── run_history.rs
+    └── run_history/
+        ├── sse.rs
+        ├── component.rs
+        ├── fragments.rs
+        ├── filter.rs
+        └── membership.rs
+```
+
+The `app` module owns SSR routes, navigation, document/page composition, and feature assembly. It does not own feature-specific SSE or patch rendering. This keeps `run_detail` as the owner of both the run SSE and the graph/trace components, including the static graph shown when no run is selected.
+
 ## Prerequisites
 
 - **Nix**: Recommended for the packaged application and its bundled assets.

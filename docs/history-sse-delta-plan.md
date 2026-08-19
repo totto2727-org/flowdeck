@@ -151,15 +151,29 @@ run SSEは選択中run_idに限定する。接続直後に現在のRunSnapshot�
 
 | ファイル | 変更内容 |
 | --- | --- |
-| src/web_page/routes.rs | runなしの `/runs/` とrunありの `/runs/{run_id}` を含む正規URL、リダイレクト、URLクエリの正規化 |
-| src/web_page.rs | GETフィルターform、SSR revision、SSE URL生成 |
-| src/web_page/console.rs | 行ID、tbody、empty state、履歴行の部品化 |
-| src/web.rs | /events をrun/historyへ分離し、HistoryDeltaからDatastar patchを生成 |
+| src/app/routes.rs | runなしの `/runs/` とrunありの `/runs/{run_id}` を含む正規URL、リダイレクト、履歴フィルタークエリの正規化 |
+| src/app/page.rs | 初期SSR、初期signals、history SSE URLの組み立て、feature componentへの状態受け渡し |
+| src/app/console.rs | run detailとrun historyのfeature componentをSSRページへ合成 |
+| src/features/workflow_launcher/action.rs | `POST /actions/runs` とworkflow固有入力の受信、実行後の正規run URLへの遷移 |
+| src/features/workflow_launcher/component.rs | workflow選択、workflow固有入力form、実行操作の描画 |
+| src/features/run_detail/sse.rs | `GET /events/runs/{run_id}` と選択runだけのstep、状態、出力更新 |
+| src/features/run_detail/fragments.rs | run inspectorのSSE patch用HTML生成 |
+| src/features/run_detail/component/inspector.rs | runありのgraph・metadata・step traceとrunなしのgraph-only表示の合成 |
+| src/features/run_detail/component/workflow_graph.rs | run状態を持たないgraphとrun状態付きgraphの共通panel |
+| src/features/run_detail/component/step_trace.rs | node/edgeのstep trace、state、実行時間、output/errorの描画 |
+| src/features/run_detail/component/topology/renderer.rs | TopcoatでSVG topologyとnode/edge状態を描画 |
+| src/features/run_detail/component/topology/geometry.rs | topologyのnode座標、edge経路、SVG表示領域の計算 |
+| src/features/run_history/sse.rs | `GET /events/history`、HistoryDeltaのreplay、フィルター済みDatastar差分patch、再同期判定 |
+| src/features/run_history/component.rs | history panelとGET filter formの描画 |
+| src/features/run_history/fragments.rs | 履歴rowとempty stateのpatch用HTML生成 |
+| src/features/run_history/filter.rs | URLクエリのparse、normalize、match。Cookie処理は持たない |
+| src/features/run_history/membership.rs | フィルター集合へのentry、stay、leaveの状態遷移判定 |
 | src/workflow.rs | revision、HistoryView、固定長ジャーナル、履歴購読API |
 | src/workflow/driver.rs | RunSnapshot変更の前後を使ってHistoryDeltaを発行 |
-| src/history_filter.rs | URLクエリのparse/normalize/match。Cookie処理は削除 |
-| src/main.rs | Cookie middlewareがこの用途だけなら削除 |
-| tests | URL復元、replay、prepend、outer patch、remove、lag時再同期を確認 |
+| src/workflow/history.rs | HistoryRevision、HistoryView、HistoryReplay、固定長journalの保持とreplay |
+| tests/workflow_events.rs | workflow eventのrun単位購読とイベント更新の検証 |
+| tests/workflow_history.rs | history revision、replay、prepend、replace、removeの検証 |
+| src/app/tests.rs、src/features/run_history/tests.rs | URL復元、filter canonicalization、SSR/SSEの境界、lag時再同期の検証 |
 
 ## 検証計画
 
