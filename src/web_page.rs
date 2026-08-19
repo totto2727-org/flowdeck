@@ -1,11 +1,8 @@
 mod console;
 mod document;
-mod presentation;
+pub(crate) mod presentation;
 mod rail;
-mod render;
 mod routes;
-mod topology;
-mod trace;
 
 #[cfg(test)]
 mod tests;
@@ -26,7 +23,6 @@ use topcoat::{
 )]
 pub(crate) use self::{
     presentation::{elapsed, run_status, trigger},
-    render::render_run_inspector,
     routes::workflow_url,
 };
 

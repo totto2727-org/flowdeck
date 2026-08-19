@@ -3,5 +3,8 @@
     reason = "Feature entrypoints are crate-visible while the top-level feature registry remains private."
 )]
 
-pub(crate) mod run_detail;
-pub(crate) mod run_history;
+mod component;
+mod fragments;
+mod sse;
+
+pub(crate) use component::selected_inspector_host;

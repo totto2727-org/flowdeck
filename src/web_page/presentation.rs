@@ -16,7 +16,7 @@ pub(crate) const fn run_status(run: &RunSnapshot) -> &'static str {
     }
 }
 
-pub(super) const fn step_status(step: &StepTrace) -> &'static str {
+pub(crate) const fn step_status(step: &StepTrace) -> &'static str {
     match step.status {
         StepTraceStatus::Running => "Running",
         StepTraceStatus::Completed => "Completed",
@@ -40,14 +40,14 @@ pub(crate) fn elapsed(run: &RunSnapshot) -> String {
     format_duration(duration)
 }
 
-pub(super) fn step_elapsed(step: &StepTrace) -> String {
+pub(crate) fn step_elapsed(step: &StepTrace) -> String {
     let duration = step
         .duration
         .or_else(|| SystemTime::now().duration_since(step.started_at).ok());
     format_duration(duration)
 }
 
-pub(super) fn timestamp(value: Option<SystemTime>) -> String {
+pub(crate) fn timestamp(value: Option<SystemTime>) -> String {
     value
         .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
         .map_or_else(
@@ -56,7 +56,7 @@ pub(super) fn timestamp(value: Option<SystemTime>) -> String {
         )
 }
 
-pub(super) const fn state_label(active: bool, traversed: bool) -> &'static str {
+pub(crate) const fn state_label(active: bool, traversed: bool) -> &'static str {
     if active {
         "Active"
     } else if traversed {
@@ -66,7 +66,7 @@ pub(super) const fn state_label(active: bool, traversed: bool) -> &'static str {
     }
 }
 
-pub(super) const fn state_value(active: bool, traversed: bool) -> &'static str {
+pub(crate) const fn state_value(active: bool, traversed: bool) -> &'static str {
     if active {
         "active"
     } else if traversed {

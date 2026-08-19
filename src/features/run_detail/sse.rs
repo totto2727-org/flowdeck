@@ -11,7 +11,7 @@ use topcoat::{
 };
 use workflow_console_experiment::{RunId, WorkflowEvent, WorkflowService};
 
-use crate::web_page::render_run_inspector;
+use super::fragments::render_run_inspector;
 
 #[path_param]
 struct RunEventPath(str);

@@ -4,10 +4,9 @@ use topcoat::{
 };
 use workflow_console_experiment::{RunSnapshot, RunStatus, WorkflowDefinition};
 
-use super::super::{
-    presentation::{elapsed, run_status, trigger},
-    topology::workflow_topology,
-};
+use crate::web_page::presentation::{elapsed, run_status, trigger};
+
+use super::topology::workflow_topology;
 
 #[component]
 pub(super) async fn workflow_graph_panel(
@@ -126,7 +125,7 @@ mod tests {
     use topcoat::view::view;
     use workflow_console_experiment::{RunTrigger, WorkflowService, workflow_definitions};
 
-    use super::{super::run_inspector, workflow_graph_panel};
+    use super::{super::inspector::run_inspector, workflow_graph_panel};
 
     #[tokio::test]
     async fn graph_panel_without_a_run_renders_only_static_workflow_context() {

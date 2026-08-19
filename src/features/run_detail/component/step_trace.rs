@@ -5,7 +5,7 @@ use topcoat::{
 };
 use workflow_console_experiment::{RunSnapshot, StepTrace, StepTraceStatus};
 
-use super::presentation::{step_elapsed, step_status, timestamp};
+use crate::web_page::presentation::{step_elapsed, step_status, timestamp};
 
 #[component]
 pub(super) async fn run_traces(run: RunSnapshot) -> Result {

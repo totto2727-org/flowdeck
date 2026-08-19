@@ -1,14 +1,9 @@
-#![allow(
-    clippy::redundant_pub_crate,
-    reason = "The run event sibling consumes this private page rendering seam."
-)]
-
 use topcoat::{Result, view::view};
 use workflow_console_experiment::WorkflowService;
 
-use super::console::run_inspector;
+use super::component::run_inspector;
 
-pub(crate) async fn render_run_inspector(
+pub(super) async fn render_run_inspector(
     service: &WorkflowService,
     run_id: &str,
 ) -> Result<Option<String>> {

@@ -3,19 +3,18 @@
     reason = "Topcoat formatting expands declarative component markup without increasing behavior."
 )]
 
-mod layout;
-
 use topcoat::{
     Result,
     view::{component, view},
 };
 use workflow_console_experiment::{EdgeSpec, NodeSpec, RunSnapshot, RunStatus, WorkflowDefinition};
 
-use self::layout::{edge_label_x, edge_label_y, edge_path, node_transform};
-use super::presentation::{state_label, state_value};
+use crate::web_page::presentation::{run_status, state_label, state_value};
+
+use super::geometry::{edge_label_x, edge_label_y, edge_path, node_transform};
 
 #[component]
-pub(super) async fn workflow_topology(
+pub(crate) async fn workflow_topology(
     definition: &'static WorkflowDefinition,
     run: Option<RunSnapshot>,
 ) -> Result {
@@ -173,7 +172,7 @@ fn topology_description(definition: &WorkflowDefinition, run: Option<&RunSnapsho
         |snapshot| {
             format!(
                 "{} status. Current node: {}. Current edge: {}. Traversed route: {}.",
-                super::presentation::run_status(snapshot),
+                run_status(snapshot),
                 snapshot.current_node.as_deref().unwrap_or("none"),
                 snapshot.current_edge.as_deref().unwrap_or("none"),
                 snapshot.route_summary

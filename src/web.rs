@@ -15,9 +15,6 @@ use workflow_console_experiment::{RunTrigger, WorkflowService};
 use crate::features::run_history::{HistoryFilterValues, HistoryFilters};
 use crate::web_page::workflow_url;
 
-#[path = "web/run_events.rs"]
-mod run_events;
-
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct StartSignals {
