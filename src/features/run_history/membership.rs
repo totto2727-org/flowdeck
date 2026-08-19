@@ -2,15 +2,17 @@ use std::collections::HashSet;
 
 use workflow_console_experiment::{HistoryDelta, HistoryReplay, HistoryView, RunId};
 
-use super::{HistoryMembershipChange, HistoryTransition, history_transition};
-use crate::history_filter::HistoryFilters;
+use super::{
+    filter::HistoryFilters,
+    sse::{HistoryMembershipChange, HistoryTransition, history_transition},
+};
 
-pub(super) struct FilteredHistoryMembership {
+pub(crate) struct FilteredHistoryMembership {
     run_ids: HashSet<RunId>,
 }
 
 impl FilteredHistoryMembership {
-    pub(super) fn at_cursor(
+    pub(crate) fn at_cursor(
         view: &HistoryView,
         replay: &HistoryReplay,
         filters: &HistoryFilters,
@@ -38,7 +40,7 @@ impl FilteredHistoryMembership {
         Self { run_ids }
     }
 
-    pub(super) fn apply(
+    pub(crate) fn apply(
         &mut self,
         delta: &HistoryDelta,
         filters: &HistoryFilters,

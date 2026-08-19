@@ -1,6 +1,5 @@
 mod console;
 mod document;
-mod history;
 mod presentation;
 mod rail;
 mod render;
@@ -26,7 +25,8 @@ use topcoat::{
     reason = "Sibling web modules use these private page rendering seams."
 )]
 pub(crate) use self::{
-    render::{render_history_empty, render_history_row, render_run_inspector},
+    presentation::{elapsed, run_status, trigger},
+    render::render_run_inspector,
     routes::workflow_url,
 };
 

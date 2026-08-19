@@ -12,11 +12,9 @@ use topcoat::{
 };
 use workflow_console_experiment::{RunTrigger, WorkflowService};
 
-use crate::history_filter::{HistoryFilterValues, HistoryFilters};
+use crate::features::run_history::{HistoryFilterValues, HistoryFilters};
 use crate::web_page::workflow_url;
 
-#[path = "web/history_events.rs"]
-mod history_events;
 #[path = "web/run_events.rs"]
 mod run_events;
 
@@ -66,33 +64,4 @@ async fn start_run(
         yield Ok(event);
     };
     Ok(Sse::new(stream))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::history_events::{HistoryMembershipChange, HistoryTransition, history_transition};
-
-    #[test]
-    fn history_transition_classifies_all_filter_membership_changes() {
-        assert_eq!(
-            history_transition(HistoryMembershipChange::Entered { was_empty: true }),
-            HistoryTransition::InsertFirst
-        );
-        assert_eq!(
-            history_transition(HistoryMembershipChange::Entered { was_empty: false }),
-            HistoryTransition::Insert
-        );
-        assert_eq!(
-            history_transition(HistoryMembershipChange::Stayed),
-            HistoryTransition::Replace
-        );
-        assert_eq!(
-            history_transition(HistoryMembershipChange::Left { is_empty: true }),
-            HistoryTransition::RemoveAndEmpty
-        );
-        assert_eq!(
-            history_transition(HistoryMembershipChange::Outside),
-            HistoryTransition::Ignore
-        );
-    }
 }

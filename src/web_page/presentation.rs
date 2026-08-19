@@ -1,8 +1,13 @@
+#![allow(
+    clippy::redundant_pub_crate,
+    reason = "Run history consumes shared presentation formatting without owning it."
+)]
+
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use workflow_console_experiment::{RunSnapshot, RunStatus, RunTrigger, StepTrace, StepTraceStatus};
 
-pub(super) const fn run_status(run: &RunSnapshot) -> &'static str {
+pub(crate) const fn run_status(run: &RunSnapshot) -> &'static str {
     match run.status {
         RunStatus::Running => "Running",
         RunStatus::Completed => "Completed",
@@ -20,7 +25,7 @@ pub(super) const fn step_status(step: &StepTrace) -> &'static str {
     }
 }
 
-pub(super) fn trigger(run: &RunSnapshot) -> String {
+pub(crate) fn trigger(run: &RunSnapshot) -> String {
     match &run.trigger {
         RunTrigger::Manual => "Manual".to_owned(),
         RunTrigger::Cron { schedule_id } => format!("Cron · {schedule_id}"),
@@ -28,7 +33,7 @@ pub(super) fn trigger(run: &RunSnapshot) -> String {
     }
 }
 
-pub(super) fn elapsed(run: &RunSnapshot) -> String {
+pub(crate) fn elapsed(run: &RunSnapshot) -> String {
     let duration = run
         .duration
         .or_else(|| SystemTime::now().duration_since(run.started_at).ok());

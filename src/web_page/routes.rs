@@ -11,7 +11,7 @@ use workflow_console_experiment::{
 };
 
 use super::document::render_console_page;
-use crate::history_filter::{HistoryFilterQuery, HistoryFilters};
+use crate::features::run_history::{HistoryFilterQuery, HistoryFilters};
 
 #[path_param]
 struct WorkflowPath(str);
@@ -164,7 +164,7 @@ mod tests {
     use workflow_console_experiment::{RunTrigger, WorkflowService};
 
     use super::{latest_run_url, workflow_url};
-    use crate::history_filter::{HistoryFilterQuery, HistoryFilters};
+    use crate::features::run_history::{HistoryFilterQuery, HistoryFilters};
 
     #[test]
     fn workflow_url_without_a_run_uses_the_canonical_runless_path() {

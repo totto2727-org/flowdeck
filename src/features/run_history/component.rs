@@ -11,13 +11,12 @@ use workflow_console_experiment::{
     HistoryRevision, HistoryView, RunSnapshot, workflow_definitions,
 };
 
-use super::{
-    presentation::{elapsed, run_status, trigger},
-    workflow_url,
+use crate::{
+    features::run_history::HistoryFilters,
+    web_page::{elapsed, run_status, trigger, workflow_url},
 };
-use crate::history_filter::HistoryFilters;
 
-pub(super) struct HistoryPanelState {
+pub(crate) struct HistoryPanelState {
     runs: Vec<RunSnapshot>,
     filters: HistoryFilters,
     page_path: String,
@@ -25,7 +24,7 @@ pub(super) struct HistoryPanelState {
 }
 
 impl HistoryPanelState {
-    pub(super) fn new(
+    pub(crate) fn new(
         mut history: HistoryView,
         filters: HistoryFilters,
         page_path: String,
@@ -40,7 +39,7 @@ impl HistoryPanelState {
         }
     }
 
-    pub(super) fn events_url(&self) -> String {
+    pub(crate) fn events_url(&self) -> String {
         let suffix = self.filters.query_suffix();
         let filter_query = suffix.strip_prefix('?').unwrap_or_default();
         if filter_query.is_empty() {
@@ -55,7 +54,7 @@ impl HistoryPanelState {
 }
 
 #[component]
-pub(super) async fn history_panel(state: HistoryPanelState) -> Result {
+pub(crate) async fn history_panel(state: HistoryPanelState) -> Result {
     let values = state.filters.values();
     let filters_active = state.filters.is_active();
     let events_url = state.events_url();

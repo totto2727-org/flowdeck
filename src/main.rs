@@ -1,6 +1,6 @@
 //! Local Topcoat workflow console server.
 
-mod history_filter;
+mod features;
 mod web;
 mod web_page;
 

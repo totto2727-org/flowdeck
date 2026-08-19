@@ -1,19 +1,19 @@
 #![allow(
     clippy::redundant_pub_crate,
-    reason = "Typed filter values cross sibling web modules while their defining module remains private."
+    reason = "Typed filter values cross feature and page modules while their defining module remains private."
 )]
 
 use serde::{Deserialize, Serialize};
 use workflow_console_experiment::{RunSnapshot, RunStatus, RunTrigger, workflow_definitions};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(super) struct HistoryFilterValues {
+pub(crate) struct HistoryFilterValues {
     #[serde(rename = "historyWorkflowFilter")]
-    pub(super) workflow: String,
+    pub(crate) workflow: String,
     #[serde(rename = "historyTriggerFilter")]
-    pub(super) trigger: String,
+    pub(crate) trigger: String,
     #[serde(rename = "historyStatusFilter")]
-    pub(super) status: String,
+    pub(crate) status: String,
 }
 
 #[allow(
@@ -21,14 +21,14 @@ pub(super) struct HistoryFilterValues {
     reason = "This query DTO mirrors the stable URL parameter names at the Serde boundary."
 )]
 #[derive(Debug, Clone, Default, Deserialize)]
-pub(super) struct HistoryFilterQuery {
-    pub(super) history_workflow: Option<String>,
-    pub(super) history_trigger: Option<String>,
-    pub(super) history_status: Option<String>,
+pub(crate) struct HistoryFilterQuery {
+    pub(crate) history_workflow: Option<String>,
+    pub(crate) history_trigger: Option<String>,
+    pub(crate) history_status: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct HistoryFilters {
+pub(crate) struct HistoryFilters {
     workflow: Option<String>,
     trigger: TriggerFilter,
     status: StatusFilter,
@@ -60,7 +60,7 @@ impl Default for HistoryFilters {
 }
 
 impl HistoryFilters {
-    pub(super) fn from_query(query: &HistoryFilterQuery) -> Self {
+    pub(crate) fn from_query(query: &HistoryFilterQuery) -> Self {
         Self::from_values(&HistoryFilterValues {
             workflow: query.history_workflow.clone().unwrap_or_default(),
             trigger: query.history_trigger.clone().unwrap_or_default(),
@@ -68,7 +68,7 @@ impl HistoryFilters {
         })
     }
 
-    pub(super) fn from_values(values: &HistoryFilterValues) -> Self {
+    pub(crate) fn from_values(values: &HistoryFilterValues) -> Self {
         let workflow = workflow_definitions()
             .iter()
             .any(|definition| definition.workflow_id == values.workflow)
@@ -91,7 +91,7 @@ impl HistoryFilters {
         }
     }
 
-    pub(super) fn values(&self) -> HistoryFilterValues {
+    pub(crate) fn values(&self) -> HistoryFilterValues {
         HistoryFilterValues {
             workflow: self.workflow.as_deref().unwrap_or("all").to_owned(),
             trigger: self.trigger.as_str().to_owned(),
@@ -99,13 +99,13 @@ impl HistoryFilters {
         }
     }
 
-    pub(super) fn is_active(&self) -> bool {
+    pub(crate) fn is_active(&self) -> bool {
         self.workflow.is_some()
             || self.trigger != TriggerFilter::All
             || self.status != StatusFilter::All
     }
 
-    pub(super) fn query_suffix(&self) -> String {
+    pub(crate) fn query_suffix(&self) -> String {
         let values = self.values();
         let mut fields = Vec::with_capacity(3);
         if values.workflow != "all" {
@@ -123,7 +123,7 @@ impl HistoryFilters {
             .unwrap_or_else(|| format!("?{}", fields.join("&")))
     }
 
-    pub(super) fn matches(&self, run: &RunSnapshot) -> bool {
+    pub(crate) fn matches(&self, run: &RunSnapshot) -> bool {
         let workflow_matches = self
             .workflow
             .as_ref()

@@ -12,18 +12,11 @@ use topcoat::{
 };
 use workflow_console_experiment::{HistoryDelta, HistoryReplay, HistoryRevision, WorkflowService};
 
-use crate::{
-    history_filter::{HistoryFilterQuery, HistoryFilters},
-    web_page::{render_history_empty, render_history_row},
+use super::{
+    filter::{HistoryFilterQuery, HistoryFilters},
+    fragments::{render_history_empty, render_history_row},
+    membership::FilteredHistoryMembership,
 };
-
-#[path = "history_events/membership.rs"]
-mod membership;
-#[cfg(test)]
-#[path = "history_events/tests.rs"]
-mod tests;
-
-use membership::FilteredHistoryMembership;
 
 #[derive(Deserialize)]
 struct HistoryEventsQuery {
@@ -34,7 +27,7 @@ struct HistoryEventsQuery {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum HistoryTransition {
+pub(crate) enum HistoryTransition {
     InsertFirst,
     Insert,
     Replace,
@@ -44,7 +37,7 @@ pub(super) enum HistoryTransition {
 }
 
 #[derive(Clone, Copy)]
-pub(super) enum HistoryMembershipChange {
+pub(crate) enum HistoryMembershipChange {
     Entered { was_empty: bool },
     Stayed,
     Left { is_empty: bool },
@@ -52,7 +45,7 @@ pub(super) enum HistoryMembershipChange {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum RevisionAction {
+pub(crate) enum RevisionAction {
     Apply,
     Ignore,
     Reload,
@@ -134,7 +127,7 @@ fn history_request(cx: &Cx) -> Result<(HistoryRevision, HistoryFilters)> {
     Ok((after, filters))
 }
 
-async fn delta_events(
+pub(crate) async fn delta_events(
     filters: &HistoryFilters,
     delta: &HistoryDelta,
     transition: HistoryTransition,
@@ -191,12 +184,12 @@ async fn delta_events(
     }
 }
 
-fn replay_cursor(query_after: u64, last_event_id: Option<&str>) -> HistoryRevision {
+pub(crate) fn replay_cursor(query_after: u64, last_event_id: Option<&str>) -> HistoryRevision {
     let resumed_after = last_event_id.and_then(|value| value.parse::<u64>().ok());
     HistoryRevision::new(resumed_after.map_or(query_after, |value| value.max(query_after)))
 }
 
-pub(super) const fn history_transition(change: HistoryMembershipChange) -> HistoryTransition {
+pub(crate) const fn history_transition(change: HistoryMembershipChange) -> HistoryTransition {
     match change {
         HistoryMembershipChange::Entered { was_empty: true } => HistoryTransition::InsertFirst,
         HistoryMembershipChange::Entered { was_empty: false } => HistoryTransition::Insert,
@@ -207,7 +200,10 @@ pub(super) const fn history_transition(change: HistoryMembershipChange) -> Histo
     }
 }
 
-const fn revision_action(last: HistoryRevision, next: HistoryRevision) -> RevisionAction {
+pub(crate) const fn revision_action(
+    last: HistoryRevision,
+    next: HistoryRevision,
+) -> RevisionAction {
     if next.value() <= last.value() {
         RevisionAction::Ignore
     } else if next.value() == last.value().saturating_add(1) {

@@ -5,7 +5,7 @@ use topcoat::{
 use workflow_console_experiment::{workflow_definitions, workflow_input_form, workflow_schedules};
 
 use super::routes::workflow_url;
-use crate::history_filter::HistoryFilters;
+use crate::features::run_history::HistoryFilters;
 
 #[component]
 pub(super) async fn workflow_rail(selected_workflow_id: &str, filters: &HistoryFilters) -> Result {

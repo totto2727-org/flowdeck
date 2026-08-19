@@ -1,33 +1,12 @@
 #![allow(
     clippy::redundant_pub_crate,
-    reason = "Sibling web modules consume these fragment render adapters through the page facade."
+    reason = "The run event sibling consumes this private page rendering seam."
 )]
 
 use topcoat::{Result, view::view};
-use workflow_console_experiment::{RunSnapshot, WorkflowService};
+use workflow_console_experiment::WorkflowService;
 
-use super::{
-    console::run_inspector,
-    history::{run_history_empty, run_history_row},
-};
-use crate::history_filter::HistoryFilters;
-
-pub(crate) async fn render_history_row(
-    run: &RunSnapshot,
-    filters: &HistoryFilters,
-) -> Result<String> {
-    let cx = topcoat::context::CxTestBuilder::new().build();
-    let __cx = &cx;
-    let rendered = view! { run_history_row(run: run.clone(), filters: filters.clone()) }?;
-    Ok(rendered.render(&cx))
-}
-
-pub(crate) async fn render_history_empty(filters: &HistoryFilters) -> Result<String> {
-    let cx = topcoat::context::CxTestBuilder::new().build();
-    let __cx = &cx;
-    let rendered = view! { run_history_empty(filters_active: filters.is_active()) }?;
-    Ok(rendered.render(&cx))
-}
+use super::console::run_inspector;
 
 pub(crate) async fn render_run_inspector(
     service: &WorkflowService,

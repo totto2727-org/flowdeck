@@ -7,10 +7,8 @@ use topcoat::{
 use workflow_console_experiment::{RunSnapshot, workflow_definitions};
 
 use self::graph_panel::workflow_graph_panel;
-use super::{
-    history::{HistoryPanelState, history_panel},
-    trace::run_traces,
-};
+use super::trace::run_traces;
+use crate::features::run_history::{HistoryPanelState, history_panel};
 
 #[component]
 pub(super) async fn console_content(
