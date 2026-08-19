@@ -5,3 +5,4 @@
 
 pub(crate) mod run_detail;
 pub(crate) mod run_history;
+pub(crate) mod workflow_launcher;

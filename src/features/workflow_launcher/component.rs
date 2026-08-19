@@ -4,11 +4,10 @@ use topcoat::{
 };
 use workflow_console_experiment::{workflow_definitions, workflow_input_form, workflow_schedules};
 
-use super::routes::workflow_url;
-use crate::features::run_history::HistoryFilters;
+use crate::{features::run_history::HistoryFilters, web_page::workflow_url};
 
 #[component]
-pub(super) async fn workflow_rail(selected_workflow_id: &str, filters: &HistoryFilters) -> Result {
+pub(crate) async fn workflow_rail(selected_workflow_id: &str, filters: &HistoryFilters) -> Result {
     let schedules = workflow_schedules();
     let filter_suffix = filters.query_suffix();
     view! {

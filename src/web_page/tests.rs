@@ -1,8 +1,11 @@
 use serde_json::json;
 use workflow_console_experiment::{RunTrigger, WorkflowService};
 
-use super::{document::initial_signals, rail::workflow_rail};
-use crate::features::run_history::{HistoryFilterQuery, HistoryFilterValues, HistoryFilters};
+use super::document::initial_signals;
+use crate::features::{
+    run_history::{HistoryFilterQuery, HistoryFilterValues, HistoryFilters},
+    workflow_launcher::workflow_rail,
+};
 
 #[tokio::test]
 async fn initial_signals_restore_the_workflow_and_run_from_the_url() {

@@ -4,10 +4,12 @@ use topcoat::{Result, context::Cx, router::StatusCode, view::view};
 use workflow_console_experiment::{HistoryView, RunSnapshot, workflow_default_input};
 
 use super::{
-    DATASTAR_JS, NOT_FOUND_REDIRECT_DELAY_SECONDS, console::console_content, rail::workflow_rail,
-    routes::workflow_url,
+    DATASTAR_JS, NOT_FOUND_REDIRECT_DELAY_SECONDS, console::console_content, routes::workflow_url,
 };
-use crate::features::run_history::{HistoryFilterValues, HistoryFilters, HistoryPanelState};
+use crate::features::{
+    run_history::{HistoryFilterValues, HistoryFilters, HistoryPanelState},
+    workflow_launcher::workflow_rail,
+};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]

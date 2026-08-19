@@ -1,7 +1,6 @@
 //! Local Topcoat workflow console server.
 
 mod features;
-mod web;
 mod web_page;
 
 use std::{error::Error, time::Instant};

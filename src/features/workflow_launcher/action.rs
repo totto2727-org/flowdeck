@@ -12,8 +12,10 @@ use topcoat::{
 };
 use workflow_console_experiment::{RunTrigger, WorkflowService};
 
-use crate::features::run_history::{HistoryFilterValues, HistoryFilters};
-use crate::web_page::workflow_url;
+use crate::{
+    features::run_history::{HistoryFilterValues, HistoryFilters},
+    web_page::workflow_url,
+};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
