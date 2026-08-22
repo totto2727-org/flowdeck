@@ -77,79 +77,81 @@ pub(crate) async fn history_panel(state: HistoryPanelState) -> Result {
             <form
                 method="get"
                 action=(state.page_path.clone())
-                class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2"
+                class="mt-4 grid gap-4"
                 aria-labelledby="history-filters-title"
             >
                 <h3 id="history-filters-title" class="sr-only">"Filter run history"</h3>
-                <label
-                    class="grid gap-1 text-sm font-semibold text-text-secondary"
-                    for="history-workflow-filter"
-                >
-                    <span>"Workflow"</span>
-                    <select
-                        id="history-workflow-filter"
-                        name="history_workflow"
-                        class="min-h-[var(--control-min)] min-w-0 w-full rounded-control border border-border bg-canvas px-3 text-text-primary shadow-inset"
+                <div class="grid gap-3 sm:grid-cols-3">
+                    <label
+                        class="grid gap-1 text-sm font-semibold text-text-secondary"
+                        for="history-workflow-filter"
                     >
-                        <option value="all" selected=(values.workflow == "all")>"All workflows"</option>
-                        for definition in workflow_definitions() {
-                            <option
-                                value=(definition.workflow_id)
-                                selected=(values.workflow == definition.workflow_id)
-                            >
-                                (definition.name)
-                            </option>
-                        }
-                    </select>
-                </label>
-                <label
-                    class="grid gap-1 text-sm font-semibold text-text-secondary"
-                    for="history-trigger-filter"
-                >
-                    <span>"Trigger"</span>
-                    <select
-                        id="history-trigger-filter"
-                        name="history_trigger"
-                        class="min-h-[var(--control-min)] min-w-0 w-full rounded-control border border-border bg-canvas px-3 text-text-primary shadow-inset"
+                        <span>"Workflow"</span>
+                        <select
+                            id="history-workflow-filter"
+                            name="history_workflow"
+                            class="min-h-[var(--control-min)] min-w-0 w-full rounded-control border border-border bg-canvas px-3 text-text-primary shadow-inset"
+                        >
+                            <option value="all" selected=(values.workflow == "all")>"All workflows"</option>
+                            for definition in workflow_definitions() {
+                                <option
+                                    value=(definition.workflow_id)
+                                    selected=(values.workflow == definition.workflow_id)
+                                >
+                                    (definition.name)
+                                </option>
+                            }
+                        </select>
+                    </label>
+                    <label
+                        class="grid gap-1 text-sm font-semibold text-text-secondary"
+                        for="history-trigger-filter"
                     >
-                        <option value="all" selected=(values.trigger == "all")>"All triggers"</option>
-                        <option value="manual" selected=(values.trigger == "manual")>"Manual"</option>
-                        <option value="cron" selected=(values.trigger == "cron")>"Cron"</option>
-                    </select>
-                </label>
-                <label
-                    class="grid gap-1 text-sm font-semibold text-text-secondary"
-                    for="history-status-filter"
-                >
-                    <span>"Status"</span>
-                    <select
-                        id="history-status-filter"
-                        name="history_status"
-                        class="min-h-[var(--control-min)] min-w-0 w-full rounded-control border border-border bg-canvas px-3 text-text-primary shadow-inset"
+                        <span>"Trigger"</span>
+                        <select
+                            id="history-trigger-filter"
+                            name="history_trigger"
+                            class="min-h-[var(--control-min)] min-w-0 w-full rounded-control border border-border bg-canvas px-3 text-text-primary shadow-inset"
+                        >
+                            <option value="all" selected=(values.trigger == "all")>"All triggers"</option>
+                            <option value="manual" selected=(values.trigger == "manual")>"Manual"</option>
+                            <option value="cron" selected=(values.trigger == "cron")>"Cron"</option>
+                        </select>
+                    </label>
+                    <label
+                        class="grid gap-1 text-sm font-semibold text-text-secondary"
+                        for="history-status-filter"
                     >
-                        <option value="all" selected=(values.status == "all")>"All statuses"</option>
-                        <option value="running" selected=(values.status == "running")>"Running"</option>
-                        <option value="completed" selected=(values.status == "completed")>"Completed"</option>
-                        <option value="failed" selected=(values.status == "failed")>"Failed"</option>
-                    </select>
-                </label>
-                <div class="flex self-end gap-3">
-                    <button
-                        type="submit"
-                        class="min-h-[var(--control-min)] rounded-control border border-accent-hover bg-accent px-4 font-semibold text-text-primary shadow-inset transition-[filter,transform] duration-[var(--motion-micro)] ease-[var(--ease-standard)] hover:brightness-110 active:translate-y-px"
-                    >
-                        "Search"
-                    </button>
+                        <span>"Status"</span>
+                        <select
+                            id="history-status-filter"
+                            name="history_status"
+                            class="min-h-[var(--control-min)] min-w-0 w-full rounded-control border border-border bg-canvas px-3 text-text-primary shadow-inset"
+                        >
+                            <option value="all" selected=(values.status == "all")>"All statuses"</option>
+                            <option value="running" selected=(values.status == "running")>"Running"</option>
+                            <option value="completed" selected=(values.status == "completed")>"Completed"</option>
+                            <option value="failed" selected=(values.status == "failed")>"Failed"</option>
+                        </select>
+                    </label>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
                     <a
-                        class="inline-flex min-h-[var(--control-min)] items-center rounded-control border border-border px-4 font-semibold text-text-primary shadow-inset transition-[filter] duration-[var(--motion-micro)] ease-[var(--ease-standard)] hover:brightness-110"
+                        class="inline-flex h-[var(--control-min)] items-center justify-center rounded-control border border-border px-4 font-semibold text-text-primary shadow-inset transition-[filter] duration-[var(--motion-micro)] ease-[var(--ease-standard)] hover:brightness-110"
                         href=(state.page_path.clone())
                     >
                         "Reset filters"
                     </a>
+                    <button
+                        type="submit"
+                        class="inline-flex h-[var(--control-min)] items-center justify-center rounded-control border border-accent-hover bg-accent px-4 font-semibold text-text-primary shadow-inset transition-[filter,transform] duration-[var(--motion-micro)] ease-[var(--ease-standard)] hover:brightness-110 active:translate-y-px"
+                    >
+                        "Search"
+                    </button>
                 </div>
             </form>
             <div
-                class="max-w-full min-w-0 overflow-x-auto"
+                class="mt-4 max-w-full min-w-0 overflow-x-auto"
                 tabindex="0"
                 aria-label="Run history, horizontally scrollable"
             >
