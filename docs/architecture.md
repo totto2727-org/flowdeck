@@ -3,6 +3,8 @@
 This document describes the current runtime architecture of Workflow Console Experiment.
 It is a source-oriented reference for maintainers adding workflows, agent nodes, schedules, execution policies, or alternative graph renderers.
 
+[日本語版](./architecture.ja.md)
+
 ## 1. Purpose and boundaries
 
 Workflow Console is a local-only orchestration surface for code-defined workflows.
@@ -141,7 +143,7 @@ The graph-flow context uses stable keys shared by workflow tasks and trace proje
 | `workflow_input` | Normalized workflow-owned JSON | Initial task input and retained state projection. |
 | `input_summary` | Short display string | Human-readable input summary for synthetic tasks and history. |
 | `jcode_session_key` | Current `RunId` | Reuses one jcode session across every agent node in the same run. |
-| `jcode_output` | `JcodeOutput` | Retains redacted agent output, tool calls, usage, and session identity. |
+| `jcode_output` | `JcodeOutput` | Retains serialized agent text, reasoning, tool-call output, usage, and session identity. |
 
 Using `RunId` as the jcode session key gives every workflow run an isolated agent conversation while allowing all jcode nodes within that run to share prior analysis and file-operation context.
 A different session-sharing policy can be implemented by supplying another `SessionMode` factory to `JcodeNode`.
@@ -237,8 +239,9 @@ The workflow reads GlossShift's selected provider configuration from its XDG con
 This adapter is intentionally isolated in `src/workflows/jcode_translation/glossshift.rs`.
 Future first-class provider-profile and credential handling must replace that adapter without expanding the generic node crate with application-specific GlossShift knowledge.
 
-Credential values are injected into launch environment or SDK calls and are not written to `RunSnapshot` or `StepState`.
+Credential values are injected into launch environment or SDK calls and are not directly copied into `RunSnapshot` or `StepState`.
 `ProviderCredential` redacts its API key from `Debug` output.
+`JcodeOutput` retains agent text, provider reasoning, and tool output without generic redaction, so workflow hooks must reject or normalize sensitive output before it becomes trace state.
 
 ### 9.4 Binary and example isolation
 
@@ -286,7 +289,7 @@ Run lifecycle states are:
 
 `StepTrace` retains:
 
-- Stable `StepId`, global sequence, node ID, and per-node execution number.
+- Stable `StepId`, run-local sequence, node ID, and per-node execution number.
 - Running, completed, or failed status.
 - Selected edge when the node chose a transition.
 - State projected after execution.
@@ -404,7 +407,7 @@ The current `RwLock`, broadcast channels, named jcode sessions, schedule claims,
 - Skipped schedule firings remain visible in history.
 - Topology layout is derived from definitions and never falls back to unknown IDs at `(0,0)`.
 - Selected-run and history SSE streams remain separate.
-- Credentials and provider secrets never enter retained trace or history state.
+- Configuration credentials are never directly copied into retained trace or history state.
 
 ## 16. Current trade-offs
 
@@ -415,6 +418,7 @@ The current `RwLock`, broadcast channels, named jcode sessions, schedule claims,
 - Edge-specific count and timeout limits are not enforced.
 - The automatic layout is deterministic but intentionally simpler than a dedicated graph-layout library.
 - The GlossShift provider mapping is a temporary compatibility adapter.
+- Agent text, reasoning, and tool output are retained without generic secret redaction.
 - The generic jcode crate exposes the most important launch, session, prompt, run, and hook boundaries, but future SDK additions may require explicit forwarding APIs.
 
 These trade-offs are acceptable for the current local experiment and are the first boundaries to revisit before persistence, remote deployment, or large workflow graphs are introduced.

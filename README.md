@@ -62,7 +62,7 @@ See [Workflow Console Architecture](./docs/architecture.md) for its HTTP boundar
 
 ## Development
 
-For the current system design, see [docs/architecture.md](./docs/architecture.md).
+For the current system design, see [docs/architecture.md](./docs/architecture.md) or its [Japanese translation](./docs/architecture.ja.md).
 For repository structure and development commands, see [AGENTS.md](./AGENTS.md).
 
 ## Documentation
