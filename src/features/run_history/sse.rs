@@ -66,7 +66,7 @@ async fn history_events(cx: &Cx) -> Result<Sse<impl Stream<Item = Result<Event>>
                     match revision_action(last, delta.revision) {
                         RevisionAction::Apply => {
                             let transition = membership.apply(&delta, &filters);
-                            for event in delta_events(&filters, &delta, transition).await? {
+                            for event in delta_events(&service, &filters, &delta, transition).await? {
                                 yield Ok(event);
                             }
                             last = delta.revision;
@@ -94,7 +94,7 @@ async fn history_events(cx: &Cx) -> Result<Sse<impl Stream<Item = Result<Event>>
                 Ok(delta) => match revision_action(last, delta.revision) {
                     RevisionAction::Apply => {
                         let transition = membership.apply(&delta, &filters);
-                        for event in delta_events(&filters, &delta, transition).await? {
+                        for event in delta_events(&service, &filters, &delta, transition).await? {
                             yield Ok(event);
                         }
                         last = delta.revision;
@@ -128,6 +128,7 @@ fn history_request(cx: &Cx) -> Result<(HistoryRevision, HistoryFilters)> {
 }
 
 pub(crate) async fn delta_events(
+    service: &WorkflowService,
     filters: &HistoryFilters,
     delta: &HistoryDelta,
     transition: HistoryTransition,
@@ -136,11 +137,11 @@ pub(crate) async fn delta_events(
     let revision_id = delta.revision.value().to_string();
     match transition {
         HistoryTransition::InsertFirst => {
-            let Some(run) = delta.after.as_ref() else {
+            let Some(run) = service.get_run(&delta.run_id).await else {
                 return Ok(Vec::new());
             };
             Ok(vec![
-                PatchElements::new(render_history_row(run, filters).await?)
+                PatchElements::new(render_history_row(&run, filters).await?)
                     .selector("#run-history-body")
                     .mode(ElementPatchMode::Inner)
                     .id(revision_id)
@@ -148,11 +149,11 @@ pub(crate) async fn delta_events(
             ])
         }
         HistoryTransition::Insert => {
-            let Some(run) = delta.after.as_ref() else {
+            let Some(run) = service.get_run(&delta.run_id).await else {
                 return Ok(Vec::new());
             };
             Ok(vec![
-                PatchElements::new(render_history_row(run, filters).await?)
+                PatchElements::new(render_history_row(&run, filters).await?)
                     .selector("#run-history-body")
                     .mode(ElementPatchMode::Prepend)
                     .id(revision_id)
@@ -160,11 +161,11 @@ pub(crate) async fn delta_events(
             ])
         }
         HistoryTransition::Replace => {
-            let Some(run) = delta.after.as_ref() else {
+            let Some(run) = service.get_run(&delta.run_id).await else {
                 return Ok(Vec::new());
             };
             Ok(vec![
-                PatchElements::new(render_history_row(run, filters).await?)
+                PatchElements::new(render_history_row(&run, filters).await?)
                     .selector(row_selector)
                     .id(revision_id)
                     .into(),

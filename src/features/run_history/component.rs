@@ -132,6 +132,7 @@ pub(crate) async fn history_panel(state: HistoryPanelState) -> Result {
                             <option value="running" selected=(values.status == "running")>"Running"</option>
                             <option value="completed" selected=(values.status == "completed")>"Completed"</option>
                             <option value="failed" selected=(values.status == "failed")>"Failed"</option>
+                            <option value="skipped" selected=(values.status == "skipped")>"Skipped"</option>
                         </select>
                     </label>
                 </div>

@@ -1,12 +1,19 @@
-use std::{collections::HashMap, fmt, sync::Arc, time::SystemTime};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt,
+    sync::Arc,
+    time::{Duration, SystemTime},
+};
 
 use graph_flow::{FlowRunner, InMemorySessionStorage, Session, SessionStorage};
+use graph_flow_jcode::{JCODE_SESSION_KEY, JcodeRuntime};
 use serde_json::Value;
-use tokio::sync::{RwLock, broadcast};
+use tokio::sync::{Mutex, RwLock, broadcast};
 use uuid::Uuid;
 
 use crate::{
     RunId, RunSnapshot, RunStatus, RunTrigger, WorkflowDefinition, WorkflowError,
+    WorkflowExecutionLimits,
     workflows::{
         INPUT_SUMMARY_KEY, WORKFLOW_INPUT_KEY, build_graph, definition, parse_input,
         workflow_definitions,
@@ -23,7 +30,7 @@ mod history;
 use driver::drive;
 pub use events::WorkflowEvent;
 use history::{HISTORY_JOURNAL_CAPACITY, HistoryState};
-pub use history::{HistoryDelta, HistoryReplay, HistoryRevision, HistoryView};
+pub use history::{HistoryDelta, HistoryReplay, HistoryRevision, HistoryView, RunListProjection};
 
 /// Cloneable local boundary for workflow starts, listing, and event subscription.
 #[derive(Clone)]
@@ -44,20 +51,38 @@ struct Inner {
     history: RwLock<HistoryState>,
     events: broadcast::Sender<WorkflowEvent>,
     history_events: broadcast::Sender<HistoryDelta>,
+    running_schedules: Mutex<HashSet<String>>,
 }
 
 struct WorkflowRuntime {
     definition: &'static WorkflowDefinition,
+    limits: WorkflowExecutionLimits,
     runner: FlowRunner,
     storage: Arc<InMemorySessionStorage>,
 }
 
 impl WorkflowService {
-    /// Build every code-defined graph and its in-memory execution service.
+    /// Start one shared jcode process and build every code-defined workflow.
     pub fn new() -> Result<Self, WorkflowError> {
+        let runtime = crate::workflows::launch_jcode_runtime()?;
+        Self::build(Some(&runtime))
+    }
+
+    /// Build the workflow catalog without starting jcode for non-agent tests.
+    #[doc(hidden)]
+    pub fn without_jcode_runtime() -> Result<Self, WorkflowError> {
+        Self::build(None)
+    }
+
+    fn build(jcode_runtime: Option<&Arc<JcodeRuntime>>) -> Result<Self, WorkflowError> {
+        crate::workflow_scheduler::validate_schedules()?;
         let mut runtimes = HashMap::new();
         for definition in workflow_definitions() {
-            let graph = Arc::new(build_graph(definition.workflow_id)?);
+            let limits = definition.execution_limits()?;
+            let graph = Arc::new(build_graph(
+                definition.workflow_id,
+                jcode_runtime.map(Arc::clone),
+            )?);
             let storage = Arc::new(InMemorySessionStorage::new());
             let session_storage: Arc<dyn SessionStorage> =
                 Arc::<InMemorySessionStorage>::clone(&storage);
@@ -65,6 +90,7 @@ impl WorkflowService {
                 definition.workflow_id,
                 WorkflowRuntime {
                     definition,
+                    limits,
                     runner: FlowRunner::new(graph, session_storage),
                     storage,
                 },
@@ -78,6 +104,7 @@ impl WorkflowService {
                 history: RwLock::new(HistoryState::new()),
                 events,
                 history_events,
+                running_schedules: Mutex::new(HashSet::new()),
             }),
         })
     }
@@ -110,6 +137,10 @@ impl WorkflowService {
         session
             .context
             .set(INPUT_SUMMARY_KEY, input.summary())
+            .map_err(|error| session_error(&error))?;
+        session
+            .context
+            .set(JCODE_SESSION_KEY, run_id.as_str())
             .map_err(|error| session_error(&error))?;
         runtime
             .storage
@@ -177,6 +208,59 @@ impl WorkflowService {
     /// Poll one retained snapshot by its opaque run ID.
     pub async fn get_run(&self, run_id: &RunId) -> Option<RunSnapshot> {
         self.inner.history.read().await.get(run_id)
+    }
+
+    pub(crate) async fn claim_schedule(&self, schedule_id: &str) -> bool {
+        self.inner
+            .running_schedules
+            .lock()
+            .await
+            .insert(schedule_id.to_owned())
+    }
+
+    pub(crate) async fn release_schedule(&self, schedule_id: &str) {
+        self.inner
+            .running_schedules
+            .lock()
+            .await
+            .remove(schedule_id);
+    }
+
+    pub(crate) async fn retain_skipped_schedule(
+        &self,
+        workflow_id: &str,
+        raw_input: Value,
+        trigger: RunTrigger,
+        reason: &str,
+    ) -> Result<RunSnapshot, WorkflowError> {
+        let input = parse_input(workflow_id, raw_input)?;
+        let now = SystemTime::now();
+        let snapshot = RunSnapshot {
+            run_id: RunId(Uuid::new_v4().to_string()),
+            workflow_id: workflow_id.to_owned(),
+            input,
+            trigger,
+            status: RunStatus::Skipped {
+                reason: reason.to_owned(),
+            },
+            current_node: None,
+            current_edge: None,
+            traversed_nodes: Vec::new(),
+            traversed_edges: Vec::new(),
+            route_summary: format!("Skipped: {reason}"),
+            started_at: now,
+            finished_at: Some(now),
+            duration: Some(Duration::ZERO),
+            steps: Vec::new(),
+        };
+        let delta = self.inner.history.write().await.insert(snapshot.clone());
+        let _ = self.inner.history_events.send(delta);
+        let _ = self.inner.events.send(WorkflowEvent::RunSkipped {
+            run_id: snapshot.run_id.clone(),
+            workflow_id: snapshot.workflow_id.clone(),
+            reason: reason.to_owned(),
+        });
+        Ok(snapshot)
     }
 }
 

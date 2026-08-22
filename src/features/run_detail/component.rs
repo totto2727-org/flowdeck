@@ -1,4 +1,5 @@
 mod inspector;
+mod step_history;
 mod step_trace;
 mod topology;
 mod workflow_graph;

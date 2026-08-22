@@ -4,14 +4,17 @@ use std::time::Duration;
 
 use serde_json::json;
 use workflow_console_experiment::{
-    HistoryReplay, HistoryRevision, RunStatus, RunTrigger, StepTraceStatus, WorkflowError,
-    WorkflowService, workflow_definitions, workflow_id,
+    DEFAULT_NODE_MAX_EXECUTIONS, DEFAULT_NODE_TIMEOUT, DEFAULT_WORKFLOW_STEP_MULTIPLIER,
+    DEFAULT_WORKFLOW_TIMEOUT_PER_STEP, HistoryReplay, HistoryRevision, RunStatus, RunTrigger,
+    StepTraceStatus, WorkflowError, WorkflowService, workflow_definitions, workflow_id,
+    workflow_schedules,
 };
 
 #[tokio::test]
 async fn history_delta_when_run_starts_contains_atomic_before_and_after() {
     // Given: a history subscriber attached before the first mutation.
-    let service = WorkflowService::new().expect("the code-defined workflow should build");
+    let service =
+        WorkflowService::without_jcode_runtime().expect("the code-defined workflow should build");
     let mut deltas = service.subscribe_history();
 
     // When: a valid workflow starts.
@@ -41,7 +44,8 @@ async fn history_delta_when_run_starts_contains_atomic_before_and_after() {
 #[tokio::test]
 async fn history_replay_when_current_or_future_revision_is_requested() {
     // Given: one retained start mutation and its revisioned view.
-    let service = WorkflowService::new().expect("the code-defined workflow should build");
+    let service =
+        WorkflowService::without_jcode_runtime().expect("the code-defined workflow should build");
     service
         .start(
             "review-pipeline",
@@ -68,7 +72,8 @@ async fn history_replay_when_current_or_future_revision_is_requested() {
 #[tokio::test]
 async fn history_replay_when_mutations_follow_cursor_is_ordered() {
     // Given: a subscriber is established before reading the empty revision.
-    let service = WorkflowService::new().expect("the code-defined workflow should build");
+    let service =
+        WorkflowService::without_jcode_runtime().expect("the code-defined workflow should build");
     let mut subscriber = service.subscribe_history();
     let cursor = service.history_view().await.revision;
 
@@ -130,7 +135,8 @@ async fn history_replay_when_mutations_follow_cursor_is_ordered() {
 
 #[tokio::test]
 async fn workflow_history_when_duplicate_or_malformed_request() {
-    let service = WorkflowService::new().expect("the code-defined workflow should build");
+    let service =
+        WorkflowService::without_jcode_runtime().expect("the code-defined workflow should build");
 
     let first = service
         .start(
@@ -172,7 +178,8 @@ async fn workflow_history_when_duplicate_or_malformed_request() {
 
 #[tokio::test]
 async fn workflow_reaches_terminal_after_observable_steps() {
-    let service = WorkflowService::new().expect("the code-defined workflow should build");
+    let service =
+        WorkflowService::without_jcode_runtime().expect("the code-defined workflow should build");
     let started = service
         .start(
             workflow_id(),
@@ -246,7 +253,8 @@ async fn workflow_reaches_terminal_after_observable_steps() {
 
 #[tokio::test]
 async fn run_input_becomes_initial_state_when_manual_run_starts() {
-    let service = WorkflowService::new().expect("the code-defined workflow should build");
+    let service =
+        WorkflowService::without_jcode_runtime().expect("the code-defined workflow should build");
     let input = json!({ "label": "release candidate", "step_delay_ms": 240 });
 
     let started = service
@@ -261,7 +269,8 @@ async fn run_input_becomes_initial_state_when_manual_run_starts() {
 
 #[tokio::test]
 async fn cron_schedule_uses_configured_input_when_dispatched() {
-    let service = WorkflowService::new().expect("the code-defined workflow should build");
+    let service =
+        WorkflowService::without_jcode_runtime().expect("the code-defined workflow should build");
 
     let started = service
         .trigger_schedule("demo-every-10-seconds")
@@ -282,8 +291,77 @@ async fn cron_schedule_uses_configured_input_when_dispatched() {
 }
 
 #[tokio::test]
+async fn cron_schedule_skips_overlap_and_retains_the_skipped_attempt() {
+    // Given: the default schedule has one run in progress.
+    let service =
+        WorkflowService::without_jcode_runtime().expect("the code-defined workflow should build");
+    let running = service
+        .trigger_schedule("demo-every-10-seconds")
+        .await
+        .expect("the first scheduled run should start");
+
+    // When: the same schedule fires before that run completes.
+    let skipped = service
+        .trigger_schedule("demo-every-10-seconds")
+        .await
+        .expect("a skipped schedule attempt should still be retained");
+
+    // Then: the attempt is visible in history without starting graph execution.
+    assert!(matches!(running.status, RunStatus::Running));
+    assert!(matches!(skipped.status, RunStatus::Skipped { .. }));
+    assert!(skipped.steps.is_empty());
+    assert!(skipped.finished_at.is_some());
+    assert_eq!(service.list_runs().await.len(), 2);
+}
+
+#[tokio::test]
+async fn cron_schedule_allows_overlap_when_configured() {
+    // Given: a schedule explicitly configured to allow overlap.
+    let service =
+        WorkflowService::without_jcode_runtime().expect("the code-defined workflow should build");
+
+    // When: it fires twice without waiting for the first run.
+    let first = service
+        .trigger_schedule("demo-every-15-seconds-overlap")
+        .await
+        .expect("the first overlapping run should start");
+    let second = service
+        .trigger_schedule("demo-every-15-seconds-overlap")
+        .await
+        .expect("the second overlapping run should start");
+
+    // Then: both attempts are active graph runs instead of skipped history entries.
+    assert!(matches!(first.status, RunStatus::Running));
+    assert!(matches!(second.status, RunStatus::Running));
+    assert_ne!(first.run_id, second.run_id);
+}
+
+#[test]
+fn execution_limits_default_from_the_workflow_topology() {
+    // Given: every registered workflow uses the application defaults.
+    for definition in workflow_definitions() {
+        // When: its effective execution limits are resolved.
+        let limits = definition
+            .execution_limits()
+            .expect("registered workflow limits should be valid");
+        let expected_steps = definition.nodes.len() * DEFAULT_WORKFLOW_STEP_MULTIPLIER;
+
+        // Then: total and node limits use their independent constants.
+        assert_eq!(limits.max_steps, expected_steps);
+        assert_eq!(
+            limits.timeout,
+            DEFAULT_WORKFLOW_TIMEOUT_PER_STEP * u32::try_from(expected_steps).unwrap()
+        );
+        assert_eq!(limits.node.max_executions, DEFAULT_NODE_MAX_EXECUTIONS);
+        assert_eq!(limits.node.timeout, DEFAULT_NODE_TIMEOUT);
+    }
+    assert_eq!(workflow_schedules().len(), 2);
+}
+
+#[tokio::test]
 async fn every_code_defined_workflow_can_be_selected_and_completed() {
-    let service = WorkflowService::new().expect("every code-defined workflow should build");
+    let service =
+        WorkflowService::without_jcode_runtime().expect("every code-defined workflow should build");
     let definitions = workflow_definitions();
     let demo = definitions
         .iter()
@@ -293,9 +371,14 @@ async fn every_code_defined_workflow_can_be_selected_and_completed() {
         .iter()
         .find(|definition| definition.workflow_id == "review-pipeline")
         .expect("review workflow is registered");
+    let jcode = definitions
+        .iter()
+        .find(|definition| definition.workflow_id == "jcode-translation")
+        .expect("jcode translation workflow is registered");
 
-    assert_eq!(definitions.len(), 2);
+    assert_eq!(definitions.len(), 3);
     assert_ne!(demo.nodes, review.nodes);
+    assert_ne!(review.nodes, jcode.nodes);
 
     let started = service
         .start(
@@ -343,7 +426,8 @@ async fn every_code_defined_workflow_can_be_selected_and_completed() {
 
 #[tokio::test]
 async fn workflow_specific_input_rejects_another_workflows_fields() {
-    let service = WorkflowService::new().expect("every code-defined workflow should build");
+    let service =
+        WorkflowService::without_jcode_runtime().expect("every code-defined workflow should build");
 
     let result = service
         .start(
@@ -359,7 +443,8 @@ async fn workflow_specific_input_rejects_another_workflows_fields() {
 
 #[tokio::test]
 async fn demo_input_rejects_label_longer_than_80_unicode_scalars_before_trim() {
-    let service = WorkflowService::new().expect("the code-defined workflow should build");
+    let service =
+        WorkflowService::without_jcode_runtime().expect("the code-defined workflow should build");
     let label = format!(" {} ", "界".repeat(80));
 
     let result = service
@@ -375,7 +460,8 @@ async fn demo_input_rejects_label_longer_than_80_unicode_scalars_before_trim() {
 
 #[tokio::test]
 async fn review_input_rejects_subject_longer_than_80_unicode_scalars_before_trim() {
-    let service = WorkflowService::new().expect("the code-defined workflow should build");
+    let service =
+        WorkflowService::without_jcode_runtime().expect("the code-defined workflow should build");
     let subject = format!(" {} ", "界".repeat(80));
 
     let result = service
@@ -387,4 +473,25 @@ async fn review_input_rejects_subject_longer_than_80_unicode_scalars_before_trim
         .await;
 
     assert!(matches!(result, Err(WorkflowError::InvalidInput { .. })));
+}
+
+#[tokio::test]
+async fn jcode_translation_rejects_paths_outside_its_workspace() {
+    let service =
+        WorkflowService::without_jcode_runtime().expect("every code-defined workflow should build");
+
+    let result = service
+        .start(
+            "jcode-translation",
+            json!({
+                "source_path": "../Cargo.toml",
+                "target_path": "output/cargo.ja.toml",
+                "target_language": "Japanese"
+            }),
+            RunTrigger::Manual,
+        )
+        .await;
+
+    assert!(matches!(result, Err(WorkflowError::InvalidInput { .. })));
+    assert!(service.list_runs().await.is_empty());
 }

@@ -71,6 +71,10 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     tokio::select! {
         result = topcoat::serve(listener, router) => result?,
         result = scheduler.run_scheduler() => result?,
+        result = tokio::signal::ctrl_c() => {
+            result?;
+            tracing::info!("shutdown signal received");
+        }
     }
     Ok(())
 }

@@ -72,9 +72,9 @@
   *, *::before, *::after { box-sizing: border-box; }
   html { color-scheme: dark; background: var(--color-canvas); }
   body { margin: 0; min-width: 0; background: var(--color-canvas); color: var(--color-text-primary); font-family: var(--font-sans); }
-  button, input { font: inherit; }
-  button, input, [tabindex="0"] { outline: none; }
-  button:focus-visible, input:focus-visible, [tabindex="0"]:focus-visible { outline: calc(2 * var(--border-width)) solid var(--color-focus); outline-offset: calc(2 * var(--border-width)); }
+  button, input, select { font: inherit; }
+  button, input, select, [tabindex="0"] { outline: none; }
+  button:focus-visible, input:focus-visible, select:focus-visible, [tabindex="0"]:focus-visible { outline: calc(2 * var(--border-width)) solid var(--color-focus); outline-offset: calc(2 * var(--border-width)); }
 }
 
 @layer components {
@@ -85,6 +85,7 @@
   .topology text { fill: var(--color-text-secondary); font-family: var(--font-sans); font-size: var(--type-graph-label); pointer-events: none; }
   .topology .node-label { font-weight: 700; }
   .topology .node-state, .topology .edge-state { fill: var(--color-text-muted); font-size: var(--type-graph-state); }
+  .topology .node-count { fill: var(--color-text-muted); font-size: var(--type-graph-state); }
   .topology [data-state="active"] .node, .topology [data-state="active"] .edge { stroke: var(--color-status-healthy); stroke-width: 3; }
   .topology [data-state="active"] .node-state, .topology [data-state="active"] .edge-state { fill: var(--color-status-healthy); }
   .topology [data-state="traversed"] .node, .topology [data-state="traversed"] .edge { stroke: var(--color-accent-hover); stroke-width: 3; }

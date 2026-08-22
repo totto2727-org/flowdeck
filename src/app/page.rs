@@ -24,6 +24,8 @@ pub(super) struct InitialSignals {
     pub(super) selected_run_id: String,
     selected_trace_kind: &'static str,
     selected_trace_id: String,
+    selected_step_id: String,
+    trace_follow_latest: bool,
     #[serde(flatten)]
     pub(super) history: HistoryFilterValues,
     input: Value,
@@ -90,18 +92,18 @@ pub(super) fn initial_signals(
     selected_run: Option<&RunSnapshot>,
     filters: &HistoryFilters,
 ) -> InitialSignals {
-    let trace_id = selected_run
-        .and_then(|run| {
-            run.current_node
-                .clone()
-                .or_else(|| run.steps.last().map(|step| step.node_id.clone()))
-        })
+    let selected_step = selected_run.and_then(|run| run.steps.last());
+    let trace_id = selected_step
+        .map(|step| step.node_id.clone())
+        .or_else(|| selected_run.and_then(|run| run.current_node.clone()))
         .unwrap_or_default();
     InitialSignals {
         selected_workflow_id: selected_workflow_id.to_owned(),
         selected_run_id: selected_run.map_or_else(String::new, |run| run.run_id.to_string()),
         selected_trace_kind: "node",
         selected_trace_id: trace_id,
+        selected_step_id: selected_step.map_or_else(String::new, |step| step.step_id.to_string()),
+        trace_follow_latest: true,
         history: filters.values(),
         input: workflow_default_input(selected_workflow_id),
         request_message: "",

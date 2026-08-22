@@ -11,7 +11,7 @@ use super::{
     EdgeSpec, NodeSpec, WorkflowDefinition, graph_build_error,
     task::{TaskBehavior, TaskDelay, task},
 };
-use crate::{RunInput, ScheduleSpec, WorkflowError};
+use crate::{RunInput, ScheduleOverlapPolicy, ScheduleSpec, WorkflowError};
 
 pub(super) const WORKFLOW_ID: &str = "demo-workflow";
 const BRANCH_KEY: &str = "branch_yes";
@@ -92,14 +92,24 @@ pub(super) const DEFINITION: WorkflowDefinition = WorkflowDefinition {
     start_node: "prepare",
     nodes: &NODES,
     edges: &EDGES,
+    limits: None,
 };
 
-pub(super) const SCHEDULES: [ScheduleSpec; 1] = [ScheduleSpec {
-    schedule_id: "demo-every-10-seconds",
-    workflow_id: WORKFLOW_ID,
-    cron_expression: "*/10 * * * * *",
-    input_summary: "scheduled heartbeat · 250 ms",
-}];
+pub(super) const SCHEDULES: [ScheduleSpec; 2] = [
+    ScheduleSpec::new(
+        "demo-every-10-seconds",
+        WORKFLOW_ID,
+        "*/10 * * * * *",
+        "scheduled heartbeat · 250 ms",
+    ),
+    ScheduleSpec::new(
+        "demo-every-15-seconds-overlap",
+        WORKFLOW_ID,
+        "*/15 * * * * *",
+        "overlapping heartbeat · 250 ms",
+    )
+    .with_overlap_policy(ScheduleOverlapPolicy::AllowOverlap),
+];
 
 #[component]
 pub(super) async fn input_form(active: bool) -> Result {
@@ -201,12 +211,17 @@ fn validate_non_blank(value: &str, _: &()) -> garde::Result {
 }
 
 pub(super) fn scheduled_input(schedule_id: &str) -> Result<Value, WorkflowError> {
-    if schedule_id == SCHEDULES[0].schedule_id {
-        return Ok(json!({ "label": "scheduled heartbeat", "step_delay_ms": 250 }));
+    match schedule_id {
+        "demo-every-10-seconds" => {
+            Ok(json!({ "label": "scheduled heartbeat", "step_delay_ms": 250 }))
+        }
+        "demo-every-15-seconds-overlap" => {
+            Ok(json!({ "label": "overlapping heartbeat", "step_delay_ms": 250 }))
+        }
+        _ => Err(WorkflowError::UnknownSchedule {
+            schedule_id: schedule_id.to_owned(),
+        }),
     }
-    Err(WorkflowError::UnknownSchedule {
-        schedule_id: schedule_id.to_owned(),
-    })
 }
 
 pub(super) fn build_graph() -> Result<graph_flow::Graph, WorkflowError> {

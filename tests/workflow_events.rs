@@ -4,17 +4,14 @@ use std::time::Duration;
 
 use serde_json::json;
 use workflow_console_experiment::{
-    RunStatus, RunTrigger, StepTraceStatus, WorkflowEvent, WorkflowService,
+    RunId, RunStatus, RunTrigger, StepTraceStatus, WorkflowEvent, WorkflowService,
 };
 
-#[allow(
-    clippy::manual_let_else,
-    reason = "The explicit match keeps every non-exhaustive event variant mapped to its run ID."
-)]
 #[tokio::test]
 async fn workflow_events_when_run_executes_are_ordered_and_snapshot_consistent() {
     // Given: a subscriber attached before a workflow begins.
-    let service = WorkflowService::new().expect("the code-defined workflows should build");
+    let service =
+        WorkflowService::without_jcode_runtime().expect("the code-defined workflows should build");
     let mut events = service.subscribe();
 
     // When: the workflow is started and driven to its terminal state.
@@ -32,42 +29,9 @@ async fn workflow_events_when_run_executes_are_ordered_and_snapshot_consistent()
             .await
             .expect("each lifecycle notification should arrive")
             .expect("the subscribed receiver should not lag");
-        let run_id = match &event {
-            WorkflowEvent::RunStarted { run_id, .. }
-            | WorkflowEvent::NodeStarted { run_id, .. }
-            | WorkflowEvent::NodeCompleted { run_id, .. }
-            | WorkflowEvent::RunCompleted { run_id, .. }
-            | WorkflowEvent::RunFailed { run_id, .. } => run_id,
-            _ => panic!("unknown workflow event"),
-        };
-        let snapshot = service
-            .get_run(run_id)
+        assert_snapshot_matches_event(&service, &event)
             .await
-            .expect("an emitted event must reference a retained snapshot");
-        match &event {
-            WorkflowEvent::RunStarted { workflow_id, .. } => {
-                assert_eq!(snapshot.workflow_id, *workflow_id);
-            }
-            WorkflowEvent::NodeStarted { node_id, .. } => {
-                assert!(snapshot.steps.iter().any(|step| step.node_id == *node_id));
-            }
-            WorkflowEvent::NodeCompleted {
-                node_id, edge_id, ..
-            } => {
-                let step = snapshot
-                    .steps
-                    .iter()
-                    .find(|step| step.node_id == *node_id)
-                    .expect("completed event must follow a retained step update");
-                assert_eq!(step.status, StepTraceStatus::Completed);
-                assert_eq!(step.selected_edge.as_deref(), edge_id.as_deref());
-            }
-            WorkflowEvent::RunCompleted { .. } => {
-                assert!(matches!(snapshot.status, RunStatus::Completed));
-            }
-            WorkflowEvent::RunFailed { .. } => panic!("the linear workflow should not fail"),
-            _ => panic!("unknown workflow event"),
-        }
+            .expect("event and retained snapshot should agree");
         received.push(event);
     }
 
@@ -117,4 +81,66 @@ async fn workflow_events_when_run_executes_are_ordered_and_snapshot_consistent()
     assert!(
         matches!(completed_event, WorkflowEvent::RunCompleted { run_id, .. } if *run_id == started.run_id)
     );
+}
+
+async fn assert_snapshot_matches_event(
+    service: &WorkflowService,
+    event: &WorkflowEvent,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let run_id =
+        event_run_id(event).ok_or_else(|| std::io::Error::other("unknown workflow event"))?;
+    let snapshot = service
+        .get_run(run_id)
+        .await
+        .ok_or_else(|| std::io::Error::other("event run should be retained"))?;
+    match event {
+        WorkflowEvent::RunStarted { workflow_id, .. } => {
+            assert_eq!(snapshot.workflow_id, *workflow_id);
+        }
+        WorkflowEvent::NodeStarted {
+            node_id, step_id, ..
+        } => {
+            assert!(
+                snapshot
+                    .steps
+                    .iter()
+                    .any(|step| step.node_id == *node_id && step.step_id == *step_id)
+            );
+        }
+        WorkflowEvent::NodeCompleted {
+            node_id,
+            step_id,
+            edge_id,
+            ..
+        } => {
+            let step = snapshot
+                .steps
+                .iter()
+                .find(|step| step.step_id == *step_id)
+                .ok_or_else(|| std::io::Error::other("completed step should be retained"))?;
+            assert_eq!(step.node_id, *node_id);
+            assert_eq!(step.status, StepTraceStatus::Completed);
+            assert_eq!(step.selected_edge.as_deref(), edge_id.as_deref());
+        }
+        WorkflowEvent::RunCompleted { .. } => {
+            assert!(matches!(snapshot.status, RunStatus::Completed));
+        }
+        WorkflowEvent::RunFailed { .. } | WorkflowEvent::RunSkipped { .. } => {
+            return Err(std::io::Error::other("linear workflow stopped early").into());
+        }
+        _ => return Err(std::io::Error::other("unknown workflow event").into()),
+    }
+    Ok(())
+}
+
+const fn event_run_id(event: &WorkflowEvent) -> Option<&RunId> {
+    match event {
+        WorkflowEvent::RunStarted { run_id, .. }
+        | WorkflowEvent::NodeStarted { run_id, .. }
+        | WorkflowEvent::NodeCompleted { run_id, .. }
+        | WorkflowEvent::RunCompleted { run_id, .. }
+        | WorkflowEvent::RunFailed { run_id, .. }
+        | WorkflowEvent::RunSkipped { run_id, .. } => Some(run_id),
+        _ => None,
+    }
 }

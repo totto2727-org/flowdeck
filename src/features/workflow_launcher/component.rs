@@ -29,6 +29,7 @@ pub(crate) async fn workflow_rail(selected_workflow_id: &str, filters: &HistoryF
                                 <span class="text-xs font-semibold uppercase tracking-label text-text-muted">"Cron schedule"</span>
                                 <code class="break-anywhere font-mono text-[length:var(--type-code)] text-status-healthy">(schedule.cron_expression)</code>
                                 <span class="text-sm text-text-muted">(schedule.input_summary)</span>
+                                <span class="text-sm text-text-muted">(schedule.overlap_policy.as_str())</span>
                             </span>
                         }
                     </a>

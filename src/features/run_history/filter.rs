@@ -4,7 +4,9 @@
 )]
 
 use serde::{Deserialize, Serialize};
-use workflow_console_experiment::{RunSnapshot, RunStatus, RunTrigger, workflow_definitions};
+use workflow_console_experiment::{
+    RunListProjection, RunSnapshot, RunStatus, RunTrigger, workflow_definitions,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct HistoryFilterValues {
@@ -47,6 +49,7 @@ enum StatusFilter {
     Running,
     Completed,
     Failed,
+    Skipped,
 }
 
 impl Default for HistoryFilters {
@@ -82,6 +85,7 @@ impl HistoryFilters {
             "running" => StatusFilter::Running,
             "completed" => StatusFilter::Completed,
             "failed" => StatusFilter::Failed,
+            "skipped" => StatusFilter::Skipped,
             _ => StatusFilter::All,
         };
         Self {
@@ -124,6 +128,10 @@ impl HistoryFilters {
     }
 
     pub(crate) fn matches(&self, run: &RunSnapshot) -> bool {
+        self.matches_projection(&RunListProjection::from(run))
+    }
+
+    pub(crate) fn matches_projection(&self, run: &RunListProjection) -> bool {
         let workflow_matches = self
             .workflow
             .as_ref()
@@ -138,6 +146,7 @@ impl HistoryFilters {
             StatusFilter::Running => matches!(run.status, RunStatus::Running),
             StatusFilter::Completed => matches!(run.status, RunStatus::Completed),
             StatusFilter::Failed => matches!(run.status, RunStatus::Failed { .. }),
+            StatusFilter::Skipped => matches!(run.status, RunStatus::Skipped { .. }),
         };
         workflow_matches && trigger_matches && status_matches
     }
@@ -160,6 +169,7 @@ impl StatusFilter {
             Self::Running => "running",
             Self::Completed => "completed",
             Self::Failed => "failed",
+            Self::Skipped => "skipped",
         }
     }
 }

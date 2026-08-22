@@ -51,7 +51,8 @@ const fn event_run_id(event: &WorkflowEvent) -> Option<&RunId> {
         | WorkflowEvent::NodeStarted { run_id, .. }
         | WorkflowEvent::NodeCompleted { run_id, .. }
         | WorkflowEvent::RunCompleted { run_id, .. }
-        | WorkflowEvent::RunFailed { run_id, .. } => Some(run_id),
+        | WorkflowEvent::RunFailed { run_id, .. }
+        | WorkflowEvent::RunSkipped { run_id, .. } => Some(run_id),
         _ => None,
     }
 }

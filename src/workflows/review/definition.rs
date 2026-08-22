@@ -68,6 +68,7 @@ pub(super) const DEFINITION: WorkflowDefinition = WorkflowDefinition {
     start_node: "receive",
     nodes: &NODES,
     edges: &EDGES,
+    limits: None,
 };
 
 #[component]

@@ -7,6 +7,7 @@ pub(crate) const fn run_status(run: &RunSnapshot) -> &'static str {
         RunStatus::Running => "Running",
         RunStatus::Completed => "Completed",
         RunStatus::Failed { .. } => "Failed",
+        RunStatus::Skipped { .. } => "Skipped",
         _ => "Unknown",
     }
 }

@@ -25,13 +25,17 @@ impl FilteredHistoryMembership {
             .collect();
         if let HistoryReplay::Changes(changes) = replay {
             for delta in changes.iter().rev() {
-                if delta.after.as_ref().is_some_and(|run| filters.matches(run)) {
+                if delta
+                    .after
+                    .as_ref()
+                    .is_some_and(|run| filters.matches_projection(run))
+                {
                     run_ids.remove(&delta.run_id);
                 }
                 if delta
                     .before
                     .as_ref()
-                    .is_some_and(|run| filters.matches(run))
+                    .is_some_and(|run| filters.matches_projection(run))
                 {
                     run_ids.insert(delta.run_id.clone());
                 }
@@ -46,7 +50,10 @@ impl FilteredHistoryMembership {
         filters: &HistoryFilters,
     ) -> HistoryTransition {
         let before_matches = self.run_ids.contains(&delta.run_id);
-        let after_matches = delta.after.as_ref().is_some_and(|run| filters.matches(run));
+        let after_matches = delta
+            .after
+            .as_ref()
+            .is_some_and(|run| filters.matches_projection(run));
         let was_empty = self.run_ids.is_empty();
         if after_matches {
             self.run_ids.insert(delta.run_id.clone());

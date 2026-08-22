@@ -1,7 +1,9 @@
 //! Local workflow execution domain.
 
 mod workflow;
-mod workflow_scheduler;
+mod workflow_limits;
+/// Code-defined cron schedules and their shared dispatcher.
+pub mod workflow_scheduler;
 pub(crate) mod workflow_trace;
 #[doc(hidden)]
 pub mod workflows;
@@ -13,10 +15,15 @@ use std::{
 };
 
 pub use workflow::{
-    HistoryDelta, HistoryReplay, HistoryRevision, HistoryView, WorkflowEvent, WorkflowService,
+    HistoryDelta, HistoryReplay, HistoryRevision, HistoryView, RunListProjection, WorkflowEvent,
+    WorkflowService,
 };
-pub use workflow_scheduler::{ScheduleSpec, workflow_schedules};
-pub use workflow_trace::{StepState, StepTrace, StepTraceStatus};
+pub use workflow_limits::{
+    DEFAULT_NODE_MAX_EXECUTIONS, DEFAULT_NODE_TIMEOUT, DEFAULT_WORKFLOW_STEP_MULTIPLIER,
+    DEFAULT_WORKFLOW_TIMEOUT_PER_STEP, ExecutionLimit, WorkflowExecutionLimits,
+};
+pub use workflow_scheduler::{ScheduleOverlapPolicy, ScheduleSpec, workflow_schedules};
+pub use workflow_trace::{StepId, StepState, StepTrace, StepTraceStatus};
 pub use workflows::{
     EdgeSpec, NodeSpec, WorkflowDefinition, workflow_default_input, workflow_definitions,
     workflow_input_form,
@@ -39,6 +46,11 @@ pub enum RunStatus {
     Failed {
         /// Description returned from graph-flow or its session storage.
         message: String,
+    },
+    /// A scheduled firing was retained but did not start because overlap was disabled.
+    Skipped {
+        /// Reason the scheduled firing did not start.
+        reason: String,
     },
 }
 
@@ -153,9 +165,19 @@ pub enum WorkflowError {
         /// Scheduler parsing or time calculation failure.
         message: String,
     },
+    /// A workflow execution limit is zero or cannot be represented safely.
+    ExecutionLimits {
+        /// Invalid limit diagnostic.
+        message: String,
+    },
     /// The static graph could not be built.
     GraphBuild {
         /// graph-flow validation failure for the static workflow.
+        message: String,
+    },
+    /// The shared jcode runtime could not be started or configured.
+    Jcode {
+        /// Runtime startup diagnostic.
         message: String,
     },
     /// The in-memory session layer rejected an operation.
@@ -176,9 +198,16 @@ impl fmt::Display for WorkflowError {
                 write!(formatter, "unknown schedule: {schedule_id}")
             }
             Self::Schedule { message } => write!(formatter, "workflow schedule failed: {message}"),
+            Self::ExecutionLimits { message } => {
+                write!(
+                    formatter,
+                    "workflow execution limits are invalid: {message}"
+                )
+            }
             Self::GraphBuild { message } => {
                 write!(formatter, "workflow graph build failed: {message}")
             }
+            Self::Jcode { message } => write!(formatter, "jcode runtime failed: {message}"),
             Self::Session { message } => write!(formatter, "workflow session failed: {message}"),
         }
     }

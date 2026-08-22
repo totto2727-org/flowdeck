@@ -31,7 +31,7 @@ pub(super) async fn workflow_graph_panel(
                 <h2 class="text-xl font-semibold" id=(title_id)>(definition.name)</h2>
             </div>
             <p
-                class="rounded-control border border-current px-2 py-1 text-sm font-semibold text-text-secondary data-[status=Running]:text-status-healthy data-[status=Completed]:text-status-healthy data-[status=Failed]:text-status-error"
+                class="rounded-control border border-current px-2 py-1 text-sm font-semibold text-text-secondary data-[status=Running]:text-status-healthy data-[status=Completed]:text-status-healthy data-[status=Failed]:text-status-error data-[status=Skipped]:text-status-warning"
                 data-status=(status)
                 role="status"
                 aria-live="polite"
@@ -47,6 +47,14 @@ pub(super) async fn workflow_graph_panel(
                     role="alert"
                 >
                     (message)
+                </p>
+            }
+            if let RunStatus::Skipped { reason } = &run.status {
+                <p
+                    class="mb-4 border-l-[var(--error-border)] border-status-warning bg-surface-elevated p-3"
+                    role="status"
+                >
+                    (reason)
                 </p>
             }
         }
@@ -150,7 +158,8 @@ mod tests {
 
     #[tokio::test]
     async fn graph_panel_with_a_run_keeps_interactive_trace_selection_and_metadata() {
-        let service = WorkflowService::new().expect("code-defined workflows should build");
+        let service =
+            WorkflowService::without_jcode_runtime().expect("code-defined workflows should build");
         let run = service
             .start(
                 "review-pipeline",
@@ -180,8 +189,9 @@ mod tests {
 
     #[tokio::test]
     async fn run_inspector_composes_the_graph_panel_with_step_trace_details() {
-        let service = WorkflowService::new().expect("code-defined workflows should build");
-        let run = service
+        let service =
+            WorkflowService::without_jcode_runtime().expect("code-defined workflows should build");
+        let started = service
             .start(
                 "review-pipeline",
                 json!({ "subject": "composition", "reviewer": "qa" }),
@@ -189,6 +199,20 @@ mod tests {
             )
             .await
             .expect("review workflow should start");
+        let run = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            loop {
+                let snapshot = service
+                    .get_run(&started.run_id)
+                    .await
+                    .expect("started run should remain retained");
+                if !snapshot.steps.is_empty() {
+                    break snapshot;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("the first execution trace should become observable");
         let run_id = run.run_id.to_string();
         let cx = topcoat::context::CxTestBuilder::new().build();
         let __cx = &cx;
@@ -203,5 +227,8 @@ mod tests {
         assert!(rendered.contains("role=\"button\""));
         assert!(rendered.contains("data-testid=\"trace-state\""));
         assert!(rendered.contains("data-testid=\"trace-output\""));
+        assert!(rendered.contains("Execution history"));
+        assert!(rendered.contains("data-bind=\"selectedStepId\""));
+        assert!(rendered.contains("Follow latest"));
     }
 }

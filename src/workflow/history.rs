@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use crate::{RunId, RunSnapshot};
+use crate::{RunId, RunSnapshot, RunStatus, RunTrigger};
 
 pub(super) const HISTORY_JOURNAL_CAPACITY: usize = 512;
 
@@ -43,9 +43,34 @@ pub struct HistoryDelta {
     /// Run changed by this mutation.
     pub run_id: RunId,
     /// Snapshot immediately before the mutation, absent for insertion.
-    pub before: Option<RunSnapshot>,
+    pub before: Option<RunListProjection>,
     /// Snapshot immediately after the mutation, absent for removal.
-    pub after: Option<RunSnapshot>,
+    pub after: Option<RunListProjection>,
+}
+
+/// Lightweight run state retained in the replay journal for list membership decisions.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct RunListProjection {
+    /// Run changed by this projection.
+    pub run_id: RunId,
+    /// Workflow selected by the run.
+    pub workflow_id: String,
+    /// Source that initiated the run.
+    pub trigger: RunTrigger,
+    /// Current list-visible lifecycle state.
+    pub status: RunStatus,
+}
+
+impl From<&RunSnapshot> for RunListProjection {
+    fn from(snapshot: &RunSnapshot) -> Self {
+        Self {
+            run_id: snapshot.run_id.clone(),
+            workflow_id: snapshot.workflow_id.clone(),
+            trigger: snapshot.trigger.clone(),
+            status: snapshot.status.clone(),
+        }
+    }
 }
 
 /// Result of replaying history changes after a caller's revision.
@@ -85,8 +110,9 @@ impl HistoryState {
 
     pub(super) fn insert(&mut self, snapshot: RunSnapshot) -> HistoryDelta {
         let run_id = snapshot.run_id.clone();
-        self.runs.push(snapshot.clone());
-        self.record(run_id, None, Some(snapshot))
+        let projection = RunListProjection::from(&snapshot);
+        self.runs.push(snapshot);
+        self.record(run_id, None, Some(projection))
     }
 
     pub(super) fn mutate<R>(
@@ -98,9 +124,9 @@ impl HistoryState {
             .runs
             .iter_mut()
             .find(|snapshot| snapshot.run_id == *run_id)?;
-        let before = snapshot.clone();
+        let before = RunListProjection::from(&*snapshot);
         let result = mutation(snapshot);
-        let after = snapshot.clone();
+        let after = RunListProjection::from(&*snapshot);
         let delta = self.record(run_id.clone(), Some(before), Some(after));
         Some((result, delta))
     }
@@ -133,8 +159,8 @@ impl HistoryState {
     fn record(
         &mut self,
         run_id: RunId,
-        before: Option<RunSnapshot>,
-        after: Option<RunSnapshot>,
+        before: Option<RunListProjection>,
+        after: Option<RunListProjection>,
     ) -> HistoryDelta {
         self.revision = self.revision.next();
         let delta = HistoryDelta {

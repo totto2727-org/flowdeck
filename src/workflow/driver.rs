@@ -1,59 +1,162 @@
-use std::{sync::Arc, time::SystemTime};
+use std::sync::Arc;
 
 use graph_flow::{ExecutionStatus, SessionStorage};
+use tokio::time::timeout;
 
 use super::{Inner, WorkflowRuntime};
-use crate::{EdgeSpec, RunId, RunSnapshot, RunStatus, StepState, WorkflowEvent};
+use crate::{RunId, RunSnapshot, StepState, WorkflowExecutionLimits};
 
-struct StepCompletion<'a> {
-    current: &'a str,
-    next: &'a str,
-    terminal: bool,
-    output: Option<String>,
-    state: StepState,
-}
+#[path = "driver/records.rs"]
+mod records;
+
+use records::{
+    RunFailure, StepCompletion, active_step_id, record_failure, record_step, record_step_start,
+};
 
 pub(super) async fn drive(inner: Arc<Inner>, run_id: RunId, workflow_id: &'static str) {
     let Some(runtime) = inner.runtimes.get(workflow_id) else {
-        record_failure(&inner, &run_id, "workflow runtime disappeared".to_owned()).await;
+        record_failure(
+            &inner,
+            &run_id,
+            RunFailure {
+                step_id: None,
+                message: "workflow runtime disappeared".to_owned(),
+            },
+        )
+        .await;
         return;
     };
+    if timeout(
+        runtime.limits.timeout,
+        drive_steps(&inner, &run_id, runtime),
+    )
+    .await
+    .is_err()
+    {
+        let step_id = active_step_id(&inner, &run_id).await;
+        record_failure(
+            &inner,
+            &run_id,
+            RunFailure {
+                step_id,
+                message: format!(
+                    "workflow timed out after {} seconds",
+                    runtime.limits.timeout.as_secs()
+                ),
+            },
+        )
+        .await;
+    }
+}
+
+enum DriveControl {
+    Continue,
+    Stop,
+}
+
+struct StepDriver<'a> {
+    inner: &'a Inner,
+    run_id: &'a RunId,
+    runtime: &'a WorkflowRuntime,
+    current: &'a str,
+}
+
+async fn drive_steps(inner: &Inner, run_id: &RunId, runtime: &WorkflowRuntime) {
     loop {
-        let Some(current) = current_node(&inner, &run_id).await else {
+        let Some(snapshot) = inner.history.read().await.get(run_id) else {
             return;
         };
-        record_step_start(&inner, &run_id, &current).await;
-        let result = match runtime.runner.run(run_id.as_str()).await {
-            Ok(result) => result,
-            Err(error) => {
-                record_failure(&inner, &run_id, error.to_string()).await;
-                return;
-            }
+        let Some(current) = snapshot.current_node.clone() else {
+            return;
         };
+        if let Some(message) = step_limit_failure(&snapshot, &current, runtime.limits) {
+            record_failure(
+                inner,
+                run_id,
+                RunFailure {
+                    step_id: None,
+                    message,
+                },
+            )
+            .await;
+            return;
+        }
+        let step = StepDriver {
+            inner,
+            run_id,
+            runtime,
+            current: &current,
+        };
+        let Some((step_id, result)) = step.execute().await else {
+            return;
+        };
+        if matches!(step.complete(step_id, result).await, DriveControl::Stop) {
+            return;
+        }
+    }
+}
+
+impl StepDriver<'_> {
+    async fn execute(&self) -> Option<(crate::StepId, graph_flow::ExecutionResult)> {
+        let step_id = record_step_start(self.inner, self.run_id, self.current).await?;
+        match timeout(
+            self.runtime.limits.node.timeout,
+            self.runtime.runner.run(self.run_id.as_str()),
+        )
+        .await
+        {
+            Ok(Ok(result)) => Some((step_id, result)),
+            Ok(Err(error)) => {
+                self.fail(Some(step_id), error.to_string()).await;
+                None
+            }
+            Err(_) => {
+                self.fail(
+                    Some(step_id),
+                    format!(
+                        "node {} timed out after {} seconds",
+                        self.current,
+                        self.runtime.limits.node.timeout.as_secs()
+                    ),
+                )
+                .await;
+                None
+            }
+        }
+    }
+
+    async fn complete(
+        &self,
+        step_id: crate::StepId,
+        result: graph_flow::ExecutionResult,
+    ) -> DriveControl {
         match result.status {
             ExecutionStatus::Paused { .. } | ExecutionStatus::Completed => {
-                let session = match runtime.storage.get(run_id.as_str()).await {
+                let session = match self.runtime.storage.get(self.run_id.as_str()).await {
                     Ok(Some(session)) => session,
                     Ok(None) => {
-                        record_failure(&inner, &run_id, "session disappeared".to_owned()).await;
-                        return;
+                        self.fail(Some(step_id), "session disappeared".to_owned())
+                            .await;
+                        return DriveControl::Stop;
                     }
                     Err(error) => {
-                        record_failure(&inner, &run_id, error.to_string()).await;
-                        return;
+                        self.fail(Some(step_id), error.to_string()).await;
+                        return DriveControl::Stop;
                     }
                 };
                 let terminal = matches!(result.status, ExecutionStatus::Completed);
-                let Some(state) = StepState::after(&session.context, &current) else {
-                    record_failure(&inner, &run_id, "trace state disappeared".to_owned()).await;
-                    return;
+                let Some(state) = StepState::after(&session.context, self.current) else {
+                    self.fail(Some(step_id), "trace state disappeared".to_owned())
+                        .await;
+                    return DriveControl::Stop;
                 };
                 record_step(
-                    &inner,
-                    &run_id,
-                    runtime,
+                    self.inner,
+                    self.run_id,
                     StepCompletion {
-                        current: &current,
+                        runtime: self.runtime,
+                        step_id,
+                        current: self.current,
                         next: &session.current_task_id,
                         terminal,
                         output: result.response,
@@ -62,154 +165,48 @@ pub(super) async fn drive(inner: Arc<Inner>, run_id: RunId, workflow_id: &'stati
                 )
                 .await;
                 if terminal {
-                    return;
+                    DriveControl::Stop
+                } else {
+                    DriveControl::Continue
                 }
             }
             ExecutionStatus::WaitingForInput => {
-                record_failure(
-                    &inner,
-                    &run_id,
-                    "unexpected wait-for-input state".to_owned(),
-                )
-                .await;
-                return;
+                self.fail(Some(step_id), "unexpected wait-for-input state".to_owned())
+                    .await;
+                DriveControl::Stop
             }
         }
     }
-}
 
-async fn record_step_start(inner: &Inner, run_id: &RunId, current: &str) {
-    let change = {
-        let mut history = inner.history.write().await;
-        history.mutate(run_id, |snapshot| {
-            snapshot.begin_step(current);
-            WorkflowEvent::NodeStarted {
-                run_id: run_id.clone(),
-                workflow_id: snapshot.workflow_id.clone(),
-                node_id: current.to_owned(),
-            }
-        })
-    };
-    let Some((event, delta)) = change else {
-        return;
-    };
-    let _ = inner.history_events.send(delta);
-    let _ = inner.events.send(event);
-}
-
-async fn current_node(inner: &Inner, run_id: &RunId) -> Option<String> {
-    inner
-        .history
-        .read()
-        .await
-        .get(run_id)
-        .and_then(|snapshot| snapshot.current_node)
-}
-
-async fn record_step(
-    inner: &Inner,
-    run_id: &RunId,
-    runtime: &WorkflowRuntime,
-    completion: StepCompletion<'_>,
-) {
-    let change = {
-        let mut history = inner.history.write().await;
-        history.mutate(run_id, |snapshot| {
-            if snapshot
-                .traversed_nodes
-                .last()
-                .is_none_or(|node| node != completion.current)
-            {
-                snapshot.traversed_nodes.push(completion.current.to_owned());
-            }
-            let edge_id = matching_edge(runtime, completion.current, completion.next)
-                .map(|edge| edge.id.to_owned());
-            snapshot.finish_step(
-                completion.current,
-                edge_id.as_deref(),
-                completion.output,
-                completion.state,
-            );
-            if let Some(edge_id) = &edge_id {
-                snapshot.current_edge = Some(edge_id.clone());
-                snapshot.traversed_edges.push(edge_id.clone());
-            }
-            snapshot.current_node = Some(completion.next.to_owned());
-            snapshot.route_summary = route_summary(snapshot);
-            let node_completed = WorkflowEvent::NodeCompleted {
-                run_id: run_id.clone(),
-                workflow_id: snapshot.workflow_id.clone(),
-                node_id: completion.current.to_owned(),
-                edge_id,
-            };
-            let run_completed = if completion.terminal {
-                snapshot.status = RunStatus::Completed;
-                let finished_at = SystemTime::now();
-                snapshot.duration = finished_at.duration_since(snapshot.started_at).ok();
-                snapshot.finished_at = Some(finished_at);
-                Some(WorkflowEvent::RunCompleted {
-                    run_id: run_id.clone(),
-                    workflow_id: snapshot.workflow_id.clone(),
-                })
-            } else {
-                None
-            };
-            (node_completed, run_completed)
-        })
-    };
-    let Some(((node_completed, run_completed), delta)) = change else {
-        return;
-    };
-    let _ = inner.history_events.send(delta);
-    let _ = inner.events.send(node_completed);
-    if let Some(run_completed) = run_completed {
-        let _ = inner.events.send(run_completed);
+    async fn fail(&self, step_id: Option<crate::StepId>, message: String) {
+        record_failure(self.inner, self.run_id, RunFailure { step_id, message }).await;
     }
 }
 
-async fn record_failure(inner: &Inner, run_id: &RunId, message: String) {
-    let change = {
-        let mut history = inner.history.write().await;
-        history.mutate(run_id, |snapshot| {
-            let finished_at = SystemTime::now();
-            snapshot.fail_step(&message, finished_at);
-            snapshot.duration = finished_at.duration_since(snapshot.started_at).ok();
-            snapshot.finished_at = Some(finished_at);
-            snapshot.status = RunStatus::Failed {
-                message: message.clone(),
-            };
-            WorkflowEvent::RunFailed {
-                run_id: run_id.clone(),
-                workflow_id: snapshot.workflow_id.clone(),
-                message,
-            }
-        })
-    };
-    let Some((event, delta)) = change else {
-        return;
-    };
-    let _ = inner.history_events.send(delta);
-    let _ = inner.events.send(event);
-}
-
-fn matching_edge(
-    runtime: &WorkflowRuntime,
+fn step_limit_failure(
+    snapshot: &RunSnapshot,
     current: &str,
-    next: &str,
-) -> Option<&'static EdgeSpec> {
-    runtime
-        .definition
-        .edges
+    limits: WorkflowExecutionLimits,
+) -> Option<String> {
+    if snapshot.steps.len() >= limits.max_steps {
+        return Some(format!(
+            "workflow exceeded its total step limit of {}",
+            limits.max_steps
+        ));
+    }
+    let node_executions = snapshot
+        .steps
         .iter()
-        .find(|edge| edge.from == current && edge.to == next)
+        .filter(|step| step.node_id == current)
+        .count();
+    (node_executions >= limits.node.max_executions).then(|| {
+        format!(
+            "node {current} exceeded its execution limit of {}",
+            limits.node.max_executions
+        )
+    })
 }
 
-fn route_summary(snapshot: &RunSnapshot) -> String {
-    let mut route = snapshot.traversed_nodes.clone();
-    if let Some(current) = &snapshot.current_node
-        && route.last() != Some(current)
-    {
-        route.push(current.clone());
-    }
-    route.join(" -> ")
-}
+#[cfg(test)]
+#[path = "driver/tests.rs"]
+mod tests;

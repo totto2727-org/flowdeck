@@ -5,45 +5,51 @@ use topcoat::{
 };
 use workflow_console_experiment::{RunSnapshot, StepTrace, StepTraceStatus};
 
+use super::step_history::execution_history;
 use crate::features::presentation::{step_elapsed, step_status, timestamp};
 
 #[component]
 pub(super) async fn run_traces(run: RunSnapshot) -> Result {
     let run_id = run.run_id.to_string();
+    let definition = workflow_console_experiment::workflow_definitions()
+        .iter()
+        .find(|definition| definition.workflow_id == run.workflow_id);
+    let latest = run.steps.last();
+    let follow_latest = latest.map(|step| {
+        format!(
+            "$traceFollowLatest && ($selectedTraceKind = 'node', $selectedTraceId = '{}', $selectedStepId = '{}')",
+            step.node_id, step.step_id
+        )
+    });
     view! {
-        <div class="mt-4">
-            for node in workflow_console_experiment::workflow_definitions()
-                .iter()
-                .find(|definition| definition.workflow_id == run.workflow_id)
-                .map_or(&[][..], |definition| definition.nodes) {
+        <div class="mt-4" data-init=(follow_latest)>
+            execution_history(steps: run.steps.clone())
+            for node in definition.map_or(&[][..], |definition| definition.nodes) {
                 trace_panel(
                     run_id: run_id.clone(),
                     kind: "node",
                     target_id: node.id,
                     label: format!("{} node", node.label),
-                    step: run
+                    steps: run
                         .steps
                         .iter()
-                        .rev()
-                        .find(|step| step.node_id == node.id)
+                        .filter(|step| step.node_id == node.id)
                         .cloned()
+                        .collect()
                 )
             }
-            for edge in workflow_console_experiment::workflow_definitions()
-                .iter()
-                .find(|definition| definition.workflow_id == run.workflow_id)
-                .map_or(&[][..], |definition| definition.edges) {
+            for edge in definition.map_or(&[][..], |definition| definition.edges) {
                 trace_panel(
                     run_id: run_id.clone(),
                     kind: "edge",
                     target_id: edge.id,
                     label: format!("{} → {} edge", edge.from, edge.to),
-                    step: run
+                    steps: run
                         .steps
                         .iter()
-                        .rev()
-                        .find(|step| step.selected_edge.as_deref() == Some(edge.id))
+                        .filter(|step| step.selected_edge.as_deref() == Some(edge.id))
                         .cloned()
+                        .collect()
                 )
             }
         </div>
@@ -56,20 +62,19 @@ async fn trace_panel(
     kind: &'static str,
     target_id: &'static str,
     label: String,
-    step: Option<StepTrace>,
+    steps: Vec<StepTrace>,
 ) -> Result {
     let visible = format!(
         "$selectedRunId === '{run_id}' && $selectedTraceKind === '{kind}' && $selectedTraceId === '{target_id}'"
     );
-    let (status, started, finished, duration, selected_edge, state, output) =
-        trace_values(step.as_ref());
+    let latest_step_id = steps.last().map(|step| step.step_id.to_string());
     view! {
         <section
             class="grid gap-4 rounded-control border border-border bg-surface-elevated p-4"
             data-show=(visible)
             aria-labelledby=(format!("trace-title-{run_id}-{kind}-{target_id}"))
         >
-            <div class="flex items-start justify-between gap-4">
+            <div class="flex flex-wrap items-start justify-between gap-4">
                 <div>
                     <p
                         class="text-xs font-semibold uppercase tracking-label text-text-muted"
@@ -83,13 +88,53 @@ async fn trace_panel(
                         (label)
                     </h3>
                 </div>
-                <span
-                    class="text-sm font-semibold text-text-secondary"
-                    data-testid="trace-status"
-                >
-                    (status)
-                </span>
+                if let Some(latest_step_id) = latest_step_id {
+                    <div class="grid min-w-[var(--summary-min)] gap-2">
+                        <label class="grid gap-1 text-sm font-semibold text-text-secondary" for=(format!("trace-execution-{run_id}-{kind}-{target_id}"))>
+                            <span>"Execution"</span>
+                            <select
+                                id=(format!("trace-execution-{run_id}-{kind}-{target_id}"))
+                                class="min-h-[var(--control-min)] min-w-0 rounded-control border border-border bg-canvas px-3 text-text-primary shadow-inset"
+                                data-bind="selectedStepId"
+                                data-on:change="$traceFollowLatest = false"
+                            >
+                                for step in steps.iter().rev() {
+                                    <option value=(step.step_id.to_string())>
+                                        (format!("#{} · execution {} · {}", step.step_id, step.node_execution, step_status(step)))
+                                    </option>
+                                }
+                            </select>
+                        </label>
+                        <button
+                            type="button"
+                            class="min-h-[var(--control-min)] rounded-control border border-border px-3 text-sm font-semibold text-text-secondary transition-[filter] duration-[var(--motion-micro)] ease-[var(--ease-standard)] hover:brightness-110"
+                            data-on:click=(format!("$traceFollowLatest = true; $selectedStepId = '{latest_step_id}'"))
+                        >
+                            "Follow latest"
+                        </button>
+                    </div>
+                }
             </div>
+            if steps.is_empty() {
+                <p class="text-sm text-text-muted">"No execution captured for this target."</p>
+            }
+            for step in steps {
+                trace_detail(step: step)
+            }
+        </section>
+    }
+}
+
+#[component]
+async fn trace_detail(step: StepTrace) -> Result {
+    let visible = format!("$selectedStepId === '{}'", step.step_id);
+    let (status, started, finished, duration, selected_edge, state, output) =
+        trace_values(Some(&step));
+    view! {
+        <div class="grid gap-4" data-show=(visible)>
+            <span class="text-sm font-semibold text-text-secondary" data-testid="trace-status">
+                (status)
+            </span>
             <dl class="grid grid-cols-2 gap-3 max-trace:grid-cols-1">
                 <div>
                     <dt class="text-xs font-semibold text-text-muted">"Started"</dt>
@@ -132,7 +177,7 @@ async fn trace_panel(
                         "State after node"
                     </p>
                     <pre
-                        class="mt-2 min-h-[var(--trace-output-min)] overflow-auto whitespace-pre-wrap break-anywhere rounded-control bg-canvas p-3 font-mono text-[length:var(--type-code)] text-text-secondary"
+                        class="mt-2 min-h-[var(--trace-output-min)] overflow-auto whitespace-pre-wrap [word-break:keep-all] rounded-control bg-canvas p-3 font-mono text-[length:var(--type-code)] text-text-secondary"
                         data-testid="trace-state"
                     >
                         (state)
@@ -145,14 +190,14 @@ async fn trace_panel(
                         "Output / error"
                     </p>
                     <pre
-                        class="mt-2 min-h-[var(--trace-output-min)] overflow-auto whitespace-pre-wrap break-anywhere rounded-control bg-canvas p-3 font-mono text-[length:var(--type-code)] text-text-secondary"
+                        class="mt-2 min-h-[var(--trace-output-min)] overflow-auto whitespace-pre-wrap [word-break:keep-all] rounded-control bg-canvas p-3 font-mono text-[length:var(--type-code)] text-text-secondary"
                         data-testid="trace-output"
                     >
                         (output)
                     </pre>
                 </div>
             </div>
-        </section>
+        </div>
     }
 }
 
