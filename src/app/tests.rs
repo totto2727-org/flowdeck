@@ -15,8 +15,7 @@ use crate::features::{
 
 #[tokio::test]
 async fn initial_signals_restore_the_workflow_and_run_from_the_url() {
-    let service =
-        WorkflowService::without_jcode_runtime().expect("code-defined workflows should build");
+    let service = WorkflowService::new().expect("code-defined workflows should build");
     let run = service
         .start(
             "review-pipeline",
@@ -71,8 +70,7 @@ fn workflow_url_without_a_run_uses_the_canonical_runless_path() {
 
 #[tokio::test]
 async fn latest_run_url_selects_the_newest_run_for_its_workflow() {
-    let service =
-        WorkflowService::without_jcode_runtime().expect("code-defined workflows should build");
+    let service = WorkflowService::new().expect("code-defined workflows should build");
     service
         .start(
             "review-pipeline",

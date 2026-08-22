@@ -8,15 +8,13 @@
 #[path = "workflows/demo/definition.rs"]
 mod demo;
 mod jcode_translation;
+mod registration;
 #[path = "workflows/review/definition.rs"]
 mod review;
 #[path = "workflows/task.rs"]
 mod task;
 
-pub(crate) use jcode_translation::launch_runtime as launch_jcode_runtime;
-
-use graph_flow::{Graph, GraphError};
-use graph_flow_jcode::JcodeRuntime;
+use graph_flow::GraphError;
 use serde::Serialize;
 use serde_json::Value;
 use topcoat::{
@@ -24,11 +22,14 @@ use topcoat::{
     view::{component, view},
 };
 
-use crate::{RunInput, ScheduleSpec, WorkflowError, WorkflowExecutionLimits};
-use std::sync::Arc;
+use crate::{ScheduleSpec, WorkflowError, WorkflowExecutionLimits};
+use std::collections::HashSet;
+
+pub(crate) use registration::{TraceProjector, WorkflowInputContract, WorkflowRegistration};
 
 pub(crate) const INPUT_SUMMARY_KEY: &str = "input_summary";
 pub(crate) const WORKFLOW_INPUT_KEY: &str = "workflow_input";
+pub(crate) const WORKFLOW_RUN_ID_KEY: &str = "workflow_run_id";
 
 /// A code-defined graph node retained independently from graph-flow.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -71,9 +72,12 @@ pub struct WorkflowDefinition {
 
 impl WorkflowDefinition {
     /// Resolve the workflow override or derive strict application defaults from its node count.
-    pub fn execution_limits(&self) -> Result<WorkflowExecutionLimits, WorkflowError> {
+    pub fn execution_limits(
+        &self,
+        defaults: &crate::WorkflowExecutionDefaults,
+    ) -> Result<WorkflowExecutionLimits, WorkflowError> {
         self.limits.map_or_else(
-            || WorkflowExecutionLimits::defaults(self.nodes.len()),
+            || WorkflowExecutionLimits::defaults(self.nodes.len(), defaults),
             WorkflowExecutionLimits::validated,
         )
     }
@@ -115,56 +119,45 @@ pub(crate) const fn default_definition() -> &'static WorkflowDefinition {
     &demo::DEFINITION
 }
 
-pub(crate) fn definition(workflow_id: &str) -> Option<&'static WorkflowDefinition> {
-    DEFINITIONS
-        .iter()
-        .find(|definition| definition.workflow_id == workflow_id)
-}
-
-pub(crate) fn build_graph(
-    workflow_id: &str,
-    jcode_runtime: Option<Arc<JcodeRuntime>>,
-) -> Result<Graph, WorkflowError> {
-    match workflow_id {
-        demo::WORKFLOW_ID => demo::build_graph(),
-        review::WORKFLOW_ID => review::build_graph(),
-        jcode_translation::WORKFLOW_ID => jcode_translation::build_graph(jcode_runtime),
-        _ => Err(WorkflowError::UnknownWorkflow {
-            workflow_id: workflow_id.to_owned(),
-        }),
-    }
-}
-
-pub(crate) fn parse_input(workflow_id: &str, input: Value) -> Result<RunInput, WorkflowError> {
-    match workflow_id {
-        demo::WORKFLOW_ID => demo::parse_input(input),
-        review::WORKFLOW_ID => review::parse_input(input),
-        jcode_translation::WORKFLOW_ID => jcode_translation::parse_input(input),
-        _ => Err(WorkflowError::UnknownWorkflow {
-            workflow_id: workflow_id.to_owned(),
-        }),
-    }
+pub(crate) fn workflow_registrations() -> Result<Vec<WorkflowRegistration>, WorkflowError> {
+    let registrations = vec![
+        WorkflowRegistration::new(
+            &demo::DEFINITION,
+            demo::build_graph()?,
+            demo::parse_input,
+            demo::scheduled_input,
+            task::project_trace,
+        ),
+        WorkflowRegistration::new(
+            &review::DEFINITION,
+            review::build_graph()?,
+            review::parse_input,
+            registration::no_scheduled_input,
+            task::project_trace,
+        ),
+        jcode_translation::registration()?,
+    ];
+    validate_registrations(&registrations)?;
+    Ok(registrations)
 }
 
 pub(crate) const fn schedules() -> &'static [ScheduleSpec] {
     &demo::SCHEDULES
 }
 
-pub(crate) fn scheduled_input(
-    workflow_id: &str,
-    schedule_id: &str,
-) -> Result<Value, WorkflowError> {
-    match workflow_id {
-        demo::WORKFLOW_ID => demo::scheduled_input(schedule_id),
-        review::WORKFLOW_ID | jcode_translation::WORKFLOW_ID => {
-            Err(WorkflowError::UnknownSchedule {
-                schedule_id: schedule_id.to_owned(),
-            })
+fn validate_registrations(registrations: &[WorkflowRegistration]) -> Result<(), WorkflowError> {
+    let mut ids = HashSet::with_capacity(registrations.len());
+    for registration in registrations {
+        if !ids.insert(registration.definition.workflow_id) {
+            return Err(WorkflowError::GraphBuild {
+                message: format!(
+                    "duplicate workflow registration: {}",
+                    registration.definition.workflow_id
+                ),
+            });
         }
-        _ => Err(WorkflowError::UnknownWorkflow {
-            workflow_id: workflow_id.to_owned(),
-        }),
     }
+    Ok(())
 }
 
 fn graph_build_error(error: &GraphError) -> WorkflowError {

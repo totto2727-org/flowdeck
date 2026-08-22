@@ -1,5 +1,6 @@
 //! Local workflow execution domain.
 
+mod config;
 mod workflow;
 mod workflow_limits;
 /// Code-defined cron schedules and their shared dispatcher.
@@ -14,15 +15,19 @@ use std::{
     time::{Duration, SystemTime},
 };
 
+pub use config::{
+    ApplicationConfig, ApplicationConfigError, EventConfig, ExecutionTargetDefaults, HttpConfig,
+    InMemoryHistoryConfig, InMemoryStateConfig, PositiveDuration, RunRetention, SchedulerConfig,
+    SchedulerMode, StateBackendConfig, StateConfig, WorkflowConfig, WorkflowExecutionDefaults,
+};
 pub use workflow::{
     HistoryDelta, HistoryReplay, HistoryRevision, HistoryView, RunListProjection, WorkflowEvent,
     WorkflowService,
 };
-pub use workflow_limits::{
-    DEFAULT_NODE_MAX_EXECUTIONS, DEFAULT_NODE_TIMEOUT, DEFAULT_WORKFLOW_STEP_MULTIPLIER,
-    DEFAULT_WORKFLOW_TIMEOUT_PER_STEP, ExecutionLimit, WorkflowExecutionLimits,
+pub use workflow_limits::{ExecutionLimit, WorkflowExecutionLimits};
+pub use workflow_scheduler::{
+    ScheduleOverlap, ScheduleOverlapPolicy, ScheduleSpec, workflow_schedules,
 };
-pub use workflow_scheduler::{ScheduleOverlapPolicy, ScheduleSpec, workflow_schedules};
 pub use workflow_trace::{StepId, StepState, StepTrace, StepTraceStatus};
 pub use workflows::{
     EdgeSpec, NodeSpec, WorkflowDefinition, workflow_default_input, workflow_definitions,
@@ -175,9 +180,9 @@ pub enum WorkflowError {
         /// graph-flow validation failure for the static workflow.
         message: String,
     },
-    /// The shared jcode runtime could not be started or configured.
-    Jcode {
-        /// Runtime startup diagnostic.
+    /// A workflow-owned trace projection could not be created.
+    Trace {
+        /// Trace projection diagnostic.
         message: String,
     },
     /// The in-memory session layer rejected an operation.
@@ -207,7 +212,7 @@ impl fmt::Display for WorkflowError {
             Self::GraphBuild { message } => {
                 write!(formatter, "workflow graph build failed: {message}")
             }
-            Self::Jcode { message } => write!(formatter, "jcode runtime failed: {message}"),
+            Self::Trace { message } => write!(formatter, "workflow trace failed: {message}"),
             Self::Session { message } => write!(formatter, "workflow session failed: {message}"),
         }
     }

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use graph_flow::{ExecutionStatus, SessionStorage};
+use graph_flow::ExecutionStatus;
 use tokio::time::timeout;
 
 use super::{Inner, WorkflowRuntime};
@@ -63,7 +63,7 @@ struct StepDriver<'a> {
 
 async fn drive_steps(inner: &Inner, run_id: &RunId, runtime: &WorkflowRuntime) {
     loop {
-        let Some(snapshot) = inner.history.read().await.get(run_id) else {
+        let Some(snapshot) = inner.state.run_history.get(run_id).await else {
             return;
         };
         let Some(current) = snapshot.current_node.clone() else {
@@ -145,10 +145,16 @@ impl StepDriver<'_> {
                     }
                 };
                 let terminal = matches!(result.status, ExecutionStatus::Completed);
-                let Some(state) = StepState::after(&session.context, self.current) else {
-                    self.fail(Some(step_id), "trace state disappeared".to_owned())
-                        .await;
-                    return DriveControl::Stop;
+                let state = match self
+                    .runtime
+                    .trace_projector
+                    .project(&session.context, self.current)
+                {
+                    Ok(payload) => StepState { payload },
+                    Err(error) => {
+                        self.fail(Some(step_id), error.to_string()).await;
+                        return DriveControl::Stop;
+                    }
                 };
                 record_step(
                     self.inner,

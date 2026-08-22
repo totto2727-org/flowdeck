@@ -2,8 +2,6 @@ use std::collections::VecDeque;
 
 use crate::{RunId, RunSnapshot, RunStatus, RunTrigger};
 
-pub(super) const HISTORY_JOURNAL_CAPACITY: usize = 512;
-
 /// Monotonic version of the retained workflow history.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub struct HistoryRevision(u64);
@@ -90,14 +88,16 @@ pub(super) struct HistoryState {
     revision: HistoryRevision,
     runs: Vec<RunSnapshot>,
     journal: VecDeque<HistoryDelta>,
+    journal_capacity: usize,
 }
 
 impl HistoryState {
-    pub(super) const fn new() -> Self {
+    pub(super) const fn new(journal_capacity: usize) -> Self {
         Self {
             revision: HistoryRevision::new(0),
             runs: Vec::new(),
             journal: VecDeque::new(),
+            journal_capacity,
         }
     }
 
@@ -169,7 +169,7 @@ impl HistoryState {
             before,
             after,
         };
-        if self.journal.len() == HISTORY_JOURNAL_CAPACITY {
+        if self.journal.len() == self.journal_capacity {
             let _ = self.journal.pop_front();
         }
         self.journal.push_back(delta.clone());
@@ -179,14 +179,14 @@ impl HistoryState {
 
 #[cfg(test)]
 mod tests {
-    use super::{HISTORY_JOURNAL_CAPACITY, HistoryReplay, HistoryRevision, HistoryState};
+    use super::{HistoryReplay, HistoryRevision, HistoryState};
     use crate::RunId;
 
     #[test]
     fn replay_when_cursor_precedes_bounded_journal_is_stale() {
         // Given: one more mutation than the fixed journal retains.
-        let mut history = HistoryState::new();
-        for value in 0..=HISTORY_JOURNAL_CAPACITY {
+        let mut history = HistoryState::new(3);
+        for value in 0..=3 {
             let _ = history.record(RunId(value.to_string()), None, None);
         }
 
@@ -195,11 +195,9 @@ mod tests {
         let expired = history.replay(HistoryRevision::new(0));
 
         // Then: the boundary cursor replays all retained entries and the older one is stale.
+        assert!(matches!(retained, HistoryReplay::Changes(changes) if changes.len() == 3));
         assert!(
-            matches!(retained, HistoryReplay::Changes(changes) if changes.len() == HISTORY_JOURNAL_CAPACITY)
-        );
-        assert!(
-            matches!(expired, HistoryReplay::Stale { current } if current == HistoryRevision::new(513))
+            matches!(expired, HistoryReplay::Stale { current } if current == HistoryRevision::new(4))
         );
     }
 }

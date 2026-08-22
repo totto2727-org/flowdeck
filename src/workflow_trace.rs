@@ -3,15 +3,10 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use graph_flow::Context;
-use graph_flow_jcode::{JCODE_OUTPUT_KEY, JcodeOutput};
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::{RunSnapshot, StepTraceStatus::Running, workflows::WORKFLOW_INPUT_KEY};
-
-const BRANCH_KEY: &str = "branch_yes";
-const BRANCH_TOKEN_KEY: &str = "branch_token";
+use crate::{RunSnapshot, StepTraceStatus::Running};
 
 /// Stable one-based identity of a node execution within one run.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize)]
@@ -35,16 +30,8 @@ impl fmt::Display for StepId {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[non_exhaustive]
 pub struct StepState {
-    /// Workflow-owned input state from the initial graph context.
-    pub input: Value,
-    /// Random token produced by this node, when available.
-    pub task_token: Option<String>,
-    /// Branch decision after the route-selection node executes.
-    pub branch_selected: Option<bool>,
-    /// Token used to derive the branch decision.
-    pub branch_token: Option<String>,
-    /// Redacted high-level jcode result when this was an agent node.
-    pub jcode_output: Option<JcodeOutput>,
+    /// Workflow-owned, explicitly projected and redacted state.
+    pub payload: Value,
 }
 
 /// Lifecycle state for one retained node execution.
@@ -107,11 +94,7 @@ impl RunSnapshot {
             selected_edge: None,
             status: Running,
             state: StepState {
-                input: self.input.state().clone(),
-                task_token: None,
-                branch_selected: None,
-                branch_token: None,
-                jcode_output: None,
+                payload: serde_json::json!({ "input": self.input.state() }),
             },
             output: None,
             started_at: SystemTime::now(),
@@ -167,18 +150,5 @@ impl RunSnapshot {
         step.output = Some(message.to_owned());
         step.duration = finished_at.duration_since(step.started_at).ok();
         step.finished_at = Some(finished_at);
-    }
-}
-
-impl StepState {
-    pub(crate) fn after(context: &Context, node_id: &str) -> Option<Self> {
-        let task_token_key = format!("task_token:{node_id}");
-        Some(Self {
-            input: context.get(WORKFLOW_INPUT_KEY)?,
-            task_token: context.get(&task_token_key),
-            branch_selected: context.get(BRANCH_KEY),
-            branch_token: context.get(BRANCH_TOKEN_KEY),
-            jcode_output: context.get(JCODE_OUTPUT_KEY),
-        })
     }
 }

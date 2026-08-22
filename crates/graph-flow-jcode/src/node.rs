@@ -1,6 +1,6 @@
 use crate::{
-    AfterRun, BeforeRun, JCODE_OUTPUT_KEY, JcodeHooks, JcodeNodeError, JcodeOutput, JcodeRuntime,
-    SessionMode, SessionOptions,
+    AfterRun, BeforeRun, JCODE_OUTPUT_KEY, JcodeHooks, JcodeNodeError, JcodeOutput,
+    JcodeProcessScope, SessionMode, SessionOptions,
 };
 use async_trait::async_trait;
 use graph_flow::{Context, GraphError, NextAction, Task, TaskResult};
@@ -15,7 +15,7 @@ type SessionModeFactory =
 type RunFactory = dyn Fn(&Context) -> Result<RunOptions, JcodeNodeError> + Send + Sync + 'static;
 
 struct ExecutionPolicy<'a> {
-    runtime: &'a JcodeRuntime,
+    process_scope: &'a JcodeProcessScope,
     prompt_factory: &'a PromptFactory,
     session_factory: &'a SessionFactory,
     session_mode_factory: &'a SessionModeFactory,
@@ -28,7 +28,7 @@ struct ExecutionPolicy<'a> {
 #[must_use]
 pub struct JcodeNode {
     id: String,
-    runtime: Arc<JcodeRuntime>,
+    process_scope: Arc<JcodeProcessScope>,
     prompt_factory: Arc<PromptFactory>,
     session_factory: Arc<SessionFactory>,
     session_mode_factory: Arc<SessionModeFactory>,
@@ -39,13 +39,17 @@ pub struct JcodeNode {
 
 impl JcodeNode {
     /// Create a node using one application-owned shared jcode runtime.
-    pub fn new<P>(id: impl Into<String>, runtime: Arc<JcodeRuntime>, prompt_factory: P) -> Self
+    pub fn new<P>(
+        id: impl Into<String>,
+        process_scope: Arc<JcodeProcessScope>,
+        prompt_factory: P,
+    ) -> Self
     where
         P: Fn(&Context) -> Result<String, JcodeNodeError> + Send + Sync + 'static,
     {
         Self {
             id: id.into(),
-            runtime,
+            process_scope,
             prompt_factory: Arc::new(prompt_factory),
             session_factory: Arc::new(|_| Ok(SessionOptions::default())),
             session_mode_factory: Arc::new(|_| Ok(SessionMode::New)),
@@ -115,7 +119,7 @@ impl Task for JcodeNode {
     }
 
     async fn run(&self, context: Context) -> graph_flow::Result<TaskResult> {
-        let runtime = Arc::clone(&self.runtime);
+        let process_scope = Arc::clone(&self.process_scope);
         let prompt_factory = Arc::clone(&self.prompt_factory);
         let session_factory = Arc::clone(&self.session_factory);
         let session_mode_factory = Arc::clone(&self.session_mode_factory);
@@ -126,7 +130,7 @@ impl Task for JcodeNode {
             execute(
                 &context,
                 ExecutionPolicy {
-                    runtime: &runtime,
+                    process_scope: &process_scope,
                     prompt_factory: &*prompt_factory,
                     session_factory: &*session_factory,
                     session_mode_factory: &*session_mode_factory,
@@ -149,13 +153,13 @@ fn execute(context: &Context, policy: ExecutionPolicy<'_>) -> Result<TaskResult,
         model,
         reasoning_effort,
     } = (policy.session_factory)(context)?;
-    let client = policy.runtime.client();
+    let client = policy.process_scope.client()?;
     for credential in &credentials {
         client.set_api_key(credential.provider(), credential.api_key())?;
     }
     let session_mode = (policy.session_mode_factory)(context)?;
     policy
-        .runtime
+        .process_scope
         .with_session(session_mode, working_dir, |client, session| {
             execute_turn(context, policy, client, session, model, reasoning_effort)
         })

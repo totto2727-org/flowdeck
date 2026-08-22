@@ -158,8 +158,7 @@ mod tests {
 
     #[tokio::test]
     async fn graph_panel_with_a_run_keeps_interactive_trace_selection_and_metadata() {
-        let service =
-            WorkflowService::without_jcode_runtime().expect("code-defined workflows should build");
+        let service = WorkflowService::new().expect("code-defined workflows should build");
         let run = service
             .start(
                 "review-pipeline",
@@ -189,8 +188,7 @@ mod tests {
 
     #[tokio::test]
     async fn run_inspector_composes_the_graph_panel_with_step_trace_details() {
-        let service =
-            WorkflowService::without_jcode_runtime().expect("code-defined workflows should build");
+        let service = WorkflowService::new().expect("code-defined workflows should build");
         let started = service
             .start(
                 "review-pipeline",

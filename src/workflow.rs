@@ -1,36 +1,39 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     fmt,
     sync::Arc,
     time::{Duration, SystemTime},
 };
 
-use graph_flow::{FlowRunner, InMemorySessionStorage, Session, SessionStorage};
-use graph_flow_jcode::{JCODE_SESSION_KEY, JcodeRuntime};
+use graph_flow::{FlowRunner, Session, SessionStorage};
 use serde_json::Value;
-use tokio::sync::{Mutex, RwLock, broadcast};
+use tokio::sync::broadcast;
 use uuid::Uuid;
 
 use crate::{
-    RunId, RunSnapshot, RunStatus, RunTrigger, WorkflowDefinition, WorkflowError,
+    RunId, RunSnapshot, RunStatus, RunTrigger, SchedulerConfig, WorkflowDefinition, WorkflowError,
     WorkflowExecutionLimits,
     workflows::{
-        INPUT_SUMMARY_KEY, WORKFLOW_INPUT_KEY, build_graph, definition, parse_input,
-        workflow_definitions,
+        INPUT_SUMMARY_KEY, TraceProjector, WORKFLOW_INPUT_KEY, WORKFLOW_RUN_ID_KEY,
+        WorkflowInputContract,
     },
 };
 
+#[path = "workflow/bootstrap.rs"]
+mod bootstrap;
 #[path = "workflow/driver.rs"]
 mod driver;
 #[path = "workflow/events.rs"]
 mod events;
 #[path = "workflow/history.rs"]
 mod history;
+#[path = "workflow/state.rs"]
+mod state;
 
 use driver::drive;
 pub use events::WorkflowEvent;
-use history::{HISTORY_JOURNAL_CAPACITY, HistoryState};
 pub use history::{HistoryDelta, HistoryReplay, HistoryRevision, HistoryView, RunListProjection};
+use state::ApplicationState;
 
 /// Cloneable local boundary for workflow starts, listing, and event subscription.
 #[derive(Clone)]
@@ -48,67 +51,22 @@ impl fmt::Debug for WorkflowService {
 
 struct Inner {
     runtimes: HashMap<&'static str, WorkflowRuntime>,
-    history: RwLock<HistoryState>,
+    state: ApplicationState,
+    scheduler: SchedulerConfig,
     events: broadcast::Sender<WorkflowEvent>,
     history_events: broadcast::Sender<HistoryDelta>,
-    running_schedules: Mutex<HashSet<String>>,
 }
 
 struct WorkflowRuntime {
     definition: &'static WorkflowDefinition,
+    input: Arc<dyn WorkflowInputContract>,
+    trace_projector: Arc<dyn TraceProjector>,
     limits: WorkflowExecutionLimits,
     runner: FlowRunner,
-    storage: Arc<InMemorySessionStorage>,
+    storage: Arc<dyn SessionStorage>,
 }
 
 impl WorkflowService {
-    /// Start one shared jcode process and build every code-defined workflow.
-    pub fn new() -> Result<Self, WorkflowError> {
-        let runtime = crate::workflows::launch_jcode_runtime()?;
-        Self::build(Some(&runtime))
-    }
-
-    /// Build the workflow catalog without starting jcode for non-agent tests.
-    #[doc(hidden)]
-    pub fn without_jcode_runtime() -> Result<Self, WorkflowError> {
-        Self::build(None)
-    }
-
-    fn build(jcode_runtime: Option<&Arc<JcodeRuntime>>) -> Result<Self, WorkflowError> {
-        crate::workflow_scheduler::validate_schedules()?;
-        let mut runtimes = HashMap::new();
-        for definition in workflow_definitions() {
-            let limits = definition.execution_limits()?;
-            let graph = Arc::new(build_graph(
-                definition.workflow_id,
-                jcode_runtime.map(Arc::clone),
-            )?);
-            let storage = Arc::new(InMemorySessionStorage::new());
-            let session_storage: Arc<dyn SessionStorage> =
-                Arc::<InMemorySessionStorage>::clone(&storage);
-            runtimes.insert(
-                definition.workflow_id,
-                WorkflowRuntime {
-                    definition,
-                    limits,
-                    runner: FlowRunner::new(graph, session_storage),
-                    storage,
-                },
-            );
-        }
-        let (events, _) = broadcast::channel(128);
-        let (history_events, _) = broadcast::channel(HISTORY_JOURNAL_CAPACITY);
-        Ok(Self {
-            inner: Arc::new(Inner {
-                runtimes,
-                history: RwLock::new(HistoryState::new()),
-                events,
-                history_events,
-                running_schedules: Mutex::new(HashSet::new()),
-            }),
-        })
-    }
-
     /// Validate a workflow ID, retain its first snapshot, and start its driver.
     pub async fn start(
         &self,
@@ -116,9 +74,6 @@ impl WorkflowService {
         raw_input: Value,
         trigger: RunTrigger,
     ) -> Result<RunSnapshot, WorkflowError> {
-        let definition = definition(workflow_id).ok_or_else(|| WorkflowError::UnknownWorkflow {
-            workflow_id: workflow_id.to_owned(),
-        })?;
         let runtime =
             self.inner
                 .runtimes
@@ -126,7 +81,8 @@ impl WorkflowService {
                 .ok_or_else(|| WorkflowError::UnknownWorkflow {
                     workflow_id: workflow_id.to_owned(),
                 })?;
-        let input = parse_input(workflow_id, raw_input)?;
+        let definition = runtime.definition;
+        let input = runtime.input.parse(raw_input)?;
         let run_id = RunId(Uuid::new_v4().to_string());
         let session = Session::new_from_task(run_id.0.clone(), definition.start_node)
             .with_graph_id(definition.workflow_id);
@@ -140,7 +96,7 @@ impl WorkflowService {
             .map_err(|error| session_error(&error))?;
         session
             .context
-            .set(JCODE_SESSION_KEY, run_id.as_str())
+            .set(WORKFLOW_RUN_ID_KEY, run_id.as_str())
             .map_err(|error| session_error(&error))?;
         runtime
             .storage
@@ -163,7 +119,7 @@ impl WorkflowService {
             duration: None,
             steps: Vec::new(),
         };
-        let delta = self.inner.history.write().await.insert(snapshot.clone());
+        let delta = self.inner.state.run_history.insert(snapshot.clone()).await;
         let _ = self.inner.history_events.send(delta);
         let _ = self.inner.events.send(WorkflowEvent::RunStarted {
             run_id: run_id.clone(),
@@ -186,44 +142,35 @@ impl WorkflowService {
 
     /// Read every retained run and its shared revision atomically.
     pub async fn history_view(&self) -> HistoryView {
-        self.inner.history.read().await.view()
+        self.inner.state.run_history.view().await
     }
 
     /// Replay retained changes after a previously observed revision.
     pub async fn history_since(&self, after: HistoryRevision) -> HistoryReplay {
-        self.inner.history.read().await.replay(after)
+        self.inner.state.run_history.replay(after).await
     }
 
     /// Read the current view and its replay boundary under one history lock.
     pub async fn history_view_since(&self, after: HistoryRevision) -> (HistoryView, HistoryReplay) {
-        let history = self.inner.history.read().await;
-        (history.view(), history.replay(after))
+        self.inner.state.run_history.view_since(after).await
     }
 
     /// List all retained snapshots in start order.
     pub async fn list_runs(&self) -> Vec<RunSnapshot> {
-        self.inner.history.read().await.view().runs
+        self.inner.state.run_history.view().await.runs
     }
 
     /// Poll one retained snapshot by its opaque run ID.
     pub async fn get_run(&self, run_id: &RunId) -> Option<RunSnapshot> {
-        self.inner.history.read().await.get(run_id)
+        self.inner.state.run_history.get(run_id).await
     }
 
     pub(crate) async fn claim_schedule(&self, schedule_id: &str) -> bool {
-        self.inner
-            .running_schedules
-            .lock()
-            .await
-            .insert(schedule_id.to_owned())
+        self.inner.state.schedule_leases.claim(schedule_id).await
     }
 
     pub(crate) async fn release_schedule(&self, schedule_id: &str) {
-        self.inner
-            .running_schedules
-            .lock()
-            .await
-            .remove(schedule_id);
+        self.inner.state.schedule_leases.release(schedule_id).await;
     }
 
     pub(crate) async fn retain_skipped_schedule(
@@ -233,7 +180,14 @@ impl WorkflowService {
         trigger: RunTrigger,
         reason: &str,
     ) -> Result<RunSnapshot, WorkflowError> {
-        let input = parse_input(workflow_id, raw_input)?;
+        let runtime =
+            self.inner
+                .runtimes
+                .get(workflow_id)
+                .ok_or_else(|| WorkflowError::UnknownWorkflow {
+                    workflow_id: workflow_id.to_owned(),
+                })?;
+        let input = runtime.input.parse(raw_input)?;
         let now = SystemTime::now();
         let snapshot = RunSnapshot {
             run_id: RunId(Uuid::new_v4().to_string()),
@@ -253,7 +207,7 @@ impl WorkflowService {
             duration: Some(Duration::ZERO),
             steps: Vec::new(),
         };
-        let delta = self.inner.history.write().await.insert(snapshot.clone());
+        let delta = self.inner.state.run_history.insert(snapshot.clone()).await;
         let _ = self.inner.history_events.send(delta);
         let _ = self.inner.events.send(WorkflowEvent::RunSkipped {
             run_id: snapshot.run_id.clone(),
@@ -261,6 +215,45 @@ impl WorkflowService {
             reason: reason.to_owned(),
         });
         Ok(snapshot)
+    }
+
+    pub(crate) fn contains_workflow(&self, workflow_id: &str) -> bool {
+        self.inner.runtimes.contains_key(workflow_id)
+    }
+
+    pub(crate) fn scheduled_input(
+        &self,
+        workflow_id: &str,
+        schedule_id: &str,
+    ) -> Result<Value, WorkflowError> {
+        self.inner
+            .runtimes
+            .get(workflow_id)
+            .ok_or_else(|| WorkflowError::UnknownWorkflow {
+                workflow_id: workflow_id.to_owned(),
+            })?
+            .input
+            .scheduled(schedule_id)
+    }
+
+    pub(crate) fn validate_input(
+        &self,
+        workflow_id: &str,
+        input: Value,
+    ) -> Result<(), WorkflowError> {
+        self.inner
+            .runtimes
+            .get(workflow_id)
+            .ok_or_else(|| WorkflowError::UnknownWorkflow {
+                workflow_id: workflow_id.to_owned(),
+            })?
+            .input
+            .parse(input)
+            .map(|_| ())
+    }
+
+    pub(crate) fn scheduler_config(&self) -> &SchedulerConfig {
+        &self.inner.scheduler
     }
 }
 

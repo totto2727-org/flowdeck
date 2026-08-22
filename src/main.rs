@@ -12,10 +12,7 @@ use topcoat::{
     router::{Body, Layer, LayerFuture, Next, Path, Router, RouterBuilderDiscoverExt, parts},
 };
 use tracing_subscriber::EnvFilter;
-use workflow_console_experiment::WorkflowService;
-
-const BIND_ADDRESS: &str = "127.0.0.1:3000";
-const SERVER_URL: &str = "http://127.0.0.1:3000";
+use workflow_console_experiment::{ApplicationConfig, WorkflowService};
 
 #[derive(Debug)]
 struct RequestLogging;
@@ -57,7 +54,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .compact()
         .try_init()?;
 
-    let service = WorkflowService::new()?;
+    let config = ApplicationConfig::local_default();
+    let service = WorkflowService::with_config(config.clone())?;
     let scheduler = service.clone();
     let assets = AssetBundle::load()?;
     let router = Router::builder()
@@ -66,8 +64,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .app_context(service)
         .assets(assets)
         .build();
-    let listener = TcpListener::bind(BIND_ADDRESS).await?;
-    tracing::info!(url = SERVER_URL, "server listening");
+    let listener = TcpListener::bind(config.http.bind_address).await?;
+    tracing::info!(url = %format!("http://{}", config.http.bind_address), "server listening");
     tokio::select! {
         result = topcoat::serve(listener, router) => result?,
         result = scheduler.run_scheduler() => result?,

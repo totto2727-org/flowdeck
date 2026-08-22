@@ -1,7 +1,6 @@
-use async_trait::async_trait;
 use garde::Validate;
-use graph_flow::{Context, GraphBuilder, GraphError, Task, TaskResult};
-use graph_flow_jcode::{JCODE_SESSION_KEY, JcodeNode, JcodeRuntime, SessionMode};
+use graph_flow::{Context, GraphBuilder};
+use graph_flow_jcode::{JCODE_OUTPUT_KEY, JcodeNode, JcodeOutput, JcodeProcessScope, SessionMode};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{path::Path, sync::Arc};
@@ -13,7 +12,10 @@ use topcoat::{
 use super::hooks::{TranslationHooks, prompt, session_options};
 use crate::{
     RunInput, WorkflowError,
-    workflows::{EdgeSpec, NodeSpec, WorkflowDefinition, graph_build_error},
+    workflows::{
+        EdgeSpec, NodeSpec, WORKFLOW_INPUT_KEY, WORKFLOW_RUN_ID_KEY, WorkflowDefinition,
+        graph_build_error,
+    },
 };
 
 pub(crate) const WORKFLOW_ID: &str = "jcode-translation";
@@ -97,19 +99,14 @@ pub(crate) fn parse_input(value: Value) -> Result<RunInput, WorkflowError> {
 }
 
 pub(crate) fn build_graph(
-    runtime: Option<Arc<JcodeRuntime>>,
+    process_scope: Arc<JcodeProcessScope>,
 ) -> Result<graph_flow::Graph, WorkflowError> {
-    let node: Arc<dyn Task> = runtime.map_or_else(
-        || Arc::new(UnavailableJcodeNode) as Arc<dyn Task>,
-        |runtime| {
-            Arc::new(
-                JcodeNode::new("translate_files", runtime, prompt)
-                    .with_session_mode(shared_session)
-                    .with_session_options(session_options)
-                    .with_hooks(TranslationHooks)
-                    .with_next_action(graph_flow::NextAction::End),
-            ) as Arc<dyn Task>
-        },
+    let node = Arc::new(
+        JcodeNode::new("translate_files", process_scope, prompt)
+            .with_session_mode(shared_session)
+            .with_session_options(session_options)
+            .with_hooks(TranslationHooks)
+            .with_next_action(graph_flow::NextAction::End),
     );
     GraphBuilder::new(WORKFLOW_ID)
         .add_task(node)
@@ -118,25 +115,26 @@ pub(crate) fn build_graph(
 }
 
 fn shared_session(context: &Context) -> Result<SessionMode, graph_flow_jcode::JcodeNodeError> {
-    let key = context.get::<String>(JCODE_SESSION_KEY).ok_or_else(|| {
+    let key = context.get::<String>(WORKFLOW_RUN_ID_KEY).ok_or_else(|| {
         graph_flow_jcode::JcodeNodeError::configuration("run session key is missing")
     })?;
     SessionMode::reuse(key)
 }
 
-#[derive(Debug)]
-struct UnavailableJcodeNode;
+pub(crate) fn project_trace(context: &Context, _node_id: &str) -> Result<Value, WorkflowError> {
+    let input = context
+        .get::<Value>(WORKFLOW_INPUT_KEY)
+        .ok_or_else(|| trace_error("translation workflow input is missing"))?;
+    Ok(json!({
+        "input": input,
+        "jcode_output": context.get::<JcodeOutput>(JCODE_OUTPUT_KEY),
+        "translation_output_path": context.get::<String>("translation_output_path"),
+    }))
+}
 
-#[async_trait]
-impl Task for UnavailableJcodeNode {
-    fn id(&self) -> &'static str {
-        "translate_files"
-    }
-
-    async fn run(&self, _context: Context) -> graph_flow::Result<TaskResult> {
-        Err(GraphError::TaskExecutionFailed(
-            "the shared jcode runtime is unavailable".to_owned(),
-        ))
+fn trace_error(message: &str) -> WorkflowError {
+    WorkflowError::Trace {
+        message: message.to_owned(),
     }
 }
 

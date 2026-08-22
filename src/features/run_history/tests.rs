@@ -41,8 +41,7 @@ fn history_transition_classifies_all_filter_membership_changes() {
 
 #[tokio::test]
 async fn run_history_renders_url_driven_filters_and_delta_ready_rows() {
-    let service =
-        WorkflowService::without_jcode_runtime().expect("code-defined workflows should build");
+    let service = WorkflowService::new().expect("code-defined workflows should build");
     let demo = service
         .start(
             workflow_id(),
@@ -98,8 +97,7 @@ async fn history_events_url_includes_the_ssr_revision_and_normalized_filters() {
         history_trigger: Some("invalid".to_owned()),
         history_status: Some("completed".to_owned()),
     });
-    let service =
-        WorkflowService::without_jcode_runtime().expect("code-defined workflows should build");
+    let service = WorkflowService::new().expect("code-defined workflows should build");
     let state = HistoryPanelState::new(
         service.history_view().await,
         filters,
@@ -141,7 +139,7 @@ fn replay_cursor_uses_the_greatest_valid_client_revision() {
 #[tokio::test]
 async fn one_history_revision_is_emitted_as_one_sse_event() -> Result<(), Box<dyn std::error::Error>>
 {
-    let service = WorkflowService::without_jcode_runtime()?;
+    let service = WorkflowService::new()?;
     assert!(
         service
             .start(
@@ -174,7 +172,7 @@ async fn one_history_revision_is_emitted_as_one_sse_event() -> Result<(), Box<dy
 #[tokio::test]
 async fn replayed_removals_add_empty_state_only_after_the_last_matching_row()
 -> Result<(), Box<dyn std::error::Error>> {
-    let service = WorkflowService::without_jcode_runtime()?;
+    let service = WorkflowService::new()?;
     for subject in ["first", "second"] {
         assert!(
             service

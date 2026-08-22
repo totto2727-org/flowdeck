@@ -1,13 +1,12 @@
-use crate::{AfterLaunch, BeforeLaunch, JcodeNodeError, JcodeRuntimeHooks};
+use crate::{AfterLaunch, BeforeLaunch, JcodeNodeError, JcodeProcessHooks};
 use jcode_sdk::{JcodeClient, LaunchOptions, SessionInfo};
 use std::{
     collections::HashMap,
     fmt,
-    sync::{Arc, Mutex, MutexGuard},
+    sync::{Arc, Mutex, MutexGuard, OnceLock},
 };
 
-/// graph-flow context key used by applications to carry a shared session name.
-pub const JCODE_SESSION_KEY: &str = "jcode_session_key";
+type ClientFactory = dyn Fn() -> Result<JcodeClient, JcodeNodeError> + Send + Sync + 'static;
 
 /// Stable name used to share one jcode session across graph-flow nodes.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -73,58 +72,20 @@ impl ManagedSession {
     }
 }
 
-/// One long-lived jcode client and its process-local named session registry.
-pub struct JcodeRuntime {
+struct JcodeProcess {
     client: JcodeClient,
     sessions: Mutex<HashMap<SessionKey, Arc<ManagedSession>>>,
 }
 
-impl JcodeRuntime {
-    /// Launch and own exactly one private jcode process.
-    ///
-    /// # Errors
-    /// Returns an SDK or hook error when the process cannot become ready.
-    pub fn launch(options: LaunchOptions) -> Result<Self, JcodeNodeError> {
-        Self::launch_with_hooks(options, &())
-    }
-
-    /// Launch one private process with initialization hooks run exactly once.
-    ///
-    /// # Errors
-    /// Returns an SDK or hook error when initialization cannot complete.
-    pub fn launch_with_hooks<H>(
-        mut options: LaunchOptions,
-        hooks: &H,
-    ) -> Result<Self, JcodeNodeError>
-    where
-        H: JcodeRuntimeHooks,
-    {
-        hooks.before_launch(BeforeLaunch {
-            options: &mut options,
-        })?;
-        let runtime = Self::from_client(JcodeClient::launch(options)?);
-        hooks.after_launch(AfterLaunch {
-            client: &runtime.client,
-        })?;
-        Ok(runtime)
-    }
-
-    /// Wrap a connected SDK client, primarily for embedding and deterministic tests.
-    #[must_use]
-    pub fn from_client(client: JcodeClient) -> Self {
+impl JcodeProcess {
+    fn new(client: JcodeClient) -> Self {
         Self {
             client,
             sessions: Mutex::new(HashMap::new()),
         }
     }
 
-    /// Access the shared high-level SDK client for process-wide initialization.
-    #[must_use]
-    pub const fn client(&self) -> &JcodeClient {
-        &self.client
-    }
-
-    pub(crate) fn with_session<T, F>(
+    fn with_session<T, F>(
         &self,
         mode: SessionMode,
         working_dir: Option<String>,
@@ -173,18 +134,154 @@ impl JcodeRuntime {
     }
 }
 
-impl fmt::Debug for JcodeRuntime {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let session_count = self
-            .sessions
+/// Lazily owns one jcode process and its process-local named session registry.
+pub struct JcodeProcessScope {
+    process: OnceLock<JcodeProcess>,
+    initialize: Mutex<()>,
+    client_factory: Box<ClientFactory>,
+}
+
+impl JcodeProcessScope {
+    /// Launch and own exactly one private jcode process.
+    ///
+    /// # Errors
+    /// Returns an SDK or hook error when the process cannot become ready.
+    pub fn launch(options: LaunchOptions) -> Result<Self, JcodeNodeError> {
+        Self::launch_with_hooks(options, &())
+    }
+
+    /// Launch one private process with initialization hooks run exactly once.
+    ///
+    /// # Errors
+    /// Returns an SDK or hook error when initialization cannot complete.
+    pub fn launch_with_hooks<H>(
+        mut options: LaunchOptions,
+        hooks: &H,
+    ) -> Result<Self, JcodeNodeError>
+    where
+        H: JcodeProcessHooks,
+    {
+        hooks.before_launch(BeforeLaunch {
+            options: &mut options,
+        })?;
+        let client = JcodeClient::launch(options)?;
+        hooks.after_launch(AfterLaunch { client: &client })?;
+        Ok(Self::from_client(client))
+    }
+
+    /// Create a retryable scope whose client is initialized on the first node execution.
+    #[must_use]
+    pub fn deferred<F>(client_factory: F) -> Self
+    where
+        F: Fn() -> Result<JcodeClient, JcodeNodeError> + Send + Sync + 'static,
+    {
+        Self {
+            process: OnceLock::new(),
+            initialize: Mutex::new(()),
+            client_factory: Box::new(client_factory),
+        }
+    }
+
+    /// Create a retryable scope that launches jcode from options produced on first use.
+    #[must_use]
+    pub fn deferred_launch<F>(options_factory: F) -> Self
+    where
+        F: Fn() -> LaunchOptions + Send + Sync + 'static,
+    {
+        Self::deferred(move || Ok(JcodeClient::launch(options_factory())?))
+    }
+
+    /// Create a retryable scope with process hooks run for each launch attempt.
+    #[must_use]
+    pub fn deferred_launch_with_hooks<F, H>(options_factory: F, hooks: H) -> Self
+    where
+        F: Fn() -> LaunchOptions + Send + Sync + 'static,
+        H: JcodeProcessHooks + 'static,
+    {
+        Self::deferred(move || {
+            let mut options = options_factory();
+            hooks.before_launch(BeforeLaunch {
+                options: &mut options,
+            })?;
+            let client = JcodeClient::launch(options)?;
+            hooks.after_launch(AfterLaunch { client: &client })?;
+            Ok(client)
+        })
+    }
+
+    /// Wrap a connected SDK client, primarily for embedding and deterministic tests.
+    #[must_use]
+    pub fn from_client(client: JcodeClient) -> Self {
+        let process = OnceLock::new();
+        let _ = process.set(JcodeProcess::new(client));
+        Self {
+            process,
+            initialize: Mutex::new(()),
+            client_factory: Box::new(|| {
+                Err(JcodeNodeError::configuration(
+                    "an initialized jcode process scope cannot relaunch its client",
+                ))
+            }),
+        }
+    }
+
+    /// Access the shared high-level SDK client for process-wide initialization.
+    ///
+    /// # Errors
+    /// Returns the launch or hook failure. A later call retries initialization.
+    pub fn client(&self) -> Result<&JcodeClient, JcodeNodeError> {
+        self.process().map(|process| &process.client)
+    }
+
+    pub(crate) fn with_session<T, F>(
+        &self,
+        mode: SessionMode,
+        working_dir: Option<String>,
+        operation: F,
+    ) -> Result<T, JcodeNodeError>
+    where
+        F: FnOnce(&JcodeClient, &SessionInfo) -> Result<T, JcodeNodeError>,
+    {
+        self.process()?.with_session(mode, working_dir, operation)
+    }
+
+    fn process(&self) -> Result<&JcodeProcess, JcodeNodeError> {
+        if let Some(process) = self.process.get() {
+            return Ok(process);
+        }
+        let _initialize = self
+            .initialize
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .len();
-        formatter
-            .debug_struct("JcodeRuntime")
-            .field("server", &self.client.server)
-            .field("session_count", &session_count)
-            .finish_non_exhaustive()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(process) = self.process.get() {
+            return Ok(process);
+        }
+        let process = JcodeProcess::new((self.client_factory)()?);
+        self.process
+            .set(process)
+            .map_err(|_| JcodeNodeError::configuration("jcode process initialized twice"))?;
+        self.process.get().ok_or_else(|| {
+            JcodeNodeError::configuration("jcode process initialization was not published")
+        })
+    }
+}
+
+impl fmt::Debug for JcodeProcessScope {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut scope = formatter.debug_struct("JcodeProcessScope");
+        if let Some(process) = self.process.get() {
+            let session_count = process
+                .sessions
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .len();
+            scope
+                .field("server", &process.client.server)
+                .field("session_count", &session_count);
+        } else {
+            scope.field("initialized", &false);
+        }
+        scope.finish_non_exhaustive()
     }
 }
 

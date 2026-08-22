@@ -10,8 +10,7 @@ use workflow_console_experiment::{
 #[tokio::test]
 async fn workflow_events_when_run_executes_are_ordered_and_snapshot_consistent() {
     // Given: a subscriber attached before a workflow begins.
-    let service =
-        WorkflowService::without_jcode_runtime().expect("the code-defined workflows should build");
+    let service = WorkflowService::new().expect("the code-defined workflows should build");
     let mut events = service.subscribe();
 
     // When: the workflow is started and driven to its terminal state.

@@ -8,10 +8,7 @@ use croner::{
 use serde::Serialize;
 use tokio::task::JoinSet;
 
-use crate::{
-    RunSnapshot, RunTrigger, WorkflowError, WorkflowService,
-    workflows::{definition, parse_input, scheduled_input, schedules},
-};
+use crate::{RunSnapshot, RunTrigger, WorkflowError, WorkflowService, workflows::schedules};
 
 /// Policy applied when one schedule fires while its prior run is still active.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
@@ -22,6 +19,34 @@ pub enum ScheduleOverlapPolicy {
     SkipWhileRunning,
     /// Start every firing regardless of prior active runs.
     AllowOverlap,
+}
+
+/// Whether a schedule inherits or overrides application overlap policy.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+#[non_exhaustive]
+pub enum ScheduleOverlap {
+    /// Resolve through `SchedulerConfig::default_overlap_policy`.
+    #[default]
+    ApplicationDefault,
+    /// Always use this workflow-owned policy.
+    Explicit(ScheduleOverlapPolicy),
+}
+
+impl ScheduleOverlap {
+    /// Return a stable console label without assuming application configuration.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::ApplicationDefault => "Application default",
+            Self::Explicit(policy) => policy.as_str(),
+        }
+    }
+
+    const fn resolve(self, default: ScheduleOverlapPolicy) -> ScheduleOverlapPolicy {
+        match self {
+            Self::ApplicationDefault => default,
+            Self::Explicit(policy) => policy,
+        }
+    }
 }
 
 impl ScheduleOverlapPolicy {
@@ -47,7 +72,7 @@ pub struct ScheduleSpec {
     /// Workflow-owned input summary shown in schedule metadata.
     pub input_summary: &'static str,
     /// Behavior when the same schedule already owns an active run.
-    pub overlap_policy: ScheduleOverlapPolicy,
+    pub overlap: ScheduleOverlap,
 }
 
 impl ScheduleSpec {
@@ -63,14 +88,14 @@ impl ScheduleSpec {
             workflow_id,
             cron_expression,
             input_summary,
-            overlap_policy: ScheduleOverlapPolicy::SkipWhileRunning,
+            overlap: ScheduleOverlap::ApplicationDefault,
         }
     }
 
     /// Override the overlap behavior for this schedule.
     #[must_use]
     pub const fn with_overlap_policy(mut self, overlap_policy: ScheduleOverlapPolicy) -> Self {
-        self.overlap_policy = overlap_policy;
+        self.overlap = ScheduleOverlap::Explicit(overlap_policy);
         self
     }
 }
@@ -89,8 +114,11 @@ impl WorkflowService {
             .ok_or_else(|| WorkflowError::UnknownSchedule {
                 schedule_id: schedule_id.to_owned(),
             })?;
-        let input = scheduled_input(schedule.workflow_id, schedule.schedule_id)?;
-        if schedule.overlap_policy == ScheduleOverlapPolicy::SkipWhileRunning
+        let input = self.scheduled_input(schedule.workflow_id, schedule.schedule_id)?;
+        let overlap_policy = schedule
+            .overlap
+            .resolve(self.scheduler_config().default_overlap_policy);
+        if overlap_policy == ScheduleOverlapPolicy::SkipWhileRunning
             && !self.claim_schedule(schedule.schedule_id).await
         {
             return self
@@ -113,7 +141,7 @@ impl WorkflowService {
                 },
             )
             .await;
-        if result.is_err() && schedule.overlap_policy == ScheduleOverlapPolicy::SkipWhileRunning {
+        if result.is_err() && overlap_policy == ScheduleOverlapPolicy::SkipWhileRunning {
             self.release_schedule(schedule.schedule_id).await;
         }
         result
@@ -121,7 +149,11 @@ impl WorkflowService {
 
     /// Run the code-defined cron dispatcher until its owning server stops.
     pub async fn run_scheduler(&self) -> Result<(), WorkflowError> {
-        let schedules = prepared_schedules()?;
+        if self.scheduler_config().mode == crate::SchedulerMode::Disabled {
+            std::future::pending::<()>().await;
+            return Ok(());
+        }
+        let schedules = prepared_schedules(self)?;
         let mut workers = JoinSet::new();
         for (schedule, cron) in schedules {
             let service = self.clone();
@@ -137,12 +169,14 @@ impl WorkflowService {
     }
 }
 
-pub(crate) fn validate_schedules() -> Result<(), WorkflowError> {
-    let _ = prepared_schedules()?;
+pub(crate) fn validate_schedules(service: &WorkflowService) -> Result<(), WorkflowError> {
+    let _ = prepared_schedules(service)?;
     Ok(())
 }
 
-fn prepared_schedules() -> Result<Vec<(&'static ScheduleSpec, Cron)>, WorkflowError> {
+fn prepared_schedules(
+    service: &WorkflowService,
+) -> Result<Vec<(&'static ScheduleSpec, Cron)>, WorkflowError> {
     let schedule_specs = workflow_schedules();
     if schedule_specs.is_empty() {
         return Err(schedule_error("no schedules configured"));
@@ -157,14 +191,14 @@ fn prepared_schedules() -> Result<Vec<(&'static ScheduleSpec, Cron)>, WorkflowEr
                     schedule.schedule_id
                 )));
             }
-            if definition(schedule.workflow_id).is_none() {
+            if !service.contains_workflow(schedule.workflow_id) {
                 return Err(schedule_error(&format!(
                     "schedule {} references unknown workflow {}",
                     schedule.schedule_id, schedule.workflow_id
                 )));
             }
-            let input = scheduled_input(schedule.workflow_id, schedule.schedule_id)?;
-            let _ = parse_input(schedule.workflow_id, input)?;
+            let input = service.scheduled_input(schedule.workflow_id, schedule.schedule_id)?;
+            service.validate_input(schedule.workflow_id, input)?;
             let cron = CronParser::builder()
                 .seconds(Seconds::Required)
                 .build()

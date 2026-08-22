@@ -1,0 +1,276 @@
+use std::{
+    error::Error,
+    fmt,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+    num::NonZeroUsize,
+    time::Duration,
+};
+
+use crate::ScheduleOverlapPolicy;
+
+const FIVE: NonZeroUsize = match NonZeroUsize::new(5) {
+    Some(value) => value,
+    None => NonZeroUsize::MIN,
+};
+const EVENT_CAPACITY: NonZeroUsize = match NonZeroUsize::new(128) {
+    Some(value) => value,
+    None => NonZeroUsize::MIN,
+};
+const HISTORY_CAPACITY: NonZeroUsize = match NonZeroUsize::new(512) {
+    Some(value) => value,
+    None => NonZeroUsize::MIN,
+};
+const FIVE_MINUTES: PositiveDuration = PositiveDuration(Duration::from_mins(5));
+
+/// Immutable process-wide policy passed into application bootstrap.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct ApplicationConfig {
+    /// HTTP listener policy.
+    pub http: HttpConfig,
+    /// Generic workflow execution policy.
+    pub workflows: WorkflowConfig,
+    /// State backend selection.
+    pub state: StateConfig,
+    /// Cron dispatcher policy.
+    pub scheduler: SchedulerConfig,
+    /// Broadcast channel capacities.
+    pub events: EventConfig,
+}
+
+impl ApplicationConfig {
+    /// Preserve the experiment's local-only, `InMemory` operating profile.
+    #[must_use]
+    pub const fn local_default() -> Self {
+        Self {
+            http: HttpConfig {
+                bind_address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 3000),
+            },
+            workflows: WorkflowConfig {
+                execution: WorkflowExecutionDefaults {
+                    step_multiplier: FIVE,
+                    timeout_per_step: FIVE_MINUTES,
+                    node: ExecutionTargetDefaults {
+                        max_executions: FIVE,
+                        timeout: FIVE_MINUTES,
+                    },
+                },
+            },
+            state: StateConfig {
+                backend: StateBackendConfig::InMemory(InMemoryStateConfig {
+                    history: InMemoryHistoryConfig {
+                        run_retention: RunRetention::Unlimited,
+                        replay_capacity: HISTORY_CAPACITY,
+                    },
+                }),
+            },
+            scheduler: SchedulerConfig {
+                mode: SchedulerMode::Enabled,
+                default_overlap_policy: ScheduleOverlapPolicy::SkipWhileRunning,
+            },
+            events: EventConfig {
+                workflow_capacity: EVENT_CAPACITY,
+                history_capacity: HISTORY_CAPACITY,
+            },
+        }
+    }
+}
+
+impl Default for ApplicationConfig {
+    fn default() -> Self {
+        Self::local_default()
+    }
+}
+
+/// HTTP listener settings.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct HttpConfig {
+    /// Socket address accepted by the server listener.
+    pub bind_address: SocketAddr,
+}
+
+/// Workflow-related application settings.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct WorkflowConfig {
+    /// Defaults applied when a workflow has no explicit override.
+    pub execution: WorkflowExecutionDefaults,
+}
+
+/// Default workflow and node execution limits.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct WorkflowExecutionDefaults {
+    /// Multiplier applied to the number of registered nodes.
+    pub step_multiplier: NonZeroUsize,
+    /// Workflow timeout allocated to every derived step.
+    pub timeout_per_step: PositiveDuration,
+    /// Per-node execution defaults.
+    pub node: ExecutionTargetDefaults,
+}
+
+/// Default limit applied to one node ID.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct ExecutionTargetDefaults {
+    /// Maximum executions of the same node in one run.
+    pub max_executions: NonZeroUsize,
+    /// Maximum wall-clock duration of one node execution.
+    pub timeout: PositiveDuration,
+}
+
+/// Duration that cannot represent a zero timeout.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PositiveDuration(Duration);
+
+impl PositiveDuration {
+    /// Validate a duration at the configuration boundary.
+    ///
+    /// # Errors
+    /// Returns an error when `duration` is zero.
+    pub const fn new(duration: Duration) -> Result<Self, ApplicationConfigError> {
+        if duration.is_zero() {
+            return Err(ApplicationConfigError::ZeroDuration);
+        }
+        Ok(Self(duration))
+    }
+
+    /// Return the validated standard duration.
+    #[must_use]
+    pub const fn get(self) -> Duration {
+        self.0
+    }
+}
+
+/// State backend settings without live state instances.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct StateConfig {
+    /// Consistent backend bundle selected for every state category.
+    pub backend: StateBackendConfig,
+}
+
+/// Supported state backend profiles.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum StateBackendConfig {
+    /// Process-local state that is lost on restart.
+    InMemory(InMemoryStateConfig),
+}
+
+/// `InMemory` backend policy.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct InMemoryStateConfig {
+    /// Retained run and replay settings.
+    pub history: InMemoryHistoryConfig,
+}
+
+/// `InMemory` history retention and replay policy.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct InMemoryHistoryConfig {
+    /// Run snapshot retention policy.
+    pub run_retention: RunRetention,
+    /// Number of atomic deltas retained for reconnect replay.
+    pub replay_capacity: NonZeroUsize,
+}
+
+/// Supported run snapshot retention policies.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum RunRetention {
+    /// Retain snapshots for the full process lifetime.
+    Unlimited,
+}
+
+/// Scheduler startup and inherited overlap policy.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct SchedulerConfig {
+    /// Whether cron workers are started.
+    pub mode: SchedulerMode,
+    /// Policy used by schedules that do not explicitly override it.
+    pub default_overlap_policy: ScheduleOverlapPolicy,
+}
+
+/// Cron worker startup mode.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum SchedulerMode {
+    /// Validate schedules and run cron workers.
+    Enabled,
+    /// Keep manual execution available without cron workers.
+    Disabled,
+}
+
+/// Event broadcast channel capacities.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct EventConfig {
+    /// Workflow lifecycle event capacity.
+    pub workflow_capacity: NonZeroUsize,
+    /// Atomic history delta event capacity.
+    pub history_capacity: NonZeroUsize,
+}
+
+/// Invalid application configuration value.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ApplicationConfigError {
+    /// A timeout was configured as zero.
+    ZeroDuration,
+}
+
+impl fmt::Display for ApplicationConfigError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::ZeroDuration => formatter.write_str("application duration must be positive"),
+        }
+    }
+}
+
+impl Error for ApplicationConfigError {}
+
+#[cfg(test)]
+mod tests {
+    use std::{net::Ipv4Addr, time::Duration};
+
+    use super::{ApplicationConfig, PositiveDuration, SchedulerMode, StateBackendConfig};
+    use crate::ScheduleOverlapPolicy;
+
+    #[test]
+    fn local_defaults_preserve_current_operating_policy() {
+        let config = ApplicationConfig::local_default();
+
+        assert_eq!(config.http.bind_address.ip(), Ipv4Addr::LOCALHOST);
+        assert_eq!(config.http.bind_address.port(), 3000);
+        assert_eq!(config.workflows.execution.step_multiplier.get(), 5);
+        assert_eq!(
+            config.workflows.execution.timeout_per_step.get(),
+            Duration::from_mins(5)
+        );
+        assert_eq!(config.workflows.execution.node.max_executions.get(), 5);
+        assert_eq!(
+            config.workflows.execution.node.timeout.get(),
+            Duration::from_mins(5)
+        );
+        assert!(matches!(
+            config.state.backend,
+            StateBackendConfig::InMemory(_)
+        ));
+        assert_eq!(config.scheduler.mode, SchedulerMode::Enabled);
+        assert_eq!(
+            config.scheduler.default_overlap_policy,
+            ScheduleOverlapPolicy::SkipWhileRunning
+        );
+        assert_eq!(config.events.workflow_capacity.get(), 128);
+        assert_eq!(config.events.history_capacity.get(), 512);
+    }
+
+    #[test]
+    fn positive_duration_rejects_zero() {
+        assert!(PositiveDuration::new(Duration::ZERO).is_err());
+    }
+}

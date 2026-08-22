@@ -42,7 +42,7 @@ pub struct AfterRun<'a> {
 }
 
 /// Lifecycle extension points around one shared jcode process startup.
-pub trait JcodeRuntimeHooks: Send + Sync {
+pub trait JcodeProcessHooks: Send + Sync {
     /// Mutate launch settings immediately before the process starts.
     ///
     /// # Errors
@@ -60,7 +60,7 @@ pub trait JcodeRuntimeHooks: Send + Sync {
     }
 }
 
-impl JcodeRuntimeHooks for () {}
+impl JcodeProcessHooks for () {}
 
 /// Lifecycle extension points around one complete jcode agent turn.
 pub trait JcodeHooks: Send + Sync + 'static {

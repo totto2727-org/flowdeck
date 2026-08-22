@@ -5,8 +5,8 @@ use graph_flow::{
     SessionStorage,
 };
 use graph_flow_jcode::{
-    AfterRun, BeforeLaunch, BeforeRun, JcodeHooks, JcodeNode, JcodeNodeError, JcodeRuntime,
-    JcodeRuntimeHooks, SessionOptions, jcode_sdk::LaunchOptions,
+    AfterRun, BeforeLaunch, BeforeRun, JcodeHooks, JcodeNode, JcodeNodeError, JcodeProcessHooks,
+    JcodeProcessScope, SessionOptions, jcode_sdk::LaunchOptions,
 };
 use std::{
     error::Error,
@@ -57,7 +57,7 @@ struct RuntimeSetup {
     workspace: PathBuf,
 }
 
-impl JcodeRuntimeHooks for RuntimeSetup {
+impl JcodeProcessHooks for RuntimeSetup {
     fn before_launch(&self, _stage: BeforeLaunch<'_>) -> Result<(), JcodeNodeError> {
         prepare_workspace(&self.workspace)
     }
@@ -70,7 +70,7 @@ async fn main() -> Result<(), ExampleError> {
         std::process::id()
     ));
     let session_workspace = workspace.clone();
-    let runtime = Arc::new(JcodeRuntime::launch_with_hooks(
+    let runtime = Arc::new(JcodeProcessScope::launch_with_hooks(
         LaunchOptions {
             working_dir: Some(workspace.clone()),
             inherit_logins: true,

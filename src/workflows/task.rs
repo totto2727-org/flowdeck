@@ -8,6 +8,7 @@ use uuid::Uuid;
 use super::{INPUT_SUMMARY_KEY, WORKFLOW_INPUT_KEY};
 
 const BRANCH_KEY: &str = "branch_yes";
+const BRANCH_TOKEN_KEY: &str = "branch_token";
 
 #[derive(Clone, Copy)]
 pub(super) enum TaskBehavior {
@@ -64,7 +65,7 @@ impl Task for WorkflowTask {
         context.set(format!("task_token:{}", self.id), token.to_string())?;
         if matches!(self.behavior, TaskBehavior::Choose) {
             context.set(BRANCH_KEY, token.as_u128().is_multiple_of(2))?;
-            context.set("branch_token", token.to_string())?;
+            context.set(BRANCH_TOKEN_KEY, token.to_string())?;
         }
         let action = match self.behavior {
             TaskBehavior::Continue | TaskBehavior::Choose => NextAction::Continue,
@@ -74,5 +75,26 @@ impl Task for WorkflowTask {
             Some(format!("{} complete for {input_summary}: {token}", self.id)),
             action,
         ))
+    }
+}
+
+pub(super) fn project_trace(
+    context: &Context,
+    node_id: &str,
+) -> Result<Value, crate::WorkflowError> {
+    let input = context
+        .get::<Value>(WORKFLOW_INPUT_KEY)
+        .ok_or_else(|| trace_error("workflow input is missing"))?;
+    Ok(serde_json::json!({
+        "input": input,
+        "task_token": context.get::<String>(&format!("task_token:{node_id}")),
+        "branch_selected": context.get::<bool>(BRANCH_KEY),
+        "branch_token": context.get::<String>(BRANCH_TOKEN_KEY),
+    }))
+}
+
+fn trace_error(message: &str) -> crate::WorkflowError {
+    crate::WorkflowError::Trace {
+        message: message.to_owned(),
     }
 }

@@ -6,10 +6,13 @@ pub mod support;
 use graph_flow::{Context, NextAction, Task};
 use graph_flow_jcode::{
     AfterRun, BeforeRun, JCODE_OUTPUT_KEY, JcodeHooks, JcodeNode, JcodeNodeError, JcodeOutput,
-    JcodeRuntime, ProviderCredential, SessionMode, SessionOptions,
+    JcodeProcessScope, ProviderCredential, SessionMode, SessionOptions,
     jcode_sdk::{RunOptions, api::ApiRequest},
 };
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicUsize, Ordering},
+};
 
 type TestResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
@@ -54,7 +57,7 @@ impl RecordingHooks {
 async fn runs_configured_jcode_session_and_records_graph_context() -> TestResult<()> {
     let requests = Arc::new(Mutex::new(Vec::new()));
     let client = support::fake_client(Arc::clone(&requests))?;
-    let runtime = Arc::new(JcodeRuntime::from_client(client));
+    let runtime = Arc::new(JcodeProcessScope::from_client(client));
     let phases = Arc::new(Mutex::new(Vec::new()));
     let hooks = RecordingHooks {
         phases: Arc::clone(&phases),
@@ -123,7 +126,7 @@ async fn runs_configured_jcode_session_and_records_graph_context() -> TestResult
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn reuses_named_sessions_and_keeps_new_sessions_isolated() -> TestResult<()> {
     let requests = Arc::new(Mutex::new(Vec::new()));
-    let runtime = Arc::new(JcodeRuntime::from_client(support::fake_client(
+    let runtime = Arc::new(JcodeProcessScope::from_client(support::fake_client(
         Arc::clone(&requests),
     )?));
     let shared = SessionMode::reuse("coding-run")?;
@@ -156,5 +159,64 @@ async fn reuses_named_sessions_and_keeps_new_sessions_isolated() -> TestResult<(
         .collect::<Vec<_>>();
     assert_eq!(created, 2);
     assert_eq!(message_sessions, ["session-1", "session-1", "session-2"]);
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn starts_one_deferred_process_scope_for_multiple_nodes() -> TestResult<()> {
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let launches = Arc::new(AtomicUsize::new(0));
+    let scope = Arc::new(JcodeProcessScope::deferred({
+        let requests = Arc::clone(&requests);
+        let launches = Arc::clone(&launches);
+        move || {
+            launches.fetch_add(1, Ordering::SeqCst);
+            support::fake_client(Arc::clone(&requests))
+                .map_err(|error| JcodeNodeError::configuration(error.to_string()))
+        }
+    }));
+    let shared = SessionMode::reuse("coding-run")?;
+    let first = JcodeNode::new("first", Arc::clone(&scope), |_| Ok("first".to_owned()))
+        .with_session_mode(move |_| Ok(shared.clone()));
+    let shared = SessionMode::reuse("coding-run")?;
+    let second = JcodeNode::new("second", Arc::clone(&scope), |_| Ok("second".to_owned()))
+        .with_session_mode(move |_| Ok(shared.clone()));
+
+    assert_eq!(launches.load(Ordering::SeqCst), 0);
+    first.run(Context::new()).await?;
+    second.run(Context::new()).await?;
+
+    assert_eq!(launches.load(Ordering::SeqCst), 1);
+    let created = requests
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .iter()
+        .filter(|request| matches!(request, ApiRequest::CreateSession { .. }))
+        .count();
+    assert_eq!(created, 1);
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn retries_deferred_process_start_after_failure() -> TestResult<()> {
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let launches = Arc::new(AtomicUsize::new(0));
+    let scope = Arc::new(JcodeProcessScope::deferred({
+        let requests = Arc::clone(&requests);
+        let launches = Arc::clone(&launches);
+        move || {
+            if launches.fetch_add(1, Ordering::SeqCst) == 0 {
+                return Err(JcodeNodeError::configuration("first launch failed"));
+            }
+            support::fake_client(Arc::clone(&requests))
+                .map_err(|error| JcodeNodeError::configuration(error.to_string()))
+        }
+    }));
+    let node = JcodeNode::new("retry", scope, |_| Ok("retry".to_owned()));
+
+    assert!(node.run(Context::new()).await.is_err());
+    node.run(Context::new()).await?;
+
+    assert_eq!(launches.load(Ordering::SeqCst), 2);
     Ok(())
 }
