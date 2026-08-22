@@ -36,7 +36,6 @@ impl SessionKey {
 
 /// Select whether a node starts a session or resumes a named session.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-#[non_exhaustive]
 pub enum SessionMode {
     /// Create a distinct session for this node execution.
     #[default]

@@ -115,7 +115,6 @@ async fn history_replay_when_mutations_follow_cursor_is_ordered() {
     let changes = match replay {
         HistoryReplay::Changes(changes) => changes,
         HistoryReplay::Stale { .. } => panic!("a retained cursor should be replayable"),
-        _ => panic!("an unknown replay result should not occur"),
     };
     assert_eq!(changes.len(), 9);
     assert_eq!(
@@ -400,10 +399,9 @@ async fn configured_history_replay_capacity_controls_stale_boundary() {
         config.state.backend,
         StateBackendConfig::InMemory(_)
     ));
-    if let StateBackendConfig::InMemory(memory) = &mut config.state.backend {
-        memory.history.replay_capacity =
-            NonZeroUsize::new(2).expect("test replay capacity should be non-zero");
-    }
+    let StateBackendConfig::InMemory(memory) = &mut config.state.backend;
+    memory.history.replay_capacity =
+        NonZeroUsize::new(2).expect("test replay capacity should be non-zero");
     let service = WorkflowService::with_config(config).expect("configured state should build");
     let started = service
         .start(

@@ -41,7 +41,6 @@ pub const fn workflow_id() -> &'static str {
 
 /// An observable workflow run state.
 #[derive(Clone, Debug, PartialEq, Eq)]
-#[non_exhaustive]
 pub enum RunStatus {
     /// The background driver is executing the graph.
     Running,
@@ -84,7 +83,6 @@ impl RunInput {
 
 /// Source that caused a workflow execution to start.
 #[derive(Clone, Debug, PartialEq, Eq)]
-#[non_exhaustive]
 pub enum RunTrigger {
     /// A user submitted the workflow form.
     Manual,
@@ -97,7 +95,6 @@ pub enum RunTrigger {
 
 /// Immutable state returned by workflow start and list calls.
 #[derive(Clone, Debug)]
-#[non_exhaustive]
 pub struct RunSnapshot {
     /// Identifier for this execution.
     pub run_id: RunId,
@@ -148,7 +145,6 @@ impl fmt::Display for RunId {
 
 /// Typed failures at the workflow service boundary.
 #[derive(Clone, Debug, PartialEq, Eq)]
-#[non_exhaustive]
 pub enum WorkflowError {
     /// The supplied ID does not name this experiment's workflow.
     UnknownWorkflow {

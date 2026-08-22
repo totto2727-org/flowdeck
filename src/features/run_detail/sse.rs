@@ -28,7 +28,7 @@ async fn run_events(cx: &Cx) -> Result<Sse<impl Stream<Item = Result<Event>> + u
         }
         loop {
             match receiver.recv().await {
-                Ok(event) if event_run_id(&event).is_some_and(|run_id| run_id.as_str() == selected_run_id) => {
+                Ok(event) if event_run_id(&event).as_str() == selected_run_id => {
                     if let Some(html) = render_run_inspector(&service, &selected_run_id).await? {
                         yield Ok(PatchElements::new(html).into());
                     }
@@ -45,14 +45,13 @@ async fn run_events(cx: &Cx) -> Result<Sse<impl Stream<Item = Result<Event>> + u
     Ok(Sse::new(stream).keep_alive(KeepAlive::new()))
 }
 
-const fn event_run_id(event: &WorkflowEvent) -> Option<&RunId> {
+const fn event_run_id(event: &WorkflowEvent) -> &RunId {
     match event {
         WorkflowEvent::RunStarted { run_id, .. }
         | WorkflowEvent::NodeStarted { run_id, .. }
         | WorkflowEvent::NodeCompleted { run_id, .. }
         | WorkflowEvent::RunCompleted { run_id, .. }
         | WorkflowEvent::RunFailed { run_id, .. }
-        | WorkflowEvent::RunSkipped { run_id, .. } => Some(run_id),
-        _ => None,
+        | WorkflowEvent::RunSkipped { run_id, .. } => run_id,
     }
 }

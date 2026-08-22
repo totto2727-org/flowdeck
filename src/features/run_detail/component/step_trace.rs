@@ -217,7 +217,7 @@ fn trace_values(
     };
     let output = match &step.status {
         StepTraceStatus::Failed { message } => message.clone(),
-        _ => step
+        StepTraceStatus::Running | StepTraceStatus::Completed => step
             .output
             .clone()
             .unwrap_or_else(|| "No output captured".to_owned()),

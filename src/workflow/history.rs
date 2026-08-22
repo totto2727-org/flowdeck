@@ -24,7 +24,6 @@ impl HistoryRevision {
 
 /// Atomic snapshot of all retained runs at one revision.
 #[derive(Clone, Debug)]
-#[non_exhaustive]
 pub struct HistoryView {
     /// Revision shared by every run in this view.
     pub revision: HistoryRevision,
@@ -34,7 +33,6 @@ pub struct HistoryView {
 
 /// One atomic change to a retained run snapshot.
 #[derive(Clone, Debug)]
-#[non_exhaustive]
 pub struct HistoryDelta {
     /// Revision assigned after the mutation.
     pub revision: HistoryRevision,
@@ -48,7 +46,6 @@ pub struct HistoryDelta {
 
 /// Lightweight run state retained in the replay journal for list membership decisions.
 #[derive(Clone, Debug, PartialEq, Eq)]
-#[non_exhaustive]
 pub struct RunListProjection {
     /// Run changed by this projection.
     pub run_id: RunId,
@@ -73,7 +70,6 @@ impl From<&RunSnapshot> for RunListProjection {
 
 /// Result of replaying history changes after a caller's revision.
 #[derive(Clone, Debug)]
-#[non_exhaustive]
 pub enum HistoryReplay {
     /// Ordered retained changes newer than the requested revision.
     Changes(Vec<HistoryDelta>),

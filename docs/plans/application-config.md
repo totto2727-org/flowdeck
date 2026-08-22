@@ -92,7 +92,6 @@ pub struct StateConfig {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-#[non_exhaustive]
 pub enum StateBackendConfig {
     InMemory(InMemoryStateConfig),
 }
@@ -109,7 +108,6 @@ pub struct InMemoryHistoryConfig {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-#[non_exhaustive]
 pub enum RunRetention {
     Unlimited,
 }
@@ -121,7 +119,6 @@ pub struct SchedulerConfig {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[non_exhaustive]
 pub enum SchedulerMode {
     Enabled,
     Disabled,
@@ -138,7 +135,6 @@ pub struct EventConfig {
 
 ```rust
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-#[non_exhaustive]
 pub enum ScheduleOverlapPolicy {
     #[default]
     SkipWhileRunning,
@@ -178,7 +174,6 @@ The plan changes the schedule declaration to preserve whether the workflow inher
 
 ```rust
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-#[non_exhaustive]
 pub enum ScheduleOverlap {
     #[default]
     ApplicationDefault,

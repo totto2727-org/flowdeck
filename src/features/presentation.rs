@@ -8,7 +8,6 @@ pub(crate) const fn run_status(run: &RunSnapshot) -> &'static str {
         RunStatus::Completed => "Completed",
         RunStatus::Failed { .. } => "Failed",
         RunStatus::Skipped { .. } => "Skipped",
-        _ => "Unknown",
     }
 }
 
@@ -17,7 +16,6 @@ pub(crate) const fn step_status(step: &StepTrace) -> &'static str {
         StepTraceStatus::Running => "Running",
         StepTraceStatus::Completed => "Completed",
         StepTraceStatus::Failed { .. } => "Failed",
-        _ => "Unknown",
     }
 }
 
@@ -25,7 +23,6 @@ pub(crate) fn trigger(run: &RunSnapshot) -> String {
     match &run.trigger {
         RunTrigger::Manual => "Manual".to_owned(),
         RunTrigger::Cron { schedule_id } => format!("Cron · {schedule_id}"),
-        _ => "Unknown".to_owned(),
     }
 }
 

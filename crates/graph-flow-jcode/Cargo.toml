@@ -31,3 +31,6 @@ expect_used = "deny"
 panic = "deny"
 todo = "deny"
 unimplemented = "deny"
+# Public domain types are intentionally exhaustive so new cases break unchecked consumers.
+exhaustive_enums = "allow"
+exhaustive_structs = "allow"

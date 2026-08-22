@@ -12,7 +12,6 @@ use crate::{RunSnapshot, RunTrigger, WorkflowError, WorkflowService, workflows::
 
 /// Policy applied when one schedule fires while its prior run is still active.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
-#[non_exhaustive]
 pub enum ScheduleOverlapPolicy {
     /// Retain a skipped history entry instead of starting another run.
     #[default]
@@ -23,7 +22,6 @@ pub enum ScheduleOverlapPolicy {
 
 /// Whether a schedule inherits or overrides application overlap policy.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
-#[non_exhaustive]
 pub enum ScheduleOverlap {
     /// Resolve through `SchedulerConfig::default_overlap_policy`.
     #[default]
@@ -61,7 +59,6 @@ impl ScheduleOverlapPolicy {
 
 /// One cron schedule declared directly in the application.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
-#[non_exhaustive]
 pub struct ScheduleSpec {
     /// Stable schedule identifier.
     pub schedule_id: &'static str,

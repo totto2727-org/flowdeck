@@ -28,7 +28,6 @@ impl fmt::Display for StepId {
 
 /// Typed graph state retained immediately after one node executes.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
-#[non_exhaustive]
 pub struct StepState {
     /// Workflow-owned, explicitly projected and redacted state.
     pub payload: Value,
@@ -36,7 +35,6 @@ pub struct StepState {
 
 /// Lifecycle state for one retained node execution.
 #[derive(Clone, Debug, PartialEq, Eq)]
-#[non_exhaustive]
 pub enum StepTraceStatus {
     /// The node is currently executing.
     Running,
@@ -51,7 +49,6 @@ pub enum StepTraceStatus {
 
 /// Observable performance and debugging data for one node execution.
 #[derive(Clone, Debug)]
-#[non_exhaustive]
 pub struct StepTrace {
     /// Stable one-based identity within the run.
     pub step_id: StepId,

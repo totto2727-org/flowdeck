@@ -24,7 +24,6 @@ const FIVE_MINUTES: PositiveDuration = PositiveDuration(Duration::from_mins(5));
 
 /// Immutable process-wide policy passed into application bootstrap.
 #[derive(Clone, Debug, PartialEq, Eq)]
-#[non_exhaustive]
 pub struct ApplicationConfig {
     /// HTTP listener policy.
     pub http: HttpConfig,
@@ -84,7 +83,6 @@ impl Default for ApplicationConfig {
 
 /// HTTP listener settings.
 #[derive(Clone, Debug, PartialEq, Eq)]
-#[non_exhaustive]
 pub struct HttpConfig {
     /// Socket address accepted by the server listener.
     pub bind_address: SocketAddr,
@@ -92,7 +90,6 @@ pub struct HttpConfig {
 
 /// Workflow-related application settings.
 #[derive(Clone, Debug, PartialEq, Eq)]
-#[non_exhaustive]
 pub struct WorkflowConfig {
     /// Defaults applied when a workflow has no explicit override.
     pub execution: WorkflowExecutionDefaults,
@@ -100,7 +97,6 @@ pub struct WorkflowConfig {
 
 /// Default workflow and node execution limits.
 #[derive(Clone, Debug, PartialEq, Eq)]
-#[non_exhaustive]
 pub struct WorkflowExecutionDefaults {
     /// Multiplier applied to the number of registered nodes.
     pub step_multiplier: NonZeroUsize,
@@ -112,7 +108,6 @@ pub struct WorkflowExecutionDefaults {
 
 /// Default limit applied to one node ID.
 #[derive(Clone, Debug, PartialEq, Eq)]
-#[non_exhaustive]
 pub struct ExecutionTargetDefaults {
     /// Maximum executions of the same node in one run.
     pub max_executions: NonZeroUsize,
@@ -145,7 +140,6 @@ impl PositiveDuration {
 
 /// State backend settings without live state instances.
 #[derive(Clone, Debug, PartialEq, Eq)]
-#[non_exhaustive]
 pub struct StateConfig {
     /// Consistent backend bundle selected for every state category.
     pub backend: StateBackendConfig,
@@ -153,7 +147,6 @@ pub struct StateConfig {
 
 /// Supported state backend profiles.
 #[derive(Clone, Debug, PartialEq, Eq)]
-#[non_exhaustive]
 pub enum StateBackendConfig {
     /// Process-local state that is lost on restart.
     InMemory(InMemoryStateConfig),
@@ -161,7 +154,6 @@ pub enum StateBackendConfig {
 
 /// `InMemory` backend policy.
 #[derive(Clone, Debug, PartialEq, Eq)]
-#[non_exhaustive]
 pub struct InMemoryStateConfig {
     /// Retained run and replay settings.
     pub history: InMemoryHistoryConfig,
@@ -169,7 +161,6 @@ pub struct InMemoryStateConfig {
 
 /// `InMemory` history retention and replay policy.
 #[derive(Clone, Debug, PartialEq, Eq)]
-#[non_exhaustive]
 pub struct InMemoryHistoryConfig {
     /// Run snapshot retention policy.
     pub run_retention: RunRetention,
@@ -179,7 +170,6 @@ pub struct InMemoryHistoryConfig {
 
 /// Supported run snapshot retention policies.
 #[derive(Clone, Debug, PartialEq, Eq)]
-#[non_exhaustive]
 pub enum RunRetention {
     /// Retain snapshots for the full process lifetime.
     Unlimited,
@@ -187,7 +177,6 @@ pub enum RunRetention {
 
 /// Scheduler startup and inherited overlap policy.
 #[derive(Clone, Debug, PartialEq, Eq)]
-#[non_exhaustive]
 pub struct SchedulerConfig {
     /// Whether cron workers are started.
     pub mode: SchedulerMode,
@@ -197,7 +186,6 @@ pub struct SchedulerConfig {
 
 /// Cron worker startup mode.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[non_exhaustive]
 pub enum SchedulerMode {
     /// Validate schedules and run cron workers.
     Enabled,
@@ -207,7 +195,6 @@ pub enum SchedulerMode {
 
 /// Event broadcast channel capacities.
 #[derive(Clone, Debug, PartialEq, Eq)]
-#[non_exhaustive]
 pub struct EventConfig {
     /// Workflow lifecycle event capacity.
     pub workflow_capacity: NonZeroUsize,
@@ -217,7 +204,6 @@ pub struct EventConfig {
 
 /// Invalid application configuration value.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[non_exhaustive]
 pub enum ApplicationConfigError {
     /// A timeout was configured as zero.
     ZeroDuration,

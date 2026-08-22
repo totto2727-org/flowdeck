@@ -86,8 +86,7 @@ async fn assert_snapshot_matches_event(
     service: &WorkflowService,
     event: &WorkflowEvent,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let run_id =
-        event_run_id(event).ok_or_else(|| std::io::Error::other("unknown workflow event"))?;
+    let run_id = event_run_id(event);
     let snapshot = service
         .get_run(run_id)
         .await
@@ -127,19 +126,17 @@ async fn assert_snapshot_matches_event(
         WorkflowEvent::RunFailed { .. } | WorkflowEvent::RunSkipped { .. } => {
             return Err(std::io::Error::other("linear workflow stopped early").into());
         }
-        _ => return Err(std::io::Error::other("unknown workflow event").into()),
     }
     Ok(())
 }
 
-const fn event_run_id(event: &WorkflowEvent) -> Option<&RunId> {
+const fn event_run_id(event: &WorkflowEvent) -> &RunId {
     match event {
         WorkflowEvent::RunStarted { run_id, .. }
         | WorkflowEvent::NodeStarted { run_id, .. }
         | WorkflowEvent::NodeCompleted { run_id, .. }
         | WorkflowEvent::RunCompleted { run_id, .. }
         | WorkflowEvent::RunFailed { run_id, .. }
-        | WorkflowEvent::RunSkipped { run_id, .. } => Some(run_id),
-        _ => None,
+        | WorkflowEvent::RunSkipped { run_id, .. } => run_id,
     }
 }

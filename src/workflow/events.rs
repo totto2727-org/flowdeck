@@ -2,7 +2,6 @@ use crate::{RunId, StepId};
 
 /// Lifecycle notification emitted after a workflow snapshot is updated.
 #[derive(Clone, Debug, PartialEq, Eq)]
-#[non_exhaustive]
 pub enum WorkflowEvent {
     /// A run snapshot was retained and its driver was started.
     RunStarted {

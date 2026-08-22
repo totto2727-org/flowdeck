@@ -83,11 +83,6 @@ async fn history_events(cx: &Cx) -> Result<Sse<impl Stream<Item = Result<Event>>
                 yield Ok(reload_event());
                 return;
             }
-            _ => {
-                tracing::warn!("unknown history replay result; reloading the page");
-                yield Ok(reload_event());
-                return;
-            }
         }
         loop {
             match receiver.recv().await {
