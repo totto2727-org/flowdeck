@@ -1,6 +1,6 @@
 # Workflow Console Experiment
 
-A local-only workflow dashboard built with Topcoat, Datastar, Tailwind CSS, graph-flow, and jcode. It runs code-defined workflows manually or on cron schedules, keeps execution history in memory, and exposes node and edge traces for debugging and performance analysis.
+A local-only workflow dashboard built with Topcoat, Datastar, Tailwind CSS, and graph-flow, with jcode available as an optional agent-node integration. It runs code-defined workflows manually or on cron schedules, keeps execution history in memory, and exposes node and edge traces for debugging and performance analysis.
 
 ## Usage
 
@@ -30,7 +30,7 @@ Run-history filters are applied on the server using `history_workflow`, `history
 - Workflow and node execution limits that bound loops and long-running tasks.
 - Automatically laid out SVG topology with external self-loop routing and active, traversed, selected, and execution-count states.
 - Per-execution node and edge traces with timestamps, elapsed time, state, output, errors, and exact `StepId` history.
-- One shared jcode process with isolated or reusable named sessions for agent nodes.
+- An optional jcode integration with one lazily started shared process and isolated or reusable named sessions.
 - URL-addressable server-rendered run-history filtering with separate run and history SSE streams.
 
 ## Prerequisites
@@ -58,11 +58,12 @@ just run
 ## API
 
 This local application does not publish a stable external Rust API.
-See [Workflow Console Architecture](./docs/architecture.md) for its HTTP boundaries and internal workflow, jcode, scheduler, state, SSE, and renderer extension contracts.
+See [Workflow Console Architecture](./docs/architecture.md) for its HTTP boundaries and internal workflow, configuration, scheduler, state, SSE, and renderer extension contracts.
 
 ## Development
 
 For the current system design, see [docs/architecture.md](./docs/architecture.md) or its [Japanese translation](./docs/architecture.ja.md).
+For the optional node integration, see [graph-flow-jcode architecture](./crates/graph-flow-jcode/docs/architecture.md) or its [Japanese translation](./crates/graph-flow-jcode/docs/architecture.ja.md).
 For repository structure and development commands, see [AGENTS.md](./AGENTS.md).
 
 ## Documentation

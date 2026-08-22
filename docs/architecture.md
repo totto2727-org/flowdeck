@@ -1,424 +1,323 @@
-# Workflow Console Architecture
+# Workflow console architecture
 
-This document describes the current runtime architecture of Workflow Console Experiment.
-It is a source-oriented reference for maintainers adding workflows, agent nodes, schedules, execution policies, or alternative graph renderers.
+## 1. Scope
 
-[日本語版](./architecture.ja.md)
+Workflow Console is a local Topcoat application for registering, executing, scheduling, and inspecting code-defined graph-flow workflows.
+The application core does not select an agent backend or interpret graph task implementations.
+Its responsibility is to turn ordinary workflow registrations into generic graph-flow execution configurations, retain observable run state, and expose that state through HTTP, HTML, and SSE.
 
-## 1. Purpose and boundaries
+The architecture follows four ownership rules:
 
-Workflow Console is a local-only orchestration surface for code-defined workflows.
-It combines graph-flow for deterministic workflow progression with jcode for complete coding-agent turns that already understand file operations and agent tooling.
-
-The application deliberately keeps the following concerns process-local:
-
-- Workflow definitions and graph runners.
-- The single jcode process and its session registry.
-- Run snapshots, step traces, and history revisions.
-- Cron workers and overlap ownership.
-- Browser synchronization through server-rendered HTML and SSE.
-
-The current architecture does not include a workflow designer, database, distributed scheduler, external queue, or multi-process coordination protocol.
+1. A workflow registration owns its executable graph, input contract, trace projection, and static presentation metadata.
+2. Application configuration owns process-wide operational policy, not workflow or node behavior.
+3. Application state is injected as one consistent backend bundle.
+4. Optional node integrations capture their own resources before they cross the application boundary.
 
 ## 2. System overview
 
 ```mermaid
 flowchart LR
-    Browser["Browser\nTopcoat + Datastar"]
-    Router["Topcoat router\nSSR, actions, SSE"]
-    Service["WorkflowService\nworkflow catalog and run boundary"]
-    Scheduler["Cron scheduler\none worker per schedule"]
-    Runners["graph-flow runtimes\none FlowRunner per workflow"]
-    History["HistoryState\nruns + 512-delta journal"]
-    Events["Broadcast channels\nrun events + history deltas"]
-    JcodeNode["graph-flow-jcode\nJcodeNode"]
-    JcodeRuntime["JcodeRuntime\none shared client/process"]
-    Sessions["Named session registry\nserialized turns per session"]
-    Jcode["jcode process\nfile and agent tools"]
-
-    Browser -->|HTTP action| Router
-    Router --> Service
-    Router <-->|SSR and SSE patches| Browser
-    Scheduler --> Service
-    Service --> Runners
-    Service --> History
-    Service --> Events
-    Runners --> JcodeNode
-    JcodeNode --> JcodeRuntime
-    JcodeRuntime --> Sessions
-    JcodeRuntime --> Jcode
-    Events --> Router
+    Browser["Browser"] --> HTTP["Topcoat routes"]
+    HTTP --> Service["WorkflowService"]
+    Catalog["Workflow registrations"] --> Config["GraphExecutionConfig generator"]
+    AppConfig["ApplicationConfig"] --> Config
+    State["ApplicationState"] --> Config
+    Config --> Runner["FlowRunner per registration"]
+    Service --> Runner
+    Runner --> Graph["graph-flow Graph"]
+    Runner --> Sessions["SessionStorage"]
+    Service --> History["RunHistoryStore"]
+    Service --> Leases["ScheduleLeaseStore"]
+    Service --> Events["Broadcast events"]
+    Events --> HTTP
+    History --> HTTP
 ```
 
-The main architectural boundary is `WorkflowService`.
-Manual actions, cron firings, page rendering, run-specific SSE, and history SSE all use the same service instance.
+`WorkflowService` receives only registrations and generic application policy.
+It never branches on graph topology, graph task type, or a concrete agent implementation.
+Every registration follows the same `WorkflowRegistration -> GraphExecutionConfig -> FlowRunner` path.
 
-## 3. Process lifecycle
+## 3. Startup
 
-`src/main.rs` owns application startup and shutdown.
+The executable bootstrap in `src/main.rs` performs these operations:
+
+1. Build `ApplicationConfig::local_default()`.
+2. Pass the configuration to `WorkflowService::with_config`.
+3. Construct the code-defined registration catalog.
+4. Build one consistent `ApplicationState` backend bundle.
+5. Generate one `GraphExecutionConfig` for every registration.
+6. Construct each `FlowRunner` through the same generic path.
+7. Load the compiled Topcoat asset bundle.
+8. Bind the configured socket address.
+9. Run the HTTP server, configured scheduler, and shutdown signal concurrently.
+
+Optional node backends are not initialized during steps 1 through 8.
+An unavailable optional backend therefore does not prevent the console, ordinary workflows, or their forms from starting.
+
+## 4. Application configuration
+
+`src/config.rs` is the process-wide policy root.
+It is Rust code rather than a deserialized file so invalid and unsupported combinations remain unrepresentable in the first implementation.
+
+```text
+ApplicationConfig
+├── http: HttpConfig
+│   └── bind_address: SocketAddr
+├── workflows: WorkflowConfig
+│   └── execution: WorkflowExecutionDefaults
+│       ├── step_multiplier: NonZeroUsize
+│       ├── timeout_per_step: PositiveDuration
+│       └── node: ExecutionTargetDefaults
+│           ├── max_executions: NonZeroUsize
+│           └── timeout: PositiveDuration
+├── state: StateConfig
+│   └── backend: StateBackendConfig
+│       └── InMemory(InMemoryStateConfig)
+│           └── history: InMemoryHistoryConfig
+│               ├── run_retention: RunRetention
+│               └── replay_capacity: NonZeroUsize
+├── scheduler: SchedulerConfig
+│   ├── mode: SchedulerMode
+│   └── default_overlap_policy: ScheduleOverlapPolicy
+└── events: EventConfig
+    ├── workflow_capacity: NonZeroUsize
+    └── history_capacity: NonZeroUsize
+```
+
+`PositiveDuration` validates non-zero durations once at the configuration boundary.
+Count values use `NonZeroUsize` for the same reason.
+Consumers receive validated values instead of repeating zero checks.
+
+### 4.1 Local defaults
+
+| Property | Default |
+| --- | --- |
+| HTTP bind address | `127.0.0.1:3000` |
+| Workflow step limit | registered node count multiplied by `5` |
+| Workflow timeout | derived maximum steps multiplied by `5 minutes` |
+| Same-node execution limit | `5` per run |
+| Node timeout | `5 minutes` |
+| State backend | `InMemory` |
+| Run retention | `Unlimited` for the process lifetime |
+| History replay capacity | `512` deltas |
+| Scheduler mode | `Enabled` |
+| Inherited overlap policy | `SkipWhileRunning` |
+| Workflow event capacity | `128` |
+| History event capacity | `512` |
+
+The logged server origin is derived from `http.bind_address` rather than stored as a second setting.
+
+### 4.2 Configuration ownership
+
+Application configuration does not contain form defaults, workflow prompts, cron expressions, graph geometry, agent credentials, or node SDK options.
+Those values remain owned by presentation code, workflow definitions, or node integrations.
+No application setting classifies a workflow as a coding, file-changing, or agent workflow.
+
+## 5. Registration and execution configuration
+
+`WorkflowRegistration` is the executable catalog boundary:
+
+```text
+WorkflowRegistration
+├── definition: WorkflowDefinition
+├── graph: Arc<graph_flow::Graph>
+├── input: Arc<dyn WorkflowInputContract>
+└── trace_projector: Arc<dyn TraceProjector>
+```
+
+The input contract parses manual input and produces input for code-defined schedules.
+The trace projector converts selected graph context values into a redacted JSON payload.
+The application never serializes the complete graph-flow `Context` because it may contain prompts, credentials, or internal state.
+
+The catalog builds ordinary workflows and optional integration workflows independently, concatenates their registrations, and rejects duplicate workflow IDs.
+It does not examine graphs or classify registrations by task type.
+
+`generate_execution_config` combines a registration with application defaults and state:
+
+```text
+registration.definition + application execution defaults -> effective limits
+registration.graph + application session storage          -> FlowRunner inputs
+registration.input + registration.trace_projector         -> runtime contracts
+```
+
+Explicit workflow limit overrides remain authoritative.
+Absent overrides are derived only from the registered node count and application defaults.
+
+Presentation still looks up static forms and defaults by the selected workflow ID.
+That lookup only selects code-defined UI; it does not alter graph construction, backend ownership, or the runner execution path.
+
+## 6. Run lifecycle
 
 ```mermaid
 sequenceDiagram
-    participant Main
+    participant Caller
     participant Service as WorkflowService
-    participant Jcode as JcodeRuntime
-    participant Registry as Workflow registry
-    participant Scheduler
-    participant Server as Topcoat server
+    participant Input as WorkflowInputContract
+    participant Storage as SessionStorage
+    participant History as RunHistoryStore
+    participant Driver
+    participant Runner as FlowRunner
+    participant Projector as TraceProjector
 
-    Main->>Service: new()
-    Service->>Jcode: launch one process
-    Service->>Scheduler: validate every schedule
-    Service->>Registry: build every registered graph
-    Registry-->>Service: FlowRunner and storage per workflow
-    Main->>Server: bind 127.0.0.1:3000
-    Main->>Scheduler: run all cron workers
-    Main->>Main: select server, scheduler, or Ctrl-C completion
+    Caller->>Service: start(workflow_id, raw_input, trigger)
+    Service->>Input: parse(raw_input)
+    Input-->>Service: normalized RunInput
+    Service->>Storage: save graph-flow Session
+    Service->>History: insert Running snapshot
+    Service-->>Caller: initial snapshot
+    Service->>Driver: spawn run driver
+    loop until terminal
+        Driver->>History: start_step(node_id)
+        Driver->>Runner: run(run_id)
+        Runner->>Storage: update graph-flow Session
+        Driver->>Storage: get(run_id)
+        Driver->>Projector: project(context, node_id)
+        Driver->>History: complete_step or fail_run
+    end
 ```
 
-`WorkflowService::new` launches jcode before the HTTP server starts.
-Startup fails if the jcode binary, GlossShift compatibility configuration, schedule definitions, execution limits, or graph definitions are invalid.
-Tests that do not need a live agent process use `WorkflowService::without_jcode_runtime` and receive an unavailable agent task for the jcode workflow.
+The initial graph context contains only generic application values:
 
-The Topcoat server and scheduler run in the same Tokio process under `tokio::select!`.
-An unexpected scheduler or server exit terminates the application instead of leaving a partially functioning console.
+- normalized workflow input under `workflow_input`;
+- display-safe input summary under `input_summary`;
+- generic run identity under `workflow_run_id`.
 
-## 4. Workspace and crate boundaries
+Node integrations may interpret the generic run identity as part of their own session policy.
+The application does not write integration-specific context keys.
 
-| Boundary | Responsibility |
-| --- | --- |
-| `crates/graph-flow-jcode` | Generic graph-flow task, shared jcode process ownership, named sessions, SDK option factories, lifecycle hooks, and structured output. |
-| `src/workflows` | Application workflow registry, forms, input parsing, graph construction, schedules, and workflow-specific integrations. |
-| `src/workflow.rs` | Run start boundary, graph-flow runtime catalog, shared in-memory state, subscriptions, and schedule ownership. |
-| `src/workflow/driver.rs` | Bounded one-step-at-a-time execution and conversion of graph-flow results into retained traces. |
-| `src/workflow_scheduler.rs` | Cron validation, one worker per schedule, overlap policy, and scheduled dispatch. |
-| `src/features` | Workflow launcher, selected-run inspector, history panel, SSE transports, and patch fragments. |
-| `src/app` | Canonical routes, initial SSR, Datastar signals, navigation, and feature composition. |
-| `src/features/run_detail/component/topology` | Replaceable topology layout and rendering contracts plus the current SVG implementation. |
+## 7. Execution limits
 
-The root package depends on `graph-flow-jcode` through a workspace path.
-`graph-flow-jcode` depends on `jcode-sdk` directly from a pinned Git revision of `https://github.com/1jehuang/jcode`.
+The driver enforces both workflow-wide and node-specific limits:
 
-## 5. Workflow definition and registration
+- workflow wall-clock timeout;
+- workflow total node execution count;
+- node wall-clock timeout;
+- execution count for the same node ID within one run.
 
-Each workflow owns a vertical slice below `src/workflows`.
-A complete workflow provides the following contracts:
+The default total step limit is `node_count * 5`.
+The default workflow timeout is `max_steps * 5 minutes`.
+Each node may execute at most five times and each execution may take at most five minutes unless the workflow supplies an explicit override.
 
-1. A stable `WORKFLOW_ID`.
-2. A `WorkflowDefinition` containing the start node, immutable node and edge metadata, and optional limit overrides.
-3. A server-rendered input form.
-4. Default input values for the initial page signals.
-5. Serde and garde input parsing that returns normalized `RunInput`.
-6. A graph-flow graph whose task and transition IDs match the retained metadata.
-7. Optional schedule input resolution.
+Self-edges are ordinary graph edges.
+Repeated execution history is retained as separate `StepTrace` values with a stable one-based `StepId` and per-node execution count.
+The same mechanism protects both intentional loops and accidental infinite self-loops.
 
-`src/workflows.rs` is the central registry and currently contains three workflows:
+## 8. State backend
 
-| Workflow | Shape | Purpose |
-| --- | --- | --- |
-| `demo-workflow` | Six nodes with a conditional branch and convergence | Exercises branching, cron scheduling, overlap policies, and observable synthetic tasks. |
-| `review-pipeline` | Four linear nodes | Exercises a simple inspect-and-approve path. |
-| `jcode-translation` | One agent node | Reads a source file, asks jcode to translate it, writes the target, and validates the result. |
+`ApplicationState` separates immutable policy from live state instances:
 
-The registry routes form rendering, defaults, input parsing, graph construction, and scheduled input through exhaustive workflow-ID matches.
-Adding only a `WorkflowDefinition` is insufficient because the HTTP and execution boundaries would not know how to initialize the workflow.
-The project-local `workflow-console-add-workflow` skill contains the implementation checklist.
-
-## 6. Run creation and graph-flow context
-
-Both manual and cron execution enter through `WorkflowService::start`.
-The boundary validates the workflow ID and parses workflow-owned input before retaining a run.
-
-Each run receives:
-
-- A UUID-based opaque `RunId`.
-- A graph-flow `Session` starting at the definition's `start_node`.
-- Its workflow ID as the graph ID.
-- A `RunSnapshot` with `Running` status and the initial route summary.
-
-The graph-flow context uses stable keys shared by workflow tasks and trace projection:
-
-| Context key | Value | Purpose |
-| --- | --- | --- |
-| `workflow_input` | Normalized workflow-owned JSON | Initial task input and retained state projection. |
-| `input_summary` | Short display string | Human-readable input summary for synthetic tasks and history. |
-| `jcode_session_key` | Current `RunId` | Reuses one jcode session across every agent node in the same run. |
-| `jcode_output` | `JcodeOutput` | Retains serialized agent text, reasoning, tool-call output, usage, and session identity. |
-
-Using `RunId` as the jcode session key gives every workflow run an isolated agent conversation while allowing all jcode nodes within that run to share prior analysis and file-operation context.
-A different session-sharing policy can be implemented by supplying another `SessionMode` factory to `JcodeNode`.
-
-## 7. Bounded execution driver
-
-The service creates one `FlowRunner` and one `InMemorySessionStorage` per workflow definition.
-Starting a run saves its graph-flow session, retains the initial snapshot, emits `RunStarted`, and spawns the driver.
-
-The driver executes one observable graph step at a time:
-
-```mermaid
-flowchart TD
-    Load["Load retained snapshot"] --> Bounds{"Workflow and node\nbudgets available?"}
-    Bounds -->|No| Fail["Retain failure and stop"]
-    Bounds -->|Yes| Begin["Append running StepTrace"]
-    Begin --> Execute["FlowRunner.run with node timeout"]
-    Execute --> Result{"Execution status"}
-    Result -->|Paused or completed| Read["Read graph-flow session and state"]
-    Read --> Record["Complete exact StepId and selected edge"]
-    Record --> Terminal{"Terminal?"}
-    Terminal -->|No| Load
-    Terminal -->|Yes| Complete["Retain completed run"]
-    Result -->|Error, timeout, or wait| Fail
+```text
+ApplicationState
+├── graph_sessions: Arc<dyn SessionStorage>
+├── run_history: Arc<dyn RunHistoryStore>
+└── schedule_leases: Arc<dyn ScheduleLeaseStore>
 ```
 
-Every node execution receives a one-based run-local `StepId` and a one-based count for that node ID.
-Repeated self-loop executions therefore append independent traces instead of overwriting the previous node state.
-The driver completes or fails an exact `StepId`, so asynchronous UI updates cannot confuse two executions of the same node.
+The initial `StateBackendConfig::InMemory` builder creates all three stores as one consistent bundle.
+`WorkflowService` does not construct `InMemorySessionStorage`, `HistoryState`, or a schedule ID set directly.
 
-The driver derives the selected `EdgeSpec` from the current and next graph-flow task IDs.
-The retained route, traversal counts, current node, current edge, trace output, and projected state are updated atomically before lifecycle and history events are emitted.
+The shared graph session store is safe because run IDs are globally unique within the process.
+Run history operations expose domain-level atomic commands rather than allowing the service to lock or mutate an in-memory collection directly.
+Schedule leases expose only `claim` and `release`.
 
-## 8. Execution limits
+The database extension point is the backend enum plus these store contracts.
+A future database backend must provide all three state categories, migrations, recovery behavior, and restart tests together.
+The current code intentionally contains no database dependency, schema, or partial hybrid mode.
 
-`WorkflowDefinition::limits` may override the application defaults.
-Leaving it as `None` derives strict limits from the workflow's node count.
+## 9. History, events, and replay
 
-| Scope | Default | Enforcement point |
-| --- | --- | --- |
-| Workflow total steps | `node_count * 5` | Checked before every node execution. |
-| Workflow total timeout | `max_steps * 5 minutes` | Tokio timeout around the complete driver. |
-| Executions per node ID | `5` | Checked before executing the current node. |
-| Timeout per node execution | `5 minutes` | Tokio timeout around one `FlowRunner::run`. |
+Every accepted run immediately creates a `RunSnapshot`.
+The snapshot retains trigger, status, active topology, traversed topology, duration, and every node execution trace.
 
-All configured counts and durations must be non-zero, and derived arithmetic must not overflow.
-Limit violations become retained failed runs and failed step traces where an active step exists.
+`RunHistoryStore` applies state changes atomically and returns `HistoryDelta` values.
+The service publishes each delta through the configured history broadcast channel.
+The history SSE endpoint replays retained deltas after a client revision and switches to a full reload when the cursor is older than the configured replay journal.
 
-Edge traversal counts are displayed, but edge-specific count and timeout enforcement is not implemented.
-This is an explicit current limitation rather than an implied safety guarantee.
+Workflow lifecycle events are a separate channel:
 
-## 9. Generic jcode node architecture
+- `RunStarted`;
+- `NodeStarted`;
+- `NodeCompleted`;
+- `RunCompleted`;
+- `RunFailed`;
+- `RunSkipped`.
 
-### 9.1 One process, multiple sessions
+The selected-run SSE endpoint uses these events to refresh the inspector.
+Lagged subscribers recover from retained state instead of treating broadcast delivery as durable storage.
 
-`JcodeRuntime` owns exactly one `jcode_sdk::JcodeClient`, and that client owns one launched jcode process.
-The runtime is wrapped in `Arc` and passed to every registered agent node.
+## 10. Scheduling and overlap
 
-`SessionMode` selects session behavior:
+Each `ScheduleSpec` stores `ScheduleOverlap`:
 
-- `New` creates a distinct SDK session for the node execution.
-- `Reuse(SessionKey)` creates the session on first use and returns the same process-local session thereafter.
+- `ApplicationDefault` resolves through `SchedulerConfig::default_overlap_policy`;
+- `Explicit(policy)` always uses the workflow-owned override.
 
-The runtime rejects reuse of one key with a different working directory.
-Each managed session has a turn mutex, so concurrent nodes sharing a session cannot interleave prompts or mutate the same conversation simultaneously.
-Different sessions may use the shared client concurrently subject to the jcode process and SDK behavior.
+The default application policy is `SkipWhileRunning`.
+When the same schedule fires while it owns an active run, the attempt is retained as a `Skipped` snapshot with a reason and no graph steps.
+`AllowOverlap` starts every firing.
+No task category or file-changing heuristic participates in this decision.
 
-### 9.2 Configurable SDK boundaries
+The scheduler validates every code-defined schedule, starts one worker per schedule, and waits for the first worker failure.
+`SchedulerMode::Disabled` skips schedule validation and workers while keeping manual workflow execution available.
 
-`JcodeNode` accepts factories and hooks instead of embedding workflow-specific policy:
+Schedule leases are released after completion, failure, and start failure.
+Skipped attempts never acquire a second lease.
 
-| Boundary | Configuration surface |
+## 11. Topology and execution history UI
+
+The topology renderer consumes `WorkflowDefinition` and optional `RunSnapshot` data.
+`LayeredAutoLayout` calculates ranks, rows, node coordinates, routed edges, self-edge curves, and the SVG view box from the registered topology.
+Workflow definitions do not contain presentation coordinates.
+
+The renderer is behind a topology layout interface so another representation, such as Mermaid or a graph library, can replace the current SVG layout without changing workflow execution.
+Self-references use an exterior curve around the node rather than a special loop node.
+
+Each run also exposes a linear execution-history list.
+Selecting an item identifies one `StepId`, and the Step Trace execution selector can inspect repeated executions of the same node independently.
+
+## 12. Optional node integrations
+
+Agent runtimes are graph task implementation details, not application services.
+The current jcode integration is an example of this rule:
+
+1. Its private integration bundle creates one deferred process scope.
+2. Jcode-backed graph tasks capture `Arc` clones of that scope.
+3. The bundle returns an ordinary `WorkflowRegistration`.
+4. The process starts only when a captured `JcodeNode` first executes.
+5. Launch and SDK failures become failures of that exact node and run.
+
+The one-scope policy applies to the console's current jcode integration bundle, not to every user of the reusable crate.
+Another application may create multiple isolated scopes, and another workflow may use a completely different agent backend without changing `WorkflowService`.
+
+Jcode-specific lifecycle, session, SDK option, and hook details live in the [graph-flow-jcode architecture](../crates/graph-flow-jcode/docs/architecture.md).
+
+## 13. Error boundaries
+
+| Failure | Boundary |
 | --- | --- |
-| Process launch | Complete SDK `LaunchOptions`, plus `before_launch` and `after_launch` runtime hooks. |
-| Session selection | `SessionMode` factory using graph-flow `Context`. |
-| Session configuration | `SessionOptions` for working directory, provider credentials, model, and reasoning effort. |
-| Prompt | Prompt factory using the current graph-flow context. |
-| Turn execution | Complete SDK `RunOptions` factory, mutable `before_run` hook, and mutable `after_run` result hook. |
-| Graph continuation | Configurable graph-flow `NextAction`. |
+| Unknown workflow or invalid input | `WorkflowError` before run insertion |
+| Invalid graph or duplicate registration | registration/bootstrap failure |
+| Invalid effective limits | bootstrap failure |
+| Session storage failure | run start or driver failure |
+| Node timeout or graph task failure | failed step and run |
+| Trace projection failure | failed step and run |
+| Invalid enabled schedule | bootstrap failure |
+| Optional backend launch failure | failed node and run, not application startup |
 
-The SDK client is exposed by `JcodeRuntime::client` for process-wide initialization that does not belong to a single node.
-The crate re-exports `jcode_sdk` so consumers can use the exact SDK types without adding another dependency version.
+## 14. Restart behavior
 
-`JcodeNode::run` uses `tokio::task::spawn_blocking` because the high-level SDK calls are blocking.
-The node sets credentials and session model options, executes hooks, sends the prompt, records graph-flow conversation messages, and stores `JcodeOutput` in the context.
+The current backend is entirely in memory.
+Restarting the process loses graph-flow sessions, run snapshots, replay deltas, schedule leases, and optional integration conversations.
+The configuration and state boundaries make a future persistent backend possible, but no recovery guarantee exists until such a backend is implemented and selected.
 
-### 9.3 Application translation workflow
+## 15. Architectural invariants
 
-The current `jcode-translation` workflow uses a single `translate_files` node and ends after one complete coding-agent turn.
-Its hooks construct a constrained translation prompt, allow jcode to read and write the requested relative files, and validate the target after the run.
-
-The workflow reads GlossShift's selected provider configuration from its XDG config directory and maps it onto jcode's built-in `opencode-go` compatibility environment.
-This adapter is intentionally isolated in `src/workflows/jcode_translation/glossshift.rs`.
-Future first-class provider-profile and credential handling must replace that adapter without expanding the generic node crate with application-specific GlossShift knowledge.
-
-Credential values are injected into launch environment or SDK calls and are not directly copied into `RunSnapshot` or `StepState`.
-`ProviderCredential` redacts its API key from `Debug` output.
-`JcodeOutput` retains agent text, provider reasoning, and tool output without generic redaction, so workflow hooks must reject or normalize sensitive output before it becomes trace state.
-
-### 9.4 Binary and example isolation
-
-`just install-jcode` installs the pinned jcode binary below `.tools/jcode`.
-`JCODE_BIN` may override the binary path, and the application otherwise resolves `.tools/jcode/bin/jcode` from the package root.
-`.tools` and every `target` directory are ignored by Git.
-
-The `graph-flow-jcode` example creates its input and output in an operating-system temporary workspace.
-It does not create `.jcode`, MCP, skill, or translation fixture directories inside the repository.
-
-## 10. Scheduler architecture
-
-Schedules are immutable `ScheduleSpec` values registered in code.
-Each specification includes a stable ID, workflow ID, six-field cron expression with seconds, input summary, and overlap policy.
-
-Startup validation rejects:
-
-- Duplicate schedule IDs.
-- Unknown workflow IDs.
-- Unknown or invalid scheduled input.
-- Invalid cron expressions.
-- An empty schedule registry.
-
-`run_scheduler` parses every schedule and spawns one structured Tokio worker per expression in a `JoinSet`.
-Each worker calculates its next UTC occurrence, sleeps until that instant, and dispatches through the same `WorkflowService::start` boundary used by manual actions.
-
-The default `SkipWhileRunning` policy atomically claims the schedule ID before starting a run.
-If the same schedule fires while its prior run remains active, the service retains a `Skipped` snapshot and emits `RunSkipped` instead of silently dropping the firing.
-The claim is released when the run completes, fails, or cannot start.
-
-`AllowOverlap` bypasses schedule ownership and starts every firing.
-The policy is selected only from `ScheduleSpec`; the scheduler does not infer it from workflow behavior or file access.
-
-## 11. Retained run, trace, and event state
-
-`RunSnapshot` is the complete operator-facing state for one run.
-It contains identity, workflow and input, trigger, lifecycle status, current topology position, traversed route, timestamps, and ordered step traces.
-
-Run lifecycle states are:
-
-- `Running`.
-- `Completed`.
-- `Failed` with a retained message.
-- `Skipped` with a retained reason.
-
-`StepTrace` retains:
-
-- Stable `StepId`, run-local sequence, node ID, and per-node execution number.
-- Running, completed, or failed status.
-- Selected edge when the node chose a transition.
-- State projected after execution.
-- Output or failure text.
-- Start, finish, and duration values.
-
-Two broadcast channels serve different consumers:
-
-| Channel | Payload | Primary consumer |
-| --- | --- | --- |
-| Workflow events | `RunStarted`, `NodeStarted`, `NodeCompleted`, `RunCompleted`, `RunFailed`, `RunSkipped` | Selected-run SSE and integration observers. |
-| History events | Revisioned `HistoryDelta` | Filtered run-history SSE. |
-
-History keeps all run snapshots in process memory for the lifetime of the server.
-Its replay journal is independently bounded to 512 lightweight deltas containing only fields required for list membership.
-This avoids cloning complete step traces into every replay entry while still supporting exact filter transitions.
-
-## 12. HTTP, SSR, and SSE boundaries
-
-| Route | Responsibility |
-| --- | --- |
-| `GET /` | Redirect to the default workflow's newest run or its canonical runless route. |
-| `GET /workflows/{workflow_id}` | Redirect to that workflow's newest run or canonical runless route. |
-| `GET /workflows/{workflow_id}/runs/` | Render a workflow topology when no retained run exists. |
-| `GET /workflows/{workflow_id}/runs/{run_id}` | Render one exact retained run and its history panel. |
-| `POST /actions/runs` | Parse Datastar signals, start a manual run, and navigate to its exact URL. |
-| `GET /events/runs/{run_id}` | Patch the selected run inspector after matching workflow events. |
-| `GET /events/history` | Replay and stream revisioned filtered history-row deltas. |
-
-SSR owns the initial document, canonical URLs, workflow form defaults, selected run, history filters, and initial Datastar signals.
-Datastar owns small client-side selection signals and applies server-rendered patches; there is no application-specific JavaScript state store.
-
-The selected-run SSE subscribes to lifecycle events and re-renders only the run inspector for its run ID.
-The history SSE subscribes to `HistoryDelta`, applies normalized workflow, trigger, and status filters, and emits insert, replace, remove, or empty-state patches.
-
-The browser supplies both an `after` query cursor and SSE `Last-Event-ID` when reconnecting.
-The server uses the greatest valid cursor, replays contiguous retained deltas, ignores duplicates, and reloads the page if a revision gap, receiver lag, or stale cursor prevents trustworthy patching.
-The reload path re-establishes state from an atomic SSR `HistoryView`.
-
-## 13. Topology and execution-history presentation
-
-Topology data comes from `WorkflowDefinition`, never from a workflow-ID geometry table.
-
-`TopologyLayoutEngine` defines the replaceable layout boundary.
-The current `LayeredAutoLayout`:
-
-- Excludes self-edges while computing incoming counts and ranks.
-- Assigns nodes to deterministic rank rows in declaration order.
-- Places unprocessed non-self cycles in fallback ranks instead of overlapping them at `(0,0)`.
-- Routes forward edges with cubic curves.
-- Routes self-edges above the node as external loops.
-- Routes backward edges above the graph with lane offsets.
-- Computes the SVG `viewBox` from placed nodes.
-
-`TopologyRenderer` defines the replaceable rendering boundary.
-The current `SvgTopologyRenderer` renders accessible SVG node and edge controls with active, traversed, selected, and execution-count states.
-A future Mermaid or library-backed renderer can implement the same model without changing workflow execution or retained state.
-
-The topology owns horizontal scrolling below its readable minimum width.
-The page itself never uses horizontal scrolling as a layout mechanism.
-
-The run inspector provides two related navigation surfaces:
-
-- The graph selects a node or edge and follows its latest retained execution.
-- The execution-history list selects an exact `StepId` in chronological order.
-
-Each trace panel includes an execution selector for repeated visits to the same node or edge and a `Follow latest` control.
-State and output blocks retain all text with internal overflow, including long serialized values and CJK output.
-
-## 14. Failure and recovery behavior
-
-The architecture retains failures at the closest observable boundary:
-
-- Invalid HTTP input returns a request message without creating a run.
-- Graph build, schedule validation, jcode launch, and invalid execution-limit configuration fail startup.
-- Node errors and node timeouts fail the active `StepId` and run.
-- Workflow timeout or total-step exhaustion fails the run.
-- Missing graph-flow session or trace state fails the run instead of fabricating completion.
-- Same-schedule overlap under the default policy creates a visible skipped run.
-- SSE gaps or lag cause a full page reload from authoritative in-memory state.
-
-There is no process recovery or persistence after application exit.
-Restarting the server starts a new jcode process, clears named sessions, clears run history, resets history revisions, and restarts cron workers.
-
-## 15. Extension points and invariants
-
-### Add a workflow
-
-Use the project-local `workflow-console-add-workflow` skill and update every registry boundary in one vertical slice.
-Keep task IDs, `NodeSpec`, `EdgeSpec`, graph transitions, and trace expectations identical.
-
-### Add multiple agent nodes
-
-Pass the same run-owned `JCODE_SESSION_KEY` to `SessionMode::Reuse` when nodes belong to one coding task.
-Use `SessionMode::New` or another stable key when a node requires isolation.
-Do not create another `JcodeRuntime` per node or run.
-
-### Replace graph rendering
-
-Implement `TopologyRenderer` and, when appropriate, a corresponding `TopologyLayoutEngine`.
-Keep execution identity based on workflow IDs and `StepId`; renderer-local element identity must not become the workflow state model.
-
-### Change persistence or deployment topology
-
-Treat persistence and multi-process scheduling as architectural migrations.
-The current `RwLock`, broadcast channels, named jcode sessions, schedule claims, and history revision journal assume one process and cannot be made distributed by swapping only the run storage vector.
-
-### Required invariants
-
-- Exactly one jcode runtime is created during application startup.
-- A workflow run owns one graph-flow session and one stable jcode session key.
-- Every node execution appends a distinct `StepId`.
-- Workflow and node limits are validated and enforced independently.
-- Every schedule has a unique ID and explicit overlap policy.
-- Skipped schedule firings remain visible in history.
-- Topology layout is derived from definitions and never falls back to unknown IDs at `(0,0)`.
-- Selected-run and history SSE streams remain separate.
-- Configuration credentials are never directly copied into retained trace or history state.
-
-## 16. Current trade-offs
-
-- Run history and jcode sessions are lost on restart.
-- The run vector is unbounded even though the replay journal is bounded.
-- Cron ownership is process-local and does not coordinate multiple replicas.
-- A failed schedule worker terminates the scheduler and therefore the application.
-- Edge-specific count and timeout limits are not enforced.
-- The automatic layout is deterministic but intentionally simpler than a dedicated graph-layout library.
-- The GlossShift provider mapping is a temporary compatibility adapter.
-- Agent text, reasoning, and tool output are retained without generic secret redaction.
-- The generic jcode crate exposes the most important launch, session, prompt, run, and hook boundaries, but future SDK additions may require explicit forwarding APIs.
-
-These trade-offs are acceptable for the current local experiment and are the first boundaries to revisit before persistence, remote deployment, or large workflow graphs are introduced.
+- Application execution does not branch on workflow ID, graph shape, task type, or agent backend.
+- Every executable workflow crosses the application boundary as `WorkflowRegistration`.
+- Every registration uses the same `GraphExecutionConfig -> FlowRunner` construction path.
+- Application configuration contains generic operational policy only.
+- State backend selection creates one internally consistent bundle.
+- Complete graph-flow context is never retained as trace payload.
+- Scheduled overlap is determined only by explicit schedule policy or the application default.
+- Repeated node executions remain individually addressable.
+- Optional backend availability cannot block application startup or ordinary workflows.

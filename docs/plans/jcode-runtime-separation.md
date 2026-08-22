@@ -1,6 +1,8 @@
 # Jcode runtime ownership and documentation separation plan
 
-Status: proposed, not implemented
+Status: implemented in `5976ad9`
+
+The implementation follows this report with `JcodeProcessScope`, ordinary workflow registrations, generic `GraphExecutionConfig` generation, workflow-owned input and trace contracts, and no jcode dependency in `WorkflowService`.
 
 ## 1. Decision summary
 

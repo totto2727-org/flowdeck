@@ -1,6 +1,8 @@
 # Application configuration extraction plan
 
-Status: proposed, not implemented
+Status: implemented in `5976ad9`
+
+The implementation follows this report with an InMemory-only `ApplicationConfig`, injected state bundle, inherited schedule policy, configurable limits and channel capacities, scheduler mode, and configured HTTP bind address.
 
 ## 1. Decision summary
 
