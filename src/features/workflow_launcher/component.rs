@@ -11,7 +11,7 @@ pub(crate) async fn workflow_rail(selected_workflow_id: &str, filters: &HistoryF
     let schedules = workflow_schedules();
     let filter_suffix = filters.query_suffix();
     view! {
-        <aside class="min-w-0 self-start rounded-panel border border-border bg-surface p-4 shadow-panel lg:sticky lg:top-6" aria-labelledby="workflows-title">
+        <aside class="min-w-0 self-start rounded-panel border border-border bg-surface p-4 shadow-panel" aria-labelledby="workflows-title">
             <h2 id="workflows-title" class="text-xl font-semibold">"Workflows"</h2>
             <div class="mt-4 grid gap-3" role="group" aria-label="Code-defined workflows">
                 for definition in workflow_definitions() {
