@@ -1,6 +1,6 @@
 # Workflow Console Experiment
 
-A local-only workflow dashboard built with Topcoat, Datastar, Tailwind CSS, and graph-flow. It runs code-defined workflows manually or on cron schedules, keeps execution history in memory, and exposes node and edge traces for debugging and performance analysis.
+A local-only workflow dashboard built with Topcoat, Datastar, Tailwind CSS, graph-flow, and jcode. It runs code-defined workflows manually or on cron schedules, keeps execution history in memory, and exposes node and edge traces for debugging and performance analysis.
 
 ## Usage
 
@@ -24,67 +24,14 @@ Run-history filters are applied on the server using `history_workflow`, `history
 
 ## Key features
 
-- Two code-defined workflows with branching, convergence, and observable sleep tasks.
+- Three code-defined workflows covering branching, linear review, and a complete jcode coding-agent turn.
 - Workflow-owned forms whose data is deserialized by Serde, validated by garde, and applied as the initial graph-flow context.
-- A code-defined cron schedule that uses the same in-memory execution service.
-- SVG topology with active, traversed, and selected node and edge states.
-- Per-node and per-edge traces with timestamps, elapsed time, state, output, and errors.
+- Multiple code-defined cron schedules with skip-while-running and allow-overlap policies.
+- Workflow and node execution limits that bound loops and long-running tasks.
+- Automatically laid out SVG topology with external self-loop routing and active, traversed, selected, and execution-count states.
+- Per-execution node and edge traces with timestamps, elapsed time, state, output, errors, and exact `StepId` history.
+- One shared jcode process with isolated or reusable named sessions for agent nodes.
 - URL-addressable server-rendered run-history filtering with separate run and history SSE streams.
-
-## Architecture
-
-### Feature boundaries
-
-The web surface is organized by feature. Each feature keeps its transport entrypoint next to the component or fragment that it updates, so an SSE endpoint can be traced to its rendered target without crossing a horizontal `web`/`web_page` split.
-
-No `mod.rs` files are used. Self-named module files such as `features.rs`, `run_detail.rs`, and `component.rs` only declare child modules and expose the minimum feature entrypoints; rendering, transport, and state logic lives in the named child modules.
-
-| Feature | API boundary | Component and fragment boundary |
-| --- | --- | --- |
-| `workflow_launcher` | `POST /actions/runs` in `features/workflow_launcher/action.rs` | `features/workflow_launcher/component.rs` owns the workflow selector, workflow-owned input form, and run action surface. |
-| `run_detail` | `GET /events/runs/{run_id}` in `features/run_detail/sse.rs` | `component/inspector.rs` composes the selected run or runless view; `workflow_graph.rs` renders the graph panel; `step_trace.rs` renders trace details; `component/topology/renderer.rs` renders SVG and `geometry.rs` computes node and edge geometry; `fragments.rs` produces the SSE patch. |
-| `run_history` | `GET /events/history` in `features/run_history/sse.rs` | `component.rs` owns the panel; `fragments.rs` renders rows and empty state; `filter.rs` parses and normalizes URL filters; `membership.rs` derives insert, replace, and remove transitions. |
-
-The module tree is intentionally feature-oriented and uses Rust self-named module files instead of `mod.rs`:
-
-```text
-src/
-├── app.rs
-├── app/
-│   ├── routes.rs       # SSR routes and canonical redirects
-│   ├── navigation.rs   # workflow and run URL construction
-│   ├── page.rs         # document and initial signal composition
-│   ├── console.rs      # feature component composition
-│   └── document.rs     # 404 document layout
-├── features.rs         # feature declarations and shared presentation exports
-└── features/
-    ├── workflow_launcher.rs
-    ├── workflow_launcher/
-    │   ├── action.rs
-    │   └── component.rs
-    ├── run_detail.rs
-    ├── run_detail/
-    │   ├── sse.rs
-    │   ├── fragments.rs
-    │   ├── component.rs
-    │   └── component/
-    │       ├── inspector.rs
-    │       ├── workflow_graph.rs
-    │       ├── step_trace.rs
-    │       ├── topology.rs
-    │       └── topology/
-    │           ├── renderer.rs
-    │           └── geometry.rs
-    ├── run_history.rs
-    └── run_history/
-        ├── sse.rs
-        ├── component.rs
-        ├── fragments.rs
-        ├── filter.rs
-        └── membership.rs
-```
-
-The `app` module owns SSR routes, navigation, document/page composition, and feature assembly. It does not own feature-specific SSE or patch rendering. This keeps `run_detail` as the owner of both the run SSE and the graph/trace components, including the static graph shown when no run is selected.
 
 ## Prerequisites
 
@@ -108,9 +55,15 @@ just run
 
 3. Open <http://127.0.0.1:3000/>.
 
+## API
+
+This local application does not publish a stable external Rust API.
+See [Workflow Console Architecture](./docs/architecture.md) for its HTTP boundaries and internal workflow, jcode, scheduler, state, SSE, and renderer extension contracts.
+
 ## Development
 
-For repository structure, development commands, CI, Nix, and FlakeHub operation, see [AGENTS.md](./AGENTS.md).
+For the current system design, see [docs/architecture.md](./docs/architecture.md).
+For repository structure and development commands, see [AGENTS.md](./AGENTS.md).
 
 ## Documentation
 
@@ -120,9 +73,9 @@ For repository structure, development commands, CI, Nix, and FlakeHub operation,
 - [graph-flow 0.6.0 on crates.io](https://crates.io/crates/graph-flow/0.6.0)
 - [garde 0.23.0 documentation](https://docs.rs/garde/0.23.0/garde/)
 - [Croner 3.0.1 documentation](https://docs.rs/croner/3.0.1/croner/)
-- [share-artifact skill](https://raw.githubusercontent.com/totto2727-org/agent/refs/heads/main/plugins/totto2727-coding/skills/share-artifact/SKILL.md)
-- [README template](https://raw.githubusercontent.com/totto2727-org/agent/refs/heads/main/plugins/totto2727-coding/skills/share-artifact/readme/template.md)
 
 ## License
 
 MIT
+
+_This README was generated from the [share-artifact skill](https://raw.githubusercontent.com/totto2727-org/agent/refs/heads/main/plugins/totto2727-coding/skills/share-artifact/SKILL.md) and [README template](https://raw.githubusercontent.com/totto2727-org/agent/refs/heads/main/plugins/totto2727-coding/skills/share-artifact/readme/template.md)._
