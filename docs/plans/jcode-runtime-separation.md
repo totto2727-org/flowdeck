@@ -5,8 +5,11 @@ Status: proposed, not implemented
 ## 1. Decision summary
 
 Treat jcode as one optional, high-level graph-flow node template rather than an application core runtime.
-The root application continues to own workflow registration, graph-flow execution, history, scheduling, HTTP, and presentation.
+The root application consumes workflow registrations and owns only generic graph-flow execution configuration, history, scheduling, HTTP, and presentation.
 The `graph-flow-jcode` crate owns the reusable jcode node mechanism, while the jcode-enabled workflow integration owns the application-specific decision to share one process and how sessions map to workflow runs.
+
+There is no execution branch based on workflow ID, graph definition, topology, or node implementation.
+The application generates the same graph-flow runtime configuration and invokes the same runner path for every registration.
 
 The application service must not construct, accept, store, initialize, or report availability of `JcodeRuntime`.
 A deployment that never executes a jcode node must not require a jcode binary, GlossShift configuration, credentials, or a running jcode process.
@@ -32,25 +35,28 @@ This shape also makes a future `graph-flow-opencode`, `graph-flow-codex`, or ano
 
 ```mermaid
 flowchart LR
-    App["Workflow console core"] --> Registry["Workflow registry"]
-    App --> Runner["graph-flow runners"]
-    Registry --> Demo["Non-agent workflows"]
-    Registry --> JcodeWorkflow["jcode-enabled workflow integration"]
-    JcodeWorkflow --> Graph["graph-flow Graph"]
-    JcodeWorkflow --> Scope["private shared JcodeProcessScope"]
-    Graph --> Node["JcodeNode"]
-    Node --> Scope
-    Scope --> Process["lazy jcode process"]
-    Scope --> Sessions["named jcode sessions"]
+    Producers["Workflow modules"] --> Registrations["WorkflowRegistration values"]
+    Registrations --> Generator["GraphExecutionConfig generator"]
+    Defaults["Generic execution defaults"] --> Generator
+    State["Generic state services"] --> Generator
+    Generator --> Configs["GraphExecutionConfig values"]
+    Configs --> Runners["graph-flow FlowRunner values"]
+    Runners --> Graphs["graph-flow Graph values"]
+    Graphs --> Tasks["Arc<dyn Task>"]
 ```
+
+Every workflow follows this single path.
+The application does not inspect graph topology, task concrete types, context keys, or captured resources to decide how to build or execute a runtime.
+It iterates registrations, generates the same graph-flow execution configuration for each one, and runs the resulting `FlowRunner`.
 
 The boundaries are:
 
 | Layer | Owns | Must not own |
 | --- | --- | --- |
-| Application core | Generic workflow registry, run identity, graph-flow sessions, limits, history, scheduling, HTTP, UI. | `JcodeRuntime`, jcode binary paths, jcode credentials, or jcode session keys. |
-| Workflow registry | Type-erased workflow registrations and their graphs. | Agent-backend branching inside `WorkflowService`. |
-| jcode integration inside the workflow registry | One shared process scope policy and lazy launch configuration for every jcode-enabled workflow. | Global application startup or unrelated workflow state. |
+| Application core | Run identity, generic graph-flow execution configuration, sessions, limits, history, scheduling, HTTP, UI. | Branching on workflow ID, graph shape, task type, `JcodeRuntime`, or another node backend. |
+| Workflow catalog | An ordered collection of type-erased `WorkflowRegistration` values. | Classifying registrations as agent or non-agent workflows. |
+| Workflow registration | Its executable graph, definition, input contract, and trace projection. | Application-wide lifecycle or state backend selection. |
+| Optional integration bundle | Any resources shared by a related set of workflow registrations and the registrations that capture those resources. | A special execution path in the application core or catalog. |
 | Individual jcode workflow | Workflow-to-jcode session mapping, prompts, provider adapter, hooks, and trace projection. | A second process scope when the shared integration policy applies. |
 | `graph-flow-jcode` crate | Reusable node, at-most-one process per shared scope, named session registry, SDK option forwarding, hooks, structured output. | A singleton policy for every application or knowledge of workflow-console IDs. |
 | jcode SDK | Binary process protocol and high-level client/session operations. | graph-flow routing and workflow history. |
@@ -63,7 +69,8 @@ The crate should expose a shareable scope with this local invariant:
 
 > One `JcodeProcessScope` initializes at most one jcode client/process and owns all named sessions created through that scope.
 
-The workflow registry's private jcode integration creates one scope and passes the same `Arc<JcodeProcessScope>` to every jcode-enabled workflow registered in this console.
+The private jcode integration bundle creates one scope, builds every related workflow registration with clones of that `Arc<JcodeProcessScope>`, and returns ordinary `WorkflowRegistration` values.
+The workflow catalog only extends its registration collection with those returned values; it does not branch on their contents or know which resources their graphs capture.
 Another application may intentionally create multiple scopes for isolation, different binaries, or different launch environments.
 
 No global static singleton is planned.
@@ -146,28 +153,54 @@ Different sessions may use the shared process concurrently subject to SDK guaran
 The graph-flow `Session` remains application state and is not replaced by a jcode session.
 Graph-flow session persistence and jcode conversation persistence are separate concerns.
 
-## 8. Workflow registry construction
+## 8. Uniform graph-flow execution configuration
 
-`WorkflowService` should receive only already constructed generic registrations or graphs.
-One possible target is:
+`WorkflowService` receives only ordinary registrations and generic application state services.
+The registration owns all workflow-specific construction results before it crosses into the service:
 
 ```rust
 pub struct WorkflowRegistration {
     pub definition: &'static WorkflowDefinition,
     pub graph: Arc<graph_flow::Graph>,
+    pub input: Arc<dyn WorkflowInputContract>,
     pub trace_projector: Arc<dyn TraceProjector>,
 }
 
 pub fn workflow_registrations() -> Result<Vec<WorkflowRegistration>, WorkflowError>;
 ```
 
-The registry function constructs private integration resources while building registrations:
+The application generates the same execution configuration from every registration:
 
-1. Build non-agent workflow graphs with no agent resources.
-2. Construct one deferred jcode process scope inside a private workflow-registry jcode integration module.
-3. Build all jcode-enabled graphs with clones of that private scope.
-4. Erase the concrete node and resource types behind `Graph` and workflow registration boundaries.
-5. Return registrations to `WorkflowService`.
+```rust
+pub struct GraphExecutionConfig {
+    pub definition: &'static WorkflowDefinition,
+    pub graph: Arc<graph_flow::Graph>,
+    pub session_storage: Arc<dyn graph_flow::SessionStorage>,
+    pub limits: WorkflowExecutionLimits,
+    pub trace_projector: Arc<dyn TraceProjector>,
+}
+
+pub fn generate_execution_config(
+    registration: WorkflowRegistration,
+    defaults: &WorkflowExecutionDefaults,
+    state: &ApplicationState,
+) -> Result<GraphExecutionConfig, WorkflowError>;
+```
+
+`generate_execution_config` may derive generic limits from `registration.definition.nodes.len()`, apply an explicit workflow override, and attach generic state services.
+It must not inspect the graph's tasks or use a workflow-ID match to select a backend-specific constructor.
+
+`WorkflowRuntime` is then created uniformly from `GraphExecutionConfig`, including `FlowRunner::new(config.graph, config.session_storage)`.
+The same start and driver path executes every resulting runtime.
+
+Workflow-specific resources are captured before registration:
+
+1. A simple workflow module builds its graph and returns one registration.
+2. The jcode integration bundle creates one deferred process scope.
+3. The bundle builds one or more workflow graphs whose `JcodeNode` tasks capture that scope.
+4. The bundle returns ordinary registrations.
+5. The catalog concatenates registration values without classifying them.
+6. The application generates and executes identical graph-flow configurations for all registrations.
 
 `WorkflowService` stores no process scope and never imports `graph_flow_jcode::JcodeRuntime`.
 The graph's `Arc<dyn Task>` values retain the scope for as long as it is needed.
@@ -277,8 +310,8 @@ After the English documents are updated, GlossShift generates the Japanese versi
 | `crates/graph-flow-jcode/src/lib.rs` | Export the final scope API and remove the application-oriented context key. |
 | `crates/graph-flow-jcode/tests/jcode_node.rs` | Verify zero launch before execution, one launch across shared nodes, retry after failure, and session policies. |
 | `crates/graph-flow-jcode/examples/jcode_translation.rs` | Demonstrate scope ownership inside a graph-flow integration. |
-| `src/workflows.rs` | Build type-erased registrations without accepting a jcode runtime parameter. |
-| `src/workflows/jcode_integration.rs` | Own the console's private shared scope and deferred launch factory for all jcode-enabled workflows. |
+| `src/workflows.rs` | Concatenate type-erased registrations without branching on workflow or node type. |
+| `src/workflows/jcode_integration.rs` | Own the shared scope and deferred launch factory, then return ordinary registrations whose graphs capture that scope. |
 | `src/workflows/jcode_translation.rs` | Consume the private shared integration resource without exposing it to `WorkflowService`. |
 | `src/workflows/jcode_translation/definition.rs` | Map generic run identity to jcode session policy. |
 | `src/workflow.rs` | Remove jcode launch, runtime injection, special test constructor, and jcode context writes. |
@@ -293,15 +326,16 @@ After the English documents are updated, GlossShift generates the Japanese versi
 
 1. Add failing crate tests for deferred launch, shared initialization, retry, and named-session behavior.
 2. Implement the lazy process scope in `graph-flow-jcode` and update `JcodeNode`.
-3. Make the workflow registry's private jcode integration construct one deferred scope and share it with the jcode translation workflow.
-4. Remove `JcodeRuntime` and `JCODE_SESSION_KEY` from `WorkflowService` and the generic registry function signatures.
-5. Replace `without_jcode_runtime` usage with the normal process-free service constructor.
-6. Introduce workflow-owned trace projection and remove `JcodeOutput` from application trace state.
-7. Remove the jcode-specific application error variant.
-8. Run non-jcode workflows with an intentionally invalid `JCODE_BIN` to prove no launch or configuration read occurs.
-9. Run the jcode workflow to prove lazy launch, one shared process, and same-run session reuse.
-10. Split and revise English architecture documentation, then regenerate and review Japanese parity.
-11. Land the application configuration extraction plan after this boundary is established.
+3. Make the private jcode integration bundle construct one deferred scope and return ordinary registrations that capture it.
+4. Introduce one generic `GraphExecutionConfig` generator and use it for every registration.
+5. Remove `JcodeRuntime`, `JCODE_SESSION_KEY`, and workflow-type branching from `WorkflowService` and registry execution paths.
+6. Replace `without_jcode_runtime` usage with the normal process-free service constructor.
+7. Introduce workflow-owned trace projection and remove `JcodeOutput` from application trace state.
+8. Remove the jcode-specific application error variant.
+9. Run non-jcode workflows with an intentionally invalid `JCODE_BIN` to prove no launch or configuration read occurs.
+10. Run the jcode workflow to prove lazy launch, one shared process, and same-run session reuse.
+11. Split and revise English architecture documentation, then regenerate and review Japanese parity.
+12. Land the application configuration extraction plan after this boundary is established.
 
 ## 15. Validation plan
 
@@ -317,6 +351,8 @@ The separation is accepted when all of the following are observable:
 - A failed first launch is retained as a node/run failure and does not stop the server.
 - A later execution can retry launch.
 - `WorkflowService`, application config, generic context setup, and root application errors contain no jcode type or key.
+- Every registration passes through the same `generate_execution_config` and `FlowRunner` construction path.
+- Runtime construction contains no match or conditional on workflow ID, graph topology, or concrete task type.
 - `StepState` contains no jcode-specific field.
 - Root architecture diagrams and system summary remain valid when the jcode workflow is removed.
 - Crate documentation fully describes the optional integration mechanism.
