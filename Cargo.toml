@@ -7,6 +7,10 @@ description = "A local-only experiment for a workflow console built with Topcoat
 license = "MIT"
 publish = false
 
+[workspace]
+members = [".", "crates/graph-flow-jcode"]
+resolver = "3"
+
 [dependencies]
 async-trait = "0.1"
 async-stream = "0.3"
@@ -15,13 +19,16 @@ croner = "3.0.1"
 futures-core = "0.3"
 garde = { version = "0.23", features = ["derive"] }
 graph-flow = "0.6.0"
+graph-flow-jcode = { path = "crates/graph-flow-jcode" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tokio = { version = "1.51.1", features = ["macros", "net", "rt-multi-thread", "sync", "time"] }
+tokio = { version = "1.51.1", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 topcoat = { version = "0.5.0", features = ["datastar", "tailwind"] }
+toml = "0.9"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4"] }
+xdg = "3"
 
 [build-dependencies]
 topcoat = { version = "0.5.0", default-features = false, features = ["tailwind"] }

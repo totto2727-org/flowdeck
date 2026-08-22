@@ -1,0 +1,160 @@
+//! Contract coverage for one complete graph-flow-backed jcode turn.
+
+/// Scripted protocol peer used by the integration contract.
+pub mod support;
+
+use graph_flow::{Context, NextAction, Task};
+use graph_flow_jcode::{
+    AfterRun, BeforeRun, JCODE_OUTPUT_KEY, JcodeHooks, JcodeNode, JcodeNodeError, JcodeOutput,
+    JcodeRuntime, ProviderCredential, SessionMode, SessionOptions,
+    jcode_sdk::{RunOptions, api::ApiRequest},
+};
+use std::sync::{Arc, Mutex};
+
+type TestResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
+
+#[derive(Debug)]
+struct RecordingHooks {
+    phases: Arc<Mutex<Vec<&'static str>>>,
+}
+
+impl JcodeHooks for RecordingHooks {
+    fn before_run(&self, stage: BeforeRun<'_>) -> Result<(), JcodeNodeError> {
+        stage.prompt.push_str(" with hook context");
+        self.record("before_run");
+        Ok(())
+    }
+
+    fn after_run(&self, stage: AfterRun<'_>) -> Result<(), JcodeNodeError> {
+        if stage.result.text != "translated output" {
+            return Err(JcodeNodeError::hook(
+                "after_run",
+                "the translated output did not pass validation",
+            ));
+        }
+        stage
+            .context
+            .set("translation_validated", true)
+            .map_err(|error| JcodeNodeError::context(&error))?;
+        self.record("after_run");
+        Ok(())
+    }
+}
+
+impl RecordingHooks {
+    fn record(&self, phase: &'static str) {
+        self.phases
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(phase);
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn runs_configured_jcode_session_and_records_graph_context() -> TestResult<()> {
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let client = support::fake_client(Arc::clone(&requests))?;
+    let runtime = Arc::new(JcodeRuntime::from_client(client));
+    let phases = Arc::new(Mutex::new(Vec::new()));
+    let hooks = RecordingHooks {
+        phases: Arc::clone(&phases),
+    };
+    let node = JcodeNode::new("translate", runtime, |_| {
+        Ok("translate the source".to_owned())
+    })
+    .with_session_options(|_| {
+        Ok(SessionOptions::default()
+            .with_working_dir("/workspace")
+            .with_credential(ProviderCredential::new("openrouter", "secret"))
+            .with_model("deepseek-v4-flash")
+            .with_reasoning_effort("high"))
+    })
+    .with_run_options(|_| Ok(RunOptions::default()))
+    .with_hooks(hooks)
+    .with_next_action(NextAction::End);
+    let context = Context::new();
+
+    let result = node.run(context.clone()).await?;
+
+    assert_eq!(result.response.as_deref(), Some("translated output"));
+    assert_eq!(result.next_action, NextAction::End);
+    assert_eq!(context.get::<bool>("translation_validated"), Some(true));
+    let Some(output) = context.get::<JcodeOutput>(JCODE_OUTPUT_KEY) else {
+        return Err("jcode output missing from graph context".into());
+    };
+    assert_eq!(output.session_id, "session-1");
+    assert_eq!(output.text, "translated output");
+    assert_eq!(context.chat_history_len(), 2);
+    assert_eq!(
+        *phases
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner),
+        ["before_run", "after_run"]
+    );
+    let captured_requests = requests
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
+    assert!(matches!(
+        &captured_requests[0],
+        ApiRequest::SetApiKey { provider, api_key }
+            if provider == "openrouter" && api_key == "secret"
+    ));
+    assert!(matches!(
+        &captured_requests[1],
+        ApiRequest::CreateSession { working_dir }
+            if working_dir.as_deref() == Some("/workspace")
+    ));
+    assert!(matches!(
+        &captured_requests[2],
+        ApiRequest::SetModel { model, .. } if model == "deepseek-v4-flash"
+    ));
+    assert!(matches!(
+        &captured_requests[3],
+        ApiRequest::SetReasoningEffort { effort, .. } if effort == "high"
+    ));
+    assert!(matches!(
+        &captured_requests[4],
+        ApiRequest::SendMessage { content, .. } if content == "translate the source with hook context"
+    ));
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn reuses_named_sessions_and_keeps_new_sessions_isolated() -> TestResult<()> {
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let runtime = Arc::new(JcodeRuntime::from_client(support::fake_client(
+        Arc::clone(&requests),
+    )?));
+    let shared = SessionMode::reuse("coding-run")?;
+    let first = JcodeNode::new("first", Arc::clone(&runtime), |_| Ok("first".to_owned()))
+        .with_session_mode(move |_| Ok(shared.clone()));
+    let shared = SessionMode::reuse("coding-run")?;
+    let second = JcodeNode::new("second", Arc::clone(&runtime), |_| Ok("second".to_owned()))
+        .with_session_mode(move |_| Ok(shared.clone()));
+    let isolated = JcodeNode::new("isolated", runtime, |_| Ok("isolated".to_owned()));
+    let context = Context::new();
+
+    first.run(context.clone()).await?;
+    second.run(context.clone()).await?;
+    isolated.run(context).await?;
+
+    let captured = requests
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
+    let created = captured
+        .iter()
+        .filter(|request| matches!(request, ApiRequest::CreateSession { .. }))
+        .count();
+    let message_sessions = captured
+        .iter()
+        .filter_map(|request| match request {
+            ApiRequest::SendMessage { session_id, .. } => Some(session_id.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(created, 2);
+    assert_eq!(message_sessions, ["session-1", "session-1", "session-2"]);
+    Ok(())
+}

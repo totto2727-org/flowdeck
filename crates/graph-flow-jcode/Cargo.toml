@@ -1,0 +1,33 @@
+[package]
+name = "graph-flow-jcode"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+description = "A configurable graph-flow task backed by the jcode Rust SDK"
+license = "MIT"
+publish = false
+
+[dependencies]
+async-trait = "0.1"
+graph-flow = "0.6.0"
+jcode-sdk = { git = "https://github.com/1jehuang/jcode", rev = "a63dbc4546895ecb4d1be1a285d98e6e13fb1b74" }
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+tokio = { version = "1.51.1", features = ["rt-multi-thread"] }
+
+[lints.rust]
+unsafe_code = "deny"
+missing_docs = "warn"
+missing_debug_implementations = "warn"
+unreachable_pub = "warn"
+unused_must_use = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"

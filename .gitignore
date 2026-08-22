@@ -1,4 +1,5 @@
-/target/
+target/
+.tools/
 .direnv/
 .omo/evidence/
 .omo/ulw-loop/
