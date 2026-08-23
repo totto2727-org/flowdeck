@@ -8,19 +8,29 @@ use std::{
 
 use crate::ScheduleOverlapPolicy;
 
-const FIVE: NonZeroUsize = match NonZeroUsize::new(5) {
+const DEFAULT_WORKFLOW_STEP_MULTIPLIER: NonZeroUsize = match NonZeroUsize::new(5) {
     Some(value) => value,
     None => NonZeroUsize::MIN,
 };
-const EVENT_CAPACITY: NonZeroUsize = match NonZeroUsize::new(128) {
+const DEFAULT_NODE_MAX_EXECUTIONS: NonZeroUsize = match NonZeroUsize::new(5) {
     Some(value) => value,
     None => NonZeroUsize::MIN,
 };
-const HISTORY_CAPACITY: NonZeroUsize = match NonZeroUsize::new(512) {
+const DEFAULT_WORKFLOW_EVENT_CAPACITY: NonZeroUsize = match NonZeroUsize::new(128) {
     Some(value) => value,
     None => NonZeroUsize::MIN,
 };
-const FIVE_MINUTES: PositiveDuration = PositiveDuration(Duration::from_mins(5));
+const DEFAULT_HISTORY_EVENT_CAPACITY: NonZeroUsize = match NonZeroUsize::new(512) {
+    Some(value) => value,
+    None => NonZeroUsize::MIN,
+};
+const DEFAULT_HISTORY_REPLAY_CAPACITY: NonZeroUsize = match NonZeroUsize::new(512) {
+    Some(value) => value,
+    None => NonZeroUsize::MIN,
+};
+const DEFAULT_WORKFLOW_TIMEOUT_PER_STEP: PositiveDuration =
+    PositiveDuration(Duration::from_mins(5));
+const DEFAULT_NODE_TIMEOUT: PositiveDuration = PositiveDuration(Duration::from_mins(5));
 
 /// Immutable process-wide policy passed into application bootstrap.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -47,11 +57,11 @@ impl ApplicationConfig {
             },
             workflows: WorkflowConfig {
                 execution: WorkflowExecutionDefaults {
-                    step_multiplier: FIVE,
-                    timeout_per_step: FIVE_MINUTES,
+                    step_multiplier: DEFAULT_WORKFLOW_STEP_MULTIPLIER,
+                    timeout_per_step: DEFAULT_WORKFLOW_TIMEOUT_PER_STEP,
                     node: ExecutionTargetDefaults {
-                        max_executions: FIVE,
-                        timeout: FIVE_MINUTES,
+                        max_executions: DEFAULT_NODE_MAX_EXECUTIONS,
+                        timeout: DEFAULT_NODE_TIMEOUT,
                     },
                 },
             },
@@ -59,7 +69,7 @@ impl ApplicationConfig {
                 backend: StateBackendConfig::InMemory(InMemoryStateConfig {
                     history: InMemoryHistoryConfig {
                         run_retention: RunRetention::Unlimited,
-                        replay_capacity: HISTORY_CAPACITY,
+                        replay_capacity: DEFAULT_HISTORY_REPLAY_CAPACITY,
                     },
                 }),
             },
@@ -68,8 +78,8 @@ impl ApplicationConfig {
                 default_overlap_policy: ScheduleOverlapPolicy::SkipWhileRunning,
             },
             events: EventConfig {
-                workflow_capacity: EVENT_CAPACITY,
-                history_capacity: HISTORY_CAPACITY,
+                workflow_capacity: DEFAULT_WORKFLOW_EVENT_CAPACITY,
+                history_capacity: DEFAULT_HISTORY_EVENT_CAPACITY,
             },
         }
     }
