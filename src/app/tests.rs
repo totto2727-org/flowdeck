@@ -1,5 +1,5 @@
+use flowdeck::{RunTrigger, WorkflowService};
 use serde_json::json;
-use workflow_console_experiment::{RunTrigger, WorkflowService};
 
 use super::{
     navigation::{

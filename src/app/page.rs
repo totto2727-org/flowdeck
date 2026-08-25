@@ -1,3 +1,4 @@
+use flowdeck::{HistoryView, RunSnapshot, workflow_default_input};
 use serde::Serialize;
 use serde_json::Value;
 use topcoat::{
@@ -6,7 +7,6 @@ use topcoat::{
     context::Cx,
     view::view,
 };
-use workflow_console_experiment::{HistoryView, RunSnapshot, workflow_default_input};
 
 use super::{assets::STYLESHEET, console::console_content, navigation::workflow_url};
 use crate::features::{
@@ -54,13 +54,13 @@ pub(super) async fn render_console_page(
                 <meta name="description" content="Inspect and run local code-defined workflows">
                 <link rel="stylesheet" href=(STYLESHEET)>
                 <script type="module" src=(DATASTAR_JS)></script>
-                <title>"Workflow Console"</title>
+                <title>"Flowdeck"</title>
             </head>
             <body data-signals=(signals_json)>
                 <header class="flex items-start justify-between gap-4 border-b border-border bg-surface px-4 py-4 lg:items-center lg:px-8">
                     <div>
                         <p class="text-xs font-semibold uppercase tracking-label text-text-muted">"Local operations"</p>
-                        <h1 class="text-3xl font-semibold tracking-title">"Workflow Console"</h1>
+                        <h1 class="text-3xl font-semibold tracking-title">"Flowdeck"</h1>
                     </div>
                     <span class="rounded-control border border-border px-2 py-1 font-mono text-[length:var(--type-code)] text-text-secondary">"In-memory"</span>
                 </header>

@@ -1,8 +1,8 @@
+use flowdeck::{EdgeSpec, NodeSpec, RunSnapshot, RunStatus, StepId};
 use topcoat::{
     Result,
     view::{component, view},
 };
-use workflow_console_experiment::{EdgeSpec, NodeSpec, RunSnapshot, RunStatus, StepId};
 
 use crate::features::presentation::{state_label, state_value};
 

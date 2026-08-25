@@ -1,8 +1,8 @@
+use flowdeck::StepTrace;
 use topcoat::{
     Result,
     view::{component, view},
 };
-use workflow_console_experiment::StepTrace;
 
 use crate::features::presentation::{step_elapsed, step_status};
 

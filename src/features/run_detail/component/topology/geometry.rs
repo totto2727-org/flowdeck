@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use workflow_console_experiment::WorkflowDefinition;
+use flowdeck::WorkflowDefinition;
 
 const NODE_WIDTH: i32 = 120;
 const NODE_HEIGHT: i32 = 54;

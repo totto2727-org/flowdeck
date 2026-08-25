@@ -1,4 +1,4 @@
-# Workflow Console Experiment
+# Flowdeck
 
 ## Language rules
 

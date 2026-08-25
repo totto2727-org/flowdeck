@@ -1,3 +1,4 @@
+use flowdeck::{RunId, WorkflowEvent, WorkflowService};
 use futures_core::Stream;
 use tokio::sync::broadcast::error::RecvError;
 use topcoat::{
@@ -9,7 +10,6 @@ use topcoat::{
         path_param, route,
     },
 };
-use workflow_console_experiment::{RunId, WorkflowEvent, WorkflowService};
 
 use super::fragments::render_run_inspector;
 

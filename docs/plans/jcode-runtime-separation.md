@@ -255,7 +255,7 @@ All service and UI tests use the normal constructor because normal construction 
 
 ## 11. Root architecture documentation plan
 
-The root [Workflow console architecture](../architecture.md) should describe graph-flow as the workflow core.
+The root [Flowdeck architecture](../architecture.md) should describe graph-flow as the workflow core.
 Jcode remains visible only where it is concrete evidence of an optional node integration.
 
 ### Remove from the system overview

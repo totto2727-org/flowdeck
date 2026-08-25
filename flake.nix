@@ -1,5 +1,5 @@
 {
-  description = "A local-only workflow console experiment";
+  description = "A local workflow cockpit for running, scheduling, and tracing graph-based workflows";
 
   inputs.nixpkgs.url = "https://flakehub.com/f/NixOS/nixpkgs/0.1";
 
@@ -14,7 +14,7 @@
       forEachSystem = nixpkgs.lib.genAttrs supportedSystems;
       overlay = final: _previous: {
         topcoat-cli = final.callPackage ./topcoat.nix { };
-        workflow-console-experiment = final.callPackage ./package.nix { };
+        flowdeck = final.callPackage ./package.nix { };
       };
       mkPkgs =
         system:
@@ -32,8 +32,8 @@
           pkgs = mkPkgs system;
         in
         rec {
-          inherit (pkgs) topcoat-cli workflow-console-experiment;
-          default = workflow-console-experiment;
+          inherit (pkgs) topcoat-cli flowdeck;
+          default = flowdeck;
         }
       );
 

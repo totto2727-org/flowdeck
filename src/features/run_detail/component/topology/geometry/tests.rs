@@ -1,4 +1,4 @@
-use workflow_console_experiment::{EdgeSpec, NodeSpec, WorkflowDefinition};
+use flowdeck::{EdgeSpec, NodeSpec, WorkflowDefinition};
 
 use super::{LayeredAutoLayout, TopologyLayoutEngine};
 

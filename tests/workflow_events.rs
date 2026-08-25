@@ -2,10 +2,8 @@
 
 use std::time::Duration;
 
+use flowdeck::{RunId, RunStatus, RunTrigger, StepTraceStatus, WorkflowEvent, WorkflowService};
 use serde_json::json;
-use workflow_console_experiment::{
-    RunId, RunStatus, RunTrigger, StepTraceStatus, WorkflowEvent, WorkflowService,
-};
 
 #[tokio::test]
 async fn workflow_events_when_run_executes_are_ordered_and_snapshot_consistent() {

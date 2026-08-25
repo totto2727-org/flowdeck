@@ -1,9 +1,9 @@
 ---
-name: workflow-console-add-workflow
-description: Add or change code-defined workflows in workflow-console-experiment, including Topcoat forms, validated Rust input types, graph-flow topology, workflow registry match arms, execution limits, runtime dependencies, trace state, cron schedules, tests, and browser verification. Use when creating a workflow, adding nodes or edges, changing workflow input, introducing a workflow-specific task or enum variant, scheduling concurrent runs, or diagnosing a workflow that is registered but does not render, route, trace, or complete correctly.
+name: flowdeck-add-workflow
+description: Add or change code-defined workflows in flowdeck, including Topcoat forms, validated Rust input types, graph-flow topology, workflow registry match arms, execution limits, runtime dependencies, trace state, cron schedules, tests, and browser verification. Use when creating a workflow, adding nodes or edges, changing workflow input, introducing a workflow-specific task or enum variant, scheduling concurrent runs, or diagnosing a workflow that is registered but does not render, route, trace, or complete correctly.
 ---
 
-# Add a Workflow Console Workflow
+# Add a Flowdeck Workflow
 
 Implement a workflow as one vertical slice from its form boundary through graph execution and observable trace. Reuse the existing registry and rendering path instead of adding a parallel workflow framework.
 

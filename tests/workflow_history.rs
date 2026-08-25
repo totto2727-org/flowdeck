@@ -2,12 +2,12 @@
 
 use std::{num::NonZeroUsize, time::Duration};
 
-use serde_json::json;
-use workflow_console_experiment::{
+use flowdeck::{
     ApplicationConfig, HistoryReplay, HistoryRevision, RunStatus, RunTrigger,
     ScheduleOverlapPolicy, SchedulerMode, StateBackendConfig, StepTraceStatus, WorkflowError,
     WorkflowService, workflow_definitions, workflow_id, workflow_schedules,
 };
+use serde_json::json;
 
 #[tokio::test]
 async fn history_delta_when_run_starts_contains_atomic_before_and_after() {

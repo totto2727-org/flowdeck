@@ -3,10 +3,8 @@
     reason = "Typed filter values cross feature and page modules while their defining module remains private."
 )]
 
+use flowdeck::{RunListProjection, RunSnapshot, RunStatus, RunTrigger, workflow_definitions};
 use serde::{Deserialize, Serialize};
-use workflow_console_experiment::{
-    RunListProjection, RunSnapshot, RunStatus, RunTrigger, workflow_definitions,
-};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct HistoryFilterValues {

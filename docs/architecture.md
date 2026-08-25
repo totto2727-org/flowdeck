@@ -1,8 +1,8 @@
-# Workflow console architecture
+# Flowdeck architecture
 
 ## 1. Scope
 
-Workflow Console is a local Topcoat application for registering, executing, scheduling, and inspecting code-defined graph-flow workflows.
+Flowdeck is a local Topcoat application for registering, executing, scheduling, and inspecting code-defined graph-flow workflows.
 The application core does not select an agent backend or interpret graph task implementations.
 Its responsibility is to turn ordinary workflow registrations into generic graph-flow execution configurations, retain observable run state, and expose that state through HTTP, HTML, and SSE.
 

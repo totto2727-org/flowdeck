@@ -1,3 +1,4 @@
+use flowdeck::{RunTrigger, WorkflowService};
 use futures_core::Stream;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -10,7 +11,6 @@ use topcoat::{
         route,
     },
 };
-use workflow_console_experiment::{RunTrigger, WorkflowService};
 
 use crate::{
     app::workflow_url,

@@ -1,8 +1,8 @@
+use flowdeck::{workflow_definitions, workflow_input_form, workflow_schedules};
 use topcoat::{
     Result,
     view::{component, view},
 };
-use workflow_console_experiment::{workflow_definitions, workflow_input_form, workflow_schedules};
 
 use crate::{app::workflow_url, features::run_history::HistoryFilters};
 

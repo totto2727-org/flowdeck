@@ -1,8 +1,8 @@
+use flowdeck::RunSnapshot;
 use topcoat::{
     Result,
     view::{component, view},
 };
-use workflow_console_experiment::RunSnapshot;
 
 use crate::features::{
     run_detail::selected_inspector_host,

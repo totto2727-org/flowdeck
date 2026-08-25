@@ -3,12 +3,10 @@
     reason = "Topcoat expands the cohesive history panel markup across its controls and table."
 )]
 
+use flowdeck::{HistoryRevision, HistoryView, RunSnapshot, workflow_definitions};
 use topcoat::{
     Result,
     view::{component, view},
-};
-use workflow_console_experiment::{
-    HistoryRevision, HistoryView, RunSnapshot, workflow_definitions,
 };
 
 use crate::{

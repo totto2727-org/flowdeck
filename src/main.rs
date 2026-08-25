@@ -1,10 +1,11 @@
-//! Local Topcoat workflow console server.
+//! Local Flowdeck server.
 
 mod app;
 mod features;
 
 use std::{error::Error, time::Instant};
 
+use flowdeck::{ApplicationConfig, WorkflowService};
 use tokio::net::TcpListener;
 use topcoat::{
     asset::{AssetBundle, RouterBuilderAssetExt},
@@ -12,7 +13,6 @@ use topcoat::{
     router::{Body, Layer, LayerFuture, Next, Path, Router, RouterBuilderDiscoverExt, parts},
 };
 use tracing_subscriber::EnvFilter;
-use workflow_console_experiment::{ApplicationConfig, WorkflowService};
 
 #[derive(Debug)]
 struct RequestLogging;
@@ -46,8 +46,8 @@ impl Layer for RequestLogging {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("workflow_console_experiment=info"));
+    let filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("flowdeck=info"));
     tracing_subscriber::fmt()
         .with_env_filter(filter)
         .with_target(false)

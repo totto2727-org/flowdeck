@@ -1,5 +1,5 @@
+use flowdeck::WorkflowService;
 use topcoat::{Result, view::view};
-use workflow_console_experiment::WorkflowService;
 
 use super::component::run_inspector;
 

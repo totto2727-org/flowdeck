@@ -5,7 +5,7 @@
 }:
 
 rustPlatform.buildRustPackage {
-  pname = "workflow-console-experiment";
+  pname = "flowdeck";
   version = "0.1.0";
 
   src = lib.cleanSource ./.;
@@ -24,9 +24,9 @@ rustPlatform.buildRustPackage {
   '';
 
   meta = {
-    description = "A local-only experiment for a workflow console built with Topcoat";
+    description = "A local workflow cockpit for running, scheduling, and tracing graph-based workflows with Topcoat";
     license = lib.licenses.mit;
-    mainProgram = "workflow-console-experiment";
+    mainProgram = "flowdeck";
     platforms = lib.platforms.unix;
   };
 }

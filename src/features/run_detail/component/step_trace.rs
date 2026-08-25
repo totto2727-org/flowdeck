@@ -1,9 +1,9 @@
+use flowdeck::{RunSnapshot, StepTrace, StepTraceStatus};
 use serde_json::to_string_pretty;
 use topcoat::{
     Result,
     view::{component, view},
 };
-use workflow_console_experiment::{RunSnapshot, StepTrace, StepTraceStatus};
 
 use super::step_history::execution_history;
 use crate::features::presentation::{step_elapsed, step_status, timestamp};
@@ -11,7 +11,7 @@ use crate::features::presentation::{step_elapsed, step_status, timestamp};
 #[component]
 pub(super) async fn run_traces(run: RunSnapshot) -> Result {
     let run_id = run.run_id.to_string();
-    let definition = workflow_console_experiment::workflow_definitions()
+    let definition = flowdeck::workflow_definitions()
         .iter()
         .find(|definition| definition.workflow_id == run.workflow_id);
     let latest = run.steps.last();

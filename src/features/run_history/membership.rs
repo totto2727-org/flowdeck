@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use workflow_console_experiment::{HistoryDelta, HistoryReplay, HistoryView, RunId};
+use flowdeck::{HistoryDelta, HistoryReplay, HistoryView, RunId};
 
 use super::{
     filter::HistoryFilters,

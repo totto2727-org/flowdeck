@@ -1,4 +1,4 @@
-# Workflow Console Experiment
+# Flowdeck
 
 A local-only workflow dashboard built with Topcoat, Datastar, Tailwind CSS, and graph-flow, with jcode available as an optional agent-node integration. It runs code-defined workflows manually or on cron schedules, keeps execution history in memory, and exposes node and edge traces for debugging and performance analysis.
 
@@ -8,7 +8,7 @@ Open <http://127.0.0.1:3000/> after starting the server. The root redirects to t
 
 Workflow selection starts at `/workflows/{workflow_id}`. When that workflow has retained runs, the server redirects this abbreviated URL to its newest exact `/workflows/{workflow_id}/runs/{run_id}` path. A workflow with no runs redirects to its exact `/workflows/{workflow_id}/runs/` path, which renders the workflow topology without a step trace or run inspector. Reloading or bookmarking an exact run path restores the same in-memory run while the server process remains alive. Unknown workflows, runs, and paths return an HTTP 404 recovery page and then return through `/` to the first workflow and its newest run.
 
-The server emits `tracing` events for its listening URL and completed HTTP requests. Set `RUST_LOG=workflow_console_experiment=info` to enable these application logs when a broader environment filter is already configured.
+The server emits `tracing` events for its listening URL and completed HTTP requests. Set `RUST_LOG=flowdeck=info` to enable these application logs when a broader environment filter is already configured.
 
 Datastar sends the selected workflow and its workflow-owned input to the Rust action. A long-lived SSE response streams server-rendered snapshot patches, including cron-triggered runs, without browser polling:
 
@@ -58,7 +58,7 @@ just run
 ## API
 
 This local application does not publish a stable external Rust API.
-See [Workflow Console Architecture](./docs/architecture.md) for its HTTP boundaries and internal workflow, configuration, scheduler, state, SSE, and renderer extension contracts.
+See [Flowdeck Architecture](./docs/architecture.md) for its HTTP boundaries and internal workflow, configuration, scheduler, state, SSE, and renderer extension contracts.
 
 ## Development
 

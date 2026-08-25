@@ -1,5 +1,5 @@
+use flowdeck::RunSnapshot;
 use topcoat::{Result, view::view};
-use workflow_console_experiment::RunSnapshot;
 
 use super::{
     component::{run_history_empty, run_history_row},

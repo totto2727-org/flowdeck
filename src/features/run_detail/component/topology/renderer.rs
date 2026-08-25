@@ -1,9 +1,9 @@
+use flowdeck::{RunSnapshot, WorkflowDefinition};
 use topcoat::{
     Result,
     context::Cx,
     view::{View, component, view},
 };
-use workflow_console_experiment::{RunSnapshot, WorkflowDefinition};
 
 use crate::features::presentation::run_status;
 
@@ -125,8 +125,8 @@ fn topology_description(definition: &WorkflowDefinition, run: Option<&RunSnapsho
 
 #[cfg(test)]
 mod tests {
+    use flowdeck::workflow_definitions;
     use topcoat::view::view;
-    use workflow_console_experiment::workflow_definitions;
 
     use super::workflow_topology;
 

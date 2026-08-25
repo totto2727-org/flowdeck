@@ -1,6 +1,6 @@
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use workflow_console_experiment::{RunSnapshot, RunStatus, RunTrigger, StepTrace, StepTraceStatus};
+use flowdeck::{RunSnapshot, RunStatus, RunTrigger, StepTrace, StepTraceStatus};
 
 pub(crate) const fn run_status(run: &RunSnapshot) -> &'static str {
     match run.status {

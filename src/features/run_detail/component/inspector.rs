@@ -1,8 +1,8 @@
+use flowdeck::{RunSnapshot, workflow_definitions};
 use topcoat::{
     Result,
     view::{component, view},
 };
-use workflow_console_experiment::{RunSnapshot, workflow_definitions};
 
 use super::{step_trace::run_traces, workflow_graph::workflow_graph_panel};
 

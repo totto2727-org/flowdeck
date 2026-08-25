@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: totto2727-org/monorepo/.github/actions/setup-nix@main
-      - name: Verify workflow console
+      - name: Verify Flowdeck
         run: |
           eval "$(nix print-dev-env "$GITHUB_WORKSPACE#default")"
           just ci

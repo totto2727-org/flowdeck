@@ -1,4 +1,4 @@
-# Workflow Console Experiment Design System
+# Flowdeck Design System
 
 ## 0. Research Log
 

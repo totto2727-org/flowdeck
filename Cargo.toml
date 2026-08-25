@@ -1,9 +1,9 @@
 [package]
-name = "workflow-console-experiment"
+name = "flowdeck"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.95"
-description = "A local-only experiment for a workflow console built with Topcoat."
+description = "A local workflow cockpit for running, scheduling, and tracing graph-based workflows with Topcoat."
 license = "MIT"
 publish = false
 

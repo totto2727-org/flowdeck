@@ -1,8 +1,8 @@
+use flowdeck::{RunSnapshot, RunStatus, WorkflowDefinition};
 use topcoat::{
     Result,
     view::{component, view},
 };
-use workflow_console_experiment::{RunSnapshot, RunStatus, WorkflowDefinition};
 
 use crate::features::presentation::{elapsed, run_status, trigger};
 
@@ -129,9 +129,9 @@ async fn topology_legend() -> Result {
 
 #[cfg(test)]
 mod tests {
+    use flowdeck::{RunTrigger, WorkflowService, workflow_definitions};
     use serde_json::json;
     use topcoat::view::view;
-    use workflow_console_experiment::{RunTrigger, WorkflowService, workflow_definitions};
 
     use super::{super::inspector::run_inspector, workflow_graph_panel};
 

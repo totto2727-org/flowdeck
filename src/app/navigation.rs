@@ -1,4 +1,4 @@
-use workflow_console_experiment::RunSnapshot;
+use flowdeck::RunSnapshot;
 
 use crate::features::run_history::HistoryFilters;
 

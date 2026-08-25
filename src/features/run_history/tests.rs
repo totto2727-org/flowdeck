@@ -1,8 +1,8 @@
-use serde_json::json;
-use tokio::time::{Duration, sleep};
-use workflow_console_experiment::{
+use flowdeck::{
     HistoryReplay, HistoryRevision, RunStatus, RunTrigger, WorkflowService, workflow_id,
 };
+use serde_json::json;
+use tokio::time::{Duration, sleep};
 
 use super::{
     HistoryFilterQuery, HistoryFilterValues, HistoryFilters, HistoryPanelState,
