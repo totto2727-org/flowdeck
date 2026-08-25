@@ -13,14 +13,14 @@ The server emits `tracing` events for its listening URL and completed HTTP reque
 Datastar sends the selected workflow and its workflow-owned input to the Rust action. A long-lived SSE response streams server-rendered snapshot patches, including cron-triggered runs, without browser polling:
 
 ```bash
-curl -N 'http://127.0.0.1:3000/events/history?after=0'
+curl -N 'http://127.0.0.1:3000/events/history'
 curl -i -X POST http://127.0.0.1:3000/actions/runs \
   -H 'Datastar-Request: true' \
   -H 'content-type: application/json' \
   --data '{"selectedWorkflowId":"demo-workflow","input":{"label":"local check","step_delay_ms":350}}'
 ```
 
-Run-history filters are applied on the server using `history_workflow`, `history_trigger`, and `history_status` URL query parameters. Missing or invalid values normalize to `all`; canonical URLs omit `all` values and retain only active filters in a stable order. Reloading, sharing, and browser navigation therefore restore the same server-rendered history without cookies. The run SSE is scoped to the selected `/runs/{run_id}` path, while the history SSE receives only the normalized filter query and streams history-row deltas.
+Run-history filters are applied on the server using `history_workflow`, `history_trigger`, and `history_status` URL query parameters. Missing or invalid values normalize to `all`; canonical URLs omit `all` values and retain only active filters in a stable order. Reloading, sharing, and browser navigation therefore restore the same server-rendered history without cookies. The run SSE is scoped to the selected `/runs/{run_id}` path, while the history SSE receives only the normalized filter query and replaces the filtered history from current server state after run lifecycle changes.
 
 ## Key features
 

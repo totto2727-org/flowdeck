@@ -64,3 +64,24 @@ async fn start_run(
     };
     Ok(Sse::new(stream))
 }
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::{HistoryFilters, StartSignals};
+
+    #[test]
+    fn start_signals_without_history_filters_defaults_to_all() {
+        let signals = serde_json::from_value::<StartSignals>(json!({
+            "selectedWorkflowId": "demo-workflow",
+            "input": { "label": "local check", "step_delay_ms": 350 }
+        }))
+        .expect("the documented request shape should deserialize");
+
+        assert_eq!(
+            HistoryFilters::from_values(&signals.history),
+            HistoryFilters::default()
+        );
+    }
+}

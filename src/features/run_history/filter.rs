@@ -6,7 +6,8 @@
 use flowdeck::{RunSnapshot, RunStatus, RunTrigger, workflow_definitions};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
 pub(crate) struct HistoryFilterValues {
     #[serde(rename = "historyWorkflowFilter")]
     pub(crate) workflow: String,
