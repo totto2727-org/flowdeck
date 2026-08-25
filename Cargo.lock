@@ -747,6 +747,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "flowdeck"
+version = "0.1.0"
+dependencies = [
+ "async-stream",
+ "async-trait",
+ "chrono",
+ "croner",
+ "futures-core",
+ "garde",
+ "graph-flow",
+ "graph-flow-jcode",
+ "ringbuffer",
+ "serde",
+ "serde_json",
+ "tokio",
+ "toml 0.9.12+spec-1.1.0",
+ "topcoat",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+ "xdg",
+]
+
+[[package]]
 name = "fluent-uri"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2057,6 +2081,12 @@ dependencies = [
  "untrusted",
  "windows-sys 0.52.0",
 ]
+
+[[package]]
+name = "ringbuffer"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "57b0b88a509053cbfd535726dcaaceee631313cef981266119527a1d110f6d2b"
 
 [[package]]
 name = "rsa"
@@ -3869,29 +3899,6 @@ name = "wit-bindgen"
 version = "0.57.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
-
-[[package]]
-name = "flowdeck"
-version = "0.1.0"
-dependencies = [
- "async-stream",
- "async-trait",
- "chrono",
- "croner",
- "futures-core",
- "garde",
- "graph-flow",
- "graph-flow-jcode",
- "serde",
- "serde_json",
- "tokio",
- "toml 0.9.12+spec-1.1.0",
- "topcoat",
- "tracing",
- "tracing-subscriber",
- "uuid",
- "xdg",
-]
 
 [[package]]
 name = "writeable"

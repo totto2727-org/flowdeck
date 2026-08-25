@@ -6,9 +6,22 @@ use croner::{
     parser::{CronParser, Seconds},
 };
 use serde::Serialize;
+use serde_json::Value;
 use tokio::task::JoinSet;
 
 use crate::{RunSnapshot, RunTrigger, WorkflowError, WorkflowService, workflows::schedules};
+
+pub(super) struct UnstartedScheduleRun {
+    pub(super) workflow_id: String,
+    pub(super) raw_input: Value,
+    pub(super) trigger: RunTrigger,
+    pub(super) status: UnstartedScheduleStatus,
+}
+
+pub(super) enum UnstartedScheduleStatus {
+    Skipped { reason: String },
+    Failed { message: String },
+}
 
 /// Policy applied when one schedule fires while its prior run is still active.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
@@ -119,29 +132,43 @@ impl WorkflowService {
             && !self.claim_schedule(schedule.schedule_id).await
         {
             return self
-                .retain_skipped_schedule(
-                    schedule.workflow_id,
-                    input,
-                    RunTrigger::Cron {
+                .retain_unstarted_schedule(UnstartedScheduleRun {
+                    workflow_id: schedule.workflow_id.to_owned(),
+                    raw_input: input,
+                    trigger: RunTrigger::Cron {
                         schedule_id: schedule.schedule_id.to_owned(),
                     },
-                    "the previous run for this schedule is still running",
-                )
+                    status: UnstartedScheduleStatus::Skipped {
+                        reason: "the previous run for this schedule is still running".to_owned(),
+                    },
+                })
                 .await;
         }
+        let rejected_input = input.clone();
+        let trigger = RunTrigger::Cron {
+            schedule_id: schedule.schedule_id.to_owned(),
+        };
         let result = self
-            .start(
-                schedule.workflow_id,
-                input,
-                RunTrigger::Cron {
-                    schedule_id: schedule.schedule_id.to_owned(),
-                },
-            )
+            .start(schedule.workflow_id, input, trigger.clone())
             .await;
         if result.is_err() && overlap_policy == ScheduleOverlapPolicy::SkipWhileRunning {
             self.release_schedule(schedule.schedule_id).await;
         }
-        result
+        match result {
+            Err(error @ WorkflowError::ActiveRunLimit { .. }) => {
+                self.retain_unstarted_schedule(UnstartedScheduleRun {
+                    workflow_id: schedule.workflow_id.to_owned(),
+                    raw_input: rejected_input,
+                    trigger,
+                    status: UnstartedScheduleStatus::Failed {
+                        message: error.to_string(),
+                    },
+                })
+                .await
+            }
+            Ok(snapshot) => Ok(snapshot),
+            Err(error) => Err(error),
+        }
     }
 
     /// Run the code-defined cron dispatcher until its owning server stops.

@@ -1,108 +1,49 @@
-use flowdeck::{HistoryDelta, HistoryReplay, HistoryRevision, WorkflowService};
+use flowdeck::{WorkflowEvent, WorkflowService};
 use futures_core::Stream;
 use serde::Deserialize;
 use tokio::sync::broadcast::error::RecvError;
 use topcoat::{
     Result,
     context::{Cx, app_context},
-    datastar::{ElementPatchMode, ExecuteScript, PatchElements},
+    datastar::{ElementPatchMode, PatchElements},
     router::{
-        content::sse::{Event, KeepAlive, Sse, last_event_id},
+        content::sse::{Event, KeepAlive, Sse},
         parse_query_params, route,
     },
 };
 
 use super::{
     filter::{HistoryFilterQuery, HistoryFilters},
-    fragments::{render_history_empty, render_history_row},
-    membership::FilteredHistoryMembership,
+    fragments::render_history_body,
 };
 
 #[derive(Deserialize)]
+#[allow(
+    clippy::struct_field_names,
+    reason = "This query DTO mirrors the stable history-prefixed URL parameters."
+)]
 struct HistoryEventsQuery {
-    after: Option<u64>,
     history_workflow: Option<String>,
     history_trigger: Option<String>,
     history_status: Option<String>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum HistoryTransition {
-    InsertFirst,
-    Insert,
-    Replace,
-    Remove,
-    RemoveAndEmpty,
-    Ignore,
-}
-
-#[derive(Clone, Copy)]
-pub(crate) enum HistoryMembershipChange {
-    Entered { was_empty: bool },
-    Stayed,
-    Left { is_empty: bool },
-    Outside,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum RevisionAction {
-    Apply,
-    Ignore,
-    Reload,
-}
-
 #[route(GET "/events/history")]
 async fn history_events(cx: &Cx) -> Result<Sse<impl Stream<Item = Result<Event>> + use<>>> {
     let service = app_context::<WorkflowService>(cx).clone();
-    let (after, filters) = history_request(cx)?;
-    let mut receiver = service.subscribe_history();
-    let (view, replay) = service.history_view_since(after).await;
+    let filters = history_request(cx)?;
+    let mut receiver = service.subscribe();
+    let initial = history_patch(&service, &filters).await?;
     let stream = async_stream::stream! {
-        let mut last = after;
-        let mut membership = FilteredHistoryMembership::at_cursor(&view, &replay, &filters);
-        match replay {
-            HistoryReplay::Changes(changes) => {
-                for delta in changes {
-                    match revision_action(last, delta.revision) {
-                        RevisionAction::Apply => {
-                            let transition = membership.apply(&delta, &filters);
-                            for event in delta_events(&service, &filters, &delta, transition).await? {
-                                yield Ok(event);
-                            }
-                            last = delta.revision;
-                        }
-                        RevisionAction::Ignore => {}
-                        RevisionAction::Reload => {
-                            yield Ok(reload_event());
-                            return;
-                        }
-                    }
-                }
-            }
-            HistoryReplay::Stale { .. } => {
-                yield Ok(reload_event());
-                return;
-            }
-        }
+        yield Ok(initial);
         loop {
             match receiver.recv().await {
-                Ok(delta) => match revision_action(last, delta.revision) {
-                    RevisionAction::Apply => {
-                        let transition = membership.apply(&delta, &filters);
-                        for event in delta_events(&service, &filters, &delta, transition).await? {
-                            yield Ok(event);
-                        }
-                        last = delta.revision;
-                    }
-                    RevisionAction::Ignore => {}
-                    RevisionAction::Reload => {
-                        yield Ok(reload_event());
-                        return;
-                    }
-                },
+                Ok(event) if history_event_changes_table(&event) => {
+                    yield Ok(history_patch(&service, &filters).await?);
+                }
+                Ok(_) => {}
                 Err(RecvError::Lagged(_)) => {
-                    yield Ok(reload_event());
-                    return;
+                    yield Ok(history_patch(&service, &filters).await?);
                 }
                 Err(RecvError::Closed) => return,
             }
@@ -111,104 +52,29 @@ async fn history_events(cx: &Cx) -> Result<Sse<impl Stream<Item = Result<Event>>
     Ok(Sse::new(stream).keep_alive(KeepAlive::new()))
 }
 
-fn history_request(cx: &Cx) -> Result<(HistoryRevision, HistoryFilters)> {
+fn history_request(cx: &Cx) -> Result<HistoryFilters> {
     let query = parse_query_params::<HistoryEventsQuery>(cx)?;
-    let after = replay_cursor(query.after.unwrap_or_default(), last_event_id(cx));
-    let filters = HistoryFilters::from_query(&HistoryFilterQuery {
+    Ok(HistoryFilters::from_query(&HistoryFilterQuery {
         history_workflow: query.history_workflow,
         history_trigger: query.history_trigger,
         history_status: query.history_status,
-    });
-    Ok((after, filters))
+    }))
 }
 
-pub(crate) async fn delta_events(
-    service: &WorkflowService,
-    filters: &HistoryFilters,
-    delta: &HistoryDelta,
-    transition: HistoryTransition,
-) -> Result<Vec<Event>> {
-    let row_selector = format!("#run-history-{}", delta.run_id);
-    let revision_id = delta.revision.value().to_string();
-    match transition {
-        HistoryTransition::InsertFirst => {
-            let Some(run) = service.get_run(&delta.run_id).await else {
-                return Ok(Vec::new());
-            };
-            Ok(vec![
-                PatchElements::new(render_history_row(&run, filters).await?)
-                    .selector("#run-history-body")
-                    .mode(ElementPatchMode::Inner)
-                    .id(revision_id)
-                    .into(),
-            ])
-        }
-        HistoryTransition::Insert => {
-            let Some(run) = service.get_run(&delta.run_id).await else {
-                return Ok(Vec::new());
-            };
-            Ok(vec![
-                PatchElements::new(render_history_row(&run, filters).await?)
-                    .selector("#run-history-body")
-                    .mode(ElementPatchMode::Prepend)
-                    .id(revision_id)
-                    .into(),
-            ])
-        }
-        HistoryTransition::Replace => {
-            let Some(run) = service.get_run(&delta.run_id).await else {
-                return Ok(Vec::new());
-            };
-            Ok(vec![
-                PatchElements::new(render_history_row(&run, filters).await?)
-                    .selector(row_selector)
-                    .id(revision_id)
-                    .into(),
-            ])
-        }
-        HistoryTransition::Remove => Ok(vec![
-            PatchElements::remove(row_selector).id(revision_id).into(),
-        ]),
-        HistoryTransition::RemoveAndEmpty => Ok(vec![
-            PatchElements::new(render_history_empty(filters).await?)
-                .selector("#run-history-body")
-                .mode(ElementPatchMode::Inner)
-                .id(revision_id)
-                .into(),
-        ]),
-        HistoryTransition::Ignore => Ok(Vec::new()),
+async fn history_patch(service: &WorkflowService, filters: &HistoryFilters) -> Result<Event> {
+    let html = render_history_body(service.history_view().await, filters).await?;
+    Ok(PatchElements::new(html)
+        .selector("#run-history-body")
+        .mode(ElementPatchMode::Inner)
+        .into())
+}
+
+pub(crate) const fn history_event_changes_table(event: &WorkflowEvent) -> bool {
+    match event {
+        WorkflowEvent::RunStarted { .. }
+        | WorkflowEvent::RunCompleted { .. }
+        | WorkflowEvent::RunFailed { .. }
+        | WorkflowEvent::RunSkipped { .. } => true,
+        WorkflowEvent::NodeStarted { .. } | WorkflowEvent::NodeCompleted { .. } => false,
     }
-}
-
-pub(crate) fn replay_cursor(query_after: u64, last_event_id: Option<&str>) -> HistoryRevision {
-    let resumed_after = last_event_id.and_then(|value| value.parse::<u64>().ok());
-    HistoryRevision::new(resumed_after.map_or(query_after, |value| value.max(query_after)))
-}
-
-pub(crate) const fn history_transition(change: HistoryMembershipChange) -> HistoryTransition {
-    match change {
-        HistoryMembershipChange::Entered { was_empty: true } => HistoryTransition::InsertFirst,
-        HistoryMembershipChange::Entered { was_empty: false } => HistoryTransition::Insert,
-        HistoryMembershipChange::Stayed => HistoryTransition::Replace,
-        HistoryMembershipChange::Left { is_empty: true } => HistoryTransition::RemoveAndEmpty,
-        HistoryMembershipChange::Left { is_empty: false } => HistoryTransition::Remove,
-        HistoryMembershipChange::Outside => HistoryTransition::Ignore,
-    }
-}
-
-pub(crate) const fn revision_action(
-    last: HistoryRevision,
-    next: HistoryRevision,
-) -> RevisionAction {
-    if next.value() <= last.value() {
-        RevisionAction::Ignore
-    } else if next.value() == last.value().saturating_add(1) {
-        RevisionAction::Apply
-    } else {
-        RevisionAction::Reload
-    }
-}
-
-fn reload_event() -> Event {
-    ExecuteScript::new("window.location.reload()").into()
 }

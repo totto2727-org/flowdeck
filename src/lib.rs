@@ -20,10 +20,7 @@ pub use config::{
     InMemoryHistoryConfig, InMemoryStateConfig, PositiveDuration, RunRetention, SchedulerConfig,
     SchedulerMode, StateBackendConfig, StateConfig, WorkflowConfig, WorkflowExecutionDefaults,
 };
-pub use workflow::{
-    HistoryDelta, HistoryReplay, HistoryRevision, HistoryView, RunListProjection, WorkflowEvent,
-    WorkflowService,
-};
+pub use workflow::{HistoryView, WorkflowEvent, WorkflowService};
 pub use workflow_limits::{ExecutionLimit, WorkflowExecutionLimits};
 pub use workflow_scheduler::{
     ScheduleOverlap, ScheduleOverlapPolicy, ScheduleSpec, workflow_schedules,
@@ -171,6 +168,11 @@ pub enum WorkflowError {
         /// Invalid limit diagnostic.
         message: String,
     },
+    /// The configured number of concurrently active runs is already in use.
+    ActiveRunLimit {
+        /// Maximum number of runs that may execute concurrently.
+        limit: usize,
+    },
     /// The static graph could not be built.
     GraphBuild {
         /// graph-flow validation failure for the static workflow.
@@ -204,6 +206,9 @@ impl fmt::Display for WorkflowError {
                     formatter,
                     "workflow execution limits are invalid: {message}"
                 )
+            }
+            Self::ActiveRunLimit { limit } => {
+                write!(formatter, "active workflow run limit reached: {limit}")
             }
             Self::GraphBuild { message } => {
                 write!(formatter, "workflow graph build failed: {message}")

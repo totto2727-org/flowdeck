@@ -3,7 +3,7 @@
     reason = "Typed filter values cross feature and page modules while their defining module remains private."
 )]
 
-use flowdeck::{RunListProjection, RunSnapshot, RunStatus, RunTrigger, workflow_definitions};
+use flowdeck::{RunSnapshot, RunStatus, RunTrigger, workflow_definitions};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -126,10 +126,6 @@ impl HistoryFilters {
     }
 
     pub(crate) fn matches(&self, run: &RunSnapshot) -> bool {
-        self.matches_projection(&RunListProjection::from(run))
-    }
-
-    pub(crate) fn matches_projection(&self, run: &RunListProjection) -> bool {
         let workflow_matches = self
             .workflow
             .as_ref()

@@ -3,7 +3,9 @@ use std::{collections::HashMap, sync::Arc};
 use graph_flow::{FlowRunner, Graph, SessionStorage};
 use tokio::sync::broadcast;
 
-use super::{ApplicationState, Inner, TraceProjector, WorkflowRuntime, WorkflowService};
+use super::{
+    ActiveRunGroup, ApplicationState, Inner, TraceProjector, WorkflowRuntime, WorkflowService,
+};
 use crate::{
     ApplicationConfig, SchedulerMode, WorkflowDefinition, WorkflowError, WorkflowExecutionDefaults,
     WorkflowExecutionLimits,
@@ -55,14 +57,13 @@ impl WorkflowService {
             );
         }
         let (events, _) = broadcast::channel(config.events.workflow_capacity.get());
-        let (history_events, _) = broadcast::channel(config.events.history_capacity.get());
         let service = Self {
             inner: Arc::new(Inner {
                 runtimes,
                 state,
                 scheduler: config.scheduler,
+                run_group: ActiveRunGroup::new(config.workflows.max_concurrent_runs),
                 events,
-                history_events,
             }),
         };
         if service.inner.scheduler.mode == SchedulerMode::Enabled {

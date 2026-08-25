@@ -1,9 +1,4 @@
-use std::{
-    collections::HashMap,
-    fmt,
-    sync::Arc,
-    time::{Duration, SystemTime},
-};
+use std::{collections::HashMap, fmt, sync::Arc, time::SystemTime};
 
 use graph_flow::{FlowRunner, Session, SessionStorage};
 use serde_json::Value;
@@ -27,12 +22,17 @@ mod driver;
 mod events;
 #[path = "workflow/history.rs"]
 mod history;
+#[path = "workflow/run_group.rs"]
+mod run_group;
+#[path = "workflow/schedule_attempt.rs"]
+mod schedule_attempt;
 #[path = "workflow/state.rs"]
 mod state;
 
 use driver::drive;
 pub use events::WorkflowEvent;
-pub use history::{HistoryDelta, HistoryReplay, HistoryRevision, HistoryView, RunListProjection};
+pub use history::HistoryView;
+use run_group::ActiveRunGroup;
 use state::ApplicationState;
 
 /// Cloneable local boundary for workflow starts, listing, and event subscription.
@@ -53,8 +53,8 @@ struct Inner {
     runtimes: HashMap<&'static str, WorkflowRuntime>,
     state: ApplicationState,
     scheduler: SchedulerConfig,
+    run_group: ActiveRunGroup,
     events: broadcast::Sender<WorkflowEvent>,
-    history_events: broadcast::Sender<HistoryDelta>,
 }
 
 struct WorkflowRuntime {
@@ -68,6 +68,10 @@ struct WorkflowRuntime {
 
 impl WorkflowService {
     /// Validate a workflow ID, retain its first snapshot, and start its driver.
+    #[allow(
+        clippy::significant_drop_tightening,
+        reason = "The run-group guard intentionally spans session setup and is then moved into the driver task."
+    )]
     pub async fn start(
         &self,
         workflow_id: &str,
@@ -83,6 +87,11 @@ impl WorkflowService {
                 })?;
         let definition = runtime.definition;
         let input = runtime.input.parse(raw_input)?;
+        let run_guard = self
+            .inner
+            .run_group
+            .try_join()
+            .map_err(|error| WorkflowError::ActiveRunLimit { limit: error.limit })?;
         let run_id = RunId(Uuid::new_v4().to_string());
         let session = Session::new_from_task(run_id.0.clone(), definition.start_node)
             .with_graph_id(definition.workflow_id);
@@ -119,14 +128,20 @@ impl WorkflowService {
             duration: None,
             steps: Vec::new(),
         };
-        let delta = self.inner.state.run_history.insert(snapshot.clone()).await;
-        let _ = self.inner.history_events.send(delta);
+        self.inner
+            .state
+            .run_history
+            .insert_active(snapshot.clone())
+            .await;
         let _ = self.inner.events.send(WorkflowEvent::RunStarted {
             run_id: run_id.clone(),
             workflow_id: definition.workflow_id.to_owned(),
         });
         let inner = Arc::clone(&self.inner);
-        tokio::spawn(async move { drive(inner, run_id, definition.workflow_id).await });
+        tokio::spawn(async move {
+            let _run_guard = run_guard;
+            drive(inner, run_id, definition.workflow_id).await;
+        });
         Ok(snapshot)
     }
 
@@ -135,24 +150,9 @@ impl WorkflowService {
         self.inner.events.subscribe()
     }
 
-    /// Subscribe to future atomic history changes.
-    pub fn subscribe_history(&self) -> broadcast::Receiver<HistoryDelta> {
-        self.inner.history_events.subscribe()
-    }
-
-    /// Read every retained run and its shared revision atomically.
+    /// Read every retained run atomically.
     pub async fn history_view(&self) -> HistoryView {
         self.inner.state.run_history.view().await
-    }
-
-    /// Replay retained changes after a previously observed revision.
-    pub async fn history_since(&self, after: HistoryRevision) -> HistoryReplay {
-        self.inner.state.run_history.replay(after).await
-    }
-
-    /// Read the current view and its replay boundary under one history lock.
-    pub async fn history_view_since(&self, after: HistoryRevision) -> (HistoryView, HistoryReplay) {
-        self.inner.state.run_history.view_since(after).await
     }
 
     /// List all retained snapshots in start order.
@@ -171,50 +171,6 @@ impl WorkflowService {
 
     pub(crate) async fn release_schedule(&self, schedule_id: &str) {
         self.inner.state.schedule_leases.release(schedule_id).await;
-    }
-
-    pub(crate) async fn retain_skipped_schedule(
-        &self,
-        workflow_id: &str,
-        raw_input: Value,
-        trigger: RunTrigger,
-        reason: &str,
-    ) -> Result<RunSnapshot, WorkflowError> {
-        let runtime =
-            self.inner
-                .runtimes
-                .get(workflow_id)
-                .ok_or_else(|| WorkflowError::UnknownWorkflow {
-                    workflow_id: workflow_id.to_owned(),
-                })?;
-        let input = runtime.input.parse(raw_input)?;
-        let now = SystemTime::now();
-        let snapshot = RunSnapshot {
-            run_id: RunId(Uuid::new_v4().to_string()),
-            workflow_id: workflow_id.to_owned(),
-            input,
-            trigger,
-            status: RunStatus::Skipped {
-                reason: reason.to_owned(),
-            },
-            current_node: None,
-            current_edge: None,
-            traversed_nodes: Vec::new(),
-            traversed_edges: Vec::new(),
-            route_summary: format!("Skipped: {reason}"),
-            started_at: now,
-            finished_at: Some(now),
-            duration: Some(Duration::ZERO),
-            steps: Vec::new(),
-        };
-        let delta = self.inner.state.run_history.insert(snapshot.clone()).await;
-        let _ = self.inner.history_events.send(delta);
-        let _ = self.inner.events.send(WorkflowEvent::RunSkipped {
-            run_id: snapshot.run_id.clone(),
-            workflow_id: snapshot.workflow_id.clone(),
-            reason: reason.to_owned(),
-        });
-        Ok(snapshot)
     }
 
     pub(crate) fn contains_workflow(&self, workflow_id: &str) -> bool {

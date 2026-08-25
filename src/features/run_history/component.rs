@@ -3,7 +3,7 @@
     reason = "Topcoat expands the cohesive history panel markup across its controls and table."
 )]
 
-use flowdeck::{HistoryRevision, HistoryView, RunSnapshot, workflow_definitions};
+use flowdeck::{HistoryView, RunSnapshot, workflow_definitions};
 use topcoat::{
     Result,
     view::{component, view},
@@ -19,37 +19,29 @@ pub(crate) struct HistoryPanelState {
     runs: Vec<RunSnapshot>,
     filters: HistoryFilters,
     page_path: String,
-    revision: HistoryRevision,
 }
 
 impl HistoryPanelState {
-    pub(crate) fn new(
-        mut history: HistoryView,
-        filters: HistoryFilters,
-        page_path: String,
-    ) -> Self {
-        history.runs.reverse();
-        history.runs.retain(|run| filters.matches(run));
+    pub(crate) fn new(history: HistoryView, filters: HistoryFilters, page_path: String) -> Self {
         Self {
-            runs: history.runs,
+            runs: filtered_history_runs(history, &filters),
             filters,
             page_path,
-            revision: history.revision,
         }
     }
 
     pub(crate) fn events_url(&self) -> String {
-        let suffix = self.filters.query_suffix();
-        let filter_query = suffix.strip_prefix('?').unwrap_or_default();
-        if filter_query.is_empty() {
-            format!("/events/history?after={}", self.revision.value())
-        } else {
-            format!(
-                "/events/history?after={}&{filter_query}",
-                self.revision.value()
-            )
-        }
+        format!("/events/history{}", self.filters.query_suffix())
     }
+}
+
+pub(super) fn filtered_history_runs(
+    mut history: HistoryView,
+    filters: &HistoryFilters,
+) -> Vec<RunSnapshot> {
+    history.runs.reverse();
+    history.runs.retain(|run| filters.matches(run));
+    history.runs
 }
 
 #[component]

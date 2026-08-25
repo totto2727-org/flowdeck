@@ -1,199 +1,166 @@
-use std::collections::VecDeque;
+use std::{collections::HashMap, num::NonZeroUsize};
 
-use crate::{RunId, RunSnapshot, RunStatus, RunTrigger};
+use ringbuffer::{AllocRingBuffer, RingBuffer};
 
-/// Monotonic version of the retained workflow history.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
-pub struct HistoryRevision(u64);
+use crate::{RunId, RunSnapshot};
 
-impl HistoryRevision {
-    /// Construct a revision from its wire representation.
-    pub const fn new(value: u64) -> Self {
-        Self(value)
-    }
-
-    /// Return the revision's wire representation.
-    pub const fn value(self) -> u64 {
-        self.0
-    }
-
-    const fn next(self) -> Self {
-        Self(self.0.saturating_add(1))
-    }
-}
-
-/// Atomic snapshot of all retained runs at one revision.
+/// Atomic snapshot of every currently retained run.
 #[derive(Clone, Debug)]
 pub struct HistoryView {
-    /// Revision shared by every run in this view.
-    pub revision: HistoryRevision,
     /// Retained runs in start order.
     pub runs: Vec<RunSnapshot>,
 }
 
-/// One atomic change to a retained run snapshot.
-#[derive(Clone, Debug)]
-pub struct HistoryDelta {
-    /// Revision assigned after the mutation.
-    pub revision: HistoryRevision,
-    /// Run changed by this mutation.
-    pub run_id: RunId,
-    /// Snapshot immediately before the mutation, absent for insertion.
-    pub before: Option<RunListProjection>,
-    /// Snapshot immediately after the mutation, absent for removal.
-    pub after: Option<RunListProjection>,
-}
-
-/// Lightweight run state retained in the replay journal for list membership decisions.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RunListProjection {
-    /// Run changed by this projection.
-    pub run_id: RunId,
-    /// Workflow selected by the run.
-    pub workflow_id: String,
-    /// Source that initiated the run.
-    pub trigger: RunTrigger,
-    /// Current list-visible lifecycle state.
-    pub status: RunStatus,
-}
-
-impl From<&RunSnapshot> for RunListProjection {
-    fn from(snapshot: &RunSnapshot) -> Self {
-        Self {
-            run_id: snapshot.run_id.clone(),
-            workflow_id: snapshot.workflow_id.clone(),
-            trigger: snapshot.trigger.clone(),
-            status: snapshot.status.clone(),
-        }
-    }
-}
-
-/// Result of replaying history changes after a caller's revision.
-#[derive(Clone, Debug)]
-pub enum HistoryReplay {
-    /// Ordered retained changes newer than the requested revision.
-    Changes(Vec<HistoryDelta>),
-    /// The requested revision cannot be replayed from retained changes.
-    Stale {
-        /// Current revision callers should obtain with a fresh history view.
-        current: HistoryRevision,
-    },
+struct RetainedRun {
+    sequence: u64,
+    snapshot: RunSnapshot,
 }
 
 pub(super) struct HistoryState {
-    revision: HistoryRevision,
-    runs: Vec<RunSnapshot>,
-    journal: VecDeque<HistoryDelta>,
-    journal_capacity: usize,
+    active: HashMap<RunId, RetainedRun>,
+    terminal: AllocRingBuffer<RetainedRun>,
+    next_sequence: u64,
 }
 
 impl HistoryState {
-    pub(super) const fn new(journal_capacity: usize) -> Self {
+    pub(super) fn new(terminal_capacity: NonZeroUsize) -> Self {
         Self {
-            revision: HistoryRevision::new(0),
-            runs: Vec::new(),
-            journal: VecDeque::new(),
-            journal_capacity,
+            active: HashMap::new(),
+            terminal: AllocRingBuffer::new(terminal_capacity.get()),
+            next_sequence: 0,
         }
     }
 
     pub(super) fn view(&self) -> HistoryView {
+        let mut retained: Vec<_> = self.active.values().chain(self.terminal.iter()).collect();
+        retained.sort_by_key(|run| run.sequence);
         HistoryView {
-            revision: self.revision,
-            runs: self.runs.clone(),
+            runs: retained
+                .into_iter()
+                .map(|run| run.snapshot.clone())
+                .collect(),
         }
     }
 
-    pub(super) fn insert(&mut self, snapshot: RunSnapshot) -> HistoryDelta {
+    pub(super) fn insert_active(&mut self, snapshot: RunSnapshot) {
         let run_id = snapshot.run_id.clone();
-        let projection = RunListProjection::from(&snapshot);
-        self.runs.push(snapshot);
-        self.record(run_id, None, Some(projection))
+        let retained = self.retained(snapshot);
+        let _ = self.active.insert(run_id, retained);
     }
 
-    pub(super) fn mutate<R>(
+    pub(super) fn insert_terminal(&mut self, snapshot: RunSnapshot) {
+        let retained = self.retained(snapshot);
+        self.terminal.enqueue(retained);
+    }
+
+    pub(super) fn mutate_active<R>(
         &mut self,
         run_id: &RunId,
         mutation: impl FnOnce(&mut RunSnapshot) -> R,
-    ) -> Option<(R, HistoryDelta)> {
-        let snapshot = self
-            .runs
-            .iter_mut()
-            .find(|snapshot| snapshot.run_id == *run_id)?;
-        let before = RunListProjection::from(&*snapshot);
-        let result = mutation(snapshot);
-        let after = RunListProjection::from(&*snapshot);
-        let delta = self.record(run_id.clone(), Some(before), Some(after));
-        Some((result, delta))
+    ) -> Option<R> {
+        self.active
+            .get_mut(run_id)
+            .map(|run| mutation(&mut run.snapshot))
+    }
+
+    pub(super) fn finish<R>(
+        &mut self,
+        run_id: &RunId,
+        mutation: impl FnOnce(&mut RunSnapshot) -> R,
+    ) -> Option<R> {
+        let mut retained = self.active.remove(run_id)?;
+        let result = mutation(&mut retained.snapshot);
+        self.terminal.enqueue(retained);
+        Some(result)
     }
 
     pub(super) fn get(&self, run_id: &RunId) -> Option<RunSnapshot> {
-        self.runs
-            .iter()
-            .find(|snapshot| snapshot.run_id == *run_id)
-            .cloned()
+        self.active
+            .get(run_id)
+            .into_iter()
+            .chain(self.terminal.iter())
+            .find(|run| run.snapshot.run_id == *run_id)
+            .map(|run| run.snapshot.clone())
     }
 
-    pub(super) fn replay(&self, after: HistoryRevision) -> HistoryReplay {
-        let oldest_cursor = self.journal.front().map_or(self.revision, |delta| {
-            HistoryRevision::new(delta.revision.value().saturating_sub(1))
-        });
-        if after > self.revision || after < oldest_cursor {
-            return HistoryReplay::Stale {
-                current: self.revision,
-            };
-        }
-        HistoryReplay::Changes(
-            self.journal
-                .iter()
-                .filter(|delta| delta.revision > after)
-                .cloned()
-                .collect(),
-        )
-    }
-
-    fn record(
-        &mut self,
-        run_id: RunId,
-        before: Option<RunListProjection>,
-        after: Option<RunListProjection>,
-    ) -> HistoryDelta {
-        self.revision = self.revision.next();
-        let delta = HistoryDelta {
-            revision: self.revision,
-            run_id,
-            before,
-            after,
+    const fn retained(&mut self, snapshot: RunSnapshot) -> RetainedRun {
+        let retained = RetainedRun {
+            sequence: self.next_sequence,
+            snapshot,
         };
-        if self.journal.len() == self.journal_capacity {
-            let _ = self.journal.pop_front();
-        }
-        self.journal.push_back(delta.clone());
-        delta
+        self.next_sequence = self.next_sequence.saturating_add(1);
+        retained
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{HistoryReplay, HistoryRevision, HistoryState};
-    use crate::RunId;
+    use std::{num::NonZeroUsize, time::SystemTime};
+
+    use super::HistoryState;
+    use crate::{RunId, RunInput, RunSnapshot, RunStatus, RunTrigger};
 
     #[test]
-    fn replay_when_cursor_precedes_bounded_journal_is_stale() {
-        // Given: one more mutation than the fixed journal retains.
-        let mut history = HistoryState::new(3);
-        for value in 0..=3 {
-            let _ = history.record(RunId(value.to_string()), None, None);
-        }
+    fn terminal_ring_overwrites_oldest_without_evicting_active_runs() {
+        let mut history = HistoryState::new(NonZeroUsize::new(2).unwrap_or(NonZeroUsize::MIN));
+        history.insert_active(snapshot("active-a", RunStatus::Running));
+        history.insert_active(snapshot("active-b", RunStatus::Running));
+        history.insert_terminal(snapshot("terminal-a", RunStatus::Completed));
+        history.insert_terminal(snapshot("terminal-b", RunStatus::Completed));
+        history.insert_terminal(snapshot("terminal-c", RunStatus::Completed));
 
-        // When: replay is requested at and before the oldest recoverable cursor.
-        let retained = history.replay(HistoryRevision::new(1));
-        let expired = history.replay(HistoryRevision::new(0));
+        let retained: Vec<_> = history
+            .view()
+            .runs
+            .into_iter()
+            .map(|run| run.run_id.to_string())
+            .collect();
 
-        // Then: the boundary cursor replays all retained entries and the older one is stale.
-        assert!(matches!(retained, HistoryReplay::Changes(changes) if changes.len() == 3));
-        assert!(
-            matches!(expired, HistoryReplay::Stale { current } if current == HistoryRevision::new(4))
+        assert_eq!(
+            retained,
+            ["active-a", "active-b", "terminal-b", "terminal-c"]
         );
+        assert!(history.get(&RunId("terminal-a".to_owned())).is_none());
+        drop(history);
+    }
+
+    #[test]
+    fn terminal_transition_moves_active_run_into_the_bounded_ring() {
+        let mut history = HistoryState::new(NonZeroUsize::MIN);
+        history.insert_active(snapshot("first", RunStatus::Running));
+        history.insert_active(snapshot("second", RunStatus::Running));
+
+        let _ = history.finish(&RunId("first".to_owned()), |run| {
+            run.status = RunStatus::Completed;
+        });
+        let _ = history.finish(&RunId("second".to_owned()), |run| {
+            run.status = RunStatus::Completed;
+        });
+
+        assert!(history.get(&RunId("first".to_owned())).is_none());
+        assert!(matches!(
+            history.get(&RunId("second".to_owned())),
+            Some(run) if run.status == RunStatus::Completed
+        ));
+        drop(history);
+    }
+
+    fn snapshot(run_id: &str, status: RunStatus) -> RunSnapshot {
+        RunSnapshot {
+            run_id: RunId(run_id.to_owned()),
+            workflow_id: "test-workflow".to_owned(),
+            input: RunInput::new(serde_json::json!({}), String::new()),
+            trigger: RunTrigger::Manual,
+            status,
+            current_node: None,
+            current_edge: None,
+            traversed_nodes: Vec::new(),
+            traversed_edges: Vec::new(),
+            route_summary: String::new(),
+            started_at: SystemTime::UNIX_EPOCH,
+            finished_at: None,
+            duration: None,
+            steps: Vec::new(),
+        }
     }
 }

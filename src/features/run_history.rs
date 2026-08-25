@@ -1,7 +1,6 @@
 mod component;
 mod filter;
 mod fragments;
-mod membership;
 mod sse;
 
 #[cfg(test)]

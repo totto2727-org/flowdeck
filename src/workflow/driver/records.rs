@@ -45,7 +45,6 @@ pub(super) async fn record_step_start(
         node_id: current.to_owned(),
         step_id: started.step_id,
     };
-    let _ = inner.history_events.send(started.delta);
     let _ = inner.events.send(event);
     Some(started.step_id)
 }
@@ -77,7 +76,6 @@ pub(super) async fn record_step(inner: &Inner, run_id: &RunId, completion: StepC
         step_id: completion.step_id,
         edge_id,
     };
-    let _ = inner.history_events.send(completed.delta);
     let _ = inner.events.send(node_completed);
     if completed.run_completed {
         let _ = inner.events.send(WorkflowEvent::RunCompleted {
@@ -98,7 +96,6 @@ pub(super) async fn record_failure(inner: &Inner, run_id: &RunId, failure: RunFa
     else {
         return;
     };
-    let _ = inner.history_events.send(failed.delta);
     let _ = inner.events.send(WorkflowEvent::RunFailed {
         run_id: run_id.clone(),
         workflow_id: failed.workflow_id,

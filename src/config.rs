@@ -20,11 +20,11 @@ const DEFAULT_WORKFLOW_EVENT_CAPACITY: NonZeroUsize = match NonZeroUsize::new(12
     Some(value) => value,
     None => NonZeroUsize::MIN,
 };
-const DEFAULT_HISTORY_EVENT_CAPACITY: NonZeroUsize = match NonZeroUsize::new(512) {
+const DEFAULT_RUN_RETENTION: NonZeroUsize = match NonZeroUsize::new(100) {
     Some(value) => value,
     None => NonZeroUsize::MIN,
 };
-const DEFAULT_HISTORY_REPLAY_CAPACITY: NonZeroUsize = match NonZeroUsize::new(512) {
+const DEFAULT_MAX_CONCURRENT_RUNS: NonZeroUsize = match NonZeroUsize::new(100) {
     Some(value) => value,
     None => NonZeroUsize::MIN,
 };
@@ -56,6 +56,7 @@ impl ApplicationConfig {
                 bind_address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 3000),
             },
             workflows: WorkflowConfig {
+                max_concurrent_runs: DEFAULT_MAX_CONCURRENT_RUNS,
                 execution: WorkflowExecutionDefaults {
                     step_multiplier: DEFAULT_WORKFLOW_STEP_MULTIPLIER,
                     timeout_per_step: DEFAULT_WORKFLOW_TIMEOUT_PER_STEP,
@@ -68,8 +69,7 @@ impl ApplicationConfig {
             state: StateConfig {
                 backend: StateBackendConfig::InMemory(InMemoryStateConfig {
                     history: InMemoryHistoryConfig {
-                        run_retention: RunRetention::Unlimited,
-                        replay_capacity: DEFAULT_HISTORY_REPLAY_CAPACITY,
+                        run_retention: RunRetention::KeepLatest(DEFAULT_RUN_RETENTION),
                     },
                 }),
             },
@@ -79,7 +79,6 @@ impl ApplicationConfig {
             },
             events: EventConfig {
                 workflow_capacity: DEFAULT_WORKFLOW_EVENT_CAPACITY,
-                history_capacity: DEFAULT_HISTORY_EVENT_CAPACITY,
             },
         }
     }
@@ -101,6 +100,8 @@ pub struct HttpConfig {
 /// Workflow-related application settings.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct WorkflowConfig {
+    /// Maximum number of workflow drivers that may run concurrently.
+    pub max_concurrent_runs: NonZeroUsize,
     /// Defaults applied when a workflow has no explicit override.
     pub execution: WorkflowExecutionDefaults,
 }
@@ -165,24 +166,22 @@ pub enum StateBackendConfig {
 /// `InMemory` backend policy.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct InMemoryStateConfig {
-    /// Retained run and replay settings.
+    /// Retained run settings.
     pub history: InMemoryHistoryConfig,
 }
 
-/// `InMemory` history retention and replay policy.
+/// `InMemory` history retention policy.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct InMemoryHistoryConfig {
-    /// Run snapshot retention policy.
+    /// Terminal run snapshot retention policy.
     pub run_retention: RunRetention,
-    /// Number of atomic deltas retained for reconnect replay.
-    pub replay_capacity: NonZeroUsize,
 }
 
 /// Supported run snapshot retention policies.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RunRetention {
-    /// Retain snapshots for the full process lifetime.
-    Unlimited,
+    /// Retain this many latest terminal snapshots.
+    KeepLatest(NonZeroUsize),
 }
 
 /// Scheduler startup and inherited overlap policy.
@@ -208,8 +207,6 @@ pub enum SchedulerMode {
 pub struct EventConfig {
     /// Workflow lifecycle event capacity.
     pub workflow_capacity: NonZeroUsize,
-    /// Atomic history delta event capacity.
-    pub history_capacity: NonZeroUsize,
 }
 
 /// Invalid application configuration value.
@@ -233,7 +230,9 @@ impl Error for ApplicationConfigError {}
 mod tests {
     use std::{net::Ipv4Addr, time::Duration};
 
-    use super::{ApplicationConfig, PositiveDuration, SchedulerMode, StateBackendConfig};
+    use super::{
+        ApplicationConfig, PositiveDuration, RunRetention, SchedulerMode, StateBackendConfig,
+    };
     use crate::ScheduleOverlapPolicy;
 
     #[test]
@@ -243,6 +242,7 @@ mod tests {
         assert_eq!(config.http.bind_address.ip(), Ipv4Addr::LOCALHOST);
         assert_eq!(config.http.bind_address.port(), 3000);
         assert_eq!(config.workflows.execution.step_multiplier.get(), 5);
+        assert_eq!(config.workflows.max_concurrent_runs.get(), 100);
         assert_eq!(
             config.workflows.execution.timeout_per_step.get(),
             Duration::from_mins(5)
@@ -252,9 +252,10 @@ mod tests {
             config.workflows.execution.node.timeout.get(),
             Duration::from_mins(5)
         );
+        let StateBackendConfig::InMemory(memory) = config.state.backend;
         assert!(matches!(
-            config.state.backend,
-            StateBackendConfig::InMemory(_)
+            memory.history.run_retention,
+            RunRetention::KeepLatest(capacity) if capacity.get() == 100
         ));
         assert_eq!(config.scheduler.mode, SchedulerMode::Enabled);
         assert_eq!(
@@ -262,7 +263,6 @@ mod tests {
             ScheduleOverlapPolicy::SkipWhileRunning
         );
         assert_eq!(config.events.workflow_capacity.get(), 128);
-        assert_eq!(config.events.history_capacity.get(), 512);
     }
 
     #[test]

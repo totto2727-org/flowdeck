@@ -4,10 +4,10 @@ use async_trait::async_trait;
 use graph_flow::{InMemorySessionStorage, SessionStorage};
 use tokio::sync::{Mutex, RwLock};
 
-use super::{HistoryDelta, HistoryReplay, HistoryRevision, HistoryView, history::HistoryState};
+use super::{HistoryView, history::HistoryState};
 use crate::{
-    InMemoryStateConfig, RunId, RunSnapshot, RunStatus, RunTrigger, StateBackendConfig, StepId,
-    StepState,
+    InMemoryStateConfig, RunId, RunRetention, RunSnapshot, RunStatus, RunTrigger,
+    StateBackendConfig, StepId, StepState,
 };
 
 pub(super) struct ApplicationState {
@@ -26,9 +26,7 @@ impl ApplicationState {
     fn in_memory(config: &InMemoryStateConfig) -> Self {
         Self {
             graph_sessions: Arc::new(InMemorySessionStorage::new()),
-            run_history: Arc::new(InMemoryRunHistoryStore::new(
-                config.history.replay_capacity.get(),
-            )),
+            run_history: Arc::new(InMemoryRunHistoryStore::new(config)),
             schedule_leases: Arc::new(InMemoryScheduleLeaseStore::default()),
         }
     }
@@ -48,29 +46,25 @@ pub(super) struct CompleteStep {
 pub(super) struct StepStarted {
     pub(super) step_id: StepId,
     pub(super) workflow_id: String,
-    pub(super) delta: HistoryDelta,
 }
 
 pub(super) struct StepCompleted {
     pub(super) workflow_id: String,
-    pub(super) delta: HistoryDelta,
     pub(super) run_completed: bool,
     pub(super) schedule_id: Option<String>,
 }
 
 pub(super) struct RunFailed {
     pub(super) workflow_id: String,
-    pub(super) delta: HistoryDelta,
     pub(super) schedule_id: Option<String>,
 }
 
 #[async_trait]
 pub(super) trait RunHistoryStore: Send + Sync {
-    async fn insert(&self, snapshot: RunSnapshot) -> HistoryDelta;
+    async fn insert_active(&self, snapshot: RunSnapshot);
+    async fn insert_terminal(&self, snapshot: RunSnapshot);
     async fn get(&self, run_id: &RunId) -> Option<RunSnapshot>;
     async fn view(&self) -> HistoryView;
-    async fn replay(&self, after: HistoryRevision) -> HistoryReplay;
-    async fn view_since(&self, after: HistoryRevision) -> (HistoryView, HistoryReplay);
     async fn start_step(&self, run_id: &RunId, node_id: &str) -> Option<StepStarted>;
     async fn complete_step(&self, completion: CompleteStep) -> Option<StepCompleted>;
     async fn fail_run(
@@ -86,17 +80,24 @@ struct InMemoryRunHistoryStore {
 }
 
 impl InMemoryRunHistoryStore {
-    fn new(replay_capacity: usize) -> Self {
+    fn new(config: &InMemoryStateConfig) -> Self {
+        let terminal_capacity = match &config.history.run_retention {
+            RunRetention::KeepLatest(capacity) => *capacity,
+        };
         Self {
-            state: RwLock::new(HistoryState::new(replay_capacity)),
+            state: RwLock::new(HistoryState::new(terminal_capacity)),
         }
     }
 }
 
 #[async_trait]
 impl RunHistoryStore for InMemoryRunHistoryStore {
-    async fn insert(&self, snapshot: RunSnapshot) -> HistoryDelta {
-        self.state.write().await.insert(snapshot)
+    async fn insert_active(&self, snapshot: RunSnapshot) {
+        self.state.write().await.insert_active(snapshot);
+    }
+
+    async fn insert_terminal(&self, snapshot: RunSnapshot) {
+        self.state.write().await.insert_terminal(snapshot);
     }
 
     async fn get(&self, run_id: &RunId) -> Option<RunSnapshot> {
@@ -107,65 +108,52 @@ impl RunHistoryStore for InMemoryRunHistoryStore {
         self.state.read().await.view()
     }
 
-    async fn replay(&self, after: HistoryRevision) -> HistoryReplay {
-        self.state.read().await.replay(after)
-    }
-
-    async fn view_since(&self, after: HistoryRevision) -> (HistoryView, HistoryReplay) {
-        let state = self.state.read().await;
-        (state.view(), state.replay(after))
-    }
-
     async fn start_step(&self, run_id: &RunId, node_id: &str) -> Option<StepStarted> {
         let mut state = self.state.write().await;
-        let ((step_id, workflow_id), delta) = state.mutate(run_id, |snapshot| {
+        let (step_id, workflow_id) = state.mutate_active(run_id, |snapshot| {
             (snapshot.begin_step(node_id), snapshot.workflow_id.clone())
         })?;
         drop(state);
         Some(StepStarted {
             step_id,
             workflow_id,
-            delta,
         })
     }
 
     async fn complete_step(&self, completion: CompleteStep) -> Option<StepCompleted> {
         let mut state = self.state.write().await;
-        let ((workflow_id, run_completed, schedule_id), delta) =
-            state.mutate(&completion.run_id, |snapshot| {
-                snapshot.traversed_nodes.push(completion.current);
-                snapshot.finish_step(
-                    completion.step_id,
-                    completion.edge_id.as_deref(),
-                    completion.output,
-                    completion.state,
-                );
-                if let Some(edge_id) = completion.edge_id {
-                    snapshot.current_edge = Some(edge_id.clone());
-                    snapshot.traversed_edges.push(edge_id);
-                }
-                snapshot.current_node = Some(completion.next);
-                snapshot.route_summary = route_summary(snapshot);
-                let schedule_id = completion
-                    .terminal
-                    .then(|| schedule_id(&snapshot.trigger))
-                    .flatten();
-                if completion.terminal {
-                    let finished_at = SystemTime::now();
-                    snapshot.status = RunStatus::Completed;
-                    snapshot.duration = finished_at.duration_since(snapshot.started_at).ok();
-                    snapshot.finished_at = Some(finished_at);
-                }
-                (
-                    snapshot.workflow_id.clone(),
-                    completion.terminal,
-                    schedule_id,
-                )
-            })?;
+        let terminal = completion.terminal;
+        let update = |snapshot: &mut RunSnapshot| {
+            snapshot.traversed_nodes.push(completion.current);
+            snapshot.finish_step(
+                completion.step_id,
+                completion.edge_id.as_deref(),
+                completion.output,
+                completion.state,
+            );
+            if let Some(edge_id) = completion.edge_id {
+                snapshot.current_edge = Some(edge_id.clone());
+                snapshot.traversed_edges.push(edge_id);
+            }
+            snapshot.current_node = Some(completion.next);
+            snapshot.route_summary = route_summary(snapshot);
+            let schedule_id = terminal.then(|| schedule_id(&snapshot.trigger)).flatten();
+            if terminal {
+                let finished_at = SystemTime::now();
+                snapshot.status = RunStatus::Completed;
+                snapshot.duration = finished_at.duration_since(snapshot.started_at).ok();
+                snapshot.finished_at = Some(finished_at);
+            }
+            (snapshot.workflow_id.clone(), terminal, schedule_id)
+        };
+        let (workflow_id, run_completed, schedule_id) = if terminal {
+            state.finish(&completion.run_id, update)
+        } else {
+            state.mutate_active(&completion.run_id, update)
+        }?;
         drop(state);
         Some(StepCompleted {
             workflow_id,
-            delta,
             run_completed,
             schedule_id,
         })
@@ -178,7 +166,7 @@ impl RunHistoryStore for InMemoryRunHistoryStore {
         message: String,
     ) -> Option<RunFailed> {
         let mut state = self.state.write().await;
-        let ((workflow_id, schedule_id), delta) = state.mutate(run_id, |snapshot| {
+        let (workflow_id, schedule_id) = state.finish(run_id, |snapshot| {
             let finished_at = SystemTime::now();
             snapshot.fail_step(step_id, &message, finished_at);
             snapshot.duration = finished_at.duration_since(snapshot.started_at).ok();
@@ -189,7 +177,6 @@ impl RunHistoryStore for InMemoryRunHistoryStore {
         drop(state);
         Some(RunFailed {
             workflow_id,
-            delta,
             schedule_id,
         })
     }

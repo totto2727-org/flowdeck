@@ -4,7 +4,7 @@ use tokio::sync::broadcast::error::RecvError;
 use topcoat::{
     Result,
     context::{Cx, app_context},
-    datastar::{ExecuteScript, PatchElements},
+    datastar::PatchElements,
     router::{
         content::sse::{Event, KeepAlive, Sse},
         path_param, route,
@@ -35,8 +35,9 @@ async fn run_events(cx: &Cx) -> Result<Sse<impl Stream<Item = Result<Event>> + u
                 }
                 Ok(_) => {}
                 Err(RecvError::Lagged(_)) => {
-                    yield Ok(ExecuteScript::new("window.location.reload()").into());
-                    return;
+                    if let Some(html) = render_run_inspector(&service, &selected_run_id).await? {
+                        yield Ok(PatchElements::new(html).into());
+                    }
                 }
                 Err(RecvError::Closed) => return,
             }

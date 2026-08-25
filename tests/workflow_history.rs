@@ -3,130 +3,11 @@
 use std::{num::NonZeroUsize, time::Duration};
 
 use flowdeck::{
-    ApplicationConfig, HistoryReplay, HistoryRevision, RunStatus, RunTrigger,
-    ScheduleOverlapPolicy, SchedulerMode, StateBackendConfig, StepTraceStatus, WorkflowError,
-    WorkflowService, workflow_definitions, workflow_id, workflow_schedules,
+    ApplicationConfig, RunStatus, RunTrigger, ScheduleOverlapPolicy, SchedulerMode,
+    StateBackendConfig, StepTraceStatus, WorkflowError, WorkflowEvent, WorkflowService,
+    workflow_definitions, workflow_id, workflow_schedules,
 };
 use serde_json::json;
-
-#[tokio::test]
-async fn history_delta_when_run_starts_contains_atomic_before_and_after() {
-    // Given: a history subscriber attached before the first mutation.
-    let service = WorkflowService::new().expect("the code-defined workflow should build");
-    let mut deltas = service.subscribe_history();
-
-    // When: a valid workflow starts.
-    let started = service
-        .start(
-            "review-pipeline",
-            json!({ "subject": "history delta", "reviewer": "local operator" }),
-            RunTrigger::Manual,
-        )
-        .await
-        .expect("the workflow should start");
-    let delta = deltas
-        .recv()
-        .await
-        .expect("the start delta should be published");
-
-    // Then: the first revision describes the insertion without a partial snapshot.
-    assert_eq!(delta.revision, HistoryRevision::new(1));
-    assert_eq!(delta.run_id, started.run_id);
-    assert!(delta.before.is_none());
-    assert_eq!(
-        delta.after.as_ref().map(|run| &run.run_id),
-        Some(&started.run_id)
-    );
-}
-
-#[tokio::test]
-async fn history_replay_when_current_or_future_revision_is_requested() {
-    // Given: one retained start mutation and its revisioned view.
-    let service = WorkflowService::new().expect("the code-defined workflow should build");
-    service
-        .start(
-            "review-pipeline",
-            json!({ "subject": "history replay", "reviewer": "local operator" }),
-            RunTrigger::Manual,
-        )
-        .await
-        .expect("the workflow should start");
-    let view = service.history_view().await;
-
-    // When: replay is requested from the current and a future revision.
-    let current = service.history_since(view.revision).await;
-    let future = service
-        .history_since(HistoryRevision::new(
-            view.revision.value().saturating_add(1),
-        ))
-        .await;
-
-    // Then: current is empty while a future cursor is stale.
-    assert!(matches!(current, HistoryReplay::Changes(changes) if changes.is_empty()));
-    assert!(matches!(future, HistoryReplay::Stale { current } if current == view.revision));
-}
-
-#[tokio::test]
-async fn history_replay_when_mutations_follow_cursor_is_ordered() {
-    // Given: a subscriber is established before reading the empty revision.
-    let service = WorkflowService::new().expect("the code-defined workflow should build");
-    let mut subscriber = service.subscribe_history();
-    let cursor = service.history_view().await.revision;
-
-    // When: one linear run is inserted and reaches its terminal state.
-    let started = service
-        .start(
-            "review-pipeline",
-            json!({ "subject": "ordered replay", "reviewer": "local operator" }),
-            RunTrigger::Manual,
-        )
-        .await
-        .expect("the workflow should start");
-    let mut observed = Vec::new();
-    for _ in 0..9 {
-        observed.push(
-            tokio::time::timeout(Duration::from_secs(3), subscriber.recv())
-                .await
-                .expect("each history mutation should arrive")
-                .expect("the history subscriber should not lag"),
-        );
-    }
-    let replay = service.history_since(cursor).await;
-
-    // Then: start and every step mutation increment once in strict order.
-    assert_eq!(observed.len(), 9);
-    assert_eq!(
-        observed
-            .iter()
-            .map(|delta| delta.revision.value())
-            .collect::<Vec<_>>(),
-        (1..=9).collect::<Vec<_>>()
-    );
-    let terminal = observed.last().expect("the terminal delta should exist");
-    assert_eq!(terminal.run_id, started.run_id);
-    assert!(matches!(
-        terminal.before.as_ref().map(|run| &run.status),
-        Some(RunStatus::Running)
-    ));
-    assert!(matches!(
-        terminal.after.as_ref().map(|run| &run.status),
-        Some(RunStatus::Completed)
-    ));
-    let changes = match replay {
-        HistoryReplay::Changes(changes) => changes,
-        HistoryReplay::Stale { .. } => panic!("a retained cursor should be replayable"),
-    };
-    assert_eq!(changes.len(), 9);
-    assert_eq!(
-        changes.first().map(|delta| delta.revision),
-        Some(HistoryRevision::new(1))
-    );
-    assert!(
-        changes.windows(2).all(
-            |pair| matches!(pair, [previous, current] if previous.revision < current.revision)
-        )
-    );
-}
 
 #[tokio::test]
 async fn workflow_history_when_duplicate_or_malformed_request() {
@@ -393,44 +274,118 @@ async fn disabled_scheduler_keeps_manual_service_available_without_workers() {
 }
 
 #[tokio::test]
-async fn configured_history_replay_capacity_controls_stale_boundary() {
+async fn configured_run_group_limit_rejects_excess_concurrency() {
     let mut config = ApplicationConfig::local_default();
     assert!(matches!(
         config.state.backend,
         StateBackendConfig::InMemory(_)
     ));
-    let StateBackendConfig::InMemory(memory) = &mut config.state.backend;
-    memory.history.replay_capacity =
-        NonZeroUsize::new(2).expect("test replay capacity should be non-zero");
+    config.workflows.max_concurrent_runs =
+        NonZeroUsize::new(2).expect("test active run limit should be non-zero");
     let service = WorkflowService::with_config(config).expect("configured state should build");
-    let started = service
+    let first = service
         .start(
-            "review-pipeline",
-            json!({ "subject": "bounded replay", "reviewer": "operator" }),
+            workflow_id(),
+            json!({ "label": "first", "step_delay_ms": 350 }),
             RunTrigger::Manual,
         )
         .await
-        .expect("review run should start");
+        .expect("first run should start");
+    let second = service
+        .start(
+            workflow_id(),
+            json!({ "label": "second", "step_delay_ms": 350 }),
+            RunTrigger::Manual,
+        )
+        .await
+        .expect("second run should start");
+    let third = service
+        .start(
+            workflow_id(),
+            json!({ "label": "third", "step_delay_ms": 350 }),
+            RunTrigger::Manual,
+        )
+        .await;
 
-    tokio::time::timeout(Duration::from_secs(4), async {
+    assert!(matches!(
+        third,
+        Err(WorkflowError::ActiveRunLimit { limit: 2 })
+    ));
+    assert_eq!(
+        service
+            .list_runs()
+            .await
+            .into_iter()
+            .map(|run| run.run_id)
+            .collect::<Vec<_>>(),
+        [first.run_id.clone(), second.run_id]
+    );
+
+    tokio::time::timeout(Duration::from_secs(8), async {
         loop {
-            let snapshot = service
-                .get_run(&started.run_id)
+            if service
+                .get_run(&first.run_id)
                 .await
-                .expect("run should remain retained");
-            if matches!(snapshot.status, RunStatus::Completed) {
+                .is_some_and(|run| matches!(run.status, RunStatus::Completed))
+            {
                 break;
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
     })
     .await
-    .expect("review run should complete");
+    .expect("a completed run should release its execution-group slot");
+
+    assert!(
+        service
+            .start(
+                workflow_id(),
+                json!({ "label": "after completion", "step_delay_ms": 350 }),
+                RunTrigger::Manual,
+            )
+            .await
+            .is_ok()
+    );
+}
+
+#[tokio::test]
+async fn cron_attempt_at_the_active_run_limit_is_retained_as_failed() {
+    let mut config = ApplicationConfig::local_default();
+    config.workflows.max_concurrent_runs = NonZeroUsize::MIN;
+    let service = WorkflowService::with_config(config).expect("configured state should build");
+    let mut events = service.subscribe();
+    let _running = service
+        .start(
+            workflow_id(),
+            json!({ "label": "occupies slot", "step_delay_ms": 350 }),
+            RunTrigger::Manual,
+        )
+        .await
+        .expect("one run should occupy the execution slot");
+
+    let failed = service
+        .trigger_schedule("demo-every-15-seconds-overlap")
+        .await
+        .expect("a rejected cron attempt should remain observable");
 
     assert!(matches!(
-        service.history_since(HistoryRevision::new(0)).await,
-        HistoryReplay::Stale { .. }
+        failed.status,
+        RunStatus::Failed { ref message } if message == "active workflow run limit reached: 1"
     ));
+    assert!(failed.steps.is_empty());
+    assert!(failed.finished_at.is_some());
+    tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            if matches!(
+                events.recv().await,
+                Ok(WorkflowEvent::RunFailed { run_id, .. }) if run_id == failed.run_id
+            ) {
+                break;
+            }
+        }
+    })
+    .await
+    .expect("the failed cron attempt should emit a lifecycle event");
 }
 
 #[test]
