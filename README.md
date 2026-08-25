@@ -30,7 +30,7 @@ Each run remains addressable at `/workflows/{workflow_id}/runs/{run_id}` while t
 
 ## Prerequisites
 
-- **Nix**: Install Nix with flakes enabled to run or install the packaged application.
+- **Nix**: Install Nix with flakes enabled on `aarch64-darwin`, `aarch64-linux`, or `x86_64-linux` to run or install the packaged application.
 
 - **jcode**: Optional; required only for the `jcode-translation` workflow together with its provider credentials.
 
