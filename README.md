@@ -38,7 +38,7 @@ With modern AI-assisted development, low-code and no-code representations offer 
 
 - **Nix**: Install Nix with flakes enabled on `aarch64-darwin`, `aarch64-linux`, or `x86_64-linux` to run or install the packaged application.
 
-- **jcode**: Optional; required only to run a bundled sample or user-defined workflow that uses the jcode coding-agent integration, together with its provider credentials.
+- **jcode integration**: Optional; to run a bundled sample or user-defined workflow that uses it, install jcode, set `JCODE_BIN` to its executable, and provide the GlossShift `config.toml` and `credentials.toml` for the selected provider.
 
 ## Setup
 
