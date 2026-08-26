@@ -13,8 +13,8 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - uses: totto2727-org/monorepo/.github/actions/setup-nix@main
-      - uses: totto2727-org/monorepo/.github/actions/publish-flakehub@main
+      - uses: totto2727-org/monorepo/.github/actions/setup-nix@d8377d2a88897926fcc90c4f9eba3f90816fd56c
+      - uses: totto2727-org/monorepo/.github/actions/publish-flakehub@d8377d2a88897926fcc90c4f9eba3f90816fd56c
