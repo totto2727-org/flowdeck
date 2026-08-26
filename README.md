@@ -38,7 +38,7 @@ With modern AI-assisted development, low-code and no-code representations offer 
 
 - **Nix**: Install Nix with flakes enabled on `aarch64-darwin`, `aarch64-linux`, or `x86_64-linux` to run or install the packaged application.
 
-- **jcode integration**: Optional; to run a bundled sample or user-defined workflow that uses it, install jcode, set `JCODE_BIN` to its executable, and provide the GlossShift `config.toml` and `credentials.toml` for the selected provider.
+- **jcode integration**: Optional; to run a bundled sample or user-defined workflow that uses it, install the [jcode revision validated by Flowdeck](https://github.com/1jehuang/jcode/blob/a63dbc4546895ecb4d1be1a285d98e6e13fb1b74/README.md#installation), set `JCODE_BIN` to its executable, and follow the [GlossShift configuration guide](https://github.com/totto2727-org/glossshift/blob/66fad64044a49e22879fb5eceed0e9b19457fca3/README.md#configuration) to place `config.toml` and `credentials.toml` under `$XDG_CONFIG_HOME/glossshift` or `~/.config/glossshift`.
 
 ## Setup
 
