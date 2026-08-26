@@ -6,7 +6,7 @@ A local workflow cockpit for running, scheduling, and inspecting code-defined gr
 
 ![Flowdeck showing a completed sample workflow, its topology, and execution history](./docs/images/flowdeck-workflow.png)
 
-Start Flowdeck through one of the setup options, then open <http://127.0.0.1:3000/>. Choose one of the bundled sample workflows, enter its run arguments, and select **Run workflow**. The completed run appears with its traversed route and chronological execution history; select a node or edge with a pointer, Enter, or Space to inspect retained state, timing, output, and errors. The bundled workflows demonstrate the interface only; users define the workflows their applications require.
+Start Flowdeck through one of the setup options, then open <http://127.0.0.1:3000/>. Choose one of the bundled sample workflows, enter its run arguments, and select **Run workflow**. The completed run appears with its traversed route and chronological execution history; select a node or edge with a pointer, Enter, or Space to inspect retained state, timing, output, and errors. The bundled workflows demonstrate the interface only; application developers define concrete workflows in Rust and rebuild Flowdeck to register them.
 
 Each run remains addressable at `/workflows/{workflow_id}/runs/{run_id}` while the server process is alive. Run-history filters are preserved in the URL, so reloads, bookmarks, and browser navigation restore the same server-rendered view without cookies.
 
@@ -30,15 +30,15 @@ Each run remains addressable at `/workflows/{workflow_id}/runs/{run_id}` while t
 
 ## All Code
 
-Flowdeck follows an **All Code** approach: runtime configuration, schedules, and workflows are defined explicitly in Rust. It deliberately provides no low-code or no-code workflow layer, visual workflow editor, or external configuration format as an alternative source of truth.
+Flowdeck follows an **All Code** approach: every workflow's structure and behavior, including its nodes, edges, schedules, input schema, validation, and execution policies, is defined explicitly in Rust. It deliberately provides no low-code or no-code workflow layer, visual workflow editor, or external workflow configuration DSL as an alternative source of truth.
 
-With modern AI-assisted development, low-code and no-code representations offer no meaningful advantage in either version control or implementation cost. Flowdeck keeps Rust as its sole source of truth to maximize extensibility, compiler-checked correctness, and runtime performance.
+With modern AI-assisted development, low-code and no-code representations offer no meaningful advantage in either version control or implementation cost. Flowdeck keeps workflow definitions in Rust to maximize extensibility, compiler-checked correctness, and runtime performance.
 
 ## Prerequisites
 
 - **Nix**: Install Nix with flakes enabled on `aarch64-darwin`, `aarch64-linux`, or `x86_64-linux` to run or install the packaged application.
 
-- **jcode**: Optional; required only when a user-defined workflow uses the bundled jcode coding-agent integration, together with its provider credentials.
+- **jcode**: Optional; required only to run a bundled sample or user-defined workflow that uses the jcode coding-agent integration, together with its provider credentials.
 
 ## Setup
 
