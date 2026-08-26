@@ -30,7 +30,7 @@ Each run remains addressable at `/workflows/{workflow_id}/runs/{run_id}` while t
 
 ## All Code
 
-Flowdeck follows an **All Code** approach: every workflow's structure and behavior, including its nodes, edges, schedules, input schema, validation, and execution policies, is defined explicitly in Rust. It deliberately provides no low-code or no-code workflow layer, visual workflow editor, or external workflow configuration DSL as an alternative source of truth.
+Flowdeck follows an **All Code** approach: each workflow's graph and control contract, including its nodes, edges, schedules, input schema, validation, and execution policies, is defined explicitly in Rust. Runtime integrations may load operational inputs such as provider settings or credentials, but those inputs do not define the workflow. Flowdeck deliberately provides no low-code or no-code workflow layer, visual workflow editor, or external workflow configuration DSL as an alternative source of truth.
 
 With modern AI-assisted development, low-code and no-code representations offer no meaningful advantage in either version control or implementation cost. Flowdeck keeps workflow definitions in Rust to maximize extensibility, compiler-checked correctness, and runtime performance.
 
