@@ -16,7 +16,7 @@ The bundled workflows demonstrate the interface only. Application developers def
 
 - Use a workflow-specific input form to enter and validate each run's arguments.
 
-- Schedule recurring runs and choose whether another run should be skipped or allowed to overlap while an earlier run is still active.
+- Define recurring schedules with a skip-or-overlap policy for runs that would start while an earlier run is still active.
 
 - Automatically laid out SVG topology with external self-loop routing and active, traversed, selected, and execution-count states.
 
