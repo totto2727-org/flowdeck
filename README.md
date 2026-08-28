@@ -16,7 +16,7 @@ The bundled workflows demonstrate the interface only. Application developers def
 
 - Use a workflow-specific input form to enter and validate each run's arguments.
 
-- Define recurring schedules with a skip-or-overlap policy for runs that would start while an earlier run is still active.
+- Define recurring schedules and their skip-or-overlap policy in Rust for runs that would start while an earlier run is still active.
 
 - Automatically laid out SVG topology with external self-loop routing and active, traversed, selected, and execution-count states.
 
