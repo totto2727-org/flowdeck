@@ -130,7 +130,3 @@ Do not report completion from registry tests alone. A workflow is complete only 
 ## Handoff
 
 Report the workflow ID, changed contract boundaries, automated validation, and the observed browser result. Name any provider credentials, binaries, or external services that prevented a real workflow execution instead of presenting static inspection as completed QA.
-
-## Maintainer evaluation
-
-When reviewing or changing this skill rather than using it, read [references/evaluation.md](references/evaluation.md). Keep evaluation prompts and expected results out of normal workflow implementation context.
