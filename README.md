@@ -13,19 +13,12 @@ The bundled workflows demonstrate the interface only. Application developers def
 ## Key features
 
 - Run code-defined workflows from a local web interface.
-
 - Use a workflow-specific input form to enter and validate each run's arguments.
-
 - Define recurring schedules and their skip-or-overlap policy in Rust for runs that would start while an earlier run is still active.
-
 - Automatically laid out SVG topology with external self-loop routing and active, traversed, selected, and execution-count states.
-
 - Per-execution node and edge traces with timestamps, elapsed time, state, output, errors, and exact `StepId` history.
-
 - Review recent runs and keep selected history filters in bookmarkable URLs.
-
 - Navigate workflow details with a pointer or keyboard.
-
 - Add optional coding-agent steps, with jcode as one example.
 
 ## All Code
