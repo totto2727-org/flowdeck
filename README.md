@@ -1,79 +1,79 @@
 # Flowdeck
 
-A local-only workflow dashboard built with Topcoat, Datastar, Tailwind CSS, and graph-flow, with jcode available as an optional agent-node integration. It runs code-defined workflows manually or on cron schedules, keeps execution history in memory, and exposes node and edge traces for debugging and performance analysis.
+A local workflow cockpit for running, scheduling, and inspecting code-defined workflows. Flowdeck helps you launch runs, follow their progress, explore workflow topology, review recent history, and inspect results from a local web interface.
 
 ## Usage
 
-Open <http://127.0.0.1:3000/> after starting the server. The root redirects to the first code-defined workflow. Choose a workflow, enter its run arguments, and select **Run workflow**. Select any node or edge in the graph with a pointer, Enter, or Space to inspect its retained state, timing, output, error, and selected route.
+![Flowdeck showing a completed sample workflow, its topology, and execution history](./docs/images/flowdeck-workflow.png)
 
-Workflow selection starts at `/workflows/{workflow_id}`. When that workflow has retained runs, the server redirects this abbreviated URL to its newest exact `/workflows/{workflow_id}/runs/{run_id}` path. A workflow with no runs redirects to its exact `/workflows/{workflow_id}/runs/` path, which renders the workflow topology without a step trace or run inspector. Reloading or bookmarking an exact run path restores the same in-memory run while the server process remains alive. Unknown workflows, runs, and paths return an HTTP 404 recovery page and then return through `/` to the first workflow and its newest run.
+Start Flowdeck through one of the setup options, then open <http://127.0.0.1:3000/>. Choose a bundled sample, enter its run arguments, and select **Run workflow**. Follow the highlighted route as the run progresses, then select a step or transition with a pointer, Enter, or Space to inspect its status, timing, output, and errors.
 
-The server emits `tracing` events for its listening URL and completed HTTP requests. Set `RUST_LOG=flowdeck=info` to enable these application logs when a broader environment filter is already configured.
-
-Datastar sends the selected workflow and its workflow-owned input to the Rust action. A long-lived SSE response streams server-rendered snapshot patches, including cron-triggered runs, without browser polling:
-
-```bash
-curl -N 'http://127.0.0.1:3000/events/history'
-curl -i -X POST http://127.0.0.1:3000/actions/runs \
-  -H 'Datastar-Request: true' \
-  -H 'content-type: application/json' \
-  --data '{"selectedWorkflowId":"demo-workflow","input":{"label":"local check","step_delay_ms":350}}'
-```
-
-Run-history filters are applied on the server using `history_workflow`, `history_trigger`, and `history_status` URL query parameters. Missing or invalid values normalize to `all`; canonical URLs omit `all` values and retain only active filters in a stable order. Reloading, sharing, and browser navigation therefore restore the same server-rendered history without cookies. The run SSE is scoped to the selected `/runs/{run_id}` path, while the history SSE receives only the normalized filter query and replaces the filtered history from current server state after run lifecycle changes.
+The bundled workflows demonstrate the interface only. Application developers define concrete workflows in Rust and rebuild Flowdeck to register them. Flowdeck is local and non-persistent, so run history remains available only while the application is running.
 
 ## Key features
 
-- Three code-defined workflows covering branching, linear review, and a complete jcode coding-agent turn.
-- Workflow-owned forms whose data is deserialized by Serde, validated by garde, and applied as the initial graph-flow context.
-- Multiple code-defined cron schedules with skip-while-running and allow-overlap policies.
-- Workflow and node execution limits that bound loops and long-running tasks.
+- Run code-defined workflows from a local web interface.
+- Use a workflow-specific input form to enter and validate each run's arguments.
+- Define recurring schedules and their skip-or-overlap policy in Rust for runs that would start while an earlier run is still active.
 - Automatically laid out SVG topology with external self-loop routing and active, traversed, selected, and execution-count states.
 - Per-execution node and edge traces with timestamps, elapsed time, state, output, errors, and exact `StepId` history.
-- An optional jcode integration with one lazily started shared process and isolated or reusable named sessions.
-- URL-addressable server-rendered run-history filtering with separate run and history SSE streams.
+- Review recent runs and keep selected history filters in bookmarkable URLs.
+- Navigate workflow details with a pointer or keyboard.
+- Add optional coding-agent steps, with jcode as one example.
+
+## All Code
+
+Flowdeck follows an **All Code** approach. Workflow structure, schedules, inputs, validation, and execution rules are explicit Rust code. Define the workflow you need, rebuild Flowdeck, and review every change through normal version control.
+
+Flowdeck deliberately provides no low-code or no-code workflow layer, visual workflow editor, or configuration DSL. Runtime values such as provider settings and credentials remain external inputs, but they do not define the workflow. With modern AI-assisted development, low-code and no-code representations offer no meaningful advantage in either version control or implementation cost, so Flowdeck keeps workflow definitions in Rust to maximize extensibility, compiler-checked correctness, and runtime performance.
 
 ## Prerequisites
 
-- **Nix**: Recommended for the packaged application and its bundled assets.
-- **Rust 1.95 and Topcoat CLI 0.5**: Required only when running directly through Cargo.
+- **Nix**: Install Nix with flakes enabled on `aarch64-darwin`, `aarch64-linux`, or `x86_64-linux` to run or install the packaged application.
 
 ## Setup
 
-1. Run the packaged application with Nix.
+### Run without installing
 
 ```bash
-nix run .
+nix run github:totto2727-org/flowdeck
 ```
 
-2. Alternatively, install the matching Topcoat asset CLI and run through Cargo.
+### Install
 
 ```bash
-cargo install --version '0.5' topcoat-cli
-just run
+nix profile add github:totto2727-org/flowdeck
 ```
 
-3. Open <http://127.0.0.1:3000/>.
+### Nix flake
+
+```nix
+{
+  inputs.flowdeck.url = "github:totto2727-org/flowdeck";
+
+  outputs = { flowdeck, ... }: {
+    packages = flowdeck.packages;
+  };
+}
+```
+
+## Optional coding-agent setup
+
+Only workflows that use the optional jcode integration need this setup. Install the revision validated by Flowdeck:
+
+```bash
+cargo install --git https://github.com/1jehuang/jcode --rev a63dbc4546895ecb4d1be1a285d98e6e13fb1b74 --locked jcode
+```
+
+Set `JCODE_BIN` to the installed executable, then follow the [GlossShift configuration guide](https://github.com/totto2727-org/glossshift/blob/66fad64044a49e22879fb5eceed0e9b19457fca3/README.md#configuration) to place `config.toml` and `credentials.toml` under `$XDG_CONFIG_HOME/glossshift` or `~/.config/glossshift`.
 
 ## API
 
-This local application does not publish a stable external Rust API.
-See [Flowdeck Architecture](./docs/architecture.md) for its HTTP boundaries and internal workflow, configuration, scheduler, state, SSE, and renderer extension contracts.
+Flowdeck currently exposes its supported interface through the local web application. It does not publish a stable external API.
 
 ## Development
 
-For the current system design, see [docs/architecture.md](./docs/architecture.md) or its [Japanese translation](./docs/architecture.ja.md).
-For the optional node integration, see [graph-flow-jcode architecture](./crates/graph-flow-jcode/docs/architecture.md) or its [Japanese translation](./crates/graph-flow-jcode/docs/architecture.ja.md).
 For repository structure and development commands, see [AGENTS.md](./AGENTS.md).
-
-## Documentation
-
-- [Topcoat 0.5.0 on crates.io](https://crates.io/crates/topcoat/0.5.0)
-- [Topcoat Datastar integration](https://github.com/tokio-rs/topcoat/blob/371c7403fcbf4d40bbacb2f87eb98d9ce00e76c8/crates/topcoat/docs/datastar.md)
-- [Topcoat Tailwind integration](https://github.com/tokio-rs/topcoat/blob/371c7403fcbf4d40bbacb2f87eb98d9ce00e76c8/crates/topcoat/docs/tailwind.md)
-- [graph-flow 0.6.0 on crates.io](https://crates.io/crates/graph-flow/0.6.0)
-- [garde 0.23.0 documentation](https://docs.rs/garde/0.23.0/garde/)
-- [Croner 3.0.1 documentation](https://docs.rs/croner/3.0.1/croner/)
 
 ## License
 

@@ -1,11 +1,25 @@
 ---
-name: flowdeck-add-workflow
-description: Add or change code-defined workflows in flowdeck, including Topcoat forms, validated Rust input types, graph-flow topology, workflow registry match arms, execution limits, runtime dependencies, trace state, cron schedules, tests, and browser verification. Use when creating a workflow, adding nodes or edges, changing workflow input, introducing a workflow-specific task or enum variant, scheduling concurrent runs, or diagnosing a workflow that is registered but does not render, route, trace, or complete correctly.
+name: develop-flowdeck-workflows
+description: >-
+  Develop and debug code-defined Flowdeck workflows across validated Topcoat
+  forms, graph-flow definitions, registry integration, execution limits, trace
+  state, schedules, tests, and browser verification. Use when creating or
+  changing a workflow, adding nodes or edges, changing workflow-owned input or
+  runtime dependencies, adding a schedule, or fixing a registered workflow that
+  does not render, route, trace, or complete correctly. Do not use for generic
+  Flowdeck UI, history, packaging, or server changes that do not alter a
+  workflow contract.
+license: MIT
+metadata:
+  author: totto2727
+  version: "1.0.0"
 ---
 
-# Add a Flowdeck Workflow
+# Develop Flowdeck Workflows
 
 Implement a workflow as one vertical slice from its form boundary through graph execution and observable trace. Reuse the existing registry and rendering path instead of adding a parallel workflow framework.
+
+Use this skill only when a code-defined workflow contract changes. Follow the repository `AGENTS.md` without this skill for generic dashboard, run-history, packaging, or server work.
 
 ## Required reading
 
@@ -95,12 +109,10 @@ The scheduler validates every schedule and scheduled input at startup, rejects d
 
 ## Verification
 
-Run from the repository root:
+Run the complete repository gate from the repository root:
 
 ```bash
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace --all-targets
+just ci
 git diff --check
 ```
 
@@ -114,3 +126,7 @@ Manually verify the real console when the workflow or topology changes:
 6. Confirm no credentials, temporary configuration, or generated output escaped its intended boundary.
 
 Do not report completion from registry tests alone. A workflow is complete only when its actual execution and browser-visible trace agree with the declared graph.
+
+## Handoff
+
+Report the workflow ID, changed contract boundaries, automated validation, and the observed browser result. Name any provider credentials, binaries, or external services that prevented a real workflow execution instead of presenting static inspection as completed QA.

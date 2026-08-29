@@ -1,6 +1,7 @@
 {
   lib,
   rustPlatform,
+  stdenv,
   topcoat-cli,
 }:
 
@@ -16,11 +17,15 @@ rustPlatform.buildRustPackage {
   };
 
   postBuild = ''
-    ${topcoat-cli}/bin/topcoat asset bundle --release --out "$PWD/bundled-assets"
+    mkdir .cargo
+    printf '[build]\ntarget = "%s"\n' ${stdenv.hostPlatform.rust.rustcTarget} > .cargo/config.toml
+    ${topcoat-cli}/bin/topcoat asset bundle --release --out "$PWD/target/assets"
+    rm .cargo/config.toml
+    rmdir .cargo
   '';
 
   postInstall = ''
-    cp -R bundled-assets "$out/assets"
+    cp -R target/assets "$out/assets"
   '';
 
   meta = {

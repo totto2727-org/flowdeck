@@ -1,16 +1,14 @@
 # Flowdeck
 
-## Language rules
-
-- Use English for repository-recorded artifacts, including source code, configuration, documentation, and commit messages.
-- Use Japanese for human-facing collaboration and handoff text.
-
 ## Repository structure
 
 ```text
 src/                         Rust application, workflow engine integration, web routes, and browser assets
 src/workflows/               Code-defined workflow registry, definitions, and shared tasks
+crates/graph-flow-jcode/     Optional graph-flow node backed by the jcode SDK
 tests/                       Rust integration tests for workflow execution and lifecycle events
+docs/                        Architecture, design plans, and end-user images
+.agents/skills/              Repository-specific Codex workflow guidance
 Cargo.toml                   Rust package metadata, dependencies, and lint policy
 rust-toolchain.toml          Rust 1.95 toolchain, rustfmt, Clippy, and rust-src
 package.nix                  Installable Rust binary package
@@ -52,7 +50,8 @@ Justfile                     Canonical development task entry points
 
 ### Execution state
 
-- Workflow definitions, run history, scheduler state, and traces are process-local and in memory.
+- Workflow definitions, active runs, bounded terminal history, scheduler state, and traces are process-local and in memory.
+- A process-wide semaphore bounds concurrent drivers, while terminal snapshots use fixed-capacity ring retention.
 - Each observable task returns control after one graph-flow step so the current node and edge can be retained.
 - Node and edge traces expose state, start and finish timestamps, duration, output or error, and route selection.
 
@@ -84,14 +83,15 @@ Justfile                     Canonical development task entry points
 
 ## Package-specific rules
 
+- Use English for repository-recorded artifacts, including source code, configuration, documentation, and commit messages.
+- Use Japanese for human-facing collaboration and handoff text.
 - Keep the server bound to `127.0.0.1`; this project is local-only.
 - Define workflows directly in Rust. Do not add a browser workflow editor without an explicit requirement.
 - Keep run history and workflow state in memory until persistence is explicitly requested.
 - Preserve workflow-owned input defaults and validate run input at the HTTP boundary.
 - Preserve active, traversed, and selected graph states independently and keep trace details accessible by pointer and keyboard.
 - Do not add Rig, OpenCode, or Codex integration until workflow execution requires them.
+- Use [`develop-flowdeck-workflows`](./.agents/skills/develop-flowdeck-workflows/SKILL.md) when creating, changing, or diagnosing a code-defined workflow contract.
+- Keep `README.md` user-facing, keep this file developer-facing, and preserve `CLAUDE.md` as the relative alias to this file.
 
-## Documentation
-
-- [share-artifact skill](https://raw.githubusercontent.com/totto2727-org/agent/refs/heads/main/plugins/totto2727-coding/skills/share-artifact/SKILL.md)
-- [AGENTS template](https://raw.githubusercontent.com/totto2727-org/agent/refs/heads/main/plugins/totto2727-coding/skills/share-artifact/agents/template.md)
+_This AGENTS.md was generated from the [share-artifact skill](https://raw.githubusercontent.com/totto2727-org/agent/refs/heads/main/plugins/totto2727-coding/skills/share-artifact/SKILL.md) and [AGENTS template](https://raw.githubusercontent.com/totto2727-org/agent/refs/heads/main/plugins/totto2727-coding/skills/share-artifact/agents/template.md)._
