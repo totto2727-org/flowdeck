@@ -14,6 +14,7 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
+use workflow_resources::{ResourceKey, ResourceStore, with_resources};
 
 const SOURCE_PATH: &str = "source/hello.md";
 const TARGET_PATH: &str = "output/hello.ja.md";
@@ -70,20 +71,23 @@ async fn main() -> Result<(), ExampleError> {
         std::process::id()
     ));
     let session_workspace = workspace.clone();
-    let runtime = Arc::new(JcodeProcessScope::launch_with_hooks(
-        LaunchOptions {
-            working_dir: Some(workspace.clone()),
-            inherit_logins: true,
-            binary: Some(jcode_binary()),
-            ..LaunchOptions::default()
-        },
-        &RuntimeSetup {
-            workspace: workspace.clone(),
-        },
-    )?);
+    let runtime_workspace = workspace.clone();
     let node = JcodeNode::new(
         "translate_files",
-        runtime,
+        ResourceKey::application("jcode-process"),
+        move || {
+            JcodeProcessScope::launch_with_hooks(
+                LaunchOptions {
+                    working_dir: Some(runtime_workspace.clone()),
+                    inherit_logins: true,
+                    binary: Some(jcode_binary()),
+                    ..LaunchOptions::default()
+                },
+                &RuntimeSetup {
+                    workspace: runtime_workspace.clone(),
+                },
+            )
+        },
         |_| {
             Ok(format!(
                 "Translate {SOURCE_PATH} into Japanese and write the complete translation to {TARGET_PATH}. Preserve Markdown structure, modify no other file, and read the output before finishing."
@@ -109,7 +113,7 @@ async fn main() -> Result<(), ExampleError> {
             "translate_files",
         ))
         .await?;
-    let result = runner.run(session_id).await?;
+    let result = with_resources(Arc::new(ResourceStore::new()), runner.run(session_id)).await?;
     if let status @ (ExecutionStatus::WaitingForInput | ExecutionStatus::Paused { .. }) =
         result.status
     {

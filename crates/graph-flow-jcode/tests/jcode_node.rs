@@ -13,6 +13,7 @@ use std::sync::{
     Arc, Mutex,
     atomic::{AtomicUsize, Ordering},
 };
+use workflow_resources::{ResourceKey, ResourceStore, with_resources};
 
 type TestResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
@@ -56,15 +57,23 @@ impl RecordingHooks {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn runs_configured_jcode_session_and_records_graph_context() -> TestResult<()> {
     let requests = Arc::new(Mutex::new(Vec::new()));
-    let client = support::fake_client(Arc::clone(&requests))?;
-    let runtime = Arc::new(JcodeProcessScope::from_client(client));
     let phases = Arc::new(Mutex::new(Vec::new()));
     let hooks = RecordingHooks {
         phases: Arc::clone(&phases),
     };
-    let node = JcodeNode::new("translate", runtime, |_| {
-        Ok("translate the source".to_owned())
-    })
+    let node = JcodeNode::new(
+        "translate",
+        ResourceKey::application("test-runtime"),
+        {
+            let requests = Arc::clone(&requests);
+            move || {
+                support::fake_client(Arc::clone(&requests))
+                    .map(JcodeProcessScope::from_client)
+                    .map_err(|error| JcodeNodeError::configuration(error.to_string()))
+            }
+        },
+        |_| Ok("translate the source".to_owned()),
+    )
     .with_session_options(|_| {
         Ok(SessionOptions::default()
             .with_working_dir("/workspace")
@@ -77,7 +86,7 @@ async fn runs_configured_jcode_session_and_records_graph_context() -> TestResult
     .with_next_action(NextAction::End);
     let context = Context::new();
 
-    let result = node.run(context.clone()).await?;
+    let result = with_resources(Arc::new(ResourceStore::new()), node.run(context.clone())).await?;
 
     assert_eq!(result.response.as_deref(), Some("translated output"));
     assert_eq!(result.next_action, NextAction::End);
@@ -126,21 +135,38 @@ async fn runs_configured_jcode_session_and_records_graph_context() -> TestResult
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn reuses_named_sessions_and_keeps_new_sessions_isolated() -> TestResult<()> {
     let requests = Arc::new(Mutex::new(Vec::new()));
-    let runtime = Arc::new(JcodeProcessScope::from_client(support::fake_client(
-        Arc::clone(&requests),
-    )?));
+    let process_key = ResourceKey::application("test-runtime");
     let shared = SessionMode::reuse("coding-run")?;
-    let first = JcodeNode::new("first", Arc::clone(&runtime), |_| Ok("first".to_owned()))
-        .with_session_mode(move |_| Ok(shared.clone()));
+    let first = JcodeNode::new(
+        "first",
+        process_key.clone(),
+        test_process_factory(Arc::clone(&requests)),
+        |_| Ok("first".to_owned()),
+    )
+    .with_session_mode(move |_| Ok(shared.clone()));
     let shared = SessionMode::reuse("coding-run")?;
-    let second = JcodeNode::new("second", Arc::clone(&runtime), |_| Ok("second".to_owned()))
-        .with_session_mode(move |_| Ok(shared.clone()));
-    let isolated = JcodeNode::new("isolated", runtime, |_| Ok("isolated".to_owned()));
+    let second = JcodeNode::new(
+        "second",
+        process_key.clone(),
+        test_process_factory(Arc::clone(&requests)),
+        |_| Ok("second".to_owned()),
+    )
+    .with_session_mode(move |_| Ok(shared.clone()));
+    let isolated = JcodeNode::new(
+        "isolated",
+        process_key,
+        test_process_factory(Arc::clone(&requests)),
+        |_| Ok("isolated".to_owned()),
+    );
     let context = Context::new();
 
-    first.run(context.clone()).await?;
-    second.run(context.clone()).await?;
-    isolated.run(context).await?;
+    with_resources(Arc::new(ResourceStore::new()), async {
+        first.run(context.clone()).await?;
+        second.run(context.clone()).await?;
+        isolated.run(context).await?;
+        Ok::<_, graph_flow::GraphError>(())
+    })
+    .await?;
 
     let captured = requests
         .lock()
@@ -163,28 +189,51 @@ async fn reuses_named_sessions_and_keeps_new_sessions_isolated() -> TestResult<(
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn starts_one_deferred_process_scope_for_multiple_nodes() -> TestResult<()> {
+async fn concurrent_nodes_publish_one_application_runtime() -> TestResult<()> {
     let requests = Arc::new(Mutex::new(Vec::new()));
     let launches = Arc::new(AtomicUsize::new(0));
-    let scope = Arc::new(JcodeProcessScope::deferred({
+    let process_factory = {
         let requests = Arc::clone(&requests);
         let launches = Arc::clone(&launches);
         move || {
             launches.fetch_add(1, Ordering::SeqCst);
             support::fake_client(Arc::clone(&requests))
+                .map(JcodeProcessScope::from_client)
                 .map_err(|error| JcodeNodeError::configuration(error.to_string()))
         }
-    }));
+    };
+    let process_key = ResourceKey::application("test-runtime");
     let shared = SessionMode::reuse("coding-run")?;
-    let first = JcodeNode::new("first", Arc::clone(&scope), |_| Ok("first".to_owned()))
-        .with_session_mode(move |_| Ok(shared.clone()));
+    let first = JcodeNode::new("first", process_key.clone(), process_factory, |_| {
+        Ok("first".to_owned())
+    })
+    .with_session_mode(move |_| Ok(shared.clone()));
     let shared = SessionMode::reuse("coding-run")?;
-    let second = JcodeNode::new("second", Arc::clone(&scope), |_| Ok("second".to_owned()))
-        .with_session_mode(move |_| Ok(shared.clone()));
+    let second = JcodeNode::new(
+        "second",
+        process_key,
+        {
+            let requests = Arc::clone(&requests);
+            let launches = Arc::clone(&launches);
+            move || {
+                launches.fetch_add(1, Ordering::SeqCst);
+                support::fake_client(Arc::clone(&requests))
+                    .map(JcodeProcessScope::from_client)
+                    .map_err(|error| JcodeNodeError::configuration(error.to_string()))
+            }
+        },
+        |_| Ok("second".to_owned()),
+    )
+    .with_session_mode(move |_| Ok(shared.clone()));
 
     assert_eq!(launches.load(Ordering::SeqCst), 0);
-    first.run(Context::new()).await?;
-    second.run(Context::new()).await?;
+    with_resources(Arc::new(ResourceStore::new()), async {
+        let (first, second) = tokio::join!(first.run(Context::new()), second.run(Context::new()));
+        first?;
+        second?;
+        Ok::<_, graph_flow::GraphError>(())
+    })
+    .await?;
 
     assert_eq!(launches.load(Ordering::SeqCst), 1);
     let created = requests
@@ -198,25 +247,61 @@ async fn starts_one_deferred_process_scope_for_multiple_nodes() -> TestResult<()
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn retries_deferred_process_start_after_failure() -> TestResult<()> {
+async fn retries_failed_application_runtime_initialization() -> TestResult<()> {
     let requests = Arc::new(Mutex::new(Vec::new()));
     let launches = Arc::new(AtomicUsize::new(0));
-    let scope = Arc::new(JcodeProcessScope::deferred({
-        let requests = Arc::clone(&requests);
-        let launches = Arc::clone(&launches);
-        move || {
-            if launches.fetch_add(1, Ordering::SeqCst) == 0 {
-                return Err(JcodeNodeError::configuration("first launch failed"));
+    let node = JcodeNode::new(
+        "retry",
+        ResourceKey::application("test-runtime"),
+        {
+            let requests = Arc::clone(&requests);
+            let launches = Arc::clone(&launches);
+            move || {
+                if launches.fetch_add(1, Ordering::SeqCst) == 0 {
+                    return Err(JcodeNodeError::configuration("first launch failed"));
+                }
+                support::fake_client(Arc::clone(&requests))
+                    .map(JcodeProcessScope::from_client)
+                    .map_err(|error| JcodeNodeError::configuration(error.to_string()))
             }
-            support::fake_client(Arc::clone(&requests))
-                .map_err(|error| JcodeNodeError::configuration(error.to_string()))
-        }
-    }));
-    let node = JcodeNode::new("retry", scope, |_| Ok("retry".to_owned()));
+        },
+        |_| Ok("retry".to_owned()),
+    );
+    let resources = Arc::new(ResourceStore::new());
 
-    assert!(node.run(Context::new()).await.is_err());
-    node.run(Context::new()).await?;
+    assert!(
+        with_resources(Arc::clone(&resources), node.run(Context::new()))
+            .await
+            .is_err()
+    );
+    with_resources(resources, node.run(Context::new())).await?;
 
     assert_eq!(launches.load(Ordering::SeqCst), 2);
     Ok(())
+}
+
+#[tokio::test]
+async fn rejects_execution_outside_resource_scope() {
+    let node = JcodeNode::new(
+        "outside",
+        ResourceKey::application("test-runtime"),
+        || Err(JcodeNodeError::configuration("factory must not run")),
+        |_| Ok(String::from("unused")),
+    );
+
+    let error = node.run(Context::new()).await;
+
+    assert!(
+        matches!(error, Err(graph_flow::GraphError::TaskExecutionFailed(message)) if message.contains("outside an execution scope"))
+    );
+}
+
+fn test_process_factory(
+    requests: Arc<Mutex<Vec<ApiRequest>>>,
+) -> impl Fn() -> Result<JcodeProcessScope, JcodeNodeError> + Send + Sync + 'static {
+    move || {
+        support::fake_client(Arc::clone(&requests))
+            .map(JcodeProcessScope::from_client)
+            .map_err(|error| JcodeNodeError::configuration(error.to_string()))
+    }
 }

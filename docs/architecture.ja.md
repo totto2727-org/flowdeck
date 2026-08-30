@@ -280,14 +280,15 @@ ApplicationState
 エージェントランタイムは、アプリケーションサービスではなく、グラフタスク実装の詳細です。
 現在のjcode統合は、この規則の例です。
 
-1. そのプライベート統合バンドルは、1つの遅延プロセススコープを作成します。
-2. Jcodeバックアップのグラフタスクは、そのスコープの`Arc`クローンを捕捉します。
+1. `WorkflowTasks`は、Tokioのtask-local scopeを使用して、アプリケーションの`ResourceStore`を各run driverへ設定します。
+2. Jcodeを使用するgraph taskは、backend非依存の`ResourceKey`とprocess factoryを保持します。
 3. バンドルは、通常の`WorkflowRegistration`を返します。
-4. プロセスは、捕捉された`JcodeNode`が最初に実行されたときにのみ開始されます。
+4. 最初に実行された`JcodeNode`が、blocking pool上でapplication scopeのprocess resourceを初期化して公開します。
 5. 起動およびSDKの失敗は、その正確なノードと実行の失敗になります。
 
-ワンスコープポリシーは、現在のコンソールのjcode統合バンドルに適用され、再利用可能なクレートのすべてのユーザーには適用されません。
-別のアプリケーションは複数の分離スコープを作成する場合があり、別のワークフローは`WorkflowService`を変更せずに完全に異なるエージェントバックエンドを使用する場合があります。
+1リソースのポリシーは、現在のコンソールのjcode統合バンドルに適用され、再利用可能なクレートのすべてのユーザーには適用されません。
+別のアプリケーションは複数のkeyまたは分離したstoreを使用でき、別のワークフローは`WorkflowService`を変更せずに完全に異なるbackendを使用できます。
+シリアライズ可能なgraph-flow contextにはworkflow stateと識別子だけを保持し、live client、session lock、stream、handleはgraph-flowのシリアライズ外に置きます。
 
 Jcode固有のライフサイクル、セッション、SDKオプション、およびフックの詳細は、[graph-flow-jcodeアーキテクチャ](../crates/graph-flow-jcode/docs/architecture.md)にあります。
 

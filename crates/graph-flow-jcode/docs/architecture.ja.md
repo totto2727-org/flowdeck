@@ -6,7 +6,7 @@
 graph-flow のルーティングと、`jcode-sdk` のプロセス、クライアント、セッション、プロンプト、オプション、フック、結果 API を組み合わせます。
 
 このクレートはノードテンプレートであり、ワークフローエンジンやアプリケーションのシングルトンではありません。
-呼び出し側が、作成するプロセススコープの数、どのノードがそれらを共有するか、セッションのキー付け方法、結果のグラフの登録または実行方法を決定します。
+呼び出し側が、型付きの`ResourceKey`とruntime factory、どのノードがそのkeyを共有するか、セッションのキー付け方法、graph実行を囲むexecution scopeの`ResourceStore`を決定します。
 
 ## 2. 非目標
 
@@ -35,7 +35,8 @@ JcodeProcessScope
     └── 名前付きセッションレジストリ
 
 JcodeNode
-├── Arc<JcodeProcessScope>
+├── ResourceKey
+├── JcodeProcessScope factory
 ├── プロンプトファクトリ
 ├── セッションオプションファクトリ
 ├── セッションモードファクトリ
@@ -44,7 +45,8 @@ JcodeNode
 └── graph-flow NextAction
 ```
 
-`JcodeProcessScope` はプロセスレベルのリソースを所有します。
+execution scopeの`ResourceStore`が、公開された`JcodeProcessScope`値を所有します。
+初期化後の`JcodeProcessScope`は、provider process、client、名前付きsessionを所有します。
 `JcodeNode` は1つのグラフタスク実行のポリシーを所有します。
 
 ## 4. プロセススコープのライフサイクル
@@ -53,7 +55,7 @@ JcodeNode
 
 `JcodeProcessScope::deferred` は、クライアントファクトリを呼び出さずに保存します。
 `deferred_launch` と `deferred_launch_with_hooks` は起動指向のヘルパーです。
-最初のノード実行が `spawn_blocking` 内で共有クライアントを要求し、その後スコープが1つの `JcodeProcess` を初期化します。
+最初のnode実行は`spawn_blocking`の前に現在のstoreを解決し、blocking thread上でkeyに対応する`JcodeProcessScope`を初期化または取得してから、scopeが1つの`JcodeProcess`を初期化します。
 
 ```mermaid
 stateDiagram-v2
@@ -62,7 +64,7 @@ stateDiagram-v2
     Initializing --> Ready: ファクトリとフックが成功
     Initializing --> Deferred: ファクトリまたはフックが失敗
     Ready --> Ready: 後続のノード実行
-    Ready --> [*]: 最後の所有 Arc がドロップ
+    Ready --> [*]: resource scopeが削除され、最後のArcがドロップ
 ```
 
 初期化はミューテックスと `OnceLock` を使用します:
@@ -94,13 +96,16 @@ stateDiagram-v2
 sequenceDiagram
     participant Runner as graph-flow FlowRunner
     participant Node as JcodeNode
+    participant Store as ResourceStore
     participant Scope as JcodeProcessScope
     participant Client as jcode-sdk JcodeClient
     participant Session as jcode セッション
     participant Hooks as JcodeHooks
 
     Runner->>Node: run(Context)
+    Node->>Store: current_resources()
     Node->>Node: spawn_blocking
+    Node->>Store: get_or_try_init(ResourceKey, factory)
     Node->>Scope: client()
     Scope->>Client: 最初の使用時に初期化
     Node->>Client: プロセス資格情報を設定
@@ -115,6 +120,7 @@ sequenceDiagram
 
 jcode SDK は同期です。
 `JcodeNode::run` は、ブロッキングターン全体を `tokio::task::spawn_blocking` に移動し、非同期の graph-flow エグゼキュータをブロックしないようにします。
+Tokioのtask-local stateはblocking closure内で利用できないため、nodeはblocking境界を越える前に現在のresource storeを解決してcloneします。
 ジョインの失敗と `JcodeNodeError` の値は、タスク境界で `GraphError::TaskExecutionFailed` になります。
 
 ## 6. セッションポリシー
@@ -197,6 +203,7 @@ jcode SDK は同期です。
 - 無効なノード設定;
 - ライフサイクルフックの拒否;
 - graph-flow コンテキスト更新の失敗;
+- execution scopeのresourceがないこと;
 - jcode SDK のプロセス、セッション、またはターンの失敗;
 - ブロッキングタスクのジョイン失敗。
 
@@ -214,7 +221,8 @@ jcode SDK は同期です。
 - 名前付きセッションの再利用と新規セッションの分離;
 - 最初のノード実行前のクライアント作成がないこと;
 - 複数のノードで共有される1つの成功した初期化;
-- 最初の遅延初期化失敗後の再試行。
+- 最初のresource初期化失敗後の再試行;
+- resource scope外でnodeを実行した場合の型付き失敗。
 
 テストは `.jcode`、MCP、またはスキルファイルを作成しません。発見と読み込みは SDK/プロセスの責任であるためです。
 

@@ -8,6 +8,7 @@ use topcoat::{
     Result,
     view::{component, view},
 };
+use workflow_resources::ResourceKey;
 
 use super::hooks::{TranslationHooks, prompt, session_options};
 use crate::{
@@ -98,15 +99,21 @@ pub(crate) fn parse_input(value: Value) -> Result<RunInput, WorkflowError> {
     ))
 }
 
-pub(crate) fn build_graph(
-    process_scope: Arc<JcodeProcessScope>,
-) -> Result<graph_flow::Graph, WorkflowError> {
+pub(crate) fn build_graph() -> Result<graph_flow::Graph, WorkflowError> {
     let node = Arc::new(
-        JcodeNode::new("translate_files", process_scope, prompt)
-            .with_session_mode(shared_session)
-            .with_session_options(session_options)
-            .with_hooks(TranslationHooks)
-            .with_next_action(graph_flow::NextAction::End),
+        JcodeNode::new(
+            "translate_files",
+            ResourceKey::application("jcode-process"),
+            || {
+                let options = super::hooks::launch_options()?;
+                JcodeProcessScope::launch(options)
+            },
+            prompt,
+        )
+        .with_session_mode(shared_session)
+        .with_session_options(session_options)
+        .with_hooks(TranslationHooks)
+        .with_next_action(graph_flow::NextAction::End),
     );
     GraphBuilder::new(WORKFLOW_ID)
         .add_task(node)

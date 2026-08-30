@@ -2,9 +2,11 @@ use std::{collections::HashMap, sync::Arc};
 
 use graph_flow::{FlowRunner, Graph, SessionStorage};
 use tokio::sync::broadcast;
+use workflow_resources::ResourceStore;
 
 use super::{
     ActiveRunGroup, ApplicationState, Inner, TraceProjector, WorkflowRuntime, WorkflowService,
+    WorkflowTasks,
 };
 use crate::{
     ApplicationConfig, SchedulerMode, WorkflowDefinition, WorkflowError, WorkflowExecutionDefaults,
@@ -64,6 +66,7 @@ impl WorkflowService {
                 scheduler: config.scheduler,
                 run_group: ActiveRunGroup::new(config.workflows.max_concurrent_runs),
                 events,
+                tasks: WorkflowTasks::new(Arc::new(ResourceStore::new())),
             }),
         };
         if service.inner.scheduler.mode == SchedulerMode::Enabled {
