@@ -61,19 +61,42 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let router = Router::builder()
         .layer(RequestLogging)
         .discover()
-        .app_context(service)
+        .app_context(service.clone())
         .assets(assets)
         .build();
     let listener = TcpListener::bind(config.http.bind_address).await?;
     tracing::info!(url = %format!("http://{}", config.http.bind_address), "server listening");
-    tokio::select! {
-        result = topcoat::serve(listener, router) => result?,
-        result = scheduler.run_scheduler() => result?,
-        result = tokio::signal::ctrl_c() => {
-            result?;
-            tracing::info!("shutdown signal received");
+    let outcome: Result<(), Box<dyn Error + Send + Sync>> = tokio::select! {
+        result = topcoat::serve(listener, router) => result.map_err(Into::into),
+        result = scheduler.run_scheduler() => result.map_err(Into::into),
+        result = shutdown_signal() => result.map_err(Into::into),
+    };
+    tracing::info!("flushing storage before shutdown");
+    let flushed = service.flush_storage().await;
+    if let Err(error) = &flushed {
+        tracing::error!(%error, "storage flush failed during shutdown");
+    } else {
+        tracing::info!("storage flush completed");
+    }
+    outcome?;
+    flushed?;
+    Ok(())
+}
+
+async fn shutdown_signal() -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        let mut terminate =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+        tokio::select! {
+            result = tokio::signal::ctrl_c() => result?,
+            _ = terminate.recv() => {},
         }
     }
+    #[cfg(not(unix))]
+    tokio::signal::ctrl_c().await?;
+
+    tracing::info!("shutdown signal received");
     Ok(())
 }
 
