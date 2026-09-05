@@ -168,12 +168,9 @@ Provider descriptors, durable provider homes and restartable agent conversations
 ## Dependency compatibility
 
 Graph-flow 0.6.0 depends on the SQLx facade, although all its actual SQLx calls are PostgreSQL operations in `src/storage_postgres.rs`.
-Toasty 0.10's SQLite driver uses a different `libsqlite3-sys` generation from SQLx 0.8's optional SQLite driver.
-The implementation's Cargo fetch still reported a native `links` conflict after disabling SQLx facade default features.
-The local `vendor/graph-flow` patch therefore replaces the facade with exact-version `sqlx-core` and `sqlx-postgres` 0.8.6 dependencies and rewires only imports and call namespaces to the same re-exported functions.
-Tokio, Rustls/ring/WebPKI, JSON, UUID, the public PostgreSQL pool types, and all SQL statements remain unchanged.
-The MIT license, original manifest, upstream revision metadata, and exact patch explanation are retained in `vendor/graph-flow/FLOWDECK-PATCH.md`.
-The root Cargo patch and lockfile resolution must be validated together with the Toasty application build.
+The workspace shares one graph-flow dependency with PostgreSQL disabled through `default-features = false`.
+Toasty uses its SQLite driver and embedded migrations without SQLx in the dependency graph.
+The dependency revision and Cargo lockfile pin the implementation, and `package.nix` pins the corresponding source hash for Nix builds.
 
 ## Verification requirements
 

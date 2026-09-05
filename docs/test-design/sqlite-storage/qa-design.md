@@ -62,8 +62,9 @@ The following numbered cases describe the AI-driven acceptance review and refere
 
 `nix develop -c just ci` completed with exit code 0 on macOS aarch64 in the pinned Rust 1.95 environment.
 Formatting, workspace/all-target/all-feature Clippy with `-D warnings`, Topcoat asset bundling, and the workspace build passed.
-All **131 tests passed**: 68 library tests, 28 application tests, 17 public workflow integration tests, 10 jcode adapter tests, and 8 runtime-resource tests.
+All **133 tests passed**: 70 library tests, 28 application tests, 17 public workflow integration tests, 10 jcode adapter tests, and 8 runtime-resource tests.
 The optional real provider was not invoked.
+The added SQLite checks confirm independent in-memory databases do not share runs, sessions, or leases, and committed SQL constraints reject invalid rows without poisoning subsequent valid writes.
 
 | Review case | Result and concrete evidence |
 | --- | --- |
@@ -71,7 +72,7 @@ The optional real provider was not invoked.
 | TC-002 | Passed: `migrations_are_repeatable_and_match_the_schema`, `failed_migration_rolls_back_ddl_and_preserves_existing_rows`, `reopening_file_recovers_interrupted_runs_and_preserves_sessions`, `startup_rejects_missing_or_rewound_ordering_clocks`, and schema-drift tests in `src/storage_test.rs`. |
 | TC-003 | Passed: 14 run DTO tests, 10 session DTO tests, workflow input/configuration tests, and restored task-context tests reject malformed syntax, invalid scalar values, unsupported versions, duplicate/incorrect trace identities, inconsistent lifecycles, and invalid paths. |
 | TC-008 | Passed: completion-order retention, rollback, orphan-prevention, and `concurrent_claims_and_session_saves_have_exactly_one_winner`; driver fault-injection tests confirm terminal events follow committed failure and are not fabricated when storage remains unavailable. |
-| TC-IMPL-001 | Passed the canonical pinned-environment CI suite, including the vendored graph-flow dependency fix. |
+| TC-IMPL-001 | Passed the canonical pinned-environment CI suite, using the shared graph-flow dependency with PostgreSQL disabled; metadata confirms one graph-flow package, Toasty SQLite, and no SQLx or Turso packages. |
 | TC-004 through TC-007 | **Blocked, not passed.** The required built-in browser could not perform page or tab operations. |
 
 ### Browser attempt
@@ -83,6 +84,11 @@ No page inspection, interaction, SSE observation, or screenshot succeeded, and n
 The discrepancy was reported through Jcode's maintainer feedback tool.
 The QA server started for this attempt was stopped afterward.
 Reconnect the Firefox bridge and execute [the browser procedure](./qa-flow.md#browser-procedure) before marking these cases complete.
+
+### Supplemental HTTP verification
+
+The SQLite server passed real HTTP checks for dashboard rendering, manual run submission, live SSE transitions from Running to Completed, completed-run reload with a status filter, and invalid-label rejection without history changes.
+This does not exercise browser-side Datastar execution or pointer/keyboard interaction and does not replace the blocked browser cases.
 
 ### Tracker and follow-up
 

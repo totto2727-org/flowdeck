@@ -11,7 +11,7 @@ publish = false
 garde = { version = "0.23", features = ["derive"] }
 async-trait = "0.1"
 workflow-resources = { path = "../workflow-resources" }
-graph-flow = "0.6.0"
+graph-flow.workspace = true
 jcode-sdk = { git = "https://github.com/1jehuang/jcode", rev = "a63dbc4546895ecb4d1be1a285d98e6e13fb1b74" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

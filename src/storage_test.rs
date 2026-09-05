@@ -73,6 +73,51 @@ async fn migrations_are_repeatable_and_match_the_schema() -> TestResult {
 }
 
 #[tokio::test]
+async fn committed_schema_rejects_invalid_rows_at_the_database_boundary() -> TestResult {
+    let store = SqliteStore::open(&config(2)?).await?;
+    // Family conformance: every statement bypasses DTO validation and must be rejected by SQL.
+    for statement in [
+        "INSERT INTO graph_sessions VALUES ('zero-version', 0, '{}')",
+        "INSERT INTO graph_sessions VALUES ('bad-json', 1, 'not-json')",
+        "INSERT INTO runs VALUES ('zero-order', 0, NULL, 'running', '{}')",
+        "INSERT INTO runs VALUES ('bad-status', 1, NULL, 'unknown', '{}')",
+        "INSERT INTO runs VALUES ('terminal-without-order', 1, NULL, 'completed', '{}')",
+        "INSERT INTO schedule_leases VALUES ('   ')",
+        "INSERT INTO store_clocks VALUES ('unknown', 0)",
+        "UPDATE store_clocks SET value = -1 WHERE id = 'start'",
+    ] {
+        assert!(
+            matches!(
+                store.execute_test_sql(statement).await,
+                Err(WorkflowError::Storage { .. })
+            ),
+            "database accepted invalid SQL: {statement}"
+        );
+    }
+    // A rejected statement must not poison the pooled connection or its ordering counters.
+    insert(&store, "valid-after-rejections").await?;
+    assert_eq!(store.history().await?.runs.len(), 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn independently_opened_memory_stores_do_not_share_state() -> TestResult {
+    let first = SqliteStore::open(&config(2)?).await?;
+    insert(&first, "private-run").await?;
+    assert!(first.claim_lease("private-schedule").await?);
+
+    let second = SqliteStore::open(&config(2)?).await?;
+    assert!(second.history().await?.runs.is_empty());
+    assert!(second.get("private-run").await?.is_none());
+    assert!(second.claim_lease("private-schedule").await?);
+
+    assert_eq!(first.history().await?.runs.len(), 1);
+    assert!(first.get("private-run").await?.is_some());
+    assert!(!first.claim_lease("private-schedule").await?);
+    Ok(())
+}
+
+#[tokio::test]
 async fn session_round_trip_and_optimistic_locking() -> TestResult {
     let store = SqliteStore::open(&config(2)?).await?;
     let session = Session::new_from_task("session".to_owned(), "start");
