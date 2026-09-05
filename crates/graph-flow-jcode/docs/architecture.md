@@ -6,7 +6,7 @@
 It combines graph-flow routing with `jcode-sdk` process, client, session, prompt, option, hook, and result APIs.
 
 The crate is a node template, not a workflow engine or an application singleton.
-Callers decide how many process scopes to create, which nodes share them, how sessions are keyed, and how the resulting graph is registered or executed.
+Callers provide a typed `ResourceKey` and runtime factory, decide which nodes share that key, define how sessions are keyed, and establish the execution-scoped `ResourceStore` around graph execution.
 
 ## 2. Non-goals
 
@@ -35,7 +35,8 @@ JcodeProcessScope
     └── named session registry
 
 JcodeNode
-├── Arc<JcodeProcessScope>
+├── ResourceKey
+├── JcodeProcessScope factory
 ├── prompt factory
 ├── session option factory
 ├── session mode factory
@@ -44,7 +45,8 @@ JcodeNode
 └── graph-flow NextAction
 ```
 
-`JcodeProcessScope` owns the process-level resources.
+The execution-scoped `ResourceStore` owns the published `JcodeProcessScope` value.
+`JcodeProcessScope` owns the provider process, client, and named sessions after initialization.
 `JcodeNode` owns the policy for one graph task execution.
 
 ## 4. Process scope lifecycle
@@ -53,7 +55,7 @@ JcodeNode
 
 `JcodeProcessScope::deferred` stores a client factory without invoking it.
 `deferred_launch` and `deferred_launch_with_hooks` are launch-oriented helpers.
-The first node execution requests the shared client inside `spawn_blocking`, then the scope initializes one `JcodeProcess`.
+The first node execution resolves the current store before `spawn_blocking`, initializes or obtains the keyed `JcodeProcessScope` on the blocking thread, then the scope initializes one `JcodeProcess`.
 
 ```mermaid
 stateDiagram-v2
@@ -62,7 +64,7 @@ stateDiagram-v2
     Initializing --> Ready: factory and hooks succeed
     Initializing --> Deferred: factory or hook fails
     Ready --> Ready: later node execution
-    Ready --> [*]: last owning Arc is dropped
+    Ready --> [*]: resource scope is removed and last Arc is dropped
 ```
 
 Initialization uses a mutex plus `OnceLock`:
@@ -94,13 +96,16 @@ The crate does not install application signal handling or a global shutdown hook
 sequenceDiagram
     participant Runner as graph-flow FlowRunner
     participant Node as JcodeNode
+    participant Store as ResourceStore
     participant Scope as JcodeProcessScope
     participant Client as jcode-sdk JcodeClient
     participant Session as jcode session
     participant Hooks as JcodeHooks
 
     Runner->>Node: run(Context)
+    Node->>Store: current_resources()
     Node->>Node: spawn_blocking
+    Node->>Store: get_or_try_init(ResourceKey, factory)
     Node->>Scope: client()
     Scope->>Client: initialize on first use
     Node->>Client: set process credentials
@@ -115,6 +120,7 @@ sequenceDiagram
 
 The jcode SDK is synchronous.
 `JcodeNode::run` moves the complete blocking turn into `tokio::task::spawn_blocking` so it does not block the async graph-flow executor.
+The node resolves and clones the current resource store before crossing that blocking boundary because Tokio task-local state is not available inside the blocking closure.
 Join failures and `JcodeNodeError` values become `GraphError::TaskExecutionFailed` at the task boundary.
 
 ## 6. Session policy
@@ -197,6 +203,7 @@ They should not serialize the complete graph-flow context as a shortcut.
 - invalid node configuration;
 - lifecycle hook rejection;
 - graph-flow context update failure;
+- missing execution-scoped resources;
 - jcode SDK process, session, or turn failure;
 - blocking-task join failure.
 
@@ -214,7 +221,8 @@ It verifies:
 - named-session reuse and new-session isolation;
 - no client creation before the first node execution;
 - one successful initialization shared by multiple nodes;
-- retry after the first deferred initialization failure.
+- retry after the first resource initialization failure;
+- typed failure when a node runs outside a resource scope.
 
 The tests do not create `.jcode`, MCP, or skill files because discovery and loading are SDK/process responsibilities.
 

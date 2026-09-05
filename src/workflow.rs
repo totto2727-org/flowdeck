@@ -28,12 +28,15 @@ mod run_group;
 mod schedule_attempt;
 #[path = "workflow/state.rs"]
 mod state;
+#[path = "workflow/tasks.rs"]
+mod tasks;
 
 use driver::drive;
 pub use events::WorkflowEvent;
 pub use history::HistoryView;
 use run_group::ActiveRunGroup;
 use state::ApplicationState;
+use tasks::WorkflowTasks;
 
 /// Cloneable local boundary for workflow starts, listing, and event subscription.
 #[derive(Clone)]
@@ -55,6 +58,7 @@ struct Inner {
     scheduler: SchedulerConfig,
     run_group: ActiveRunGroup,
     events: broadcast::Sender<WorkflowEvent>,
+    tasks: WorkflowTasks,
 }
 
 struct WorkflowRuntime {
@@ -138,7 +142,7 @@ impl WorkflowService {
             workflow_id: definition.workflow_id.to_owned(),
         });
         let inner = Arc::clone(&self.inner);
-        tokio::spawn(async move {
+        self.inner.tasks.spawn(async move {
             let _run_guard = run_guard;
             drive(inner, run_id, definition.workflow_id).await;
         });

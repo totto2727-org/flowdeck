@@ -299,3 +299,58 @@ fn ensure_working_dir(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        sync::{Arc, Mutex, mpsc},
+        thread,
+    };
+
+    use jcode_sdk::SessionInfo;
+
+    use super::ManagedSession;
+
+    #[test]
+    fn one_session_serializes_concurrent_turns() {
+        let session = Arc::new(ManagedSession {
+            info: SessionInfo {
+                session_id: String::from("session-1"),
+                working_dir: None,
+                title: None,
+                status: String::from("idle"),
+                transcript_bytes: None,
+                archived: false,
+                archived_at_ms: None,
+            },
+            turn: Mutex::new(()),
+        });
+        let (first_acquired_sender, first_acquired_receiver) = mpsc::channel();
+        let (release_sender, release_receiver) = mpsc::channel();
+        let first_session = Arc::clone(&session);
+        let first = thread::spawn(move || {
+            let _turn = first_session.lock_turn();
+            let _ = first_acquired_sender.send(());
+            let _ = release_receiver.recv();
+        });
+        assert_eq!(first_acquired_receiver.recv(), Ok(()));
+
+        let (second_attempting_sender, second_attempting_receiver) = mpsc::channel();
+        let (second_acquired_sender, second_acquired_receiver) = mpsc::channel();
+        let second = thread::spawn(move || {
+            let _ = second_attempting_sender.send(());
+            let _turn = session.lock_turn();
+            let _ = second_acquired_sender.send(());
+        });
+
+        assert_eq!(second_attempting_receiver.recv(), Ok(()));
+        assert_eq!(
+            second_acquired_receiver.try_recv(),
+            Err(mpsc::TryRecvError::Empty)
+        );
+        let _ = release_sender.send(());
+        assert_eq!(second_acquired_receiver.recv(), Ok(()));
+        assert!(first.join().is_ok());
+        assert!(second.join().is_ok());
+    }
+}

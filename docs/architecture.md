@@ -280,14 +280,15 @@ Selecting an item identifies one `StepId`, and the Step Trace execution selector
 Agent runtimes are graph task implementation details, not application services.
 The current jcode integration is an example of this rule:
 
-1. Its private integration bundle creates one deferred process scope.
-2. Jcode-backed graph tasks capture `Arc` clones of that scope.
+1. `WorkflowTasks` attaches the application `ResourceStore` to each run driver with Tokio task-local scope.
+2. Jcode-backed graph tasks capture a provider-neutral `ResourceKey` and process factory.
 3. The bundle returns an ordinary `WorkflowRegistration`.
-4. The process starts only when a captured `JcodeNode` first executes.
+4. The first executing `JcodeNode` initializes and publishes one application-scoped process resource on the blocking pool.
 5. Launch and SDK failures become failures of that exact node and run.
 
-The one-scope policy applies to the console's current jcode integration bundle, not to every user of the reusable crate.
-Another application may create multiple isolated scopes, and another workflow may use a completely different agent backend without changing `WorkflowService`.
+The one-resource policy applies to the console's current jcode integration bundle, not to every user of the reusable crate.
+Another application may use multiple keys or isolated stores, and another workflow may use a completely different backend without changing `WorkflowService`.
+Serializable graph-flow context retains only workflow state and identifiers; live clients, session locks, streams, and handles remain outside graph-flow serialization.
 
 Jcode-specific lifecycle, session, SDK option, and hook details live in the [graph-flow-jcode architecture](../crates/graph-flow-jcode/docs/architecture.md).
 

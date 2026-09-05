@@ -6,6 +6,7 @@ use async_trait::async_trait;
 use graph_flow::{Context, GraphError, NextAction, Task, TaskResult};
 use jcode_sdk::RunOptions;
 use std::{fmt, sync::Arc};
+use workflow_resources::{ResourceKey, current_resources};
 
 type PromptFactory = dyn Fn(&Context) -> Result<String, JcodeNodeError> + Send + Sync + 'static;
 type SessionFactory =
@@ -13,6 +14,7 @@ type SessionFactory =
 type SessionModeFactory =
     dyn Fn(&Context) -> Result<SessionMode, JcodeNodeError> + Send + Sync + 'static;
 type RunFactory = dyn Fn(&Context) -> Result<RunOptions, JcodeNodeError> + Send + Sync + 'static;
+type ProcessFactory = dyn Fn() -> Result<JcodeProcessScope, JcodeNodeError> + Send + Sync + 'static;
 
 struct ExecutionPolicy<'a> {
     process_scope: &'a JcodeProcessScope,
@@ -28,7 +30,8 @@ struct ExecutionPolicy<'a> {
 #[must_use]
 pub struct JcodeNode {
     id: String,
-    process_scope: Arc<JcodeProcessScope>,
+    process_key: ResourceKey,
+    process_factory: Arc<ProcessFactory>,
     prompt_factory: Arc<PromptFactory>,
     session_factory: Arc<SessionFactory>,
     session_mode_factory: Arc<SessionModeFactory>,
@@ -38,18 +41,21 @@ pub struct JcodeNode {
 }
 
 impl JcodeNode {
-    /// Create a node using one application-owned shared jcode runtime.
-    pub fn new<P>(
+    /// Create a node that lazily resolves one application-owned jcode runtime resource.
+    pub fn new<F, P>(
         id: impl Into<String>,
-        process_scope: Arc<JcodeProcessScope>,
+        process_key: ResourceKey,
+        process_factory: F,
         prompt_factory: P,
     ) -> Self
     where
+        F: Fn() -> Result<JcodeProcessScope, JcodeNodeError> + Send + Sync + 'static,
         P: Fn(&Context) -> Result<String, JcodeNodeError> + Send + Sync + 'static,
     {
         Self {
             id: id.into(),
-            process_scope,
+            process_key,
+            process_factory: Arc::new(process_factory),
             prompt_factory: Arc::new(prompt_factory),
             session_factory: Arc::new(|_| Ok(SessionOptions::default())),
             session_mode_factory: Arc::new(|_| Ok(SessionMode::New)),
@@ -119,7 +125,10 @@ impl Task for JcodeNode {
     }
 
     async fn run(&self, context: Context) -> graph_flow::Result<TaskResult> {
-        let process_scope = Arc::clone(&self.process_scope);
+        let resources = current_resources()
+            .map_err(|error| GraphError::TaskExecutionFailed(error.to_string()))?;
+        let process_key = self.process_key.clone();
+        let process_factory = Arc::clone(&self.process_factory);
         let prompt_factory = Arc::clone(&self.prompt_factory);
         let session_factory = Arc::clone(&self.session_factory);
         let session_mode_factory = Arc::clone(&self.session_mode_factory);
@@ -127,6 +136,7 @@ impl Task for JcodeNode {
         let hooks = Arc::clone(&self.hooks);
         let next_action = self.next_action.clone();
         tokio::task::spawn_blocking(move || {
+            let process_scope = resources.get_or_try_init(process_key, || process_factory())?;
             execute(
                 &context,
                 ExecutionPolicy {

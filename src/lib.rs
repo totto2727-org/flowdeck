@@ -22,6 +22,9 @@ pub use config::{
 };
 pub use workflow::{HistoryView, WorkflowEvent, WorkflowService};
 pub use workflow_limits::{ExecutionLimit, WorkflowExecutionLimits};
+pub use workflow_resources::{
+    ResourceError, ResourceKey, ResourceScope, ResourceStore, current_resources, with_resources,
+};
 pub use workflow_scheduler::{
     ScheduleOverlap, ScheduleOverlapPolicy, ScheduleSpec, workflow_schedules,
 };
