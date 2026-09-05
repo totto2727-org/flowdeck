@@ -1,0 +1,37 @@
+[package]
+name = "graph-flow"
+version = "0.6.0"
+edition = "2024"
+authors = ["Alon Agmon"]
+description = "A high-performance, type-safe framework for building multi-agent workflow systems in Rust"
+homepage = "https://github.com/a-agmon/rs-graph-llm"
+repository = "https://github.com/a-agmon/rs-graph-llm"
+documentation = "https://docs.rs/graph-flow"
+readme = "README.md"
+license = "MIT"
+keywords = ["ai", "agents", "workflow", "graph", "llm"]
+categories = ["science", "algorithms", "asynchronous"]
+exclude = [
+    "examples/*",
+    "target/*",
+    ".git/*",
+    "tests/*",
+]
+
+[dependencies]
+tokio = { version = "1.40", features = ["full"] }
+async-trait = "0.1"
+anyhow = "1.0"
+thiserror = "2.0.16"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tracing = "0.1"
+uuid = { version = "1.10", features = ["v4", "serde"] }
+dashmap = "6.1"
+chrono = { version = "0.4", features = ["serde"] }
+sqlx = { version = "0.8.6", features = ["runtime-tokio-rustls", "postgres", "json", "macros", "uuid"] }
+rig-core = { workspace = true, optional = true }
+
+[features]
+default = []
+rig = ["dep:rig-core"]
