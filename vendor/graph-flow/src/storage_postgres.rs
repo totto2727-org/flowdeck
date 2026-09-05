@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use serde_json;
-use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
+use sqlx_core::{pool::Pool, query::query, query_as::query_as};
+use sqlx_postgres::{PgPoolOptions, Postgres};
 
 use crate::{Session, error::{Result, GraphError}, storage::SessionStorage};
 
@@ -58,7 +59,7 @@ impl PostgresSessionStorage {
         ];
 
         for statement in statements {
-            sqlx::query(statement)
+            query(statement)
                 .execute(pool)
                 .await
                 .map_err(|e| GraphError::StorageError(format!("Migration failed: {e}")))?;
@@ -77,7 +78,7 @@ impl SessionStorage for PostgresSessionStorage {
 
         // Optimistic locking: the UPDATE only applies when the stored version
         // still matches the version this session was loaded with.
-        let result = sqlx::query(
+        let result = query(
             r#"
             INSERT INTO sessions (id, graph_id, current_task_id, status_message, context, version, updated_at)
             VALUES ($1, $2, $3, $4, $5, $6 + 1, NOW())
@@ -112,7 +113,7 @@ impl SessionStorage for PostgresSessionStorage {
     }
 
     async fn get(&self, id: &str) -> Result<Option<Session>> {
-        let row = sqlx::query_as::<_, (String, String, String, Option<String>, serde_json::Value, i64)>(
+        let row = query_as::<_, (String, String, String, Option<String>, serde_json::Value, i64)>(
             r#"
             SELECT id, graph_id, current_task_id, status_message, context, version
             FROM sessions
@@ -141,7 +142,7 @@ impl SessionStorage for PostgresSessionStorage {
     }
 
     async fn delete(&self, id: &str) -> Result<()> {
-        sqlx::query(
+        query(
             r#"
             DELETE FROM sessions WHERE id = $1
             "#,

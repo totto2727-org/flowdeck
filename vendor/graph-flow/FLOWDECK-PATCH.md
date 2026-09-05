@@ -16,12 +16,17 @@ The registry extraction marker and standalone lockfile are omitted because this 
 
 ## Local change
 
-The only build or behavior change is `default-features = false` on the existing SQLx 0.8.6 dependency in `Cargo.toml`.
-The explicitly requested `runtime-tokio-rustls`, `postgres`, `json`, `macros`, and `uuid` features remain unchanged.
-All Rust source files are byte-for-byte identical to the published package.
+The SQLx 0.8.6 facade dependency is replaced by exact-version `sqlx-core` and `sqlx-postgres` 0.8.6 dependencies with default features disabled.
+Tokio, Rustls with ring and WebPKI roots, PostgreSQL, JSON, and UUID support are preserved through their corresponding component features.
+The unused SQLx Any, migration, and procedural macro surfaces are not enabled.
+`src/storage_postgres.rs` imports `Pool`, `query`, and `query_as` directly from `sqlx-core` and `PgPoolOptions` and `Postgres` from `sqlx-postgres`.
+These are the same types and functions re-exported by the facade, so the public storage API and SQL statements remain unchanged.
+Every other Rust source file is byte-for-byte identical to the published package.
 The crate's SQLx calls are confined to `src/storage_postgres.rs`, which uses `PgPoolOptions`, `Pool<Postgres>`, `query`, and `query_as`.
 It does not use SQLite, SQLx Any, or SQLx migration APIs.
 
-This patch allows the application to investigate using Toasty 0.10's SQLite driver without enabling unrelated SQLx defaults.
+Merely disabling facade defaults did not resolve Cargo's native-library `links` conflict between SQLx's optional SQLite dependency and Toasty 0.10's SQLite driver.
+Using only the PostgreSQL component removes that competing SQLite dependency from the resolution graph.
+The component versions are pinned because the runtime and TLS feature names are lower-level SQLx interfaces.
 The application owns the root `[patch.crates-io]` entry and integration validation.
 Remove this local patch when an upstream release exposes compatible SQLx feature selection.
