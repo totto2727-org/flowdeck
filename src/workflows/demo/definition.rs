@@ -18,7 +18,7 @@ const BRANCH_KEY: &str = "branch_yes";
 
 #[derive(Debug, Deserialize, Validate)]
 #[serde(deny_unknown_fields)]
-struct DemoInput {
+struct DemoInputDto {
     #[garde(custom(validate_non_blank), length(chars, max = 80))]
     label: String,
     #[garde(range(min = 100, max = 2_000))]
@@ -181,22 +181,28 @@ pub(super) fn default_input() -> Value {
 }
 
 pub(super) fn parse_input(value: Value) -> Result<RunInput, WorkflowError> {
-    let input = serde_json::from_value::<DemoInput>(value).map_err(|error| {
+    let input = serde_json::from_value::<DemoInputDto>(value).map_err(|error| {
         WorkflowError::InvalidInput {
-            message: format!("{WORKFLOW_ID}: {error}"),
+            message: format!("{WORKFLOW_ID}: invalid JSON structure: {error}"),
         }
     })?;
     input
         .validate()
         .map_err(|error| WorkflowError::InvalidInput {
-            message: format!("{WORKFLOW_ID}: {error}"),
+            message: format!("{WORKFLOW_ID}: validation failed: {error}"),
         })?;
-    let label = input.label.trim().to_owned();
-    let summary = format!("{label} · {} ms", input.step_delay_ms);
-    Ok(RunInput::new(
-        json!({ "label": label, "step_delay_ms": input.step_delay_ms }),
-        summary,
-    ))
+    Ok(RunInput::from(input))
+}
+
+impl From<DemoInputDto> for RunInput {
+    fn from(input: DemoInputDto) -> Self {
+        let label = input.label.trim().to_owned();
+        let summary = format!("{label} · {} ms", input.step_delay_ms);
+        Self::new(
+            json!({ "label": label, "step_delay_ms": input.step_delay_ms }),
+            summary,
+        )
+    }
 }
 
 #[allow(

@@ -5,6 +5,8 @@
 ```text
 src/                         Rust application, workflow engine integration, web routes, and browser assets
 src/workflows/               Code-defined workflow registry, definitions, and shared tasks
+src/storage/                 Toasty database models and validated persistence DTOs
+src/storage/migrations/      Committed SQLite schema migrations
 crates/graph-flow-jcode/     Optional graph-flow node backed by the jcode SDK
 tests/                       Rust integration tests for workflow execution and lifecycle events
 docs/                        Architecture, design plans, and end-user images
@@ -50,8 +52,11 @@ Justfile                     Canonical development task entry points
 
 ### Execution state
 
-- Workflow definitions, active runs, bounded terminal history, scheduler state, and traces are process-local and in memory.
-- A process-wide semaphore bounds concurrent drivers, while terminal snapshots use fixed-capacity ring retention.
+- Active runs, bounded terminal history, traces, graph-flow sessions, and schedule leases share one Toasty Turso database, in memory by default.
+- A process-wide semaphore bounds concurrent drivers, while SQL retention evicts terminal runs in completion order without evicting active runs.
+- Executable workflow definitions, broadcast channels, task trackers, semaphore permits, and non-serializable runtime resources remain process-local control objects, not database records.
+- Keep database models, Serde wire DTOs, and application domain types distinct. Validate ORM rows and decoded DTOs with `garde` before domain conversion, and enforce collection and cross-field invariants in domain constructors or conversion services.
+- Commit additive migration SQL and its metadata. Apply migrations at startup rather than resetting schemas. See [the SQLite design](./docs/plans/sqlite-storage.md) for the schema and recovery contract.
 - Each observable task returns control after one graph-flow step so the current node and edge can be retained.
 - Node and edge traces expose state, start and finish timestamps, duration, output or error, and route selection.
 
@@ -76,6 +81,7 @@ Justfile                     Canonical development task entry points
 - **rustfmt and Clippy**: Enforce Rust formatting and lint policy.
 - **Topcoat**: Render and serve the local dashboard and bundle browser assets.
 - **graph-flow**: Execute the code-defined workflow graphs.
+- **Toasty and SQLite**: Store application data with embedded, versioned schema migrations.
 - **Nix flakes**: Pin the development environment and build the installable Rust package.
 - **Just**: Provide the canonical local task interface used by CI.
 - **direnv**: Load the default flake development shell from `.envrc`.
@@ -87,7 +93,7 @@ Justfile                     Canonical development task entry points
 - Use Japanese for human-facing collaboration and handoff text.
 - Keep the server bound to `127.0.0.1`; this project is local-only.
 - Define workflows directly in Rust. Do not add a browser workflow editor without an explicit requirement.
-- Keep run history and workflow state in memory until persistence is explicitly requested.
+- Keep the default SQLite location in memory unless file-backed persistence is explicitly configured. Do not serialize process handles, credentials, or live clients as application data.
 - Preserve workflow-owned input defaults and validate run input at the HTTP boundary.
 - Preserve active, traversed, and selected graph states independently and keep trace details accessible by pointer and keyboard.
 - Do not add Rig, OpenCode, or Codex integration until workflow execution requires them.

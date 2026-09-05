@@ -6,3 +6,6 @@ target/
 .DS_Store
 result
 result-*
+
+# Disposable local investigation and SQLite test databases.
+/tmp/

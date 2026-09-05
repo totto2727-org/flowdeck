@@ -12,5 +12,5 @@ pub use error::JcodeNodeError;
 pub use hooks::{AfterLaunch, AfterRun, BeforeLaunch, BeforeRun, JcodeHooks, JcodeProcessHooks};
 pub use jcode_sdk;
 pub use node::JcodeNode;
-pub use output::{JCODE_OUTPUT_KEY, JcodeOutput, JcodeToolCall, JcodeUsage};
+pub use output::{JCODE_OUTPUT_KEY, JcodeOutput, JcodeOutputDto, JcodeToolCall, JcodeUsage};
 pub use runtime::{JcodeProcessScope, SessionKey, SessionMode};

@@ -5,8 +5,8 @@ pub mod support;
 
 use graph_flow::{Context, NextAction, Task};
 use graph_flow_jcode::{
-    AfterRun, BeforeRun, JCODE_OUTPUT_KEY, JcodeHooks, JcodeNode, JcodeNodeError, JcodeOutput,
-    JcodeProcessScope, ProviderCredential, SessionMode, SessionOptions,
+    AfterRun, BeforeRun, JcodeHooks, JcodeNode, JcodeNodeError, JcodeOutput, JcodeProcessScope,
+    ProviderCredential, SessionMode, SessionOptions,
     jcode_sdk::{RunOptions, api::ApiRequest},
 };
 use std::sync::{
@@ -91,7 +91,7 @@ async fn runs_configured_jcode_session_and_records_graph_context() -> TestResult
     assert_eq!(result.response.as_deref(), Some("translated output"));
     assert_eq!(result.next_action, NextAction::End);
     assert_eq!(context.get::<bool>("translation_validated"), Some(true));
-    let Some(output) = context.get::<JcodeOutput>(JCODE_OUTPUT_KEY) else {
+    let Some(output) = JcodeOutput::from_context(&context)? else {
         return Err("jcode output missing from graph context".into());
     };
     assert_eq!(output.session_id, "session-1");

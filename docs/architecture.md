@@ -11,7 +11,7 @@ The architecture follows four ownership rules:
 1. A workflow registration owns its executable graph, input contract, trace projection, and static presentation metadata.
 2. Application configuration owns process-wide operational policy, not workflow or node behavior.
 3. Application state is injected as one consistent backend bundle.
-4. Optional node integrations capture their own resources before they cross the application boundary.
+4. Optional node integrations resolve non-serializable resources through the application-owned resource store without coupling the application service to a provider.
 
 ## 2. System overview
 
@@ -42,9 +42,9 @@ Every registration follows the same `WorkflowRegistration -> GraphExecutionConfi
 The executable bootstrap in `src/main.rs` performs these operations:
 
 1. Build `ApplicationConfig::local_default()`.
-2. Pass the configuration to `WorkflowService::with_config`.
+2. Await `WorkflowService::with_config` with the configuration.
 3. Construct the code-defined registration catalog.
-4. Build one consistent `ApplicationState` backend bundle.
+4. Open one embedded Turso database and apply the committed migrations before constructing the consistent `ApplicationState` backend bundle.
 5. Generate one `GraphExecutionConfig` for every registration.
 6. Construct each `FlowRunner` through the same generic path.
 7. Load the compiled Topcoat asset bundle.
@@ -64,6 +64,7 @@ ApplicationConfig
 ├── http: HttpConfig
 │   └── bind_address: SocketAddr
 ├── workflows: WorkflowConfig
+│   ├── max_concurrent_runs: NonZeroUsize
 │   └── execution: WorkflowExecutionDefaults
 │       ├── step_multiplier: NonZeroUsize
 │       ├── timeout_per_step: PositiveDuration
@@ -72,16 +73,15 @@ ApplicationConfig
 │           └── timeout: PositiveDuration
 ├── state: StateConfig
 │   └── backend: StateBackendConfig
-│       └── InMemory(InMemoryStateConfig)
-│           └── history: InMemoryHistoryConfig
-│               ├── run_retention: RunRetention
-│               └── replay_capacity: NonZeroUsize
+│       └── Sqlite(TursoStateConfig)
+│           ├── location: TursoLocation
+│           └── history: RunHistoryConfig
+│               └── run_retention: RunRetention
 ├── scheduler: SchedulerConfig
 │   ├── mode: SchedulerMode
 │   └── default_overlap_policy: ScheduleOverlapPolicy
 └── events: EventConfig
-    ├── workflow_capacity: NonZeroUsize
-    └── history_capacity: NonZeroUsize
+    └── workflow_capacity: NonZeroUsize
 ```
 
 `PositiveDuration` validates non-zero durations once at the configuration boundary.
@@ -97,13 +97,12 @@ Consumers receive validated values instead of repeating zero checks.
 | Workflow timeout | derived maximum steps multiplied by `5 minutes` |
 | Same-node execution limit | `5` per run |
 | Node timeout | `5 minutes` |
-| State backend | `InMemory` |
-| Run retention | `Unlimited` for the process lifetime |
-| History replay capacity | `512` deltas |
+| State backend | SQLite with `TursoLocation::Memory` |
+| Run retention | Latest `100` terminal snapshots, without evicting active runs |
+| Concurrent run limit | `100` |
 | Scheduler mode | `Enabled` |
 | Inherited overlap policy | `SkipWhileRunning` |
 | Workflow event capacity | `128` |
-| History event capacity | `512` |
 
 The logged server origin is derived from `http.bind_address` rather than stored as a second setting.
 
@@ -127,7 +126,8 @@ WorkflowRegistration
 
 The input contract parses manual input and produces input for code-defined schedules.
 The trace projector converts selected graph context values into a redacted JSON payload.
-The application never serializes the complete graph-flow `Context` because it may contain prompts, credentials, or internal state.
+The trace projector never exposes the complete graph-flow `Context` as a trace payload because it may contain prompts or internal state.
+The private session storage boundary serializes the complete `Session`, including its JSON context and chat history, so credentials and live resources must never enter graph context.
 
 The catalog builds ordinary workflows and optional integration workflows independently, concatenates their registrations, and rejects duplicate workflow IDs.
 It does not examine graphs or classify registrations by task type.
@@ -162,8 +162,9 @@ sequenceDiagram
     Caller->>Service: start(workflow_id, raw_input, trigger)
     Service->>Input: parse(raw_input)
     Input-->>Service: normalized RunInput
-    Service->>Storage: save graph-flow Session
-    Service->>History: insert Running snapshot
+    Service->>Storage: begin transaction and save graph-flow Session
+    Service->>History: insert Running snapshot in the same transaction
+    Service->>Storage: commit initial state
     Service-->>Caller: initial snapshot
     Service->>Driver: spawn run driver
     loop until terminal
@@ -213,27 +214,38 @@ ApplicationState
 └── schedule_leases: Arc<dyn ScheduleLeaseStore>
 ```
 
-The initial `StateBackendConfig::InMemory` builder creates all three stores as one consistent bundle.
-`WorkflowService` does not construct `InMemorySessionStorage`, `HistoryState`, or a schedule ID set directly.
+The `StateBackendConfig::Turso` builder creates one Toasty-backed store and exposes it through all three contracts.
+`WorkflowService` does not construct an in-memory graph session store, history map, terminal ring, or schedule ID set.
+The default location is a private SQLite in-memory database, so selecting SQLite does not silently enable disk persistence.
+A file location is an explicit application configuration choice.
 
-The shared graph session store is safe because run IDs are globally unique within the process.
-Run history operations expose domain-level atomic commands rather than allowing the service to lock or mutate an in-memory collection directly.
-Schedule leases expose only `claim` and `release`.
+The shared graph session store uses opaque globally unique run IDs and preserves graph-flow's optimistic version check on every save.
+Validated versioned DTOs form the serialization boundary for runs and graph sessions, while their row adapters check indexed metadata against the decoded payload.
+The graph session DTO's format version is independent from graph-flow's compare-and-swap version.
+Run history operations expose domain-level atomic commands rather than allowing the service to lock or mutate a collection directly.
+The storage representation retains a start-order sequence independently from terminal retention order.
+Evicting a terminal run also deletes its associated graph session in the same transaction.
+Schedule leases expose `claim` and `release`, with the database enforcing unique schedule ownership.
+All storage operations distinguish database failure from a missing row or an overlap rejection.
 
-The database extension point is the backend enum plus these store contracts.
-A future database backend must provide all three state categories, migrations, recovery behavior, and restart tests together.
-The current code intentionally contains no database dependency, schema, or partial hybrid mode.
+The database is opened and migrated before the HTTP listener or scheduler starts.
+Toasty 0.10's `MigrationSet::apply` applies committed SQL from `src/storage/migrations/` and records applied migration IDs rather than resetting the database or regenerating its schema on every startup.
+The current table definitions in `src/storage/schema.sql` are also checked against SQLite schema metadata before recovery.
+All store adapters share the same `Db` pool, which is limited to one connection for in-memory SQLite.
+Transactions must use their transaction handle for every statement and must not await a second pool checkout while holding that single connection.
+The [SQLite storage plan](plans/sqlite-storage.md) records the complete state inventory, API evidence, compatibility patch, recovery boundaries, and verification requirements.
 
-## 9. History, events, and replay
+## 9. History and event invalidation
 
 Every accepted run immediately creates a `RunSnapshot`.
 The snapshot retains trigger, status, active topology, traversed topology, duration, and every node execution trace.
 
-`RunHistoryStore` applies state changes atomically and returns `HistoryDelta` values.
-The service publishes each delta through the configured history broadcast channel.
-The history SSE endpoint replays retained deltas after a client revision and switches to a full reload when the cursor is older than the configured replay journal.
+`RunHistoryStore` applies snapshot changes atomically.
+Workflow lifecycle notifications are published only after the corresponding state change succeeds.
+Both SSE endpoints subscribe before reading their initial snapshot and re-fetch authoritative state after relevant events or a lagged receiver.
+The history endpoint refreshes its bounded table on run lifecycle changes rather than maintaining a separate durable delta journal.
 
-Workflow lifecycle events are a separate channel:
+The workflow lifecycle channel contains:
 
 - `RunStarted`;
 - `NodeStarted`;
@@ -307,9 +319,15 @@ Jcode-specific lifecycle, session, SDK option, and hook details live in the [gra
 
 ## 14. Restart behavior
 
-The current backend is entirely in memory.
-Restarting the process loses graph-flow sessions, run snapshots, replay deltas, schedule leases, and optional integration conversations.
-The configuration and state boundaries make a future persistent backend possible, but no recovery guarantee exists until such a backend is implemented and selected.
+The default SQLite location is in memory.
+Restarting the process loses its graph-flow sessions, run snapshots, and schedule leases, while code-defined registrations and schedules are rebuilt.
+An explicitly configured file-backed database can retain serializable state, but retaining a session does not make its external effects or live resources restartable.
+A file-backed service holds an exclusive file lock for its lifetime, preventing a second owning service from treating live runs as interrupted.
+Before starting cron workers, recovery validates stored rows, marks interrupted running snapshots and active steps failed, clears schedule leases, and applies terminal retention in a transaction.
+Recovery never runs graph tasks or repeats agent or filesystem side effects.
+Provider clients, process handles, task trackers, semaphore permits, broadcast receivers, and turn mutexes are always recreated rather than serialized.
+In particular, the current process-local jcode session registry and ephemeral provider home do not provide cross-process conversation resumption.
+Provider descriptors, durable homes and resumption are tracked separately in [issue #3](https://github.com/totto2727-org/flowdeck/issues/3).
 
 ## 15. Architectural invariants
 

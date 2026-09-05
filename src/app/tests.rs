@@ -15,7 +15,9 @@ use crate::features::{
 
 #[tokio::test]
 async fn initial_signals_restore_the_workflow_and_run_from_the_url() {
-    let service = WorkflowService::new().expect("code-defined workflows should build");
+    let service = WorkflowService::new()
+        .await
+        .expect("code-defined workflows should build");
     let run = service
         .start(
             "review-pipeline",
@@ -70,7 +72,9 @@ fn workflow_url_without_a_run_uses_the_canonical_runless_path() {
 
 #[tokio::test]
 async fn latest_run_url_selects_the_newest_run_for_its_workflow() {
-    let service = WorkflowService::new().expect("code-defined workflows should build");
+    let service = WorkflowService::new()
+        .await
+        .expect("code-defined workflows should build");
     service
         .start(
             "review-pipeline",
@@ -89,7 +93,10 @@ async fn latest_run_url_selects_the_newest_run_for_its_workflow() {
         .expect("newest review run should start");
 
     assert_eq!(
-        latest_run_url(&service.list_runs().await, "review-pipeline"),
+        latest_run_url(
+            &service.list_runs().await.expect("runs should load"),
+            "review-pipeline"
+        ),
         Some(workflow_url(
             "review-pipeline",
             Some(newest.run_id.as_str())

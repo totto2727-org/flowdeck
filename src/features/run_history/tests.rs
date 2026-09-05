@@ -9,7 +9,9 @@ use crate::app::workflow_url;
 
 #[tokio::test]
 async fn run_history_renders_url_driven_filters_and_full_snapshot_rows() {
-    let service = WorkflowService::new().expect("code-defined workflows should build");
+    let service = WorkflowService::new()
+        .await
+        .expect("code-defined workflows should build");
     let demo = service
         .start(
             workflow_id(),
@@ -36,7 +38,7 @@ async fn run_history_renders_url_driven_filters_and_full_snapshot_rows() {
     let __cx = &cx;
     let html = topcoat::view::view! {
         history_panel(state: HistoryPanelState::new(
-            service.history_view().await,
+            service.history_view().await.expect("history should load"),
             filters,
             workflow_url("review-pipeline", None),
         ))
@@ -65,9 +67,11 @@ async fn history_events_url_contains_only_normalized_filters() {
         history_trigger: Some("invalid".to_owned()),
         history_status: Some("completed".to_owned()),
     });
-    let service = WorkflowService::new().expect("code-defined workflows should build");
+    let service = WorkflowService::new()
+        .await
+        .expect("code-defined workflows should build");
     let state = HistoryPanelState::new(
-        service.history_view().await,
+        service.history_view().await.expect("history should load"),
         filters,
         "/workflows/review-pipeline/runs/".to_owned(),
     );
@@ -80,7 +84,9 @@ async fn history_events_url_contains_only_normalized_filters() {
 
 #[tokio::test]
 async fn history_invalidation_uses_run_events_and_ignores_step_events() {
-    let service = WorkflowService::new().expect("code-defined workflows should build");
+    let service = WorkflowService::new()
+        .await
+        .expect("code-defined workflows should build");
     let mut events = service.subscribe();
     let _ = service
         .start(

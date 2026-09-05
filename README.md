@@ -8,7 +8,10 @@ A local workflow cockpit for running, scheduling, and inspecting code-defined wo
 
 Start Flowdeck through one of the setup options, then open <http://127.0.0.1:3000/>. Choose a bundled sample, enter its run arguments, and select **Run workflow**. Follow the highlighted route as the run progresses, then select a step or transition with a pointer, Enter, or Space to inspect its status, timing, output, and errors.
 
-The bundled workflows demonstrate the interface only. Application developers define concrete workflows in Rust and rebuild Flowdeck to register them. Flowdeck is local and non-persistent, so run history remains available only while the application is running.
+The bundled workflows demonstrate the interface only.
+Application developers define concrete workflows in Rust and rebuild Flowdeck to register them.
+By default, Flowdeck stores runs, traces, workflow sessions, and schedule leases in an in-memory Turso database (SQLite-compatible), so history remains available only while the application is running.
+The latest 100 terminal runs are retained without evicting active runs.
 
 ## Key features
 
@@ -80,3 +83,23 @@ For repository structure and development commands, see [AGENTS.md](./AGENTS.md).
 MIT
 
 _This README was generated from the [share-artifact skill](https://raw.githubusercontent.com/totto2727-org/agent/refs/heads/main/plugins/totto2727-coding/skills/share-artifact/SKILL.md) and [README template](https://raw.githubusercontent.com/totto2727-org/agent/refs/heads/main/plugins/totto2727-coding/skills/share-artifact/readme/template.md)._
+
+## Storage configuration
+
+Storage uses embedded Turso through Toasty and defaults to a private in-memory database.
+A local file and an optional Turso remote can be injected through the Rust `ApplicationConfig` API:
+
+```rust
+let mut config = ApplicationConfig::local_default();
+let StateBackendConfig::Turso(storage) = &mut config.state.backend;
+storage.location = TursoLocation::File("state.db".into());
+storage.remote = Some(TursoRemoteConfig::new(remote_url, auth_token)?);
+let service = WorkflowService::with_config(config).await?;
+```
+
+The remote URL and token are validated before driver construction and are redacted from configuration debug output.
+Remote mode is single-writer replica synchronization, not direct remote SQL or distributed scheduling.
+Normal operations commit locally and attempt replication; `service.flush_storage().await?` explicitly confirms pending changes have been pushed.
+A file replica preserves unsynchronized local changes across restarts; an in-memory replica does not.
+See [storage synchronization and migration maintenance](src/storage/README.md).
+No temporary-file mode or new external configuration loader is provided.

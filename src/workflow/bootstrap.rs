@@ -25,20 +25,20 @@ struct GraphExecutionConfig {
 
 impl WorkflowService {
     /// Build every registered workflow without starting optional node backends.
-    pub fn new() -> Result<Self, WorkflowError> {
-        Self::with_config(ApplicationConfig::local_default())
+    pub async fn new() -> Result<Self, WorkflowError> {
+        Self::with_config(ApplicationConfig::local_default()).await
     }
 
     /// Build every registered workflow with explicit application policy.
-    pub fn with_config(config: ApplicationConfig) -> Result<Self, WorkflowError> {
-        Self::build(workflow_registrations()?, config)
+    pub async fn with_config(config: ApplicationConfig) -> Result<Self, WorkflowError> {
+        Self::build(workflow_registrations()?, config).await
     }
 
-    fn build(
+    async fn build(
         registrations: Vec<WorkflowRegistration>,
         config: ApplicationConfig,
     ) -> Result<Self, WorkflowError> {
-        let state = ApplicationState::build(&config.state.backend);
+        let state = ApplicationState::build(&config.state.backend).await?;
         let mut runtimes = HashMap::new();
         for registration in registrations {
             let execution =

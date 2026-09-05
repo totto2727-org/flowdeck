@@ -71,6 +71,15 @@ struct WorkflowRuntime {
 }
 
 impl WorkflowService {
+    /// Push pending local storage changes to the configured Turso remote.
+    ///
+    /// Normal workflow operations commit locally and attempt replication without
+    /// undoing successful runs when the network fails. Use this method when a
+    /// caller needs explicit confirmation of replication. With no remote it is a no-op.
+    pub async fn flush_storage(&self) -> Result<(), WorkflowError> {
+        self.inner.state.storage.flush_remote().await
+    }
+
     /// Validate a workflow ID, retain its first snapshot, and start its driver.
     #[allow(
         clippy::significant_drop_tightening,
@@ -111,11 +120,6 @@ impl WorkflowService {
             .context
             .set(WORKFLOW_RUN_ID_KEY, run_id.as_str())
             .map_err(|error| session_error(&error))?;
-        runtime
-            .storage
-            .save(session)
-            .await
-            .map_err(|error| session_error(&error))?;
         let snapshot = RunSnapshot {
             run_id: run_id.clone(),
             workflow_id: definition.workflow_id.to_owned(),
@@ -135,8 +139,8 @@ impl WorkflowService {
         self.inner
             .state
             .run_history
-            .insert_active(snapshot.clone())
-            .await;
+            .insert_active(snapshot.clone(), session)
+            .await?;
         let _ = self.inner.events.send(WorkflowEvent::RunStarted {
             run_id: run_id.clone(),
             workflow_id: definition.workflow_id.to_owned(),
@@ -144,7 +148,17 @@ impl WorkflowService {
         let inner = Arc::clone(&self.inner);
         self.inner.tasks.spawn(async move {
             let _run_guard = run_guard;
-            drive(inner, run_id, definition.workflow_id).await;
+            if let Err(error) =
+                drive(Arc::clone(&inner), run_id.clone(), definition.workflow_id).await
+            {
+                tracing::error!(%run_id, %error, "workflow driver persistence failed");
+                if let Err(recovery_error) =
+                    driver::recover_storage_failure(&inner, &run_id, &error).await
+                {
+                    tracing::error!(%run_id, original_error = %error, %recovery_error,
+                        "workflow failure could not be persisted; no terminal event emitted");
+                }
+            }
         });
         Ok(snapshot)
     }
@@ -155,26 +169,26 @@ impl WorkflowService {
     }
 
     /// Read every retained run atomically.
-    pub async fn history_view(&self) -> HistoryView {
+    pub async fn history_view(&self) -> Result<HistoryView, WorkflowError> {
         self.inner.state.run_history.view().await
     }
 
     /// List all retained snapshots in start order.
-    pub async fn list_runs(&self) -> Vec<RunSnapshot> {
-        self.inner.state.run_history.view().await.runs
+    pub async fn list_runs(&self) -> Result<Vec<RunSnapshot>, WorkflowError> {
+        Ok(self.inner.state.run_history.view().await?.runs)
     }
 
     /// Poll one retained snapshot by its opaque run ID.
-    pub async fn get_run(&self, run_id: &RunId) -> Option<RunSnapshot> {
+    pub async fn get_run(&self, run_id: &RunId) -> Result<Option<RunSnapshot>, WorkflowError> {
         self.inner.state.run_history.get(run_id).await
     }
 
-    pub(crate) async fn claim_schedule(&self, schedule_id: &str) -> bool {
+    pub(crate) async fn claim_schedule(&self, schedule_id: &str) -> Result<bool, WorkflowError> {
         self.inner.state.schedule_leases.claim(schedule_id).await
     }
 
-    pub(crate) async fn release_schedule(&self, schedule_id: &str) {
-        self.inner.state.schedule_leases.release(schedule_id).await;
+    pub(crate) async fn release_schedule(&self, schedule_id: &str) -> Result<(), WorkflowError> {
+        self.inner.state.schedule_leases.release(schedule_id).await
     }
 
     pub(crate) fn contains_workflow(&self, workflow_id: &str) -> bool {
