@@ -369,3 +369,61 @@ The conceptual flow is submission, server-managed pending work, runner pickup, e
 This illustrates decoupled execution and a runner pool, not proof of complete system HA.
 Server and database availability, interrupted-job recovery, and duplicate-side-effect handling must be assessed separately.
 Flowdeck can adopt that responsibility pattern independently of whether its roles share a binary.
+
+## 16. Actual failure handling and comparison with an HA reference architecture
+
+Question recorded on 2026-09-05: how do Forgejo and similar systems achieve HA, how does that differ from the Flowdeck proposal, and why choose those boundaries?
+
+### Evidence boundary and correction
+
+The earlier description of Forgejo as a relevant queue/runner example must not be read as evidence of a fully supported active-active Forgejo server topology.
+The official Forgejo material and source inspected here establish execution distribution and failure handling, not a complete verified multi-server HA deployment recipe.
+No claim that Forgejo categorically cannot support HA follows from this research limitation.
+Use Forgejo for the concrete runner protocol and failure-handling comparison, and GitLab's explicit HA reference architecture for the whole-service redundancy comparison.
+
+### Verified Forgejo Actions behavior
+
+- `FetchTask` accepts authenticated runner requests and invokes server-side `PickTask`.
+- `CreateTaskForRunner` selects matching work, creates an attempt assigned to a runner, and conditionally updates the job with `task_id = 0` within a transaction.
+- This is database-backed assignment rather than runners directly consuming Redis messages or connecting to the application database.
+- The inspected request-key handling can return previously assigned tasks to the same authenticated runner after an uncertain fetch response.
+- Request-key recovery is not migration of a running job to another runner.
+- `UpdateTaskByState` checks the assigned runner identity and updates the task timestamp even when a nonterminal status has not otherwise changed.
+- `StopZombieTasks` finds running tasks whose updates have expired; its `stopTasks` path marks them failed through `StopTask(..., StatusFailure)`.
+- That timeout path does not transparently resume the interrupted task on another runner.
+- Available compatible runners can continue picking other waiting jobs; failure of a particular active task is a separate outcome.
+- Some API retry coordination uses a process-local mutex map, reinforcing that this source review is not proof of whole-server multi-replica safety.
+
+### Explicit whole-service HA example: GitLab
+
+GitLab's official 3,000-user / 60-RPS reference architecture explicitly documents HA.
+It combines load balancing, multiple Rails application instances, multiple Sidekiq background workers, PostgreSQL replication/failover, Redis/Sentinel, object storage, and Gitaly/Praefect for Git repository availability.
+The documentation explicitly notes that Praefect needs an HA PostgreSQL solution and that fault tolerance of repository storage adds operational complexity.
+Sidekiq workers are internal background workers, not GitLab CI Runners; these must not be conflated.
+The relevant lesson is to make both replaceable compute and its stateful dependencies resilient, not to copy the full product-specific component count into Flowdeck.
+
+### Differences and recommendations for Flowdeck
+
+| Concern | Observed example | Flowdeck proposal and reason |
+| --- | --- | --- |
+| Work pickup | Forgejo runner calls an authenticated server API; server assigns database-backed work | Prefer an API boundary if runners are independently operated or execute untrusted code; avoid giving them broad DB credentials and schema coupling |
+| Interrupted execution | Forgejo's zombie timeout marks the attempt failed | Initially record interrupted/failed outcomes; add automatic retry only where explicitly safe, rather than requiring transparent resumption for service HA |
+| Work granularity | Forgejo assigns workflow jobs, with steps inside the job | A complete graph-flow run is a simpler initial unit for Flowdeck's current driver/resources; finer distribution can follow actual needs |
+| Controller | Forgejo source places assignment and timeout handling in the server application | A separate Flowdeck controller is an operational option, not a queue requirement; choose it to isolate scheduling/recovery lifecycle from HTTP rollout and load |
+| Web availability | GitLab explicitly deploys multiple application instances behind a load balancer | Replicate Flowdeck Web/API and make request correctness independent of a particular process |
+| State availability | GitLab makes DB, Redis, object storage, and Git storage separate HA concerns | Use an HA database and suitable artifact storage; retaining a DB-backed queue initially avoids adding another stateful service requiring HA |
+
+The proposed controller need not be a singleton hop in the runner request path.
+Runner fetch and progress APIs can be served by replicated Web/API processes with DB-enforced ownership and deduplication, while leader-elected controllers perform periodic scheduling and recovery.
+API mediation adds a network hop and dependence on API availability, so the API itself must be replicated and clients must retry safely.
+Direct database access remains a valid alternative for a tightly trusted internal worker pool.
+These are reasoned Flowdeck recommendations, not assertions of Forgejo's exact HA deployment.
+
+### Additional primary sources
+
+- Forgejo runner API source, development branch inspected 2026-09-05: https://codeberg.org/forgejo/forgejo/src/branch/forgejo/routers/api/actions/runner/runner.go
+- Forgejo database assignment and status handling, development branch inspected 2026-09-05: https://codeberg.org/forgejo/forgejo/src/branch/forgejo/services/actions/task.go
+- Forgejo timeout behavior, pinned source: https://codeberg.org/forgejo/forgejo/src/commit/8fc8a89b5ca7238b1fd655623cfb49508dcf028c/services/actions/clear_tasks.go
+- GitLab HA reference architecture: https://docs.gitlab.com/administration/reference_architectures/3k_users/
+
+Development-branch behavior is not automatically a guarantee about every released Forgejo version.
