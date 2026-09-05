@@ -51,15 +51,15 @@ An eventual restartable descriptor would need provider identity, stable session 
 
 ## Concrete storage model
 
-Use explicit Toasty table names to avoid accidental schema changes caused by Rust model renaming.
-A compact initial design stores opaque serialized payloads beside fields needed for indexing and concurrency:
+The implementation in `src/storage.rs` uses explicit Toasty table names and the committed migration `src/storage/migrations/0001_initial.sql`.
+It stores opaque serialized payloads beside fields needed for indexing and concurrency:
 
 | Table role | Required columns and constraints |
 | --- | --- |
-| Graph sessions | Text session ID primary key, signed 64-bit version, serialized session payload. Optional indexed graph ID when queried independently. |
-| Run snapshots | Text run ID primary key, unique start sequence, nullable terminal sequence, active/terminal discriminator, serialized validated snapshot payload. |
-| Ordering metadata | Durable monotonic start and terminal counters, or an equivalent allocation scheme that never reuses a sequence after eviction or restart. |
-| Schedule leases | Unique text schedule ID. An owner/run token is required if release can race with acquisition by another process. |
+| `graph_sessions` / `SessionRow` | Text `id` primary key, positive signed 64-bit `version`, JSON-valid text `payload`. |
+| `runs` / `RunRow` | Text `id` primary key, unique positive `start_order`, nullable unique positive `terminal_order`, constrained `status`, JSON-valid text `snapshot`. Running status requires a null terminal order. |
+| `store_clocks` / `ClockRow` | `id` is `start` or `terminal`, with a nonnegative signed 64-bit `value`. Updates reject exhaustion before incrementing. |
+| `schedule_leases` / `LeaseRow` | Unique nonblank text `id`. A file-backed service holds an exclusive file lock, so the current database has only one owning service. |
 | Migration bookkeeping | Toasty's standard `__toasty_migrations` table, owned by the migration API rather than an application model. |
 
 The existing ring evicts by insertion into the terminal ring, not by run start time.
@@ -68,6 +68,12 @@ A schema based only on `started_at`, UUID ordering, or the start sequence will c
 Use checked conversions for `u64`, `usize`, durations and timestamps because SQLite integers are signed 64-bit values.
 Keep storage DTO versioning and validation distinct from application domain models.
 JSON decode failures must be actionable storage errors, not an absent row or an empty history.
+`src/storage/run_dto.rs` validates versioned run/step wire data with Garde before restoring domain values.
+`src/storage/session_dto.rs` validates a separate `schema_version = 1` envelope whose other fields match graph-flow's session wire shape: `id`, `graph_id`, `current_task_id`, `status_message`, `context`, and optimistic-lock `version`.
+Session identifiers must be nonblank, context must be an object, and the lock version must fit SQLite's signed integer range.
+The context envelope is restored through graph-flow's own Serde contract, preserving opaque workflow values and chat history, while `Session` itself is explicitly constructed only after DTO validation.
+`SessionRow::into_session` separately checks the decoded ID and lock version against the indexed row metadata.
+The schema version never replaces or increments the compare-and-swap version.
 
 ## Toasty 0.10 APIs
 
@@ -82,7 +88,7 @@ toasty = { version = "0.10", features = ["sqlite", "migration"] }
 
 ```rust,ignore
 let db = toasty::Db::builder()
-    .models(toasty::models!(GraphSessionRow, RunRow, ScheduleLeaseRow))
+    .models(toasty::models!(SessionRow, RunRow, LeaseRow, ClockRow))
     .max_pool_size(1)
     .connect("sqlite::memory:")
     .await?;
@@ -118,8 +124,10 @@ Toasty 0.10 supports two standard embedding forms:
 static MIGRATIONS: toasty::migration::MigrationSet = toasty::embed_migrations!();
 ```
 
-Alternatively, use `MigrationSet::new` with a static slice of `MigrationFile::new(id, name, include_str!(...))` for explicitly maintained committed SQL.
-This avoids adding a custom migration runner while permitting a small application-owned migration manifest.
+The application selects the explicit `MigrationSet::new` form with a static `MigrationFile::new(1, "0001_initial.sql", include_str!(...))` entry for `src/storage/migrations/0001_initial.sql`.
+This reuses Toasty's transactional apply and migration-ID tracking without requiring runtime SQL files, a custom runner, or a migration CLI.
+`SqliteStore::verify_schema` also compares the expected table declarations with SQLite's retained schema before recovery, rejecting table drift.
+The `toasty/` layout below describes an optional generator workflow, not the application's current migration path.
 
 For generated migrations, use a project-local binary built on `toasty-cli` 0.10 and the same model registry as the application.
 `ToastyCli::with_config(db, Config::load()?).parse_and_run().await?` provides generation and application commands.
@@ -150,11 +158,12 @@ A process can stop after a session advances but before the visible trace finishe
 Optimistic locking cannot roll back filesystem edits, provider requests, or other external effects performed before a stale save is rejected.
 A dropped async timeout also does not terminate an already-running synchronous `spawn_blocking` agent turn.
 
-The baseline retains graph sessions after terminal history eviction and has no named jcode-session removal path.
-Consequently, bounding visible history alone does not bound total state or integration resource growth.
-The SQLite implementation must explicitly define graph-session cleanup relative to history retention, and the integration's live-session lifetime must remain a separately owned policy.
-File-backed simultaneous processes additionally require owner-aware leases and a startup-recovery ownership rule before stale-state cleanup is safe.
-These are acceptance constraints for advertised persistence guarantees, not assumptions supplied by choosing SQLite.
+The baseline retained graph sessions after terminal history eviction and had no named jcode-session removal path.
+The SQLite implementation now deletes graph sessions associated with evicted terminal runs in the same retention transaction, while the integration's live-session lifetime remains a separately owned policy.
+On file-backed startup, the service acquires an exclusive file lock, validates retained rows, marks interrupted running snapshots and their active steps failed, clears leases, and applies retention transactionally.
+It never runs a graph task during recovery.
+Removing the single-owner restriction would require owner-aware leases and a startup-recovery ownership rule before stale-state cleanup is safe.
+Provider descriptors, durable provider homes and restartable agent conversations are tracked by [follow-up issue #3](https://github.com/totto2727-org/flowdeck/issues/3) rather than being claimed as SQLite migration guarantees.
 
 ## Dependency compatibility
 

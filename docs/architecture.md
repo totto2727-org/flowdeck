@@ -162,8 +162,9 @@ sequenceDiagram
     Caller->>Service: start(workflow_id, raw_input, trigger)
     Service->>Input: parse(raw_input)
     Input-->>Service: normalized RunInput
-    Service->>Storage: save graph-flow Session
-    Service->>History: insert Running snapshot
+    Service->>Storage: begin transaction and save graph-flow Session
+    Service->>History: insert Running snapshot in the same transaction
+    Service->>Storage: commit initial state
     Service-->>Caller: initial snapshot
     Service->>Driver: spawn run driver
     loop until terminal
@@ -219,13 +220,17 @@ The default location is a private SQLite in-memory database, so selecting SQLite
 A file location is an explicit application configuration choice.
 
 The shared graph session store uses opaque globally unique run IDs and preserves graph-flow's optimistic version check on every save.
+Validated versioned DTOs form the serialization boundary for runs and graph sessions, while their row adapters check indexed metadata against the decoded payload.
+The graph session DTO's format version is independent from graph-flow's compare-and-swap version.
 Run history operations expose domain-level atomic commands rather than allowing the service to lock or mutate a collection directly.
 The storage representation retains a start-order sequence independently from terminal retention order.
+Evicting a terminal run also deletes its associated graph session in the same transaction.
 Schedule leases expose `claim` and `release`, with the database enforcing unique schedule ownership.
 All storage operations distinguish database failure from a missing row or an overlap rejection.
 
 The database is opened and migrated before the HTTP listener or scheduler starts.
-Toasty 0.10's `MigrationSet::apply` applies committed SQL and records applied migration IDs rather than resetting the database or regenerating its schema on every startup.
+Toasty 0.10's `MigrationSet::apply` applies committed SQL from `src/storage/migrations/` and records applied migration IDs rather than resetting the database or regenerating its schema on every startup.
+The current table definitions in `src/storage/schema.sql` are also checked against SQLite schema metadata before recovery.
 All store adapters share the same `Db` pool, which is limited to one connection for in-memory SQLite.
 Transactions must use their transaction handle for every statement and must not await a second pool checkout while holding that single connection.
 The [SQLite storage plan](plans/sqlite-storage.md) records the complete state inventory, API evidence, compatibility patch, recovery boundaries, and verification requirements.
@@ -317,9 +322,12 @@ Jcode-specific lifecycle, session, SDK option, and hook details live in the [gra
 The default SQLite location is in memory.
 Restarting the process loses its graph-flow sessions, run snapshots, and schedule leases, while code-defined registrations and schedules are rebuilt.
 An explicitly configured file-backed database can retain serializable state, but retaining a session does not make its external effects or live resources restartable.
-Interrupted run recovery must reconcile active snapshots and schedule leases before cron workers start and must not automatically repeat agent or filesystem side effects.
+A file-backed service holds an exclusive file lock for its lifetime, preventing a second owning service from treating live runs as interrupted.
+Before starting cron workers, recovery validates stored rows, marks interrupted running snapshots and active steps failed, clears schedule leases, and applies terminal retention in a transaction.
+Recovery never runs graph tasks or repeats agent or filesystem side effects.
 Provider clients, process handles, task trackers, semaphore permits, broadcast receivers, and turn mutexes are always recreated rather than serialized.
 In particular, the current process-local jcode session registry and ephemeral provider home do not provide cross-process conversation resumption.
+Provider descriptors, durable homes and resumption are tracked separately in [issue #3](https://github.com/totto2727-org/flowdeck/issues/3).
 
 ## 15. Architectural invariants
 
