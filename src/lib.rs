@@ -1,6 +1,8 @@
 //! Local workflow execution domain.
 
 mod config;
+mod run_snapshot;
+pub(crate) mod storage;
 mod workflow;
 mod workflow_limits;
 /// Code-defined cron schedules and their shared dispatcher.
@@ -17,8 +19,9 @@ use std::{
 
 pub use config::{
     ApplicationConfig, ApplicationConfigError, EventConfig, ExecutionTargetDefaults, HttpConfig,
-    InMemoryHistoryConfig, InMemoryStateConfig, PositiveDuration, RunRetention, SchedulerConfig,
-    SchedulerMode, StateBackendConfig, StateConfig, WorkflowConfig, WorkflowExecutionDefaults,
+    PositiveDuration, RunHistoryConfig, RunRetention, SchedulerConfig, SchedulerMode,
+    SqliteLocation, SqliteStateConfig, StateBackendConfig, StateConfig, WorkflowConfig,
+    WorkflowExecutionDefaults,
 };
 pub use workflow::{HistoryView, WorkflowEvent, WorkflowService};
 pub use workflow_limits::{ExecutionLimit, WorkflowExecutionLimits};
@@ -146,6 +149,11 @@ impl fmt::Display for RunId {
 /// Typed failures at the workflow service boundary.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum WorkflowError {
+    /// A database operation or persisted-value validation failed.
+    Storage {
+        /// Storage diagnostic without persisted payloads.
+        message: String,
+    },
     /// The supplied ID does not name this experiment's workflow.
     UnknownWorkflow {
         /// Caller-provided value rejected by the service boundary.
@@ -196,6 +204,7 @@ pub enum WorkflowError {
 impl fmt::Display for WorkflowError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Storage { message } => write!(formatter, "workflow storage failed: {message}"),
             Self::UnknownWorkflow { workflow_id } => {
                 write!(formatter, "unknown workflow: {workflow_id}")
             }

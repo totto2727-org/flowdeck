@@ -3,17 +3,23 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use serde::Serialize;
 use serde_json::Value;
 
 use crate::{RunSnapshot, StepTraceStatus::Running};
 
 /// Stable one-based identity of a node execution within one run.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize)]
-#[serde(transparent)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct StepId(usize);
 
 impl StepId {
+    pub(crate) fn from_persisted(value: usize) -> Result<Self, crate::WorkflowError> {
+        if value == 0 {
+            return Err(crate::WorkflowError::Storage {
+                message: "step identity must be positive".to_owned(),
+            });
+        }
+        Ok(Self(value))
+    }
     /// Return the run-local numeric identity.
     pub const fn value(self) -> usize {
         self.0
@@ -27,7 +33,7 @@ impl fmt::Display for StepId {
 }
 
 /// Typed graph state retained immediately after one node executes.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StepState {
     /// Workflow-owned, explicitly projected and redacted state.
     pub payload: Value,

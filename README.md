@@ -8,7 +8,10 @@ A local workflow cockpit for running, scheduling, and inspecting code-defined wo
 
 Start Flowdeck through one of the setup options, then open <http://127.0.0.1:3000/>. Choose a bundled sample, enter its run arguments, and select **Run workflow**. Follow the highlighted route as the run progresses, then select a step or transition with a pointer, Enter, or Space to inspect its status, timing, output, and errors.
 
-The bundled workflows demonstrate the interface only. Application developers define concrete workflows in Rust and rebuild Flowdeck to register them. Flowdeck is local and non-persistent, so run history remains available only while the application is running.
+The bundled workflows demonstrate the interface only.
+Application developers define concrete workflows in Rust and rebuild Flowdeck to register them.
+By default, Flowdeck stores runs, traces, workflow sessions, and schedule leases in an in-memory SQLite database, so history remains available only while the application is running.
+The latest 100 terminal runs are retained without evicting active runs.
 
 ## Key features
 

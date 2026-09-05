@@ -1,3 +1,8 @@
+# SQLite storage update
+
+The storage and startup sections in this historical translation describe the pre-SQLite implementation.
+See the current [English architecture](./architecture.md) and [SQLite design](./plans/sqlite-storage.md) for the authoritative database, migration, validation, and recovery contracts.
+
 # ワークフローコンソールのアーキテクチャ
 
 ## 1. 適用範囲
