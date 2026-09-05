@@ -4,18 +4,21 @@ use graph_flow::ExecutionStatus;
 use tokio::time::timeout;
 
 use super::{Inner, WorkflowRuntime};
-use crate::{RunId, RunSnapshot, StepState, WorkflowExecutionLimits};
+use crate::{RunId, RunSnapshot, StepState, WorkflowError, WorkflowExecutionLimits};
 
 #[path = "driver/records.rs"]
 mod records;
-
 use records::{
     RunFailure, StepCompletion, active_step_id, record_failure, record_step, record_step_start,
 };
 
-pub(super) async fn drive(inner: Arc<Inner>, run_id: RunId, workflow_id: &'static str) {
+pub(super) async fn drive(
+    inner: Arc<Inner>,
+    run_id: RunId,
+    workflow_id: &'static str,
+) -> Result<(), WorkflowError> {
     let Some(runtime) = inner.runtimes.get(workflow_id) else {
-        record_failure(
+        return record_failure(
             &inner,
             &run_id,
             RunFailure {
@@ -24,16 +27,16 @@ pub(super) async fn drive(inner: Arc<Inner>, run_id: RunId, workflow_id: &'stati
             },
         )
         .await;
-        return;
     };
-    if timeout(
+    if let Ok(result) = timeout(
         runtime.limits.timeout,
         drive_steps(&inner, &run_id, runtime),
     )
     .await
-    .is_err()
     {
-        let step_id = active_step_id(&inner, &run_id).await;
+        result
+    } else {
+        let step_id = active_step_id(&inner, &run_id).await?;
         record_failure(
             &inner,
             &run_id,
@@ -45,8 +48,25 @@ pub(super) async fn drive(inner: Arc<Inner>, run_id: RunId, workflow_id: &'stati
                 ),
             },
         )
-        .await;
+        .await
     }
+}
+
+pub(super) async fn recover_storage_failure(
+    inner: &Inner,
+    run_id: &RunId,
+    error: &WorkflowError,
+) -> Result<(), WorkflowError> {
+    let step_id = active_step_id(inner, run_id).await?;
+    record_failure(
+        inner,
+        run_id,
+        RunFailure {
+            step_id,
+            message: error.to_string(),
+        },
+    )
+    .await
 }
 
 enum DriveControl {
@@ -61,16 +81,20 @@ struct StepDriver<'a> {
     current: &'a str,
 }
 
-async fn drive_steps(inner: &Inner, run_id: &RunId, runtime: &WorkflowRuntime) {
+async fn drive_steps(
+    inner: &Inner,
+    run_id: &RunId,
+    runtime: &WorkflowRuntime,
+) -> Result<(), WorkflowError> {
     loop {
-        let Some(snapshot) = inner.state.run_history.get(run_id).await else {
-            return;
+        let Some(snapshot) = inner.state.run_history.get(run_id).await? else {
+            return Ok(());
         };
         let Some(current) = snapshot.current_node.clone() else {
-            return;
+            return Ok(());
         };
         if let Some(message) = step_limit_failure(&snapshot, &current, runtime.limits) {
-            record_failure(
+            return record_failure(
                 inner,
                 run_id,
                 RunFailure {
@@ -79,7 +103,6 @@ async fn drive_steps(inner: &Inner, run_id: &RunId, runtime: &WorkflowRuntime) {
                 },
             )
             .await;
-            return;
         }
         let step = StepDriver {
             inner,
@@ -87,28 +110,32 @@ async fn drive_steps(inner: &Inner, run_id: &RunId, runtime: &WorkflowRuntime) {
             runtime,
             current: &current,
         };
-        let Some((step_id, result)) = step.execute().await else {
-            return;
+        let Some((step_id, result)) = step.execute().await? else {
+            return Ok(());
         };
-        if matches!(step.complete(step_id, result).await, DriveControl::Stop) {
-            return;
+        if matches!(step.complete(step_id, result).await?, DriveControl::Stop) {
+            return Ok(());
         }
     }
 }
 
 impl StepDriver<'_> {
-    async fn execute(&self) -> Option<(crate::StepId, graph_flow::ExecutionResult)> {
-        let step_id = record_step_start(self.inner, self.run_id, self.current).await?;
+    async fn execute(
+        &self,
+    ) -> Result<Option<(crate::StepId, graph_flow::ExecutionResult)>, WorkflowError> {
+        let Some(step_id) = record_step_start(self.inner, self.run_id, self.current).await? else {
+            return Ok(None);
+        };
         match timeout(
             self.runtime.limits.node.timeout,
             self.runtime.runner.run(self.run_id.as_str()),
         )
         .await
         {
-            Ok(Ok(result)) => Some((step_id, result)),
+            Ok(Ok(result)) => Ok(Some((step_id, result))),
             Ok(Err(error)) => {
-                self.fail(Some(step_id), error.to_string()).await;
-                None
+                self.fail(Some(step_id), error.to_string()).await?;
+                Ok(None)
             }
             Err(_) => {
                 self.fail(
@@ -119,8 +146,8 @@ impl StepDriver<'_> {
                         self.runtime.limits.node.timeout.as_secs()
                     ),
                 )
-                .await;
-                None
+                .await?;
+                Ok(None)
             }
         }
     }
@@ -129,19 +156,19 @@ impl StepDriver<'_> {
         &self,
         step_id: crate::StepId,
         result: graph_flow::ExecutionResult,
-    ) -> DriveControl {
+    ) -> Result<DriveControl, WorkflowError> {
         match result.status {
             ExecutionStatus::Paused { .. } | ExecutionStatus::Completed => {
                 let session = match self.runtime.storage.get(self.run_id.as_str()).await {
                     Ok(Some(session)) => session,
                     Ok(None) => {
                         self.fail(Some(step_id), "session disappeared".to_owned())
-                            .await;
-                        return DriveControl::Stop;
+                            .await?;
+                        return Ok(DriveControl::Stop);
                     }
                     Err(error) => {
-                        self.fail(Some(step_id), error.to_string()).await;
-                        return DriveControl::Stop;
+                        self.fail(Some(step_id), error.to_string()).await?;
+                        return Ok(DriveControl::Stop);
                     }
                 };
                 let terminal = matches!(result.status, ExecutionStatus::Completed);
@@ -152,8 +179,8 @@ impl StepDriver<'_> {
                 {
                     Ok(payload) => StepState { payload },
                     Err(error) => {
-                        self.fail(Some(step_id), error.to_string()).await;
-                        return DriveControl::Stop;
+                        self.fail(Some(step_id), error.to_string()).await?;
+                        return Ok(DriveControl::Stop);
                     }
                 };
                 record_step(
@@ -169,23 +196,27 @@ impl StepDriver<'_> {
                         state,
                     },
                 )
-                .await;
-                if terminal {
+                .await?;
+                Ok(if terminal {
                     DriveControl::Stop
                 } else {
                     DriveControl::Continue
-                }
+                })
             }
             ExecutionStatus::WaitingForInput => {
                 self.fail(Some(step_id), "unexpected wait-for-input state".to_owned())
-                    .await;
-                DriveControl::Stop
+                    .await?;
+                Ok(DriveControl::Stop)
             }
         }
     }
 
-    async fn fail(&self, step_id: Option<crate::StepId>, message: String) {
-        record_failure(self.inner, self.run_id, RunFailure { step_id, message }).await;
+    async fn fail(
+        &self,
+        step_id: Option<crate::StepId>,
+        message: String,
+    ) -> Result<(), WorkflowError> {
+        record_failure(self.inner, self.run_id, RunFailure { step_id, message }).await
     }
 }
 

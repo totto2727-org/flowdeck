@@ -48,7 +48,7 @@ pub struct ApplicationConfig {
 }
 
 impl ApplicationConfig {
-    /// Preserve the experiment's local-only, `InMemory` operating profile.
+    /// Preserve the experiment's local-only, `SQLite` operating profile.
     #[must_use]
     pub const fn local_default() -> Self {
         Self {
@@ -67,8 +67,9 @@ impl ApplicationConfig {
                 },
             },
             state: StateConfig {
-                backend: StateBackendConfig::InMemory(InMemoryStateConfig {
-                    history: InMemoryHistoryConfig {
+                backend: StateBackendConfig::Sqlite(SqliteStateConfig {
+                    location: SqliteLocation::Memory,
+                    history: RunHistoryConfig {
                         run_retention: RunRetention::KeepLatest(DEFAULT_RUN_RETENTION),
                     },
                 }),
@@ -159,20 +160,31 @@ pub struct StateConfig {
 /// Supported state backend profiles.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum StateBackendConfig {
-    /// Process-local state that is lost on restart.
-    InMemory(InMemoryStateConfig),
+    /// `SQLite`-backed state, in memory or in a local file.
+    Sqlite(SqliteStateConfig),
 }
 
-/// `InMemory` backend policy.
+/// `SQLite` backend policy.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct InMemoryStateConfig {
+pub struct SqliteStateConfig {
+    /// Database location.
+    pub location: SqliteLocation,
     /// Retained run settings.
-    pub history: InMemoryHistoryConfig,
+    pub history: RunHistoryConfig,
 }
 
-/// `InMemory` history retention policy.
+/// `SQLite` connection target.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct InMemoryHistoryConfig {
+pub enum SqliteLocation {
+    /// A private database lasting for the lifetime of the service.
+    Memory,
+    /// A database file preserved across service restarts.
+    File(std::path::PathBuf),
+}
+
+/// `SQLite` history retention policy.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RunHistoryConfig {
     /// Terminal run snapshot retention policy.
     pub run_retention: RunRetention,
 }
@@ -252,7 +264,7 @@ mod tests {
             config.workflows.execution.node.timeout.get(),
             Duration::from_mins(5)
         );
-        let StateBackendConfig::InMemory(memory) = config.state.backend;
+        let StateBackendConfig::Sqlite(memory) = config.state.backend;
         assert!(matches!(
             memory.history.run_retention,
             RunRetention::KeepLatest(capacity) if capacity.get() == 100

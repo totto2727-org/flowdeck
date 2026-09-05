@@ -58,3 +58,108 @@ fn snapshot() -> RunSnapshot {
         steps: Vec::new(),
     }
 }
+
+async fn fault_fixture() -> Result<
+    (
+        super::Inner,
+        std::sync::Arc<crate::storage::SqliteStore>,
+        tokio::sync::broadcast::Receiver<crate::WorkflowEvent>,
+    ),
+    Box<dyn std::error::Error>,
+> {
+    use super::super::{ActiveRunGroup, ApplicationState, WorkflowTasks};
+    use std::{collections::HashMap, sync::Arc};
+    let config = crate::ApplicationConfig::local_default();
+    let crate::StateBackendConfig::Sqlite(state_config) = &config.state.backend;
+    let store = Arc::new(crate::storage::SqliteStore::open(state_config).await?);
+    let (events, receiver) = tokio::sync::broadcast::channel(4);
+    let inner = super::Inner {
+        runtimes: HashMap::new(),
+        state: ApplicationState {
+            graph_sessions: Arc::<crate::storage::SqliteStore>::clone(&store),
+            run_history: Arc::<crate::storage::SqliteStore>::clone(&store),
+            schedule_leases: Arc::<crate::storage::SqliteStore>::clone(&store),
+        },
+        scheduler: config.scheduler,
+        run_group: ActiveRunGroup::new(config.workflows.max_concurrent_runs),
+        events,
+        tasks: WorkflowTasks::new(Arc::new(crate::ResourceStore::new())),
+    };
+    let mut run = snapshot();
+    run.trigger = RunTrigger::Cron {
+        schedule_id: "fault-schedule".to_owned(),
+    };
+    let _ = run.begin_step("loop");
+    store
+        .insert_run(
+            run,
+            Some(graph_flow::Session::new_from_task(
+                "limit-test".to_owned(),
+                "loop",
+            )),
+        )
+        .await?;
+    assert!(store.claim_lease("fault-schedule").await?);
+    Ok((inner, store, receiver))
+}
+
+#[tokio::test]
+async fn transient_storage_failure_is_committed_before_terminal_event()
+-> Result<(), Box<dyn std::error::Error>> {
+    let (inner, store, mut events) = fault_fixture().await?;
+    store.execute_test_sql("CREATE TRIGGER reject_completion BEFORE UPDATE ON runs WHEN NEW.status = 'completed' BEGIN SELECT RAISE(ABORT, 'injected completion failure'); END").await?;
+    let run_id = RunId("limit-test".to_owned());
+    let result = store
+        .mutate_run(&run_id, |run| {
+            run.status = RunStatus::Completed;
+        })
+        .await;
+    let Err(error @ crate::WorkflowError::Storage { .. }) = result else {
+        return Err("expected injected storage error".into());
+    };
+    super::recover_storage_failure(&inner, &run_id, &error).await?;
+    let run = store
+        .get_run(&run_id)
+        .await?
+        .ok_or("missing recovered run")?;
+    assert!(matches!(run.status, RunStatus::Failed { .. }));
+    assert!(matches!(
+        run.steps.first().map(|step| &step.status),
+        Some(crate::StepTraceStatus::Failed { .. })
+    ));
+    assert!(store.claim_lease("fault-schedule").await?);
+    assert!(matches!(
+        events.try_recv()?,
+        crate::WorkflowEvent::RunFailed { .. }
+    ));
+    Ok(())
+}
+
+#[tokio::test]
+async fn unrecoverable_storage_failure_does_not_publish_a_false_terminal_event()
+-> Result<(), Box<dyn std::error::Error>> {
+    let (inner, store, mut events) = fault_fixture().await?;
+    store.execute_test_sql("CREATE TRIGGER reject_updates BEFORE UPDATE ON runs BEGIN SELECT RAISE(ABORT, 'injected persistent failure'); END").await?;
+    let run_id = RunId("limit-test".to_owned());
+    let error = crate::WorkflowError::Storage {
+        message: "initial storage failure".to_owned(),
+    };
+    assert!(matches!(
+        super::recover_storage_failure(&inner, &run_id, &error).await,
+        Err(crate::WorkflowError::Storage { .. })
+    ));
+    assert_eq!(
+        store
+            .get_run(&run_id)
+            .await?
+            .ok_or("missing active run")?
+            .status,
+        RunStatus::Running
+    );
+    assert!(!store.claim_lease("fault-schedule").await?);
+    assert!(matches!(
+        events.try_recv(),
+        Err(tokio::sync::broadcast::error::TryRecvError::Empty)
+    ));
+    Ok(())
+}

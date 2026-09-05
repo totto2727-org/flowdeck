@@ -1,13 +1,12 @@
-use std::{collections::HashSet, sync::Arc, time::SystemTime};
+use std::{sync::Arc, time::SystemTime};
 
 use async_trait::async_trait;
-use graph_flow::{InMemorySessionStorage, SessionStorage};
-use tokio::sync::{Mutex, RwLock};
+use graph_flow::{Session, SessionStorage};
 
-use super::{HistoryView, history::HistoryState};
+use super::HistoryView;
 use crate::{
-    InMemoryStateConfig, RunId, RunRetention, RunSnapshot, RunStatus, RunTrigger,
-    StateBackendConfig, StepId, StepState,
+    RunId, RunSnapshot, RunStatus, StateBackendConfig, StepId, StepState, WorkflowError,
+    storage::SqliteStore,
 };
 
 pub(super) struct ApplicationState {
@@ -17,18 +16,14 @@ pub(super) struct ApplicationState {
 }
 
 impl ApplicationState {
-    pub(super) fn build(config: &StateBackendConfig) -> Self {
-        match config {
-            StateBackendConfig::InMemory(config) => Self::in_memory(config),
-        }
-    }
-
-    fn in_memory(config: &InMemoryStateConfig) -> Self {
-        Self {
-            graph_sessions: Arc::new(InMemorySessionStorage::new()),
-            run_history: Arc::new(InMemoryRunHistoryStore::new(config)),
-            schedule_leases: Arc::new(InMemoryScheduleLeaseStore::default()),
-        }
+    pub(super) async fn build(config: &StateBackendConfig) -> Result<Self, WorkflowError> {
+        let StateBackendConfig::Sqlite(config) = config;
+        let store = Arc::new(SqliteStore::open(config).await?);
+        Ok(Self {
+            graph_sessions: Arc::<SqliteStore>::clone(&store),
+            run_history: Arc::<SqliteStore>::clone(&store),
+            schedule_leases: store,
+        })
     }
 }
 
@@ -51,79 +46,78 @@ pub(super) struct StepStarted {
 pub(super) struct StepCompleted {
     pub(super) workflow_id: String,
     pub(super) run_completed: bool,
-    pub(super) schedule_id: Option<String>,
 }
 
 pub(super) struct RunFailed {
     pub(super) workflow_id: String,
-    pub(super) schedule_id: Option<String>,
 }
 
 #[async_trait]
 pub(super) trait RunHistoryStore: Send + Sync {
-    async fn insert_active(&self, snapshot: RunSnapshot);
-    async fn insert_terminal(&self, snapshot: RunSnapshot);
-    async fn get(&self, run_id: &RunId) -> Option<RunSnapshot>;
-    async fn view(&self) -> HistoryView;
-    async fn start_step(&self, run_id: &RunId, node_id: &str) -> Option<StepStarted>;
-    async fn complete_step(&self, completion: CompleteStep) -> Option<StepCompleted>;
+    async fn insert_active(
+        &self,
+        snapshot: RunSnapshot,
+        session: Session,
+    ) -> Result<(), WorkflowError>;
+    async fn insert_terminal(&self, snapshot: RunSnapshot) -> Result<(), WorkflowError>;
+    async fn get(&self, run_id: &RunId) -> Result<Option<RunSnapshot>, WorkflowError>;
+    async fn view(&self) -> Result<HistoryView, WorkflowError>;
+    async fn start_step(
+        &self,
+        run_id: &RunId,
+        node_id: &str,
+    ) -> Result<Option<StepStarted>, WorkflowError>;
+    async fn complete_step(
+        &self,
+        completion: CompleteStep,
+    ) -> Result<Option<StepCompleted>, WorkflowError>;
     async fn fail_run(
         &self,
         run_id: &RunId,
         step_id: Option<StepId>,
         message: String,
-    ) -> Option<RunFailed>;
-}
-
-struct InMemoryRunHistoryStore {
-    state: RwLock<HistoryState>,
-}
-
-impl InMemoryRunHistoryStore {
-    fn new(config: &InMemoryStateConfig) -> Self {
-        let terminal_capacity = match &config.history.run_retention {
-            RunRetention::KeepLatest(capacity) => *capacity,
-        };
-        Self {
-            state: RwLock::new(HistoryState::new(terminal_capacity)),
-        }
-    }
+    ) -> Result<Option<RunFailed>, WorkflowError>;
 }
 
 #[async_trait]
-impl RunHistoryStore for InMemoryRunHistoryStore {
-    async fn insert_active(&self, snapshot: RunSnapshot) {
-        self.state.write().await.insert_active(snapshot);
+impl RunHistoryStore for SqliteStore {
+    async fn insert_active(
+        &self,
+        snapshot: RunSnapshot,
+        session: Session,
+    ) -> Result<(), WorkflowError> {
+        self.insert_run(snapshot, Some(session)).await
     }
 
-    async fn insert_terminal(&self, snapshot: RunSnapshot) {
-        self.state.write().await.insert_terminal(snapshot);
+    async fn insert_terminal(&self, snapshot: RunSnapshot) -> Result<(), WorkflowError> {
+        self.insert_run(snapshot, None).await
     }
 
-    async fn get(&self, run_id: &RunId) -> Option<RunSnapshot> {
-        self.state.read().await.get(run_id)
+    async fn get(&self, run_id: &RunId) -> Result<Option<RunSnapshot>, WorkflowError> {
+        self.get_run(run_id).await
     }
 
-    async fn view(&self) -> HistoryView {
-        self.state.read().await.view()
+    async fn view(&self) -> Result<HistoryView, WorkflowError> {
+        self.history().await
     }
 
-    async fn start_step(&self, run_id: &RunId, node_id: &str) -> Option<StepStarted> {
-        let mut state = self.state.write().await;
-        let (step_id, workflow_id) = state.mutate_active(run_id, |snapshot| {
-            (snapshot.begin_step(node_id), snapshot.workflow_id.clone())
-        })?;
-        drop(state);
-        Some(StepStarted {
-            step_id,
-            workflow_id,
+    async fn start_step(
+        &self,
+        run_id: &RunId,
+        node_id: &str,
+    ) -> Result<Option<StepStarted>, WorkflowError> {
+        self.mutate_run(run_id, |snapshot| StepStarted {
+            step_id: snapshot.begin_step(node_id),
+            workflow_id: snapshot.workflow_id.clone(),
         })
+        .await
     }
 
-    async fn complete_step(&self, completion: CompleteStep) -> Option<StepCompleted> {
-        let mut state = self.state.write().await;
-        let terminal = completion.terminal;
-        let update = |snapshot: &mut RunSnapshot| {
+    async fn complete_step(
+        &self,
+        completion: CompleteStep,
+    ) -> Result<Option<StepCompleted>, WorkflowError> {
+        self.mutate_run(&completion.run_id, |snapshot| {
             snapshot.traversed_nodes.push(completion.current);
             snapshot.finish_step(
                 completion.step_id,
@@ -137,26 +131,18 @@ impl RunHistoryStore for InMemoryRunHistoryStore {
             }
             snapshot.current_node = Some(completion.next);
             snapshot.route_summary = route_summary(snapshot);
-            let schedule_id = terminal.then(|| schedule_id(&snapshot.trigger)).flatten();
-            if terminal {
+            if completion.terminal {
                 let finished_at = SystemTime::now();
                 snapshot.status = RunStatus::Completed;
                 snapshot.duration = finished_at.duration_since(snapshot.started_at).ok();
                 snapshot.finished_at = Some(finished_at);
             }
-            (snapshot.workflow_id.clone(), terminal, schedule_id)
-        };
-        let (workflow_id, run_completed, schedule_id) = if terminal {
-            state.finish(&completion.run_id, update)
-        } else {
-            state.mutate_active(&completion.run_id, update)
-        }?;
-        drop(state);
-        Some(StepCompleted {
-            workflow_id,
-            run_completed,
-            schedule_id,
+            StepCompleted {
+                workflow_id: snapshot.workflow_id.clone(),
+                run_completed: completion.terminal,
+            }
         })
+        .await
     }
 
     async fn fail_run(
@@ -164,53 +150,34 @@ impl RunHistoryStore for InMemoryRunHistoryStore {
         run_id: &RunId,
         step_id: Option<StepId>,
         message: String,
-    ) -> Option<RunFailed> {
-        let mut state = self.state.write().await;
-        let (workflow_id, schedule_id) = state.finish(run_id, |snapshot| {
+    ) -> Result<Option<RunFailed>, WorkflowError> {
+        self.mutate_run(run_id, |snapshot| {
             let finished_at = SystemTime::now();
             snapshot.fail_step(step_id, &message, finished_at);
             snapshot.duration = finished_at.duration_since(snapshot.started_at).ok();
             snapshot.finished_at = Some(finished_at);
             snapshot.status = RunStatus::Failed { message };
-            (snapshot.workflow_id.clone(), schedule_id(&snapshot.trigger))
-        })?;
-        drop(state);
-        Some(RunFailed {
-            workflow_id,
-            schedule_id,
+            RunFailed {
+                workflow_id: snapshot.workflow_id.clone(),
+            }
         })
+        .await
     }
 }
 
 #[async_trait]
 pub(super) trait ScheduleLeaseStore: Send + Sync {
-    async fn claim(&self, schedule_id: &str) -> bool;
-    async fn release(&self, schedule_id: &str);
-}
-
-#[derive(Default)]
-struct InMemoryScheduleLeaseStore {
-    schedule_ids: Mutex<HashSet<String>>,
+    async fn claim(&self, schedule_id: &str) -> Result<bool, WorkflowError>;
+    async fn release(&self, schedule_id: &str) -> Result<(), WorkflowError>;
 }
 
 #[async_trait]
-impl ScheduleLeaseStore for InMemoryScheduleLeaseStore {
-    async fn claim(&self, schedule_id: &str) -> bool {
-        self.schedule_ids
-            .lock()
-            .await
-            .insert(schedule_id.to_owned())
+impl ScheduleLeaseStore for SqliteStore {
+    async fn claim(&self, schedule_id: &str) -> Result<bool, WorkflowError> {
+        self.claim_lease(schedule_id).await
     }
-
-    async fn release(&self, schedule_id: &str) {
-        self.schedule_ids.lock().await.remove(schedule_id);
-    }
-}
-
-fn schedule_id(trigger: &RunTrigger) -> Option<String> {
-    match trigger {
-        RunTrigger::Manual => None,
-        RunTrigger::Cron { schedule_id } => Some(schedule_id.clone()),
+    async fn release(&self, schedule_id: &str) -> Result<(), WorkflowError> {
+        self.release_lease(schedule_id).await
     }
 }
 

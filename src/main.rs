@@ -55,7 +55,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .try_init()?;
 
     let config = ApplicationConfig::local_default();
-    let service = WorkflowService::with_config(config.clone())?;
+    let service = WorkflowService::with_config(config.clone()).await?;
     let scheduler = service.clone();
     let assets = AssetBundle::load()?;
     let router = Router::builder()
