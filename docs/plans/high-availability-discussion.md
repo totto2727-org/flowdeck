@@ -427,3 +427,24 @@ These are reasoned Flowdeck recommendations, not assertions of Forgejo's exact H
 - GitLab HA reference architecture: https://docs.gitlab.com/administration/reference_architectures/3k_users/
 
 Development-branch behavior is not automatically a guarantee about every released Forgejo version.
+
+## 17. Single-machine concurrency versus redundancy
+
+Question recorded on 2026-09-05: are Tokio-spawned tasks or Go goroutines sufficient redundancy on a single machine?
+
+Conclusion: they can be sufficient execution infrastructure for a single-machine service that accepts downtime, but spawning concurrent work is not redundancy by itself.
+Tasks and goroutines share their process and machine failure domains.
+They provide concurrency and can support application-level supervision, not survival of process termination, OOM kills, OS failure, or machine loss.
+
+| Failure | Required boundary or mechanism |
+| --- | --- |
+| A workflow returns an ordinary error | Record the error and keep independent runs alive |
+| A task panics | Depends on runtime and panic policy; Tokio JoinHandle can report an unwinding task panic, whereas an unrecovered Go goroutine panic terminates the program; Rust abort configurations terminate the process |
+| The process stops or is killed | A process supervisor can restart it, with downtime and durable-state recovery |
+| The machine fails | Another machine and accessible durable state are required for continued service |
+
+For Flowdeck's current simplicity goal, one process with Tokio tasks, bounded concurrency, explicit error handling, durable accepted-work/state storage, and process supervision is a reasonable initial operating model.
+Persist queued work before spawning if accepted requests must survive a crash between acceptance and task startup.
+Interrupted executions may be classified as interrupted/failed instead of blindly replayed.
+This is recoverable single-instance operation, not machine-fault-tolerant HA.
+Multiple worker tasks can be useful for throughput and supervision, but creating extra workers alone does not create additional independent failure domains.
