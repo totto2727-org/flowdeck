@@ -26,7 +26,7 @@ struct SessionDto {
     version: u64,
 }
 
-pub(crate) fn encode(session: &Session) -> Result<String, WorkflowError> {
+pub(super) fn encode(session: &Session) -> Result<String, WorkflowError> {
     let dto = SessionDto {
         schema_version: 1,
         id: session.id.clone(),
@@ -42,7 +42,7 @@ pub(crate) fn encode(session: &Session) -> Result<String, WorkflowError> {
     serde_json::to_string(&dto).map_err(|_| storage_error("encoding failed"))
 }
 
-pub(crate) fn decode(json: &str) -> Result<Session, WorkflowError> {
+pub(super) fn decode(json: &str) -> Result<Session, WorkflowError> {
     let dto: SessionDto = serde_json::from_str(json)
         .map_err(|_| storage_error("invalid JSON or incompatible wire fields"))?;
     dto.validate()
@@ -59,6 +59,10 @@ pub(crate) fn decode(json: &str) -> Result<Session, WorkflowError> {
     })
 }
 
+#[allow(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "Garde requires a borrowed validation context"
+)]
 fn non_blank(value: &str, (): &()) -> garde::Result {
     if value.trim().is_empty() {
         Err(garde::Error::new("must not be blank"))
@@ -67,6 +71,10 @@ fn non_blank(value: &str, (): &()) -> garde::Result {
     }
 }
 
+#[allow(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "Garde requires a borrowed validation context"
+)]
 fn object(value: &Value, (): &()) -> garde::Result {
     if value.is_object() {
         Ok(())
@@ -75,6 +83,10 @@ fn object(value: &Value, (): &()) -> garde::Result {
     }
 }
 
+#[allow(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "Garde requires borrowed field values and validation context"
+)]
 fn sqlite_version(value: &u64, (): &()) -> garde::Result {
     if i64::try_from(*value).is_ok() {
         Ok(())

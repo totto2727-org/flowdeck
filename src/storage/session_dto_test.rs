@@ -12,6 +12,18 @@ fn wire() -> Result<Value, Box<dyn std::error::Error>> {
     Ok(serde_json::from_str(&encode(&session())?)?)
 }
 
+fn set_field(
+    value: &mut Value,
+    key: &str,
+    replacement: Value,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let fields = value
+        .as_object_mut()
+        .ok_or("session fixture must be an object")?;
+    let _ = fields.insert(key.to_owned(), replacement);
+    Ok(())
+}
+
 fn assert_storage_error(value: &Value) -> Result<(), serde_json::Error> {
     assert!(matches!(
         decode(&serde_json::to_string(value)?),
@@ -79,7 +91,7 @@ fn corrupt_json_and_wrong_field_types_are_rejected() -> Result<(), Box<dyn std::
         "schema_version",
     ] {
         let mut value = wire()?;
-        value[field] = json!({"unexpected": true});
+        set_field(&mut value, field, json!({"unexpected": true}))?;
         assert_storage_error(&value)?;
     }
     Ok(())
@@ -110,7 +122,7 @@ fn blank_identifiers_are_rejected_on_decode_and_encode() -> Result<(), Box<dyn s
     for field in ["id", "graph_id", "current_task_id"] {
         for blank in ["", " \t\n", "\u{3000}"] {
             let mut value = wire()?;
-            value[field] = json!(blank);
+            set_field(&mut value, field, json!(blank))?;
             assert_storage_error(&value)?;
         }
     }
@@ -140,12 +152,12 @@ fn unsupported_schema_and_out_of_range_cas_versions_are_rejected()
 -> Result<(), Box<dyn std::error::Error>> {
     for version in [json!(0), json!(2), json!(256), json!(-1)] {
         let mut value = wire()?;
-        value["schema_version"] = version;
+        set_field(&mut value, "schema_version", version)?;
         assert_storage_error(&value)?;
     }
     for version in [json!(-1), json!(u64::MAX)] {
         let mut value = wire()?;
-        value["version"] = version;
+        set_field(&mut value, "version", version)?;
         assert_storage_error(&value)?;
     }
     let mut original = session();
@@ -169,7 +181,7 @@ fn invalid_context_shapes_are_rejected_before_domain_restoration()
         json!({"data": {}, "chat_history": {"messages": "invalid"}}),
     ] {
         let mut value = wire()?;
-        value["context"] = context;
+        set_field(&mut value, "context", context)?;
         assert_storage_error(&value)?;
     }
     Ok(())
@@ -179,7 +191,7 @@ fn invalid_context_shapes_are_rejected_before_domain_restoration()
 fn unknown_wire_fields_are_rejected_but_workflow_context_is_opaque()
 -> Result<(), Box<dyn std::error::Error>> {
     let mut value = wire()?;
-    value["unrecognized"] = json!(true);
+    set_field(&mut value, "unrecognized", json!(true))?;
     assert_storage_error(&value)?;
 
     let original = session();
@@ -208,7 +220,7 @@ fn optional_status_message_preserves_none_and_empty_text() -> Result<(), Box<dyn
 #[test]
 fn errors_do_not_echo_persisted_values() -> Result<(), Box<dyn std::error::Error>> {
     let mut value = wire()?;
-    value["version"] = json!("private-persisted-value");
+    set_field(&mut value, "version", json!("private-persisted-value"))?;
     let error = decode(&serde_json::to_string(&value)?)
         .err()
         .ok_or("expected error")?;
