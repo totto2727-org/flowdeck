@@ -1,4 +1,4 @@
-//! `SQLite` persistence for workflow snapshots, graph sessions, and schedule leases.
+//! Turso persistence for workflow snapshots, graph sessions, and schedule leases.
 
 use std::{
     fs::{File, OpenOptions},
@@ -13,11 +13,12 @@ use toasty::{
     migration::{MigrationFile, MigrationSet},
     sql,
 };
+use toasty_driver_turso::Turso;
 use tokio::sync::Mutex;
 
 use crate::{
-    HistoryView, RunId, RunRetention, RunSnapshot, RunStatus, RunTrigger, SqliteLocation,
-    SqliteStateConfig, WorkflowError,
+    HistoryView, RunId, RunRetention, RunSnapshot, RunStatus, RunTrigger, TursoLocation,
+    TursoStateConfig, WorkflowError,
 };
 
 mod models;
@@ -34,14 +35,15 @@ const MIGRATIONS: MigrationSet =
     clippy::redundant_pub_crate,
     reason = "The live database store is intentionally crate-internal, not application public API."
 )]
-pub(crate) struct SqliteStore {
+pub(crate) struct TursoStore {
     db: Mutex<Db>,
     terminal_capacity: i64,
+    remote: Option<Turso>,
     // A file service owns its database exclusively, so startup recovery cannot interrupt another service.
     _file_lock: Option<File>,
 }
 
-impl SqliteStore {
+impl TursoStore {
     #[cfg(test)]
     pub(crate) async fn execute_test_sql(&self, statement: &str) -> Result<(), WorkflowError> {
         let mut db = self.db.lock().await;
@@ -49,14 +51,20 @@ impl SqliteStore {
             .exec(&mut *db)
             .await
             .map_err(error)?;
+        self.replicate_committed().await;
         drop(db);
         Ok(())
     }
 
-    pub(crate) async fn open(config: &SqliteStateConfig) -> Result<Self, WorkflowError> {
+    pub(crate) async fn open(config: &TursoStateConfig) -> Result<Self, WorkflowError> {
+        // SQLx and Turso enable different Rustls providers. Preserve an explicit
+        // application choice, otherwise select one before Turso starts its IO thread.
+        if rustls::crypto::CryptoProvider::get_default().is_none() {
+            let _ = rustls::crypto::ring::default_provider().install_default();
+        }
         let (url, file_lock) = match &config.location {
-            SqliteLocation::Memory => ("sqlite::memory:".to_owned(), None),
-            SqliteLocation::File(path) => {
+            TursoLocation::Memory => ("turso::memory:".to_owned(), None),
+            TursoLocation::File(path) => {
                 let file = OpenOptions::new()
                     .read(true)
                     .write(true)
@@ -79,10 +87,19 @@ impl SqliteStore {
                 let path = path
                     .to_str()
                     .ok_or_else(|| error("SQLite path must be valid UTF-8"))?;
-                (format!("sqlite:{path}"), Some(file))
+                (format!("turso:{path}"), Some(file))
             }
         };
-        let mut db = Db::builder()
+        let mut driver = Turso::new(&url).map_err(error)?;
+        if let Some(remote) = &config.remote {
+            driver = driver
+                .with_remote_url(remote.url())
+                .with_auth_token(remote.auth_token())
+                .with_long_poll_timeout(std::time::Duration::from_secs(1));
+        }
+        let remote = config.remote.as_ref().map(|_| driver.clone());
+        let mut builder = Db::builder();
+        builder
             .models(toasty::models!(
                 RunRow,
                 SessionRow,
@@ -92,10 +109,26 @@ impl SqliteStore {
             ))
             .max_pool_size(1)
             .pool_max_connection_lifetime(None)
-            .pool_max_connection_idle_time(None)
-            .connect(&url)
-            .await
-            .map_err(error)?;
+            .pool_max_connection_idle_time(None);
+        let mut db =
+            tokio::time::timeout(std::time::Duration::from_secs(30), builder.build(driver))
+                .await
+                .map_err(|_| error("Turso connection timed out"))?
+                .map_err(|cause| {
+                    if remote.is_some() {
+                        error("Turso remote connection failed")
+                    } else {
+                        error(cause)
+                    }
+                })?;
+        if let Some(remote) = &remote {
+            // Preserve locally committed changes from an interrupted/offline process before pulling.
+            sync_push(remote).await?;
+            tokio::time::timeout(std::time::Duration::from_secs(30), remote.pull())
+                .await
+                .map_err(|_| error("Turso remote pull timed out"))?
+                .map_err(|_| error("Turso remote pull failed"))?;
+        }
         verify_migration_history(&mut db).await?;
         MIGRATIONS.apply(&db).await.map_err(error)?;
         let RunRetention::KeepLatest(capacity) = config.history.run_retention;
@@ -103,10 +136,36 @@ impl SqliteStore {
             db: Mutex::new(db),
             terminal_capacity: i64::try_from(capacity.get()).map_err(error)?,
             _file_lock: file_lock,
+            remote,
         };
         store.verify_schema().await?;
         store.recover().await?;
+        store.flush_remote().await?;
         Ok(store)
+    }
+
+    // A failed replication must not orphan a locally committed run or lease by
+    // reporting its creation as failed. Explicit flush exposes replication errors.
+    async fn replicate_committed(&self) {
+        if self.sync_remote().await.is_err() {
+            tracing::warn!(
+                "Turso replication failed; changes remain local and will be retried on the next write or explicit flush"
+            );
+        }
+    }
+
+    async fn sync_remote(&self) -> Result<(), WorkflowError> {
+        if let Some(driver) = &self.remote {
+            sync_push(driver).await?;
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn flush_remote(&self) -> Result<(), WorkflowError> {
+        let guard = self.db.lock().await;
+        let result = self.sync_remote().await;
+        drop(guard);
+        result
     }
 
     async fn verify_schema(&self) -> Result<(), WorkflowError> {
@@ -182,7 +241,9 @@ impl SqliteStore {
             save_session(&mut tx, session).await.map_err(error)?;
         }
         retain(&mut tx, self.terminal_capacity).await?;
-        tx.commit().await.map_err(error)
+        tx.commit().await.map_err(error)?;
+        self.replicate_committed().await;
+        Ok(())
     }
 
     pub(crate) async fn get_run(&self, id: &RunId) -> Result<Option<RunSnapshot>, WorkflowError> {
@@ -238,6 +299,7 @@ impl SqliteStore {
         persist_mutation(&mut tx, &snapshot).await?;
         retain(&mut tx, self.terminal_capacity).await?;
         tx.commit().await.map_err(error)?;
+        self.replicate_committed().await;
         Ok(Some(result))
     }
 
@@ -251,6 +313,7 @@ impl SqliteStore {
         .exec(&mut *db)
         .await
         .map_err(error)?;
+        self.replicate_committed().await;
         drop(db);
         Ok(count == 1)
     }
@@ -262,6 +325,7 @@ impl SqliteStore {
             .exec(&mut *db)
             .await
             .map_err(error)?;
+        self.replicate_committed().await;
         drop(db);
         Ok(())
     }
@@ -309,8 +373,17 @@ impl SqliteStore {
             .await
             .map_err(error)?;
         retain(&mut tx, self.terminal_capacity).await?;
-        tx.commit().await.map_err(error)
+        tx.commit().await.map_err(error)?;
+        self.replicate_committed().await;
+        Ok(())
     }
+}
+
+async fn sync_push(driver: &Turso) -> Result<(), WorkflowError> {
+    tokio::time::timeout(std::time::Duration::from_secs(30), driver.push())
+        .await
+        .map_err(|_| error("Turso remote push timed out; local changes may already be committed"))?
+        .map_err(|_| error("Turso remote push failed; local changes may already be committed"))
 }
 
 async fn next_order(executor: &mut dyn Executor, id: &str) -> Result<i64, WorkflowError> {
@@ -402,10 +475,13 @@ async fn save_session(executor: &mut dyn Executor, mut session: Session) -> Resu
 }
 
 #[async_trait]
-impl SessionStorage for SqliteStore {
+impl SessionStorage for TursoStore {
     async fn save(&self, session: Session) -> Result<(), GraphError> {
         let mut db = self.db.lock().await;
-        save_session(&mut *db, session).await
+        save_session(&mut *db, session).await?;
+        self.replicate_committed().await;
+        drop(db);
+        Ok(())
     }
     async fn get(&self, id: &str) -> Result<Option<Session>, GraphError> {
         let mut db = self.db.lock().await;
@@ -424,6 +500,7 @@ impl SessionStorage for SqliteStore {
             .exec(&mut *db)
             .await
             .map_err(graph_error)?;
+        self.replicate_committed().await;
         drop(db);
         Ok(())
     }
@@ -522,3 +599,7 @@ async fn verify_clocks(executor: &mut dyn Executor, runs: &[RunRow]) -> Result<(
     }
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "storage_remote_test.rs"]
+mod remote_tests;

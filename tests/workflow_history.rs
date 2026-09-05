@@ -300,10 +300,7 @@ async fn disabled_scheduler_keeps_manual_service_available_without_workers() {
 #[tokio::test]
 async fn configured_run_group_limit_rejects_excess_concurrency() {
     let mut config = ApplicationConfig::local_default();
-    assert!(matches!(
-        config.state.backend,
-        StateBackendConfig::Sqlite(_)
-    ));
+    assert!(matches!(config.state.backend, StateBackendConfig::Turso(_)));
     config.workflows.max_concurrent_runs =
         NonZeroUsize::new(2).expect("test active run limit should be non-zero");
     let service = WorkflowService::with_config(config)

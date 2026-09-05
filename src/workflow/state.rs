@@ -6,10 +6,11 @@ use graph_flow::{Session, SessionStorage};
 use super::HistoryView;
 use crate::{
     RunId, RunSnapshot, RunStatus, StateBackendConfig, StepId, StepState, WorkflowError,
-    storage::SqliteStore,
+    storage::TursoStore,
 };
 
 pub(super) struct ApplicationState {
+    pub(super) storage: Arc<TursoStore>,
     pub(super) graph_sessions: Arc<dyn SessionStorage>,
     pub(super) run_history: Arc<dyn RunHistoryStore>,
     pub(super) schedule_leases: Arc<dyn ScheduleLeaseStore>,
@@ -17,11 +18,12 @@ pub(super) struct ApplicationState {
 
 impl ApplicationState {
     pub(super) async fn build(config: &StateBackendConfig) -> Result<Self, WorkflowError> {
-        let StateBackendConfig::Sqlite(config) = config;
-        let store = Arc::new(SqliteStore::open(config).await?);
+        let StateBackendConfig::Turso(config) = config;
+        let store = Arc::new(TursoStore::open(config).await?);
         Ok(Self {
-            graph_sessions: Arc::<SqliteStore>::clone(&store),
-            run_history: Arc::<SqliteStore>::clone(&store),
+            storage: Arc::clone(&store),
+            graph_sessions: Arc::<TursoStore>::clone(&store),
+            run_history: Arc::<TursoStore>::clone(&store),
             schedule_leases: store,
         })
     }
@@ -80,7 +82,7 @@ pub(super) trait RunHistoryStore: Send + Sync {
 }
 
 #[async_trait]
-impl RunHistoryStore for SqliteStore {
+impl RunHistoryStore for TursoStore {
     async fn insert_active(
         &self,
         snapshot: RunSnapshot,
@@ -172,7 +174,7 @@ pub(super) trait ScheduleLeaseStore: Send + Sync {
 }
 
 #[async_trait]
-impl ScheduleLeaseStore for SqliteStore {
+impl ScheduleLeaseStore for TursoStore {
     async fn claim(&self, schedule_id: &str) -> Result<bool, WorkflowError> {
         self.claim_lease(schedule_id).await
     }

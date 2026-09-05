@@ -62,7 +62,7 @@ fn snapshot() -> RunSnapshot {
 async fn fault_fixture() -> Result<
     (
         super::Inner,
-        std::sync::Arc<crate::storage::SqliteStore>,
+        std::sync::Arc<crate::storage::TursoStore>,
         tokio::sync::broadcast::Receiver<crate::WorkflowEvent>,
     ),
     Box<dyn std::error::Error>,
@@ -70,15 +70,16 @@ async fn fault_fixture() -> Result<
     use super::super::{ActiveRunGroup, ApplicationState, WorkflowTasks};
     use std::{collections::HashMap, sync::Arc};
     let config = crate::ApplicationConfig::local_default();
-    let crate::StateBackendConfig::Sqlite(state_config) = &config.state.backend;
-    let store = Arc::new(crate::storage::SqliteStore::open(state_config).await?);
+    let crate::StateBackendConfig::Turso(state_config) = &config.state.backend;
+    let store = Arc::new(crate::storage::TursoStore::open(state_config).await?);
     let (events, receiver) = tokio::sync::broadcast::channel(4);
     let inner = super::Inner {
         runtimes: HashMap::new(),
         state: ApplicationState {
-            graph_sessions: Arc::<crate::storage::SqliteStore>::clone(&store),
-            run_history: Arc::<crate::storage::SqliteStore>::clone(&store),
-            schedule_leases: Arc::<crate::storage::SqliteStore>::clone(&store),
+            storage: Arc::clone(&store),
+            graph_sessions: Arc::<crate::storage::TursoStore>::clone(&store),
+            run_history: Arc::<crate::storage::TursoStore>::clone(&store),
+            schedule_leases: Arc::<crate::storage::TursoStore>::clone(&store),
         },
         scheduler: config.scheduler,
         run_group: ActiveRunGroup::new(config.workflows.max_concurrent_runs),

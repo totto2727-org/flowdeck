@@ -8,6 +8,9 @@ use std::{
 
 use crate::ScheduleOverlapPolicy;
 
+mod remote;
+pub use remote::TursoRemoteConfig;
+
 const DEFAULT_WORKFLOW_STEP_MULTIPLIER: NonZeroUsize = match NonZeroUsize::new(5) {
     Some(value) => value,
     None => NonZeroUsize::MIN,
@@ -48,7 +51,7 @@ pub struct ApplicationConfig {
 }
 
 impl ApplicationConfig {
-    /// Preserve the experiment's local-only, `SQLite` operating profile.
+    /// Preserve the experiment's local-only, Turso operating profile.
     #[must_use]
     pub const fn local_default() -> Self {
         Self {
@@ -67,8 +70,9 @@ impl ApplicationConfig {
                 },
             },
             state: StateConfig {
-                backend: StateBackendConfig::Sqlite(SqliteStateConfig {
-                    location: SqliteLocation::Memory,
+                backend: StateBackendConfig::Turso(TursoStateConfig {
+                    location: TursoLocation::Memory,
+                    remote: None,
                     history: RunHistoryConfig {
                         run_retention: RunRetention::KeepLatest(DEFAULT_RUN_RETENTION),
                     },
@@ -160,29 +164,31 @@ pub struct StateConfig {
 /// Supported state backend profiles.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum StateBackendConfig {
-    /// `SQLite`-backed state, in memory or in a local file.
-    Sqlite(SqliteStateConfig),
+    /// Turso-backed state, in memory or in a local file.
+    Turso(TursoStateConfig),
 }
 
-/// `SQLite` backend policy.
+/// Turso backend policy.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SqliteStateConfig {
+pub struct TursoStateConfig {
     /// Database location.
-    pub location: SqliteLocation,
+    pub location: TursoLocation,
+    /// Optional embedded sync target with a single writer, not a direct SQL connection.
+    pub remote: Option<TursoRemoteConfig>,
     /// Retained run settings.
     pub history: RunHistoryConfig,
 }
 
-/// `SQLite` connection target.
+/// Turso connection target.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum SqliteLocation {
+pub enum TursoLocation {
     /// A private database lasting for the lifetime of the service.
     Memory,
     /// A database file preserved across service restarts.
     File(std::path::PathBuf),
 }
 
-/// `SQLite` history retention policy.
+/// Turso history retention policy.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RunHistoryConfig {
     /// Terminal run snapshot retention policy.
@@ -226,12 +232,15 @@ pub struct EventConfig {
 pub enum ApplicationConfigError {
     /// A timeout was configured as zero.
     ZeroDuration,
+    /// Remote connection settings failed validation.
+    InvalidTursoRemote,
 }
 
 impl fmt::Display for ApplicationConfigError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::ZeroDuration => formatter.write_str("application duration must be positive"),
+            Self::InvalidTursoRemote => formatter.write_str("invalid Turso remote configuration"),
         }
     }
 }
@@ -264,7 +273,11 @@ mod tests {
             config.workflows.execution.node.timeout.get(),
             Duration::from_mins(5)
         );
-        let StateBackendConfig::Sqlite(memory) = config.state.backend;
+        let StateBackendConfig::Turso(memory) = config.state.backend;
+        assert_eq!(
+            memory.remote, None,
+            "local defaults must not connect remotely"
+        );
         assert!(matches!(
             memory.history.run_retention,
             RunRetention::KeepLatest(capacity) if capacity.get() == 100

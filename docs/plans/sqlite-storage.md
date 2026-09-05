@@ -90,7 +90,7 @@ toasty = { version = "0.10", features = ["sqlite", "migration"] }
 let db = toasty::Db::builder()
     .models(toasty::models!(SessionRow, RunRow, LeaseRow, ClockRow))
     .max_pool_size(1)
-    .connect("sqlite::memory:")
+    .connect("turso::memory:")
     .await?;
 
 MIGRATIONS.apply(&db).await?;
@@ -126,7 +126,7 @@ static MIGRATIONS: toasty::migration::MigrationSet = toasty::embed_migrations!()
 
 The application selects the explicit `MigrationSet::new` form with a static `MigrationFile::new(1, "0001_initial.sql", include_str!(...))` entry for `src/storage/migrations/0001_initial.sql`.
 This reuses Toasty's transactional apply and migration-ID tracking without requiring runtime SQL files, a custom runner, or a migration CLI.
-`SqliteStore::verify_schema` also compares the expected table declarations with SQLite's retained schema before recovery, rejecting table drift.
+`TursoStore::verify_schema` also compares the expected table declarations with SQLite's retained schema before recovery, rejecting table drift.
 The `toasty/` layout below describes an optional generator workflow, not the application's current migration path.
 
 For generated migrations, use a project-local binary built on `toasty-cli` 0.10 and the same model registry as the application.
@@ -167,10 +167,12 @@ Provider descriptors, durable provider homes and restartable agent conversations
 
 ## Dependency compatibility
 
-Graph-flow 0.6.0 depends on the SQLx facade, although all its actual SQLx calls are PostgreSQL operations in `src/storage_postgres.rs`.
-The workspace shares one graph-flow dependency with PostgreSQL disabled through `default-features = false`.
-Toasty uses its SQLite driver and embedded migrations without SQLx in the dependency graph.
-The dependency revision and Cargo lockfile pin the implementation, and `package.nix` pins the corresponding source hash for Nix builds.
+The workspace uses Toasty's embedded Turso driver with a private in-memory database by default and optional local file storage.
+The committed SQLite-compatible schema and validated DTO/domain boundaries remain unchanged.
+All workspace crates share the published graph-flow dependency; no local vendor patch or Git revision override is required.
+The published graph-flow package still depends on SQLx, but the Turso driver does not introduce the conflicting native SQLite dependency used by Toasty's SQLite driver.
+Optional validated remote URL/token configuration uses the Turso sync driver; see the [remote synchronization contract](../../src/storage/README.md#remote-synchronization).
+Remote mode requires a single Flowdeck writer per remote database and is not a distributed storage backend.
 
 ## Verification requirements
 
@@ -197,7 +199,7 @@ The implementation handoff records actual build, test, migration and browser res
 - Builder and pool configuration: <https://docs.rs/toasty/0.10.0/toasty/db/struct.Builder.html>
 - Database and transaction API: <https://docs.rs/toasty/0.10.0/toasty/db/struct.Db.html>
 - Raw SQL: <https://docs.rs/toasty/0.10.0/toasty/sql/index.html>
-- SQLite driver: <https://docs.rs/toasty-driver-sqlite/0.10.0/toasty_driver_sqlite/enum.Sqlite.html>
+- Turso driver and remote sync: <https://docs.rs/toasty-driver-turso/0.10.0/toasty_driver_turso/struct.Turso.html>
 - Feature-gated migration exports: <https://docs.rs/crate/toasty/0.10.0/source/src/lib.rs>
 - Release identity: <https://docs.rs/crate/toasty/0.10.0/source/.cargo_vcs_info.json>
 - Release-fixed migration guide: <https://raw.githubusercontent.com/tokio-rs/toasty/f3411327b6b57fb03deac9e49f7021d1448176be/docs/guide/src/schema-management.md>

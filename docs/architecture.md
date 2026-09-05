@@ -44,7 +44,7 @@ The executable bootstrap in `src/main.rs` performs these operations:
 1. Build `ApplicationConfig::local_default()`.
 2. Await `WorkflowService::with_config` with the configuration.
 3. Construct the code-defined registration catalog.
-4. Open one SQLite database and apply the committed migrations before constructing the consistent `ApplicationState` backend bundle.
+4. Open one embedded Turso database and apply the committed migrations before constructing the consistent `ApplicationState` backend bundle.
 5. Generate one `GraphExecutionConfig` for every registration.
 6. Construct each `FlowRunner` through the same generic path.
 7. Load the compiled Topcoat asset bundle.
@@ -73,8 +73,8 @@ ApplicationConfig
 │           └── timeout: PositiveDuration
 ├── state: StateConfig
 │   └── backend: StateBackendConfig
-│       └── Sqlite(SqliteStateConfig)
-│           ├── location: SqliteLocation
+│       └── Sqlite(TursoStateConfig)
+│           ├── location: TursoLocation
 │           └── history: RunHistoryConfig
 │               └── run_retention: RunRetention
 ├── scheduler: SchedulerConfig
@@ -97,7 +97,7 @@ Consumers receive validated values instead of repeating zero checks.
 | Workflow timeout | derived maximum steps multiplied by `5 minutes` |
 | Same-node execution limit | `5` per run |
 | Node timeout | `5 minutes` |
-| State backend | SQLite with `SqliteLocation::Memory` |
+| State backend | SQLite with `TursoLocation::Memory` |
 | Run retention | Latest `100` terminal snapshots, without evicting active runs |
 | Concurrent run limit | `100` |
 | Scheduler mode | `Enabled` |
@@ -214,7 +214,7 @@ ApplicationState
 └── schedule_leases: Arc<dyn ScheduleLeaseStore>
 ```
 
-The `StateBackendConfig::Sqlite` builder creates one Toasty-backed store and exposes it through all three contracts.
+The `StateBackendConfig::Turso` builder creates one Toasty-backed store and exposes it through all three contracts.
 `WorkflowService` does not construct an in-memory graph session store, history map, terminal ring, or schedule ID set.
 The default location is a private SQLite in-memory database, so selecting SQLite does not silently enable disk persistence.
 A file location is an explicit application configuration choice.

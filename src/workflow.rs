@@ -71,6 +71,15 @@ struct WorkflowRuntime {
 }
 
 impl WorkflowService {
+    /// Push pending local storage changes to the configured Turso remote.
+    ///
+    /// Normal workflow operations commit locally and attempt replication without
+    /// undoing successful runs when the network fails. Use this method when a
+    /// caller needs explicit confirmation of replication. With no remote it is a no-op.
+    pub async fn flush_storage(&self) -> Result<(), WorkflowError> {
+        self.inner.state.storage.flush_remote().await
+    }
+
     /// Validate a workflow ID, retain its first snapshot, and start its driver.
     #[allow(
         clippy::significant_drop_tightening,

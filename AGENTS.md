@@ -52,7 +52,7 @@ Justfile                     Canonical development task entry points
 
 ### Execution state
 
-- Active runs, bounded terminal history, traces, graph-flow sessions, and schedule leases share one Toasty SQLite database, in memory by default.
+- Active runs, bounded terminal history, traces, graph-flow sessions, and schedule leases share one Toasty Turso database, in memory by default.
 - A process-wide semaphore bounds concurrent drivers, while SQL retention evicts terminal runs in completion order without evicting active runs.
 - Executable workflow definitions, broadcast channels, task trackers, semaphore permits, and non-serializable runtime resources remain process-local control objects, not database records.
 - Keep database models, Serde wire DTOs, and application domain types distinct. Validate ORM rows and decoded DTOs with `garde` before domain conversion, and enforce collection and cross-field invariants in domain constructors or conversion services.

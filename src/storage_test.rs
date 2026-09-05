@@ -6,17 +6,18 @@ use std::{
 use graph_flow::{Session, SessionStorage};
 use serde_json::json;
 
-use super::{SqliteStore, sql};
+use super::{TursoStore, sql};
 use crate::{
     RunHistoryConfig, RunId, RunInput, RunRetention, RunSnapshot, RunStatus, RunTrigger,
-    SqliteLocation, SqliteStateConfig, WorkflowError,
+    TursoLocation, TursoStateConfig, WorkflowError,
 };
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
-fn config(capacity: usize) -> Result<SqliteStateConfig, Box<dyn std::error::Error>> {
-    Ok(SqliteStateConfig {
-        location: SqliteLocation::Memory,
+fn config(capacity: usize) -> Result<TursoStateConfig, Box<dyn std::error::Error>> {
+    Ok(TursoStateConfig {
+        location: TursoLocation::Memory,
+        remote: None,
         history: RunHistoryConfig {
             run_retention: RunRetention::KeepLatest(
                 NonZeroUsize::new(capacity).ok_or("zero capacity")?,
@@ -50,7 +51,7 @@ fn complete(snapshot: &mut RunSnapshot) {
     snapshot.duration = Some(Duration::ZERO);
 }
 
-async fn insert(store: &SqliteStore, id: &str) -> TestResult {
+async fn insert(store: &TursoStore, id: &str) -> TestResult {
     store
         .insert_run(
             snapshot(id),
@@ -62,7 +63,7 @@ async fn insert(store: &SqliteStore, id: &str) -> TestResult {
 
 #[tokio::test]
 async fn migrations_are_repeatable_and_match_the_schema() -> TestResult {
-    let store = SqliteStore::open(&config(2)?).await?;
+    let store = TursoStore::open(&config(2)?).await?;
     let db = store.db.lock().await;
     let report = super::MIGRATIONS.apply(&db).await?;
     assert_eq!(report.applied(), 0);
@@ -74,7 +75,7 @@ async fn migrations_are_repeatable_and_match_the_schema() -> TestResult {
 
 #[tokio::test]
 async fn committed_schema_rejects_invalid_rows_at_the_database_boundary() -> TestResult {
-    let store = SqliteStore::open(&config(2)?).await?;
+    let store = TursoStore::open(&config(2)?).await?;
     // Family conformance: every statement bypasses DTO validation and must be rejected by SQL.
     for statement in [
         "INSERT INTO graph_sessions VALUES ('zero-version', 0, '{}')",
@@ -102,11 +103,11 @@ async fn committed_schema_rejects_invalid_rows_at_the_database_boundary() -> Tes
 
 #[tokio::test]
 async fn independently_opened_memory_stores_do_not_share_state() -> TestResult {
-    let first = SqliteStore::open(&config(2)?).await?;
+    let first = TursoStore::open(&config(2)?).await?;
     insert(&first, "private-run").await?;
     assert!(first.claim_lease("private-schedule").await?);
 
-    let second = SqliteStore::open(&config(2)?).await?;
+    let second = TursoStore::open(&config(2)?).await?;
     assert!(second.history().await?.runs.is_empty());
     assert!(second.get("private-run").await?.is_none());
     assert!(second.claim_lease("private-schedule").await?);
@@ -119,7 +120,7 @@ async fn independently_opened_memory_stores_do_not_share_state() -> TestResult {
 
 #[tokio::test]
 async fn session_round_trip_and_optimistic_locking() -> TestResult {
-    let store = SqliteStore::open(&config(2)?).await?;
+    let store = TursoStore::open(&config(2)?).await?;
     let session = Session::new_from_task("session".to_owned(), "start");
     session.context.set(
         "nested",
@@ -150,7 +151,7 @@ async fn session_round_trip_and_optimistic_locking() -> TestResult {
 
 #[tokio::test]
 async fn retention_uses_completion_order_but_history_uses_start_order() -> TestResult {
-    let store = SqliteStore::open(&config(1)?).await?;
+    let store = TursoStore::open(&config(1)?).await?;
     for id in ["first", "second", "active"] {
         insert(&store, id).await?;
     }
@@ -176,7 +177,7 @@ async fn retention_uses_completion_order_but_history_uses_start_order() -> TestR
 
 #[tokio::test]
 async fn failed_completion_rolls_back_snapshot_lease_and_retention() -> TestResult {
-    let store = SqliteStore::open(&config(1)?).await?;
+    let store = TursoStore::open(&config(1)?).await?;
     insert(&store, "old").await?;
     store.mutate_run(&RunId("old".to_owned()), complete).await?;
     let mut run = snapshot("new");
@@ -212,7 +213,7 @@ async fn failed_completion_rolls_back_snapshot_lease_and_retention() -> TestResu
 
 #[tokio::test]
 async fn failed_session_insert_does_not_leave_an_orphan_run() -> TestResult {
-    let store = SqliteStore::open(&config(1)?).await?;
+    let store = TursoStore::open(&config(1)?).await?;
     let mut session = Session::new_from_task("bad".to_owned(), "start");
     session.version = u64::MAX;
     assert!(matches!(
@@ -225,7 +226,7 @@ async fn failed_session_insert_does_not_leave_an_orphan_run() -> TestResult {
 
 #[tokio::test]
 async fn schema_drift_and_corrupt_rows_are_errors() -> TestResult {
-    let store = SqliteStore::open(&config(1)?).await?;
+    let store = TursoStore::open(&config(1)?).await?;
     insert(&store, "one").await?;
     {
         let mut db = store.db.lock().await;
@@ -260,9 +261,9 @@ async fn reopening_file_recovers_interrupted_runs_and_preserves_sessions() -> Te
     std::fs::create_dir_all(&directory)?;
     let path = directory.join("state.sqlite");
     let mut config = config(2)?;
-    config.location = SqliteLocation::File(path.clone());
+    config.location = TursoLocation::File(path.clone());
     {
-        let store = SqliteStore::open(&config).await?;
+        let store = TursoStore::open(&config).await?;
         insert(&store, "retained").await?;
         store
             .mutate_run(&RunId("retained".to_owned()), complete)
@@ -270,12 +271,12 @@ async fn reopening_file_recovers_interrupted_runs_and_preserves_sessions() -> Te
         insert(&store, "interrupted").await?;
         assert!(store.claim_lease("stale").await?);
         assert!(matches!(
-            SqliteStore::open(&config).await,
+            TursoStore::open(&config).await,
             Err(WorkflowError::Storage { .. })
         ));
     }
     {
-        let store = SqliteStore::open(&config).await?;
+        let store = TursoStore::open(&config).await?;
         assert_eq!(store.history().await?.runs.len(), 2);
         assert!(matches!(
             store
@@ -294,7 +295,7 @@ async fn reopening_file_recovers_interrupted_runs_and_preserves_sessions() -> Te
         drop(db);
     }
     assert!(matches!(
-        SqliteStore::open(&config).await,
+        TursoStore::open(&config).await,
         Err(WorkflowError::Storage { .. })
     ));
     std::fs::remove_dir_all(directory)?;
@@ -309,7 +310,7 @@ async fn failed_migration_rolls_back_ddl_and_preserves_existing_rows() -> TestRe
         "0002_invalid.sql",
         "CREATE TABLE migration_probe (id TEXT PRIMARY KEY);\n-- #[toasty::breakpoint]\nINSERT INTO missing_table VALUES (1);",
     )]);
-    let store = SqliteStore::open(&config(1)?).await?;
+    let store = TursoStore::open(&config(1)?).await?;
     insert(&store, "kept").await?;
     let mut db = store.db.lock().await;
     assert!(INVALID.apply(&db).await.is_err());
@@ -325,7 +326,7 @@ async fn failed_migration_rolls_back_ddl_and_preserves_existing_rows() -> TestRe
 
 #[tokio::test]
 async fn unknown_migration_and_invalid_lease_are_rejected() -> TestResult {
-    let store = SqliteStore::open(&config(1)?).await?;
+    let store = TursoStore::open(&config(1)?).await?;
     assert!(matches!(
         store.claim_lease(" \t\n").await,
         Err(WorkflowError::Storage { .. })
@@ -342,7 +343,7 @@ async fn unknown_migration_and_invalid_lease_are_rejected() -> TestResult {
 
 #[tokio::test]
 async fn concurrent_claims_and_session_saves_have_exactly_one_winner() -> TestResult {
-    let store = SqliteStore::open(&config(1)?).await?;
+    let store = TursoStore::open(&config(1)?).await?;
     let (first, second) = tokio::join!(store.claim_lease("race"), store.claim_lease("race"));
     assert_ne!(first?, second?);
     store
@@ -386,7 +387,7 @@ async fn startup_rejects_missing_or_rewound_ordering_clocks() -> TestResult {
         "UPDATE store_clocks SET value = 0 WHERE id = 'start'",
         "UPDATE store_clocks SET value = 0 WHERE id = 'terminal'",
     ] {
-        let store = SqliteStore::open(&config(2)?).await?;
+        let store = TursoStore::open(&config(2)?).await?;
         insert(&store, "terminal").await?;
         store
             .mutate_run(&RunId("terminal".to_owned()), complete)
@@ -406,5 +407,38 @@ async fn startup_rejects_missing_or_rewound_ordering_clocks() -> TestResult {
             RunStatus::Running
         );
     }
+    Ok(())
+}
+
+#[tokio::test]
+async fn replication_failure_does_not_orphan_local_runs_or_leases() -> TestResult {
+    let mut store = TursoStore::open(&config(2)?).await?;
+    // Fault injection at the driver boundary: invalid remote setup must fail to push.
+    // This does not claim successful Cloud synchronization.
+    store.remote = Some(toasty_driver_turso::Turso::in_memory().with_remote_url("invalid-url"));
+    assert!(store.flush_remote().await.is_err());
+    assert!(store.claim_lease("locally-owned").await?);
+    insert(&store, "locally-created").await?;
+    assert!(
+        store
+            .get_run(&RunId("locally-created".to_owned()))
+            .await?
+            .is_some()
+    );
+    store
+        .mutate_run(&RunId("locally-created".to_owned()), complete)
+        .await?;
+    store.release_lease("locally-owned").await?;
+    assert!(store.claim_lease("locally-owned").await?);
+    assert_eq!(store.history().await?.runs.len(), 1);
+    assert!(store.flush_remote().await.is_err());
+    Ok(())
+}
+
+#[tokio::test]
+async fn local_only_service_flush_is_a_successful_noop() -> TestResult {
+    let service =
+        crate::WorkflowService::with_config(crate::ApplicationConfig::local_default()).await?;
+    service.flush_storage().await?;
     Ok(())
 }

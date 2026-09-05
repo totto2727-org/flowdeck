@@ -8,7 +8,7 @@
 
 ## Overview
 
-- SC-1: Runs, traces, graph sessions, leases, and ordering counters are stored in one SQLite database rather than parallel application caches.
+- SC-1: Runs, traces, graph sessions, leases, and ordering counters are stored in one Turso database rather than parallel application caches.
 - SC-2: Committed migrations initialize an empty database and reopening preserves terminal history without replaying interrupted work.
 - SC-3: External DTOs and ORM rows are validated before domain construction, including multi-value consistency checks.
 - SC-4: Manual execution, history navigation, trace selection, filtering, and live updates continue working in the browser.
@@ -58,7 +58,7 @@ The following numbered cases describe the AI-driven acceptance review and refere
 
 ## Execution evidence
 
-### Automated evidence, 2026-09-05
+### Prior SQLite-driver evidence, 2026-09-05
 
 `nix develop -c just ci` completed with exit code 0 on macOS aarch64 in the pinned Rust 1.95 environment.
 Formatting, workspace/all-target/all-feature Clippy with `-D warnings`, Topcoat asset bundling, and the workspace build passed.
@@ -68,11 +68,11 @@ The added SQLite checks confirm independent in-memory databases do not share run
 
 | Review case | Result and concrete evidence |
 | --- | --- |
-| TC-001 | Passed source review: `ApplicationState` shares one `SqliteStore`; sessions, run snapshots, leases, and clocks have database rows with no parallel application caches. |
+| TC-001 | Passed source review: `ApplicationState` shares one `TursoStore`; sessions, run snapshots, leases, and clocks have database rows with no parallel application caches. |
 | TC-002 | Passed: `migrations_are_repeatable_and_match_the_schema`, `failed_migration_rolls_back_ddl_and_preserves_existing_rows`, `reopening_file_recovers_interrupted_runs_and_preserves_sessions`, `startup_rejects_missing_or_rewound_ordering_clocks`, and schema-drift tests in `src/storage_test.rs`. |
 | TC-003 | Passed: 14 run DTO tests, 10 session DTO tests, workflow input/configuration tests, and restored task-context tests reject malformed syntax, invalid scalar values, unsupported versions, duplicate/incorrect trace identities, inconsistent lifecycles, and invalid paths. |
 | TC-008 | Passed: completion-order retention, rollback, orphan-prevention, and `concurrent_claims_and_session_saves_have_exactly_one_winner`; driver fault-injection tests confirm terminal events follow committed failure and are not fabricated when storage remains unavailable. |
-| TC-IMPL-001 | Passed the canonical pinned-environment CI suite, using the shared graph-flow dependency with PostgreSQL disabled; metadata confirms one graph-flow package, Toasty SQLite, and no SQLx or Turso packages. |
+| TC-IMPL-001 | Passed the canonical pinned-environment CI suite, for the earlier SQLite-driver revision. Current Turso-driver validation is recorded separately below. |
 | TC-004 through TC-007 | **Blocked, not passed.** The required built-in browser could not perform page or tab operations. |
 
 ### Browser attempt
@@ -94,3 +94,16 @@ This does not exercise browser-side Datastar execution or pointer/keyboard inter
 
 Linear synchronization is blocked by HTTP 401 from the configured credential, so no Linear update is claimed.
 Provider session restart/resume is tracked separately in [issue #3](https://github.com/totto2727-org/flowdeck/issues/3).
+
+### Current Turso-driver and remote configuration evidence
+
+The canonical pinned-environment CI passed **170 tests** with the Turso sync driver and published graph-flow dependency.
+Existing migration, memory isolation, file reopening, recovery, retention, CAS, and DTO/domain validation checks pass against Turso.
+The configuration tests cover valid HTTPS/libsql/loopback URLs, invalid authorities and credentials, token validation, and redacted debug/error output.
+`remote_configuration_reaches_http_and_auth_failure_is_redacted` uses the real Turso HTTP client against a rejecting loopback endpoint to verify URL/token injection and sanitized startup failure.
+`replication_failure_does_not_orphan_local_runs_or_leases` injects a driver configuration failure to verify locally committed operations still succeed while explicit flush reports failure.
+`local_only_service_flush_is_a_successful_noop` exercises the public service API without a remote.
+The loopback HTTP endpoint and driver fault injection are boundary tests, not successful Turso Cloud synchronization evidence.
+Real Cloud bootstrap/push/pull remains unverified because no dedicated remote URL and credential were supplied.
+The real local application also passed dashboard, manual run, Running-to-Completed SSE, filtered reload, and invalid-label HTTP checks with this driver.
+Browser interaction and Linear blockers remain as recorded above.
