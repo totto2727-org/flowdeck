@@ -194,9 +194,9 @@ pub enum WorkflowError {
         /// Trace projection diagnostic.
         message: String,
     },
-    /// The in-memory session layer rejected an operation.
+    /// The graph session layer rejected an operation.
     Session {
-        /// In-memory session storage failure.
+        /// Session storage failure.
         message: String,
     },
 }

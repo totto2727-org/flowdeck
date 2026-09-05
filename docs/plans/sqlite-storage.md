@@ -60,7 +60,7 @@ It stores opaque serialized payloads beside fields needed for indexing and concu
 | `runs` / `RunRow` | Text `id` primary key, unique positive `start_order`, nullable unique positive `terminal_order`, constrained `status`, JSON-valid text `snapshot`. Running status requires a null terminal order. |
 | `store_clocks` / `ClockRow` | `id` is `start` or `terminal`, with a nonnegative signed 64-bit `value`. Updates reject exhaustion before incrementing. |
 | `schedule_leases` / `LeaseRow` | Unique nonblank text `id`. A file-backed service holds an exclusive file lock, so the current database has only one owning service. |
-| Migration bookkeeping | Toasty's standard `__toasty_migrations` table, owned by the migration API rather than an application model. |
+| Migration bookkeeping | Toasty's standard `__toasty_migrations` table, owned by the migration API and read through a validation-only `MigrationRow` to reject incompatible history. |
 
 The existing ring evicts by insertion into the terminal ring, not by run start time.
 Preserve this by allocating terminal order when a run finishes or an unstarted schedule attempt is inserted, while `HistoryView` remains sorted by start order.
