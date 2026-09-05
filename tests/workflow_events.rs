@@ -8,7 +8,9 @@ use serde_json::json;
 #[tokio::test]
 async fn workflow_events_when_run_executes_are_ordered_and_snapshot_consistent() {
     // Given: a subscriber attached before a workflow begins.
-    let service = WorkflowService::new().expect("the code-defined workflows should build");
+    let service = WorkflowService::new()
+        .await
+        .expect("the code-defined workflows should build");
     let mut events = service.subscribe();
 
     // When: the workflow is started and driven to its terminal state.
@@ -87,7 +89,7 @@ async fn assert_snapshot_matches_event(
     let run_id = event_run_id(event);
     let snapshot = service
         .get_run(run_id)
-        .await
+        .await?
         .ok_or_else(|| std::io::Error::other("event run should be retained"))?;
     match event {
         WorkflowEvent::RunStarted { workflow_id, .. } => {

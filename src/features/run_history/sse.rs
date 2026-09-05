@@ -1,6 +1,5 @@
 use flowdeck::{WorkflowEvent, WorkflowService};
 use futures_core::Stream;
-use serde::Deserialize;
 use tokio::sync::broadcast::error::RecvError;
 use topcoat::{
     Result,
@@ -16,17 +15,6 @@ use super::{
     filter::{HistoryFilterQuery, HistoryFilters},
     fragments::render_history_body,
 };
-
-#[derive(Deserialize)]
-#[allow(
-    clippy::struct_field_names,
-    reason = "This query DTO mirrors the stable history-prefixed URL parameters."
-)]
-struct HistoryEventsQuery {
-    history_workflow: Option<String>,
-    history_trigger: Option<String>,
-    history_status: Option<String>,
-}
 
 #[route(GET "/events/history")]
 async fn history_events(cx: &Cx) -> Result<Sse<impl Stream<Item = Result<Event>> + use<>>> {
@@ -53,16 +41,12 @@ async fn history_events(cx: &Cx) -> Result<Sse<impl Stream<Item = Result<Event>>
 }
 
 fn history_request(cx: &Cx) -> Result<HistoryFilters> {
-    let query = parse_query_params::<HistoryEventsQuery>(cx)?;
-    Ok(HistoryFilters::from_query(&HistoryFilterQuery {
-        history_workflow: query.history_workflow,
-        history_trigger: query.history_trigger,
-        history_status: query.history_status,
-    }))
+    let query = parse_query_params::<HistoryFilterQuery>(cx)?;
+    Ok(HistoryFilters::from_query(&query))
 }
 
 async fn history_patch(service: &WorkflowService, filters: &HistoryFilters) -> Result<Event> {
-    let html = render_history_body(service.history_view().await, filters).await?;
+    let html = render_history_body(service.history_view().await?, filters).await?;
     Ok(PatchElements::new(html)
         .selector("#run-history-body")
         .mode(ElementPatchMode::Inner)

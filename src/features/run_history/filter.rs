@@ -4,16 +4,20 @@
 )]
 
 use flowdeck::{RunSnapshot, RunStatus, RunTrigger, workflow_definitions};
+use garde::Validate;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, Validate)]
 #[serde(default)]
 pub(crate) struct HistoryFilterValues {
     #[serde(rename = "historyWorkflowFilter")]
+    #[garde(length(chars, max = 128))]
     pub(crate) workflow: String,
     #[serde(rename = "historyTriggerFilter")]
+    #[garde(length(chars, max = 32))]
     pub(crate) trigger: String,
     #[serde(rename = "historyStatusFilter")]
+    #[garde(length(chars, max = 32))]
     pub(crate) status: String,
 }
 
@@ -71,6 +75,9 @@ impl HistoryFilters {
     }
 
     pub(crate) fn from_values(values: &HistoryFilterValues) -> Self {
+        if values.validate().is_err() {
+            return Self::default();
+        }
         let workflow = workflow_definitions()
             .iter()
             .any(|definition| definition.workflow_id == values.workflow)
@@ -172,6 +179,16 @@ impl StatusFilter {
 #[cfg(test)]
 mod tests {
     use super::{HistoryFilterQuery, HistoryFilters};
+
+    #[test]
+    fn oversized_query_values_normalize_to_safe_default_filters() {
+        let filters = HistoryFilters::from_query(&HistoryFilterQuery {
+            history_workflow: Some("x".repeat(129)),
+            history_trigger: Some("manual".to_owned()),
+            history_status: None,
+        });
+        assert_eq!(filters, HistoryFilters::default());
+    }
 
     #[test]
     fn history_filters_normalize_missing_and_invalid_query_values_to_all() {

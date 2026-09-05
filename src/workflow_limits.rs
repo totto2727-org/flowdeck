@@ -1,10 +1,8 @@
 use std::time::Duration;
 
-use serde::Serialize;
-
 use crate::{WorkflowError, WorkflowExecutionDefaults};
 /// Count and duration bounds for one execution target.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ExecutionLimit {
     /// Maximum executions or traversals during one workflow run.
     pub max_executions: usize,
@@ -23,7 +21,7 @@ impl ExecutionLimit {
 }
 
 /// Effective bounds applied to one workflow run.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct WorkflowExecutionLimits {
     /// Maximum number of node executions across the run.
     pub max_steps: usize,

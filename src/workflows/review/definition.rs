@@ -17,7 +17,7 @@ pub(super) const WORKFLOW_ID: &str = "review-pipeline";
 
 #[derive(Debug, Deserialize, Validate)]
 #[serde(deny_unknown_fields)]
-struct ReviewInput {
+struct ReviewInputDto {
     #[garde(custom(validate_non_blank), length(chars, max = 80))]
     subject: String,
     #[garde(custom(validate_non_blank), length(chars, max = 80))]
@@ -139,23 +139,26 @@ pub(super) fn default_input() -> Value {
 }
 
 pub(super) fn parse_input(value: Value) -> Result<RunInput, WorkflowError> {
-    let input = serde_json::from_value::<ReviewInput>(value).map_err(|error| {
+    let input = serde_json::from_value::<ReviewInputDto>(value).map_err(|error| {
         WorkflowError::InvalidInput {
-            message: format!("{WORKFLOW_ID}: {error}"),
+            message: format!("{WORKFLOW_ID}: invalid JSON structure: {error}"),
         }
     })?;
     input
         .validate()
         .map_err(|error| WorkflowError::InvalidInput {
-            message: format!("{WORKFLOW_ID}: {error}"),
+            message: format!("{WORKFLOW_ID}: validation failed: {error}"),
         })?;
-    let subject = input.subject.trim().to_owned();
-    let reviewer = input.reviewer.trim().to_owned();
-    let summary = format!("{subject} · reviewer {reviewer}");
-    Ok(RunInput::new(
-        json!({ "subject": subject, "reviewer": reviewer }),
-        summary,
-    ))
+    Ok(RunInput::from(input))
+}
+
+impl From<ReviewInputDto> for RunInput {
+    fn from(input: ReviewInputDto) -> Self {
+        let subject = input.subject.trim().to_owned();
+        let reviewer = input.reviewer.trim().to_owned();
+        let summary = format!("{subject} · reviewer {reviewer}");
+        Self::new(json!({ "subject": subject, "reviewer": reviewer }), summary)
+    }
 }
 
 #[allow(

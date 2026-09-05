@@ -9,7 +9,7 @@ pub(super) async fn render_run_inspector(
 ) -> Result<Option<String>> {
     let Some(run) = service
         .list_runs()
-        .await
+        .await?
         .into_iter()
         .find(|run| run.run_id.as_str() == run_id)
     else {

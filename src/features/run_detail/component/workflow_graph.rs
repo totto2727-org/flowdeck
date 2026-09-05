@@ -158,7 +158,9 @@ mod tests {
 
     #[tokio::test]
     async fn graph_panel_with_a_run_keeps_interactive_trace_selection_and_metadata() {
-        let service = WorkflowService::new().expect("code-defined workflows should build");
+        let service = WorkflowService::new()
+            .await
+            .expect("code-defined workflows should build");
         let run = service
             .start(
                 "review-pipeline",
@@ -188,7 +190,9 @@ mod tests {
 
     #[tokio::test]
     async fn run_inspector_composes_the_graph_panel_with_step_trace_details() {
-        let service = WorkflowService::new().expect("code-defined workflows should build");
+        let service = WorkflowService::new()
+            .await
+            .expect("code-defined workflows should build");
         let started = service
             .start(
                 "review-pipeline",
@@ -202,6 +206,7 @@ mod tests {
                 let snapshot = service
                     .get_run(&started.run_id)
                     .await
+                    .expect("run storage should load")
                     .expect("started run should remain retained");
                 if !snapshot.steps.is_empty() {
                     break snapshot;

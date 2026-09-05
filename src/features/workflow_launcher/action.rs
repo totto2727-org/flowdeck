@@ -1,5 +1,6 @@
-use flowdeck::{RunTrigger, WorkflowService};
+use flowdeck::{RunTrigger, WorkflowError, WorkflowService};
 use futures_core::Stream;
+use garde::Validate;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use topcoat::{
@@ -17,12 +18,15 @@ use crate::{
     features::run_history::{HistoryFilterValues, HistoryFilters},
 };
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Validate)]
 #[serde(rename_all = "camelCase")]
 struct StartSignals {
+    #[garde(length(chars, min = 1, max = 128))]
     selected_workflow_id: String,
+    #[garde(skip)]
     input: Value,
     #[serde(flatten)]
+    #[garde(dive)]
     history: HistoryFilterValues,
 }
 
@@ -38,11 +42,19 @@ async fn start_run(
     Signals(signals): Signals<StartSignals>,
 ) -> Result<Sse<impl Stream<Item = Result<Event>> + use<>>> {
     let service = app_context::<WorkflowService>(cx);
+    let validation = signals.validate();
     let workflow_id = signals.selected_workflow_id;
     let filters = HistoryFilters::from_values(&signals.history);
-    let result = service
-        .start(&workflow_id, signals.input, RunTrigger::Manual)
-        .await;
+    let result = match validation {
+        Ok(()) => {
+            service
+                .start(&workflow_id, signals.input, RunTrigger::Manual)
+                .await
+        }
+        Err(error) => Err(WorkflowError::InvalidInput {
+            message: format!("invalid request signals: {error}"),
+        }),
+    };
     let event = match result {
         Ok(run) => {
             let run_id = run.run_id.to_string();
@@ -67,9 +79,21 @@ async fn start_run(
 
 #[cfg(test)]
 mod tests {
+    use garde::Validate;
     use serde_json::json;
 
     use super::{HistoryFilters, StartSignals};
+
+    #[test]
+    fn blank_workflow_signal_is_rejected_before_execution() {
+        let signals = serde_json::from_value::<StartSignals>(json!({
+            "selectedWorkflowId": "", "input": {}
+        }))
+        .expect("structurally valid signals");
+        let _ = signals
+            .validate()
+            .expect_err("blank workflow IDs fail validation");
+    }
 
     #[test]
     fn start_signals_without_history_filters_defaults_to_all() {
