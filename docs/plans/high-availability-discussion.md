@@ -350,3 +350,22 @@ Official `latest` documentation is mutable; these notes record the distinctions 
 - Whether this exploratory discussion should later become approved ADRs or tracked implementation work.
 
 These are unresolved design choices, not implementation tasks silently excluded from an authorized change.
+
+## 15. Clarification: two independent questions
+
+On 2026-09-05, the user clarified that the single-binary role-selection question and Forgejo as an example of queued runner execution were independent questions.
+Future responses should address each separately, lead with conclusions, and omit investigation narration and unnecessary detail.
+
+### Single binary with selectable roles
+
+Conclusion: this is an established deployment pattern, demonstrated by Loki's documented component selection within one binary.
+It is a suitable option for preserving Flowdeck's simple all-in-one distribution, but it is not required for HA.
+
+### Forgejo as a queued runner architecture example
+
+Conclusion: Forgejo Actions is a relevant example of a server managing pending work and separate runners fetching and executing it.
+The official guide verifies runner-side fetching and multiple runners per Forgejo instance; this comparison does not assert a particular internal queue implementation or require an external message broker.
+The conceptual flow is submission, server-managed pending work, runner pickup, execution, and result reporting.
+This illustrates decoupled execution and a runner pool, not proof of complete system HA.
+Server and database availability, interrupted-job recovery, and duplicate-side-effect handling must be assessed separately.
+Flowdeck can adopt that responsibility pattern independently of whether its roles share a binary.
