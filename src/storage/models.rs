@@ -1,7 +1,7 @@
 use garde::Validate;
 use graph_flow::Session;
 
-use super::{error, run_dto, status_name};
+use super::{epoch_millis, error, run_dto, status_name};
 use crate::{RunSnapshot, WorkflowError};
 
 #[derive(Debug, toasty::Model, Validate)]
@@ -10,10 +10,10 @@ pub(super) struct RunRow {
     #[key]
     #[garde(custom(non_blank))]
     pub id: String,
-    #[garde(range(min = 1))]
-    pub start_order: i64,
-    #[garde(range(min = 1))]
-    pub terminal_order: Option<i64>,
+    #[garde(range(min = 0))]
+    pub started_at: i64,
+    #[garde(range(min = 0))]
+    pub finished_at: Option<i64>,
     #[garde(custom(valid_status))]
     pub status: String,
     #[garde(length(min = 1))]
@@ -26,7 +26,9 @@ impl RunRow {
         let snapshot = run_dto::decode(&self.snapshot)?;
         if snapshot.run_id.as_str() != self.id
             || status_name(&snapshot.status) != self.status
-            || (self.status == "running") != self.terminal_order.is_none()
+            || epoch_millis(snapshot.started_at)? != self.started_at
+            || snapshot.finished_at.map(epoch_millis).transpose()? != self.finished_at
+            || (self.status == "running") != self.finished_at.is_none()
         {
             return Err(error("run row and snapshot metadata disagree"));
         }
@@ -81,16 +83,6 @@ pub(super) struct LeaseRow {
     pub id: String,
 }
 
-#[derive(Debug, toasty::Model, Validate)]
-#[table = "store_clocks"]
-pub(super) struct ClockRow {
-    #[key]
-    #[garde(custom(clock_id))]
-    pub id: String,
-    #[garde(range(min = 0))]
-    pub value: i64,
-}
-
 #[allow(
     clippy::trivially_copy_pass_by_ref,
     reason = "Garde custom validators require a borrowed context."
@@ -100,18 +92,6 @@ fn non_blank(value: &str, (): &()) -> garde::Result {
         Err(garde::Error::new("identifier must not be blank"))
     } else {
         Ok(())
-    }
-}
-
-#[allow(
-    clippy::trivially_copy_pass_by_ref,
-    reason = "Garde custom validators require a borrowed context."
-)]
-fn clock_id(value: &str, (): &()) -> garde::Result {
-    if matches!(value, "start" | "terminal") {
-        Ok(())
-    } else {
-        Err(garde::Error::new("unknown storage clock"))
     }
 }
 

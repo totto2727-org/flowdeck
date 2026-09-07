@@ -221,7 +221,9 @@ The shared graph session store uses opaque globally unique run IDs and preserves
 Validated versioned DTOs form the serialization boundary for runs and graph sessions, while their row adapters check indexed metadata against the decoded payload.
 The graph session DTO's format version is independent from graph-flow's compare-and-swap version.
 Run history operations expose domain-level atomic commands rather than allowing the service to lock or mutate a collection directly.
-The storage representation retains start-order and terminal-transition sequences for compatibility with existing database files; neither sequence drives automatic deletion.
+The storage representation uses Unix epoch millisecond start and optional finish timestamps derived independently from the snapshot, which retains its original `SystemTime` precision.
+History sorts by start milliseconds ascending and then run ID ascending for equal timestamps, without sequence counters.
+The single initial migration was rebuilt before merge, so databases from earlier PR drafts are rejected rather than reset or automatically upgraded.
 Evicting a terminal run also deletes its associated graph session in the same transaction.
 Schedule leases expose `claim` and `release`, with the database enforcing unique schedule ownership.
 All storage operations distinguish database failure from a missing row or an overlap rejection.

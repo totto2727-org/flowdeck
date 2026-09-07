@@ -173,7 +173,7 @@ impl WorkflowService {
         self.inner.state.run_history.view().await
     }
 
-    /// List all retained snapshots in start order.
+    /// List all retained snapshots by start milliseconds ascending, then run ID ascending.
     pub async fn list_runs(&self) -> Result<Vec<RunSnapshot>, WorkflowError> {
         Ok(self.inner.state.run_history.view().await?.runs)
     }

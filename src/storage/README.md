@@ -8,15 +8,19 @@ Each migration statement is separated by `-- #[toasty::breakpoint]` and each mig
 When changing a model, add a new migration to `MIGRATIONS`, update this current schema snapshot, and add a test that upgrades a populated database from the previous version without losing its data.
 The snapshot includes primary keys, inline unique indexes, nullability, and CHECK constraints.
 Startup rejects missing or drifted definitions instead of attempting destructive repair.
-A migration change is not complete until both fresh initialization and populated upgrade tests pass.
+After the initial schema ships, a migration change is not complete until both fresh initialization and populated upgrade tests pass.
 
 The Turso pool has one connection for private memory databases and a process-local mutex serializes operations.
-Every operation involving multiple writes uses the same Toasty transaction, including run/session creation, completion, lease release, and ordering counters.
+Every operation involving multiple writes uses the same Toasty transaction, including run/session creation, completion and lease release.
 File-backed services hold an exclusive OS file lock for their lifetime.
 On reopening a file, interrupted runs become failed and stale schedule leases are released in one transaction.
 No run-count retention limit or automatic history/session deletion is applied at startup or during writes.
 This also applies to in-memory databases: storage usage grows with history.
-Existing migration SQL and completion-order metadata remain unchanged so existing database files stay compatible.
+Run columns store Unix epoch milliseconds derived independently from the snapshot start and optional finish times.
+The JSON snapshot retains its original `SystemTime` precision.
+History sorts by start milliseconds ascending and then run ID ascending for ties, without unique timestamps or global sequence counters.
+The initial migration was rebuilt before merge, so earlier draft databases are incompatible and rejected without deleting or resetting them.
+There is a single initial migration and no separate generated metadata or runtime SQL checksums to update.
 Graphs, runtime resources, driver admission, and broadcast channels remain process-local execution infrastructure, not serialized database data.
 
 ## Remote synchronization

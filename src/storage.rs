@@ -24,7 +24,7 @@ use crate::{
 mod models;
 mod run_dto;
 mod session_dto;
-use models::{ClockRow, LeaseRow, MigrationRow, RunRow, SessionRow};
+use models::{LeaseRow, MigrationRow, RunRow, SessionRow};
 
 const INITIAL_SQL: &str = include_str!("storage/migrations/0001_initial.sql");
 const CURRENT_SCHEMA: &str = include_str!("storage/schema.sql");
@@ -99,13 +99,7 @@ impl TursoStore {
         let remote = config.remote.as_ref().map(|_| driver.clone());
         let mut builder = Db::builder();
         builder
-            .models(toasty::models!(
-                RunRow,
-                SessionRow,
-                LeaseRow,
-                ClockRow,
-                MigrationRow
-            ))
+            .models(toasty::models!(RunRow, SessionRow, LeaseRow, MigrationRow))
             .max_pool_size(1)
             .pool_max_connection_lifetime(None)
             .pool_max_connection_idle_time(None);
@@ -209,26 +203,19 @@ impl TursoStore {
     ) -> Result<(), WorkflowError> {
         let mut db = self.db.lock().await;
         let mut tx = db.transaction().await.map_err(error)?;
-        let start = next_order(&mut tx, "start").await?;
-        let terminal = snapshot.status != RunStatus::Running;
-        let terminal_order = if terminal {
-            Some(next_order(&mut tx, "terminal").await?)
-        } else {
-            None
-        };
         let json = run_dto::encode(&snapshot)?;
         let row = RunRow {
             id: snapshot.run_id.to_string(),
-            start_order: start,
-            terminal_order,
+            started_at: epoch_millis(snapshot.started_at)?,
+            finished_at: snapshot.finished_at.map(epoch_millis).transpose()?,
             status: status_name(&snapshot.status).to_owned(),
             snapshot: json,
         };
         row.validate().map_err(error)?;
         RunRow::create()
             .id(row.id)
-            .start_order(row.start_order)
-            .terminal_order(row.terminal_order)
+            .started_at(row.started_at)
+            .finished_at(row.finished_at)
             .status(row.status)
             .snapshot(row.snapshot)
             .exec(&mut tx)
@@ -257,7 +244,7 @@ impl TursoStore {
         let mut db = self.db.lock().await;
         let mut rows = RunRow::all().exec(&mut *db).await.map_err(error)?;
         drop(db);
-        rows.sort_by_key(|row| row.start_order);
+        rows.sort_by(|left, right| (left.started_at, &left.id).cmp(&(right.started_at, &right.id)));
         Ok(HistoryView {
             runs: rows
                 .into_iter()
@@ -334,7 +321,6 @@ impl TursoStore {
         let mut tx = db.transaction().await.map_err(error)?;
         // Validate every stored boundary before performing any recovery mutation.
         let rows = RunRow::all().exec(&mut tx).await.map_err(error)?;
-        verify_clocks(&mut tx, &rows).await?;
         let snapshots = rows
             .into_iter()
             .map(RunRow::into_snapshot)
@@ -380,23 +366,14 @@ async fn sync_push(driver: &Turso) -> Result<(), WorkflowError> {
         .map_err(|_| error("Turso remote push failed; local changes may already be committed"))
 }
 
-async fn next_order(executor: &mut dyn Executor, id: &str) -> Result<i64, WorkflowError> {
-    let count = sql::statement(
-        "UPDATE store_clocks SET value = value + 1 WHERE id = ?1 AND value < 9223372036854775807",
+// Query columns use milliseconds; the snapshot retains its original SystemTime precision.
+fn epoch_millis(time: SystemTime) -> Result<i64, WorkflowError> {
+    i64::try_from(
+        time.duration_since(SystemTime::UNIX_EPOCH)
+            .map_err(error)?
+            .as_millis(),
     )
-    .bind(id)
-    .exec(executor)
-    .await
-    .map_err(error)?;
-    if count != 1 {
-        return Err(error("storage ordering counter missing or exhausted"));
-    }
-    let row = ClockRow::filter_by_id(id)
-        .get(executor)
-        .await
-        .map_err(error)?;
-    row.validate().map_err(error)?;
-    Ok(row.value)
+    .map_err(error)
 }
 
 async fn persist_mutation(
@@ -404,32 +381,28 @@ async fn persist_mutation(
     snapshot: &RunSnapshot,
 ) -> Result<(), WorkflowError> {
     let json = run_dto::encode(snapshot)?;
-    if snapshot.status == RunStatus::Running {
-        sql::statement("UPDATE runs SET snapshot = ?1 WHERE id = ?2")
-            .bind(json)
-            .bind(snapshot.run_id.as_str())
+    sql::statement(
+        "UPDATE runs SET snapshot = ?1, status = ?2, started_at = ?3, finished_at = ?4 WHERE id = ?5",
+    )
+    .bind(json)
+    .bind(status_name(&snapshot.status))
+    .bind(epoch_millis(snapshot.started_at)?)
+    .bind_typed(
+        snapshot.finished_at.map(epoch_millis).transpose()?,
+        toasty::schema::db::Type::Integer(8),
+    )
+    .bind(snapshot.run_id.as_str())
+    .exec(executor)
+    .await
+    .map_err(error)?;
+    if snapshot.status != RunStatus::Running
+        && let RunTrigger::Cron { schedule_id } = &snapshot.trigger
+    {
+        sql::statement("DELETE FROM schedule_leases WHERE id = ?1")
+            .bind(schedule_id.as_str())
             .exec(executor)
             .await
             .map_err(error)?;
-    } else {
-        let order = next_order(executor, "terminal").await?;
-        sql::statement(
-            "UPDATE runs SET snapshot = ?1, status = ?2, terminal_order = ?3 WHERE id = ?4",
-        )
-        .bind(json)
-        .bind(status_name(&snapshot.status))
-        .bind(order)
-        .bind(snapshot.run_id.as_str())
-        .exec(executor)
-        .await
-        .map_err(error)?;
-        if let RunTrigger::Cron { schedule_id } = &snapshot.trigger {
-            sql::statement("DELETE FROM schedule_leases WHERE id = ?1")
-                .bind(schedule_id.as_str())
-                .exec(executor)
-                .await
-                .map_err(error)?;
-        }
     }
     Ok(())
 }
@@ -559,33 +532,6 @@ fn normalize_schema(sql: &str) -> String {
         }
     }
     normalized
-}
-
-async fn verify_clocks(executor: &mut dyn Executor, runs: &[RunRow]) -> Result<(), WorkflowError> {
-    let clocks = ClockRow::all().exec(executor).await.map_err(error)?;
-    for clock in &clocks {
-        clock.validate().map_err(error)?;
-    }
-    for run in runs {
-        run.validate().map_err(error)?;
-    }
-    let start_maximum = runs.iter().map(|run| run.start_order).fold(0, i64::max);
-    let terminal_maximum = runs
-        .iter()
-        .filter_map(|run| run.terminal_order)
-        .fold(0, i64::max);
-    for (id, minimum) in [("start", start_maximum), ("terminal", terminal_maximum)] {
-        let clock = clocks
-            .iter()
-            .find(|clock| clock.id == id)
-            .ok_or_else(|| error(format!("missing SQLite ordering clock {id}")))?;
-        if clock.value < minimum {
-            return Err(error(format!(
-                "SQLite ordering clock {id} precedes retained runs"
-            )));
-        }
-    }
-    Ok(())
 }
 
 #[cfg(test)]

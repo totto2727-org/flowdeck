@@ -1,10 +1,10 @@
 CREATE TABLE runs (
     id TEXT PRIMARY KEY NOT NULL CHECK (length(trim(id)) > 0),
-    start_order BIGINT NOT NULL UNIQUE CHECK (start_order > 0),
-    terminal_order BIGINT UNIQUE CHECK (terminal_order > 0),
+    started_at BIGINT NOT NULL CHECK (started_at >= 0),
+    finished_at BIGINT CHECK (finished_at >= 0),
     status TEXT NOT NULL CHECK (status IN ('running', 'completed', 'failed', 'skipped')),
     snapshot TEXT NOT NULL CHECK (json_valid(snapshot)),
-    CHECK ((status = 'running') = (terminal_order IS NULL))
+    CHECK ((status = 'running') = (finished_at IS NULL))
 );
 -- #[toasty::breakpoint]
 CREATE TABLE graph_sessions (
@@ -15,9 +15,4 @@ CREATE TABLE graph_sessions (
 -- #[toasty::breakpoint]
 CREATE TABLE schedule_leases (
     id TEXT PRIMARY KEY NOT NULL CHECK (length(trim(id)) > 0)
-);
--- #[toasty::breakpoint]
-CREATE TABLE store_clocks (
-    id TEXT PRIMARY KEY NOT NULL CHECK (id IN ('start', 'terminal')),
-    value BIGINT NOT NULL CHECK (value >= 0)
 );

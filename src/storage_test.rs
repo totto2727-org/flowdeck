@@ -39,7 +39,7 @@ fn snapshot(id: &str) -> RunSnapshot {
 
 fn complete(snapshot: &mut RunSnapshot) {
     snapshot.status = RunStatus::Completed;
-    snapshot.finished_at = Some(SystemTime::UNIX_EPOCH);
+    snapshot.finished_at = Some(snapshot.started_at);
     snapshot.duration = Some(Duration::ZERO);
 }
 
@@ -72,12 +72,12 @@ async fn committed_schema_rejects_invalid_rows_at_the_database_boundary() -> Tes
     for statement in [
         "INSERT INTO graph_sessions VALUES ('zero-version', 0, '{}')",
         "INSERT INTO graph_sessions VALUES ('bad-json', 1, 'not-json')",
-        "INSERT INTO runs VALUES ('zero-order', 0, NULL, 'running', '{}')",
+        "INSERT INTO runs VALUES ('negative-start', -1, NULL, 'running', '{}')",
         "INSERT INTO runs VALUES ('bad-status', 1, NULL, 'unknown', '{}')",
-        "INSERT INTO runs VALUES ('terminal-without-order', 1, NULL, 'completed', '{}')",
+        "INSERT INTO runs VALUES ('terminal-without-finish', 1, NULL, 'completed', '{}')",
         "INSERT INTO schedule_leases VALUES ('   ')",
-        "INSERT INTO store_clocks VALUES ('unknown', 0)",
-        "UPDATE store_clocks SET value = -1 WHERE id = 'start'",
+        "INSERT INTO runs VALUES ('negative-finish', 0, -1, 'completed', '{}')",
+        "INSERT INTO runs VALUES ('running-with-finish', 0, 1, 'running', '{}')",
     ] {
         assert!(
             matches!(
@@ -87,7 +87,7 @@ async fn committed_schema_rejects_invalid_rows_at_the_database_boundary() -> Tes
             "database accepted invalid SQL: {statement}"
         );
     }
-    // A rejected statement must not poison the pooled connection or its ordering counters.
+    // A rejected statement must not poison the pooled connection.
     insert(&store, "valid-after-rejections").await?;
     assert_eq!(store.history().await?.runs.len(), 1);
     Ok(())
@@ -142,10 +142,14 @@ async fn session_round_trip_and_optimistic_locking() -> TestResult {
 }
 
 #[tokio::test]
-async fn history_preserves_all_runs_in_start_order_despite_out_of_order_completion() -> TestResult {
+async fn history_sorts_by_start_timestamp_despite_insertion_and_completion_order() -> TestResult {
     let store = TursoStore::open(&config()).await?;
-    for id in ["first", "second", "active"] {
-        insert(&store, id).await?;
+    for (id, millis) in [("active", 30), ("second", 20), ("first", 10)] {
+        let mut run = snapshot(id);
+        run.started_at += Duration::from_millis(millis);
+        store
+            .insert_run(run, Some(Session::new_from_task(id.to_owned(), "start")))
+            .await?;
     }
     store
         .mutate_run(&RunId("second".to_owned()), complete)
@@ -364,6 +368,20 @@ async fn reopening_file_recovers_interrupted_runs_and_preserves_sessions() -> Te
         assert!(store.get("retained").await?.is_some());
         assert!(store.claim_lease("stale").await?);
         let mut db = store.db.lock().await;
+        let retained = super::models::RunRow::filter_by_id("retained")
+            .get(&mut *db)
+            .await?;
+        assert_eq!((retained.started_at, retained.finished_at), (0, Some(0)));
+        let recovered = super::models::RunRow::filter_by_id("interrupted")
+            .get(&mut *db)
+            .await?;
+        let recovered_finish = recovered.finished_at.ok_or("missing recovery finish")?;
+        assert_eq!(recovered.started_at, 0);
+        let restored = recovered.into_snapshot()?;
+        assert_eq!(
+            restored.finished_at.map(super::epoch_millis).transpose()?,
+            Some(recovered_finish)
+        );
         sql::statement("ALTER TABLE runs ADD COLUMN drift TEXT")
             .exec(&mut *db)
             .await?;
@@ -455,12 +473,11 @@ fn schema_comparison_preserves_meaningful_quoted_whitespace() {
 }
 
 #[tokio::test]
-async fn startup_rejects_missing_or_rewound_ordering_clocks() -> TestResult {
+async fn startup_rejects_timestamp_metadata_disagreement_before_recovery() -> TestResult {
+    // Family conformance: either timestamp column must agree with its snapshot.
     for corruption in [
-        "DELETE FROM store_clocks WHERE id = 'start'",
-        "DELETE FROM store_clocks WHERE id = 'terminal'",
-        "UPDATE store_clocks SET value = 0 WHERE id = 'start'",
-        "UPDATE store_clocks SET value = 0 WHERE id = 'terminal'",
+        "UPDATE runs SET started_at = 1 WHERE id = 'terminal'",
+        "UPDATE runs SET finished_at = 1 WHERE id = 'terminal'",
     ] {
         let store = TursoStore::open(&config()).await?;
         insert(&store, "terminal").await?;
@@ -482,6 +499,107 @@ async fn startup_rejects_missing_or_rewound_ordering_clocks() -> TestResult {
             RunStatus::Running
         );
     }
+    Ok(())
+}
+
+#[tokio::test]
+async fn equal_start_milliseconds_are_sorted_by_id_not_insertion_or_submillisecond_time()
+-> TestResult {
+    let store = TursoStore::open(&config()).await?;
+    for (id, nanos) in [("z", 1), ("a", 999_999), ("m", 500_000)] {
+        let mut run = snapshot(id);
+        run.started_at += Duration::from_nanos(nanos);
+        store.insert_run(run, None).await?;
+    }
+    let ids: Vec<_> = store
+        .history()
+        .await?
+        .runs
+        .into_iter()
+        .map(|run| run.run_id.to_string())
+        .collect();
+    assert_eq!(ids, ["a", "m", "z"]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn run_timestamp_columns_follow_snapshot_times_without_losing_snapshot_precision()
+-> TestResult {
+    let store = TursoStore::open(&config()).await?;
+    let mut run = snapshot("timed");
+    run.started_at += Duration::from_nanos(1_234_567_890);
+    let started = run.started_at;
+    store.insert_run(run, None).await?;
+    {
+        let mut db = store.db.lock().await;
+        let row = super::models::RunRow::filter_by_id("timed")
+            .get(&mut *db)
+            .await?;
+        drop(db);
+        assert_eq!((row.started_at, row.finished_at), (1234, None));
+        let restored = row.into_snapshot()?;
+        assert_eq!((restored.started_at, restored.finished_at), (started, None));
+    }
+    let elapsed = Duration::from_nanos(9_876_543_210);
+    let finished = started + elapsed;
+    store
+        .mutate_run(&RunId("timed".to_owned()), |run| {
+            run.status = RunStatus::Completed;
+            run.finished_at = Some(finished);
+            run.duration = Some(elapsed);
+        })
+        .await?;
+    let mut db = store.db.lock().await;
+    let row = super::models::RunRow::filter_by_id("timed")
+        .get(&mut *db)
+        .await?;
+    drop(db);
+    assert_eq!((row.started_at, row.finished_at), (1234, Some(11111)));
+    let restored = row.into_snapshot()?;
+    assert_eq!(
+        (restored.started_at, restored.finished_at, restored.duration),
+        (started, Some(finished), Some(elapsed))
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn running_mutation_preserves_optional_finish_timestamp() -> TestResult {
+    let store = TursoStore::open(&config()).await?;
+    insert(&store, "running").await?;
+    store
+        .mutate_run(&RunId("running".to_owned()), |run| {
+            run.route_summary = "still running".to_owned();
+        })
+        .await?;
+    let mut db = store.db.lock().await;
+    let row = super::models::RunRow::filter_by_id("running")
+        .get(&mut *db)
+        .await?;
+    drop(db);
+    assert_eq!((row.started_at, row.finished_at), (0, None));
+    let restored = row.into_snapshot()?;
+    assert_eq!(restored.route_summary, "still running");
+    assert_eq!(restored.status, RunStatus::Running);
+    Ok(())
+}
+
+#[tokio::test]
+async fn terminal_insert_preserves_independent_start_and_finish_times() -> TestResult {
+    let store = TursoStore::open(&config()).await?;
+    let mut run = snapshot("terminal");
+    run.started_at += Duration::from_secs(2);
+    run.finished_at = Some(SystemTime::UNIX_EPOCH + Duration::from_secs(5));
+    run.duration = Some(Duration::from_secs(3));
+    run.status = RunStatus::Completed;
+    store.insert_run(run, None).await?;
+    let mut db = store.db.lock().await;
+    let row = super::models::RunRow::filter_by_id("terminal")
+        .get(&mut *db)
+        .await?;
+    drop(db);
+    assert_eq!((row.started_at, row.finished_at), (2000, Some(5000)));
+    assert_eq!(row.into_snapshot()?.status, RunStatus::Completed);
     Ok(())
 }
 

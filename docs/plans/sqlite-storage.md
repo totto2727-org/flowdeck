@@ -20,7 +20,7 @@ Line locations deliberately describe that fixed baseline rather than concurrentl
 | Shared graph-flow sessions | `src/workflow/state.rs:13-30`, `src/workflow/bootstrap.rs:17-24,79-90` | Replace `InMemorySessionStorage` with a `SessionStorage` adapter backed by the shared database. |
 | Active runs | `src/workflow/history.rs:19-22,45-49` | Persist all active `RunSnapshot` data without automatic deletion. |
 | Terminal runs, including skipped and rejected cron attempts | `src/workflow/history.rs:19-22,51-54,66-74`, `src/workflow/schedule_attempt.rs:12-72` | Persist terminal snapshots without a count limit or automatic deletion. |
-| Global start-order sequence | `src/workflow/history.rs:14-16,22,34-42,86-92` | Persist a monotonic sequence independently from terminal-transition order. |
+| Global start-order sequence | `src/workflow/history.rs:14-16,22,34-42,86-92` | Replace the sequence with snapshot-derived Unix epoch milliseconds and an ID tie-breaker. |
 | Per-run step trace, topology progress, input, status and timing | `src/lib.rs:61-126`, `src/workflow_trace.rs:11-149` | Persist through validated storage DTOs or explicit model fields, including exact `StepId`, node execution ordinal, selected edge, output, redacted state, error and times. |
 | Schedule overlap leases | `src/workflow/state.rs:185-206`, `src/workflow_scheduler.rs:118-171` | Replace the mutex-protected schedule ID set with a unique-key table and atomic claim/release. |
 | Named provider session descriptors | `crates/graph-flow-jcode/src/runtime.rs:57-76,101-132` | Distinguish serializable `SessionKey` to provider session identity/working-directory metadata from live attached sessions and their turn mutexes. The current map is an integration-owned runtime registry, not a graph session database. |
@@ -57,14 +57,16 @@ It stores opaque serialized payloads beside fields needed for indexing and concu
 | Table role | Required columns and constraints |
 | --- | --- |
 | `graph_sessions` / `SessionRow` | Text `id` primary key, positive signed 64-bit `version`, JSON-valid text `payload`. |
-| `runs` / `RunRow` | Text `id` primary key, unique positive `start_order`, nullable unique positive `terminal_order`, constrained `status`, JSON-valid text `snapshot`. Running status requires a null terminal order. |
-| `store_clocks` / `ClockRow` | `id` is `start` or `terminal`, with a nonnegative signed 64-bit `value`. Updates reject exhaustion before incrementing. |
+| `runs` / `RunRow` | Text `id` primary key, nonnegative Unix epoch millisecond `started_at`, nullable nonnegative millisecond `finished_at`, constrained `status`, JSON-valid text `snapshot`. Running status requires a null finish timestamp, and terminal status requires a finish timestamp. |
 | `schedule_leases` / `LeaseRow` | Unique nonblank text `id`. A file-backed service holds an exclusive file lock, so the current database has only one owning service. |
 | Migration bookkeeping | Toasty's standard `__toasty_migrations` table, owned by the migration API and read through a validation-only `MigrationRow` to reject incompatible history. |
 
 Application-level history eviction has been removed, including in-memory mode.
-`HistoryView` remains sorted by start order, and terminal-order metadata is preserved for compatibility with already-created databases.
-No migration rewrite is needed: terminal order no longer triggers deletion of runs or sessions.
+`HistoryView` sorts by `started_at` milliseconds ascending, then text run ID ascending for equal timestamps.
+Both columns derive independently from the existing snapshot times, and the JSON snapshot preserves the original `SystemTime` precision.
+Timestamps are not unique or monotonic counters, and SQL imposes no relative ordering constraint between start and finish times.
+The initial migration is rebuilt before merge, with no compatibility guarantee for databases created from an earlier draft of this PR.
+Startup rejects incompatible schemas without resetting or deleting database files.
 Use checked conversions for `u64`, `usize`, durations and timestamps because SQLite integers are signed 64-bit values.
 Keep storage DTO versioning and validation distinct from application domain models.
 JSON decode failures must be actionable storage errors, not an absent row or an empty history.
@@ -88,7 +90,7 @@ toasty = { version = "0.10", features = ["sqlite", "migration"] }
 
 ```rust,ignore
 let db = toasty::Db::builder()
-    .models(toasty::models!(SessionRow, RunRow, LeaseRow, ClockRow))
+    .models(toasty::models!(SessionRow, RunRow, LeaseRow))
     .max_pool_size(1)
     .connect("turso::memory:")
     .await?;

@@ -8,7 +8,7 @@
 
 ## Overview
 
-- SC-1: Runs, traces, graph sessions, leases, and ordering counters are stored in one Turso database rather than parallel application caches.
+- SC-1: Runs with snapshot-derived start/finish timestamps, traces, graph sessions, and leases are stored in one Turso database rather than parallel application caches.
 - SC-2: Committed migrations initialize an empty database and reopening preserves terminal history without replaying interrupted work.
 - SC-3: External DTOs and ORM rows are validated before domain construction, including multi-value consistency checks.
 - SC-4: Manual execution, history navigation, trace selection, filtering, and live updates continue working in the browser.
@@ -38,7 +38,7 @@ The following numbered cases describe the AI-driven acceptance review and refere
 | TC-005 | SC-4 | Trace selection remains usable | ai-driven | scenario | Select an executed node/step and inspect output, timing, and state | Pointer and keyboard paths |
 | TC-006 | SC-4 | History filters and navigation remain stable | ai-driven | scenario | Filter to a known status and reload the resulting URL without losing the filter | Live invalidation must preserve selection |
 | TC-007 | SC-4 | Invalid input does not launch a run | ai-driven | scenario | Submit invalid workflow input and observe rejection without a new matching history entry | Browser-side and server-side checks are distinguished |
-| TC-008 | SC-5 | Retention and concurrency behavior is verified | ai-driven | inspection | Review passing SQLite tests for start/completion ordering, active-run retention, session CAS, and lease exclusion | No mocked database |
+| TC-008 | SC-5 | Retention and concurrency behavior is verified | ai-driven | inspection | Review passing SQLite tests for start timestamp ordering with deterministic ID ties, active-run retention, session CAS, and lease exclusion | No mocked database |
 
 ## Implementation-driven test cases
 
@@ -68,8 +68,8 @@ The added SQLite checks confirm independent in-memory databases do not share run
 
 | Review case | Result and concrete evidence |
 | --- | --- |
-| TC-001 | Passed source review: `ApplicationState` shares one `TursoStore`; sessions, run snapshots, leases, and clocks have database rows with no parallel application caches. |
-| TC-002 | Passed: `migrations_are_repeatable_and_match_the_schema`, `failed_migration_rolls_back_ddl_and_preserves_existing_rows`, `reopening_file_recovers_interrupted_runs_and_preserves_sessions`, `startup_rejects_missing_or_rewound_ordering_clocks`, and schema-drift tests in `src/storage_test.rs`. |
+| TC-001 | Passed source review: `ApplicationState` shares one `TursoStore`; sessions, run snapshots, and leases had database rows alongside the earlier draft counters with no parallel application caches. |
+| TC-002 | Passed: `migrations_are_repeatable_and_match_the_schema`, `failed_migration_rolls_back_ddl_and_preserves_existing_rows`, `reopening_file_recovers_interrupted_runs_and_preserves_sessions`, the earlier draft counter-validation test (replaced by timestamp metadata validation), and schema-drift tests in `src/storage_test.rs`. |
 | TC-003 | Passed: 14 run DTO tests, 10 session DTO tests, workflow input/configuration tests, and restored task-context tests reject malformed syntax, invalid scalar values, unsupported versions, duplicate/incorrect trace identities, inconsistent lifecycles, and invalid paths. |
 | TC-008 | Passed: completion-order retention, rollback, orphan-prevention, and `concurrent_claims_and_session_saves_have_exactly_one_winner`; driver fault-injection tests confirm terminal events follow committed failure and are not fabricated when storage remains unavailable. |
 | TC-IMPL-001 | Passed the canonical pinned-environment CI suite, for the earlier SQLite-driver revision. Current Turso-driver validation is recorded separately below. |
@@ -108,3 +108,24 @@ The loopback HTTP endpoint and driver fault injection are boundary tests, not su
 Real Cloud bootstrap/push/pull remains unverified because no dedicated remote URL and credential were supplied.
 The real local application also passed dashboard, manual run, Running-to-Completed SSE, filtered reload, and invalid-label HTTP checks with this driver.
 Browser interaction and Linear blockers remain as recorded above.
+
+### Snapshot timestamp replacement evidence, 2026-09-07
+
+`nix develop --command just ci` completed with exit code 0 on macOS aarch64 using the pinned Rust 1.95 environment.
+Formatting, workspace/all-target/all-feature Clippy with `-D warnings`, Topcoat bundling, and the workspace/all-feature build passed.
+All **147 tests passed**: 84 library tests, 28 application tests, 17 public workflow integration tests, 10 jcode adapter tests, and 8 runtime-resource tests.
+
+| Contract | Passing executable evidence |
+| --- | --- |
+| Single rebuilt initial migration and repeatable initialization | `migrations_are_repeatable_and_match_the_schema` and schema-boundary rejection tests |
+| History uses snapshot start milliseconds rather than insertion or completion order | `history_sorts_by_start_timestamp_despite_insertion_and_completion_order` |
+| Equal start milliseconds use run ID as a deterministic tie-breaker | `equal_start_milliseconds_are_sorted_by_id_not_insertion_or_submillisecond_time` |
+| Start and finish columns derive independently from snapshots while preserving original precision | `run_timestamp_columns_follow_snapshot_times_without_losing_snapshot_precision` and `terminal_insert_preserves_independent_start_and_finish_times` |
+| Running updates accept Unix epoch zero and retain a null finish timestamp | `running_mutation_preserves_optional_finish_timestamp` |
+| Recovery preserves retained timestamps and writes the recovered finish time consistently | `reopening_file_recovers_interrupted_runs_and_preserves_sessions` |
+| Corrupt timestamp metadata is rejected before recovery mutates other rows | `startup_rejects_timestamp_metadata_disagreement_before_recovery` |
+
+The full suite exposed an untyped SQL null-bind failure during running updates, which was fixed with an explicit 64-bit integer bind type and covered by the running-mutation regression test.
+Tracked-source review found no remaining sequence columns, clock model/table, counter allocation, or counter verification implementation.
+No user database was reset or deleted, and no compatibility migration was added for earlier unmerged drafts.
+Browser and real Cloud synchronization were not rerun for this storage-only change, and no new evidence is claimed for those previously recorded boundaries.
