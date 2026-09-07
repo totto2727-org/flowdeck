@@ -21,7 +21,7 @@ Line locations deliberately describe that fixed baseline rather than concurrentl
 | Active runs | `src/workflow/history.rs:19-22,45-49` | Persist all active `RunSnapshot` data without automatic deletion. |
 | Terminal runs, including skipped and rejected cron attempts | `src/workflow/history.rs:19-22,51-54,66-74`, `src/workflow/schedule_attempt.rs:12-72` | Persist terminal snapshots without a count limit or automatic deletion. |
 | Global start-order sequence | `src/workflow/history.rs:14-16,22,34-42,86-92` | Replace the sequence with snapshot-derived Unix epoch milliseconds and an ID tie-breaker. |
-| Per-run step trace, topology progress, input, status and timing | `src/lib.rs:61-126`, `src/workflow_trace.rs:11-149` | Persist through validated storage DTOs or explicit model fields, including exact `StepId`, node execution ordinal, selected edge, output, redacted state, error and times. |
+| Per-run step trace, topology progress, input, status and timing | `src/lib.rs:61-126`, `src/workflow_trace.rs:11-149` | Persist through normalized run and step fields, including exact `StepId`, node execution ordinal, selected edge, output, redacted state, error and times. |
 | Schedule overlap leases | `src/workflow/state.rs:185-206`, `src/workflow_scheduler.rs:118-171` | Replace the mutex-protected schedule ID set with a unique-key table and atomic claim/release. |
 | Named provider session descriptors | `crates/graph-flow-jcode/src/runtime.rs:57-76,101-132` | Distinguish serializable `SessionKey` to provider session identity/working-directory metadata from live attached sessions and their turn mutexes. The current map is an integration-owned runtime registry, not a graph session database. |
 | Agent output and chat history | `crates/graph-flow-jcode/src/node.rs:178-215`, `crates/graph-flow-jcode/src/output.rs`, graph-flow `src/context.rs:307-311,564-600` | Already contained in serializable graph-flow context. Preserve them through the complete session round trip without publishing private context as a UI trace. |
@@ -52,30 +52,29 @@ An eventual restartable descriptor would need provider identity, stable session 
 ## Concrete storage model
 
 The implementation in `src/storage.rs` uses explicit Toasty table names and the committed migration `src/storage/migrations/0001_initial.sql`.
-It stores opaque serialized payloads beside fields needed for indexing and concurrency:
+It stores normalized fixed fields rather than whole run or session payload JSON:
 
 | Table role | Required columns and constraints |
 | --- | --- |
-| `graph_sessions` / `SessionRow` | Text `id` primary key, positive signed 64-bit `version`, JSON-valid text `payload`. |
-| `runs` / `RunRow` | Text `id` primary key, nonnegative Unix epoch millisecond `started_at`, nullable nonnegative millisecond `finished_at`, constrained `status`, JSON-valid text `snapshot`. Running status requires a null finish timestamp, and terminal status requires a finish timestamp. |
+| `runs` / `RunRow` | Text `id` primary key; workflow ID; JSON-object `input`; input summary; trigger and optional schedule ID; status and optional message; optional current node; route summary; start and optional finish timestamps as epoch milliseconds plus `0..=999_999` submillisecond-nanosecond remainders. Running status requires null finish columns. |
+| `run_steps` / `StepRow` | Composite `(run_id, step_id)` key and ordered `sequence`; node ID/execution, selected edge, status/message, JSON `state`, optional text output, and precise start/optional finish timestamp columns. The run foreign key cascades deletion. |
+| `graph_sessions` / `SessionRow` | Text `id` primary key, positive signed 64-bit `version`, nonblank graph and current-task IDs, optional status message, and JSON-object `context`. |
 | `schedule_leases` / `LeaseRow` | Unique nonblank text `id`. A file-backed service holds an exclusive file lock, so the current database has only one owning service. |
 | Migration bookkeeping | Toasty's standard `__toasty_migrations` table, owned by the migration API and read through a validation-only `MigrationRow` to reject incompatible history. |
 
 Application-level history eviction has been removed, including in-memory mode.
-`HistoryView` sorts by `started_at` milliseconds ascending, then text run ID ascending for equal timestamps.
-Both columns derive independently from the existing snapshot times, and the JSON snapshot preserves the original `SystemTime` precision.
+`HistoryView` sorts by start milliseconds ascending, then text run ID ascending for equal millisecond values.
+The paired submillisecond columns preserve the represented `SystemTime` precision while sort order intentionally remains millisecond-based.
+Run duration is derived from its persisted start and finish columns; traversed nodes, traversed edges, and current edge are derived from ordered `run_steps`.
 Timestamps are not unique or monotonic counters, and SQL imposes no relative ordering constraint between start and finish times.
-The initial migration is rebuilt before merge, with no compatibility guarantee for databases created from an earlier draft of this PR.
+The initial migration is rewritten while this PR is unreleased, with no compatibility upgrade for databases created by an earlier draft.
 Startup rejects incompatible schemas without resetting or deleting database files.
 Use checked conversions for `u64`, `usize`, durations and timestamps because SQLite integers are signed 64-bit values.
-Keep storage DTO versioning and validation distinct from application domain models.
-JSON decode failures must be actionable storage errors, not an absent row or an empty history.
-`src/storage/run_dto.rs` validates versioned run/step wire data with Garde before restoring domain values.
-`src/storage/session_dto.rs` validates a separate `schema_version = 1` envelope whose other fields match graph-flow's session wire shape: `id`, `graph_id`, `current_task_id`, `status_message`, `context`, and optimistic-lock `version`.
-Session identifiers must be nonblank, context must be an object, and the lock version must fit SQLite's signed integer range.
-The context envelope is restored through graph-flow's own Serde contract, preserving opaque workflow values and chat history, while `Session` itself is explicitly constructed only after DTO validation.
-`SessionRow::into_session` separately checks the decoded ID and lock version against the indexed row metadata.
-The schema version never replaces or increments the compare-and-swap version.
+Validate ORM rows before domain conversion.
+JSON decoding is limited to workflow input, trace state, and graph-flow context, and failures must be actionable storage errors rather than an absent row or an empty history.
+Workflow-owned input and state remain opaque to storage after their required JSON shape checks.
+`SessionRow` validates its fixed fields and JSON-object context, then reconstructs graph-flow context through graph-flow's Serde contract to preserve opaque workflow values and chat history.
+The row has no schema-version copy, and its optimistic-lock `version` remains the sole persisted session version.
 
 ## Toasty 0.10 APIs
 
@@ -105,7 +104,8 @@ Disabling connection lifetime/idle eviction avoids accidentally dropping the sol
 
 A basic model uses `#[derive(Debug, toasty::Model)]`, an explicit `#[table = "graph_sessions"]`, and `#[key] id: String`.
 `String` maps to `TEXT`, `i64` to `BIGINT`, and `Option<T>` to nullable columns.
-For domain JSON payloads, an explicit `String` column plus Serde conversion avoids relying on a domain type implementing Toasty's field traits.
+For JSON-owned values, an explicit `String` column plus Serde conversion avoids relying on a domain type implementing Toasty's field traits.
+The normalized schema uses this only for workflow input, redacted step state, and graph-flow context, never for a whole run or session payload.
 
 Verified read patterns are `Row::all().exec(&mut db).await?`, `Row::filter_by_id(id).first().exec(&mut db).await?` for `Option<Row>`, and `Row::filter_by_id(id).get(&mut db).await?` when a missing row is an error.
 `Row::get_by_id(&mut db, &id).await?` is the immediate primary-key form.
@@ -141,16 +141,18 @@ Rename detection can prompt interactively, so it must not be relied on in unatte
 Separate SQL statements with `-- #[toasty::breakpoint]` when using the generated migration format.
 Do not call `reset_db` or `push_schema` during ordinary application startup.
 `push_schema` pushes a complete schema rather than tracking changes, while resetting is destructive for a file-backed database.
-Embedded migration application tracks IDs, not runtime checksum equality, so treat released migration IDs and SQL as immutable and add a new migration for changes.
+Embedded migration application tracks IDs, not runtime checksum equality.
+The initial migration may be rewritten only until this PR ships, and deliberately provides no upgrade from earlier draft databases.
+After release, treat migration IDs and SQL as immutable and add a new migration for changes.
 
 ## Atomicity and recovery
 
 1. Insert the initial graph session and running snapshot together before returning success or spawning its driver.
 2. Allocate a step's exact identity and persist its running trace before emitting `NodeStarted`.
 3. Preserve graph-flow's compare-and-swap contract: every successful save, including the initial insert, stores incoming `version + 1`, and a stale save produces `GraphError::SessionConflict`.
-4. If version is stored both in a SQL column and serialized payload, update both consistently inside the same atomic operation.
+4. Store the graph-flow compare-and-swap version in the session `version` column only; the parent adapter increments it before constructing `SessionRow`.
 5. Use a conditional update or `INSERT ... ON CONFLICT ... DO UPDATE ... WHERE version = ?` and check affected rows, not an unconditional overwrite following a separate read.
-6. Finish/fail the snapshot and release its schedule lease atomically where their domain boundary permits it.
+6. Finish/fail the run and release its schedule lease atomically where their domain boundary permits it.
 7. Preserve broadcast notifications as post-commit invalidations rather than making their delivery part of database durability.
 8. Reconcile file-backed interrupted runs before starting cron workers, marking them failed/interrupted and releasing stale leases instead of replaying side effects automatically.
 
@@ -170,7 +172,7 @@ Provider descriptors, durable provider homes and restartable agent conversations
 ## Dependency compatibility
 
 The workspace uses Toasty's embedded Turso driver with a private in-memory database by default and optional local file storage.
-The committed SQLite-compatible schema and validated DTO/domain boundaries remain unchanged.
+The committed SQLite-compatible normalized schema and validated row/domain boundaries remain unchanged.
 All workspace crates share the published graph-flow 0.8 dependency with `default-features = false`; no local vendor patch or Git revision override is required.
 This disables graph-flow's optional PostgreSQL backend and excludes SQLx and its database drivers from Flowdeck's dependency graph. Application storage continues to use Toasty's Turso driver.
 Optional validated remote URL/token configuration uses the Turso sync driver; see the [remote synchronization contract](../../src/storage/README.md#remote-synchronization).
@@ -184,7 +186,7 @@ Remote mode requires a single Flowdeck writer per remote database and is not a d
 - Independently built memory services are isolated, while all adapters within one service share the same database.
 - Graph session save/get/delete preserves graph ID, task ID, status message, context values, chat history, and version.
 - Concurrent stale session saves yield exactly one successful update and a typed conflict, including version overflow handling.
-- History round trips preserve repeated step identities, selected edges, ordering, failures, and nanosecond timing where supported by the DTO.
+- History round trips preserve normalized run and step fields, repeated step identities, selected edges, ordering, failures, derived duration/traversal, and exact `SystemTime` values reconstructed from millisecond plus submillisecond columns.
 - More than 100 terminal runs and their sessions survive subsequent writes and file-backed recovery; completion order does not cause deletion.
 - Schedule claims are atomic under concurrency, skipped attempts are retained, and completion/failure/start rejection release ownership.
 - File-backed reopen preserves terminal history and reconciles interrupted runs and leases without rerunning graph tasks.

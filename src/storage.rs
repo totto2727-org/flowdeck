@@ -22,9 +22,12 @@ use crate::{
 };
 
 mod models;
-mod run_dto;
-mod session_dto;
-use models::{LeaseRow, MigrationRow, RunRow, RunStatusRow, SessionRow};
+mod run_rows;
+mod run_store;
+mod session_row;
+use models::{LeaseRow, MigrationRow};
+use run_rows::{RunRow, StepRow};
+use session_row::SessionRow;
 
 const INITIAL_SQL: &str = include_str!("storage/migrations/0001_initial.sql");
 const CURRENT_SCHEMA: &str = include_str!("storage/schema.sql");
@@ -99,7 +102,13 @@ impl TursoStore {
         let remote = config.remote.as_ref().map(|_| driver.clone());
         let mut builder = Db::builder();
         builder
-            .models(toasty::models!(RunRow, SessionRow, LeaseRow, MigrationRow))
+            .models(toasty::models!(
+                RunRow,
+                StepRow,
+                SessionRow,
+                LeaseRow,
+                MigrationRow
+            ))
             .max_pool_size(1)
             .pool_max_connection_lifetime(None)
             .pool_max_connection_idle_time(None);
@@ -122,6 +131,10 @@ impl TursoStore {
                 .map_err(|_| error("Turso remote pull timed out"))?
                 .map_err(|_| error("Turso remote pull failed"))?;
         }
+        sql::statement("PRAGMA foreign_keys = ON")
+            .exec(&mut db)
+            .await
+            .map_err(error)?;
         verify_migration_history(&mut db).await?;
         MIGRATIONS.apply(&db).await.map_err(error)?;
         let store = Self {
@@ -203,24 +216,7 @@ impl TursoStore {
     ) -> Result<(), WorkflowError> {
         let mut db = self.db.lock().await;
         let mut tx = db.transaction().await.map_err(error)?;
-        let json = run_dto::encode(&snapshot)?;
-        let row = RunRow {
-            id: snapshot.run_id.to_string(),
-            started_at: epoch_millis(snapshot.started_at)?,
-            finished_at: snapshot.finished_at.map(epoch_millis).transpose()?,
-            status: RunStatusRow::from(&snapshot.status),
-            snapshot: json,
-        };
-        row.validate().map_err(error)?;
-        RunRow::create()
-            .id(row.id)
-            .started_at(row.started_at)
-            .finished_at(row.finished_at)
-            .status(row.status)
-            .snapshot(row.snapshot)
-            .exec(&mut tx)
-            .await
-            .map_err(error)?;
+        run_store::insert(&mut tx, &snapshot).await?;
         if let Some(session) = session {
             save_session(&mut tx, session).await.map_err(error)?;
         }
@@ -231,26 +227,12 @@ impl TursoStore {
 
     pub(crate) async fn get_run(&self, id: &RunId) -> Result<Option<RunSnapshot>, WorkflowError> {
         let mut db = self.db.lock().await;
-        RunRow::filter_by_id(id.as_str())
-            .first()
-            .exec(&mut *db)
-            .await
-            .map_err(error)?
-            .map(RunRow::into_snapshot)
-            .transpose()
+        run_store::get(&mut *db, id).await
     }
 
     pub(crate) async fn history(&self) -> Result<HistoryView, WorkflowError> {
         let mut db = self.db.lock().await;
-        let mut rows = RunRow::all().exec(&mut *db).await.map_err(error)?;
-        drop(db);
-        rows.sort_by(|left, right| (left.started_at, &left.id).cmp(&(right.started_at, &right.id)));
-        Ok(HistoryView {
-            runs: rows
-                .into_iter()
-                .map(RunRow::into_snapshot)
-                .collect::<Result<_, _>>()?,
-        })
+        run_store::history(&mut *db).await
     }
 
     #[allow(
@@ -264,16 +246,10 @@ impl TursoStore {
     ) -> Result<Option<R>, WorkflowError> {
         let mut db = self.db.lock().await;
         let mut tx = db.transaction().await.map_err(error)?;
-        let Some(row) = RunRow::filter_by_id(id.as_str())
-            .first()
-            .exec(&mut tx)
-            .await
-            .map_err(error)?
-        else {
+        let Some(mut snapshot) = run_store::get(&mut tx, id).await? else {
             tx.commit().await.map_err(error)?;
             return Ok(None);
         };
-        let mut snapshot = row.into_snapshot()?;
         if snapshot.status != RunStatus::Running {
             tx.commit().await.map_err(error)?;
             return Ok(None);
@@ -320,11 +296,7 @@ impl TursoStore {
         let mut db = self.db.lock().await;
         let mut tx = db.transaction().await.map_err(error)?;
         // Validate every stored boundary before performing any recovery mutation.
-        let rows = RunRow::all().exec(&mut tx).await.map_err(error)?;
-        let snapshots = rows
-            .into_iter()
-            .map(RunRow::into_snapshot)
-            .collect::<Result<Vec<_>, _>>()?;
+        let snapshots = run_store::history(&mut tx).await?.runs;
         for row in SessionRow::all().exec(&mut tx).await.map_err(error)? {
             row.into_session()?;
         }
@@ -366,35 +338,11 @@ async fn sync_push(driver: &Turso) -> Result<(), WorkflowError> {
         .map_err(|_| error("Turso remote push failed; local changes may already be committed"))
 }
 
-// Query columns use milliseconds; the snapshot retains its original SystemTime precision.
-fn epoch_millis(time: SystemTime) -> Result<i64, WorkflowError> {
-    i64::try_from(
-        time.duration_since(SystemTime::UNIX_EPOCH)
-            .map_err(error)?
-            .as_millis(),
-    )
-    .map_err(error)
-}
-
 async fn persist_mutation(
     executor: &mut dyn Executor,
     snapshot: &RunSnapshot,
 ) -> Result<(), WorkflowError> {
-    let json = run_dto::encode(snapshot)?;
-    sql::statement(
-        "UPDATE runs SET snapshot = ?1, status = ?2, started_at = ?3, finished_at = ?4 WHERE id = ?5",
-    )
-    .bind(json)
-    .bind(RunStatusRow::from(&snapshot.status).as_str())
-    .bind(epoch_millis(snapshot.started_at)?)
-    .bind_typed(
-        snapshot.finished_at.map(epoch_millis).transpose()?,
-        toasty::schema::db::Type::Integer(8),
-    )
-    .bind(snapshot.run_id.as_str())
-    .exec(executor)
-    .await
-    .map_err(error)?;
+    run_store::update(executor, snapshot).await?;
     if snapshot.status != RunStatus::Running
         && let RunTrigger::Cron { schedule_id } = &snapshot.trigger
     {
@@ -413,19 +361,18 @@ async fn save_session(executor: &mut dyn Executor, mut session: Session) -> Resu
         .version
         .checked_add(1)
         .ok_or_else(|| GraphError::StorageError("session version exhausted".to_owned()))?;
-    let version = i64::try_from(session.version).map_err(graph_error)?;
-    let row = SessionRow {
-        id: session.id,
-        version,
-        payload: String::new(),
-    };
-    session.id = row.id.clone();
-    let row = SessionRow {
-        payload: session_dto::encode(&session).map_err(graph_error)?,
-        ..row
-    };
-    row.validate().map_err(graph_error)?;
-    let count = sql::statement("INSERT INTO graph_sessions (id, version, payload) VALUES (?1, ?2, ?3) ON CONFLICT(id) DO UPDATE SET version = excluded.version, payload = excluded.payload WHERE graph_sessions.version = ?4").bind(row.id.as_str()).bind(row.version).bind(row.payload).bind(previous).exec(executor).await.map_err(graph_error)?;
+    let row = SessionRow::from_session(&session).map_err(graph_error)?;
+    let count = sql::statement("INSERT INTO graph_sessions (id, version, graph_id, current_task_id, status_message, context) VALUES (?1, ?2, ?3, ?4, ?5, ?6) ON CONFLICT(id) DO UPDATE SET version = excluded.version, graph_id = excluded.graph_id, current_task_id = excluded.current_task_id, status_message = excluded.status_message, context = excluded.context WHERE graph_sessions.version = ?7")
+        .bind(row.id.as_str())
+        .bind(row.version)
+        .bind(row.graph_id)
+        .bind(row.current_task_id)
+        .bind_typed(row.status_message, toasty::schema::db::Type::Text)
+        .bind(row.context)
+        .bind(previous)
+        .exec(executor)
+        .await
+        .map_err(graph_error)?;
     if count == 0 {
         return Err(GraphError::SessionConflict(format!(
             "session {} was modified concurrently",

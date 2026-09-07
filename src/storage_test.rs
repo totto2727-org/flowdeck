@@ -54,6 +54,108 @@ async fn insert(store: &TursoStore, id: &str) -> TestResult {
 }
 
 #[tokio::test]
+async fn normalized_run_and_session_columns_round_trip_nested_state_and_repeated_steps()
+-> TestResult {
+    let store = TursoStore::open(&config()).await?;
+    let mut run = snapshot("structured");
+    for edge in ["first-edge", "second-edge"] {
+        let step = run.begin_step("start");
+        run.finish_step(
+            step,
+            Some(edge),
+            Some("output".to_owned()),
+            crate::StepState {
+                payload: json!({"nested": [null, true, {"unicode": "日本語"}]}),
+            },
+        );
+        run.traversed_nodes.push("start".to_owned());
+        run.traversed_edges.push(edge.to_owned());
+        run.current_edge = Some(edge.to_owned());
+    }
+    run.status = RunStatus::Completed;
+    run.finished_at = Some(SystemTime::now());
+    run.duration = run
+        .finished_at
+        .and_then(|end| end.duration_since(run.started_at).ok());
+    let expected = run.clone();
+    let mut session = Session::new_from_task("structured".to_owned(), "next").with_graph_id("demo");
+    session.status_message = Some("waiting".to_owned());
+    session
+        .context
+        .set("nested", json!({"items": [1, "two"]}))?;
+    store.insert_run(run, Some(session)).await?;
+
+    let mut db = store.db.lock().await;
+    let row = super::run_rows::RunRow::filter_by_id("structured")
+        .get(&mut *db)
+        .await?;
+    let steps = super::run_rows::StepRow::all().exec(&mut *db).await?;
+    let session = super::session_row::SessionRow::filter_by_id("structured")
+        .get(&mut *db)
+        .await?;
+    drop(db);
+    assert_eq!(row.workflow_id, "demo");
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&row.input)?,
+        expected.input.state().clone()
+    );
+    assert_eq!(steps.len(), 2);
+    assert_eq!(session.graph_id, "demo");
+    assert_eq!(session.current_task_id, "next");
+    assert_eq!(session.status_message.as_deref(), Some("waiting"));
+    let restored = store
+        .get_run(&expected.run_id)
+        .await?
+        .ok_or("missing run")?;
+    assert_eq!(restored.traversed_nodes, expected.traversed_nodes);
+    assert_eq!(restored.traversed_edges, expected.traversed_edges);
+    assert_eq!(restored.current_edge, expected.current_edge);
+    assert_eq!(restored.duration, expected.duration);
+    assert_eq!(restored.steps.len(), expected.steps.len());
+    for (actual, expected) in restored.steps.iter().zip(&expected.steps) {
+        assert_eq!(actual.step_id, expected.step_id);
+        assert_eq!(actual.sequence, expected.sequence);
+        assert_eq!(actual.node_execution, expected.node_execution);
+        assert_eq!(actual.state, expected.state);
+        assert_eq!(actual.output, expected.output);
+        assert_eq!(actual.started_at, expected.started_at);
+        assert_eq!(actual.finished_at, expected.finished_at);
+        assert_eq!(actual.duration, expected.duration);
+    }
+    store
+        .execute_test_sql(
+            "UPDATE run_steps SET node_execution = 2 WHERE run_id = 'structured' AND step_id = 1",
+        )
+        .await?;
+    assert!(matches!(
+        store.get_run(&expected.run_id).await,
+        Err(WorkflowError::Storage { .. })
+    ));
+    Ok(())
+}
+
+#[tokio::test]
+async fn failed_step_insert_rolls_back_parent_and_child_changes() -> TestResult {
+    let store = TursoStore::open(&config()).await?;
+    insert(&store, "atomic").await?;
+    store.execute_test_sql("CREATE TRIGGER reject_step BEFORE INSERT ON run_steps BEGIN SELECT RAISE(ABORT, 'injected step failure'); END").await?;
+    let result = store
+        .mutate_run(&RunId("atomic".to_owned()), |run| {
+            run.route_summary = "must roll back".to_owned();
+            run.begin_step("start")
+        })
+        .await;
+    assert!(matches!(result, Err(WorkflowError::Storage { .. })));
+    let restored = store
+        .get_run(&RunId("atomic".to_owned()))
+        .await?
+        .ok_or("missing run")?;
+    assert_eq!(restored.route_summary, "start");
+    assert!(restored.steps.is_empty());
+    Ok(())
+}
+
+#[tokio::test]
 async fn migrations_are_repeatable_and_match_the_schema() -> TestResult {
     let store = TursoStore::open(&config()).await?;
     let db = store.db.lock().await;
@@ -66,18 +168,43 @@ async fn migrations_are_repeatable_and_match_the_schema() -> TestResult {
 }
 
 #[tokio::test]
+async fn step_foreign_key_rejects_orphans_and_cascades_explicit_run_deletion() -> TestResult {
+    let store = TursoStore::open(&config()).await?;
+    insert(&store, "parent").await?;
+    store
+        .mutate_run(&RunId("parent".to_owned()), |run| run.begin_step("start"))
+        .await?;
+    assert!(
+        store
+            .execute_test_sql("UPDATE run_steps SET run_id = 'missing' WHERE run_id = 'parent'")
+            .await
+            .is_err()
+    );
+    store
+        .execute_test_sql("DELETE FROM runs WHERE id = 'parent'")
+        .await?;
+    let mut db = store.db.lock().await;
+    let steps = super::run_rows::StepRow::all().exec(&mut *db).await?;
+    drop(db);
+    assert!(steps.is_empty());
+    Ok(())
+}
+
+#[tokio::test]
 async fn committed_schema_rejects_invalid_rows_at_the_database_boundary() -> TestResult {
     let store = TursoStore::open(&config()).await?;
-    // Family conformance: every statement bypasses DTO validation and must be rejected by SQL.
+    insert(&store, "boundary-fixture").await?;
+    // Family conformance: each statement bypasses models but violates a SQL constraint.
     for statement in [
-        "INSERT INTO graph_sessions VALUES ('zero-version', 0, '{}')",
-        "INSERT INTO graph_sessions VALUES ('bad-json', 1, 'not-json')",
-        "INSERT INTO runs VALUES ('negative-start', -1, NULL, 'running', '{}')",
-        "INSERT INTO runs VALUES ('bad-status', 1, NULL, 'unknown', '{}')",
-        "INSERT INTO runs VALUES ('terminal-without-finish', 1, NULL, 'completed', '{}')",
+        "UPDATE graph_sessions SET version = 0 WHERE id = 'boundary-fixture'",
+        "UPDATE graph_sessions SET context = 'not-json' WHERE id = 'boundary-fixture'",
+        "UPDATE runs SET started_at = -1 WHERE id = 'boundary-fixture'",
+        "UPDATE runs SET status = 'unknown' WHERE id = 'boundary-fixture'",
+        "UPDATE runs SET status = 'completed' WHERE id = 'boundary-fixture'",
         "INSERT INTO schedule_leases VALUES ('   ')",
-        "INSERT INTO runs VALUES ('negative-finish', 0, -1, 'completed', '{}')",
-        "INSERT INTO runs VALUES ('running-with-finish', 0, 1, 'running', '{}')",
+        "UPDATE runs SET finished_at = -1 WHERE id = 'boundary-fixture'",
+        "UPDATE runs SET finished_at = 1, finished_at_submillis = 0 WHERE id = 'boundary-fixture'",
+        "UPDATE runs SET started_at_submillis = 1000000 WHERE id = 'boundary-fixture'",
     ] {
         assert!(
             matches!(
@@ -89,7 +216,7 @@ async fn committed_schema_rejects_invalid_rows_at_the_database_boundary() -> Tes
     }
     // A rejected statement must not poison the pooled connection.
     insert(&store, "valid-after-rejections").await?;
-    assert_eq!(store.history().await?.runs.len(), 1);
+    assert_eq!(store.history().await?.runs.len(), 2);
     Ok(())
 }
 
@@ -309,7 +436,7 @@ async fn schema_drift_and_corrupt_rows_are_errors() -> TestResult {
     insert(&store, "one").await?;
     {
         let mut db = store.db.lock().await;
-        sql::statement("UPDATE runs SET snapshot = '{}' WHERE id = 'one'")
+        sql::statement("UPDATE runs SET status = 'completed', started_at = 2, finished_at = 1, finished_at_submillis = 0 WHERE id = 'one'")
             .exec(&mut *db)
             .await?;
         drop(db);
@@ -368,19 +495,24 @@ async fn reopening_file_recovers_interrupted_runs_and_preserves_sessions() -> Te
         assert!(store.get("retained").await?.is_some());
         assert!(store.claim_lease("stale").await?);
         let mut db = store.db.lock().await;
-        let retained = super::models::RunRow::filter_by_id("retained")
+        let retained = super::run_rows::RunRow::filter_by_id("retained")
             .get(&mut *db)
             .await?;
         assert_eq!((retained.started_at, retained.finished_at), (0, Some(0)));
-        let recovered = super::models::RunRow::filter_by_id("interrupted")
+        let recovered = super::run_rows::RunRow::filter_by_id("interrupted")
             .get(&mut *db)
             .await?;
         let recovered_finish = recovered.finished_at.ok_or("missing recovery finish")?;
         assert_eq!(recovered.started_at, 0);
-        let restored = recovered.into_snapshot()?;
+        let restored = recovered.into_snapshot(Vec::new())?;
         assert_eq!(
-            restored.finished_at.map(super::epoch_millis).transpose()?,
-            Some(recovered_finish)
+            restored
+                .finished_at
+                .map(|time| time
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .map(|duration| duration.as_millis()))
+                .transpose()?,
+            Some(u128::try_from(recovered_finish)?)
         );
         sql::statement("ALTER TABLE runs ADD COLUMN drift TEXT")
             .exec(&mut *db)
@@ -473,11 +605,11 @@ fn schema_comparison_preserves_meaningful_quoted_whitespace() {
 }
 
 #[tokio::test]
-async fn startup_rejects_timestamp_metadata_disagreement_before_recovery() -> TestResult {
-    // Family conformance: either timestamp column must agree with its snapshot.
+async fn startup_rejects_invalid_timestamp_order_before_recovery() -> TestResult {
+    // Family conformance: persisted finish must not precede start at either precision.
     for corruption in [
         "UPDATE runs SET started_at = 1 WHERE id = 'terminal'",
-        "UPDATE runs SET finished_at = 1 WHERE id = 'terminal'",
+        "UPDATE runs SET started_at_submillis = 1 WHERE id = 'terminal'",
     ] {
         let store = TursoStore::open(&config()).await?;
         insert(&store, "terminal").await?;
@@ -523,8 +655,7 @@ async fn equal_start_milliseconds_are_sorted_by_id_not_insertion_or_submilliseco
 }
 
 #[tokio::test]
-async fn run_timestamp_columns_follow_snapshot_times_without_losing_snapshot_precision()
--> TestResult {
+async fn run_timestamp_columns_preserve_submillisecond_precision() -> TestResult {
     let store = TursoStore::open(&config()).await?;
     let mut run = snapshot("timed");
     run.started_at += Duration::from_nanos(1_234_567_890);
@@ -532,12 +663,12 @@ async fn run_timestamp_columns_follow_snapshot_times_without_losing_snapshot_pre
     store.insert_run(run, None).await?;
     {
         let mut db = store.db.lock().await;
-        let row = super::models::RunRow::filter_by_id("timed")
+        let row = super::run_rows::RunRow::filter_by_id("timed")
             .get(&mut *db)
             .await?;
         drop(db);
         assert_eq!((row.started_at, row.finished_at), (1234, None));
-        let restored = row.into_snapshot()?;
+        let restored = row.into_snapshot(Vec::new())?;
         assert_eq!((restored.started_at, restored.finished_at), (started, None));
     }
     let elapsed = Duration::from_nanos(9_876_543_210);
@@ -550,12 +681,12 @@ async fn run_timestamp_columns_follow_snapshot_times_without_losing_snapshot_pre
         })
         .await?;
     let mut db = store.db.lock().await;
-    let row = super::models::RunRow::filter_by_id("timed")
+    let row = super::run_rows::RunRow::filter_by_id("timed")
         .get(&mut *db)
         .await?;
     drop(db);
     assert_eq!((row.started_at, row.finished_at), (1234, Some(11111)));
-    let restored = row.into_snapshot()?;
+    let restored = row.into_snapshot(Vec::new())?;
     assert_eq!(
         (restored.started_at, restored.finished_at, restored.duration),
         (started, Some(finished), Some(elapsed))
@@ -573,12 +704,12 @@ async fn running_mutation_preserves_optional_finish_timestamp() -> TestResult {
         })
         .await?;
     let mut db = store.db.lock().await;
-    let row = super::models::RunRow::filter_by_id("running")
+    let row = super::run_rows::RunRow::filter_by_id("running")
         .get(&mut *db)
         .await?;
     drop(db);
     assert_eq!((row.started_at, row.finished_at), (0, None));
-    let restored = row.into_snapshot()?;
+    let restored = row.into_snapshot(Vec::new())?;
     assert_eq!(restored.route_summary, "still running");
     assert_eq!(restored.status, RunStatus::Running);
     Ok(())
@@ -594,12 +725,12 @@ async fn terminal_insert_preserves_independent_start_and_finish_times() -> TestR
     run.status = RunStatus::Completed;
     store.insert_run(run, None).await?;
     let mut db = store.db.lock().await;
-    let row = super::models::RunRow::filter_by_id("terminal")
+    let row = super::run_rows::RunRow::filter_by_id("terminal")
         .get(&mut *db)
         .await?;
     drop(db);
     assert_eq!((row.started_at, row.finished_at), (2000, Some(5000)));
-    assert_eq!(row.into_snapshot()?.status, RunStatus::Completed);
+    assert_eq!(row.into_snapshot(Vec::new())?.status, RunStatus::Completed);
     Ok(())
 }
 
@@ -667,7 +798,7 @@ async fn run_status_enum_round_trips_all_variants_through_the_database() -> Test
         run.status = status.clone();
         store.insert_run(run, None).await?;
         let mut db = store.db.lock().await;
-        let row = super::models::RunRow::filter_by_id(id)
+        let row = super::run_rows::RunRow::filter_by_id(id)
             .get(&mut *db)
             .await?;
         let labels = sql::query("SELECT status FROM runs WHERE id = ?1")
@@ -676,7 +807,7 @@ async fn run_status_enum_round_trips_all_variants_through_the_database() -> Test
             .await?;
         drop(db);
         assert_eq!(row.status, expected);
-        assert_eq!(row.into_snapshot()?.status, status);
+        assert_eq!(row.into_snapshot(Vec::new())?.status, status);
         let [toasty::stmt::Value::Record(label)] = labels.as_slice() else {
             return Err("missing status label".into());
         };

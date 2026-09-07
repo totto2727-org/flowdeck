@@ -218,13 +218,15 @@ The default location is a private SQLite in-memory database, so selecting SQLite
 A file location is an explicit application configuration choice.
 
 The shared graph session store uses opaque globally unique run IDs and preserves graph-flow's optimistic version check on every save.
-Validated versioned DTOs form the serialization boundary for runs and graph sessions, while their row adapters check indexed metadata against the decoded payload.
-The graph session DTO's format version is independent from graph-flow's compare-and-swap version.
-Run history operations expose domain-level atomic commands rather than allowing the service to lock or mutate a collection directly.
-The storage representation uses Unix epoch millisecond start and optional finish timestamps derived independently from the snapshot, which retains its original `SystemTime` precision.
-History sorts by start milliseconds ascending and then run ID ascending for equal timestamps, without sequence counters.
-The single initial migration was rebuilt before merge, so databases from earlier PR drafts are rejected rather than reset or automatically upgraded.
-Evicting a terminal run also deletes its associated graph session in the same transaction.
+Runs, steps, and graph sessions persist normalized fixed fields, not versioned whole-payload DTOs.
+The only JSON columns are workflow input, redacted step state, and graph-flow context. Input and context must be JSON objects, while workflow-owned values inside them remain opaque to storage.
+`graph_sessions` stores the graph ID, current task ID, optional status message, JSON context, and the sole compare-and-swap version column.
+`runs` stores workflow, trigger, status, topology, summary, and precise timestamps; `run_steps` stores ordered node executions, selected edges, state, output, and their precise timestamps.
+Run duration, traversed nodes, traversed edges, and current edge are derived when restoring a snapshot from the run and ordered step rows.
+Timestamp storage is Unix epoch milliseconds plus a `0..=999_999` submillisecond-nanosecond remainder, preserving the represented `SystemTime` precision.
+History sorts by start milliseconds ascending and then run ID ascending for equal milliseconds, without sequence counters.
+The initial migration is rewritten only while this PR is unreleased and deliberately provides no upgrade for earlier draft databases.
+Run history exposes domain-level atomic commands rather than allowing the service to lock or mutate a collection directly.
 Schedule leases expose `claim` and `release`, with the database enforcing unique schedule ownership.
 All storage operations distinguish database failure from a missing row or an overlap rejection.
 
