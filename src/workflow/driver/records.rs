@@ -1,6 +1,6 @@
 use super::super::state::CompleteStep;
 use super::super::{Inner, WorkflowRuntime};
-use crate::{EdgeSpec, RunId, StepId, StepState, WorkflowEvent};
+use crate::{EdgeSpec, RunId, StepId, StepState, WorkflowError, WorkflowEvent};
 
 pub(super) struct StepCompletion<'a> {
     pub(super) runtime: &'a WorkflowRuntime,
@@ -17,12 +17,15 @@ pub(super) struct RunFailure {
     pub(super) message: String,
 }
 
-pub(super) async fn active_step_id(inner: &Inner, run_id: &RunId) -> Option<StepId> {
-    inner
+pub(super) async fn active_step_id(
+    inner: &Inner,
+    run_id: &RunId,
+) -> Result<Option<StepId>, WorkflowError> {
+    Ok(inner
         .state
         .run_history
         .get(run_id)
-        .await
+        .await?
         .and_then(|snapshot| {
             snapshot
                 .steps
@@ -30,15 +33,17 @@ pub(super) async fn active_step_id(inner: &Inner, run_id: &RunId) -> Option<Step
                 .rev()
                 .find(|step| step.status == crate::StepTraceStatus::Running)
                 .map(|step| step.step_id)
-        })
+        }))
 }
 
 pub(super) async fn record_step_start(
     inner: &Inner,
     run_id: &RunId,
     current: &str,
-) -> Option<StepId> {
-    let started = inner.state.run_history.start_step(run_id, current).await?;
+) -> Result<Option<StepId>, WorkflowError> {
+    let Some(started) = inner.state.run_history.start_step(run_id, current).await? else {
+        return Ok(None);
+    };
     let event = WorkflowEvent::NodeStarted {
         run_id: run_id.clone(),
         workflow_id: started.workflow_id,
@@ -46,10 +51,14 @@ pub(super) async fn record_step_start(
         step_id: started.step_id,
     };
     let _ = inner.events.send(event);
-    Some(started.step_id)
+    Ok(Some(started.step_id))
 }
 
-pub(super) async fn record_step(inner: &Inner, run_id: &RunId, completion: StepCompletion<'_>) {
+pub(super) async fn record_step(
+    inner: &Inner,
+    run_id: &RunId,
+    completion: StepCompletion<'_>,
+) -> Result<(), WorkflowError> {
     let edge_id = matching_edge(completion.runtime, completion.current, completion.next)
         .map(|edge| edge.id.to_owned());
     let Some(completed) = inner
@@ -65,9 +74,9 @@ pub(super) async fn record_step(inner: &Inner, run_id: &RunId, completion: StepC
             output: completion.output,
             state: completion.state,
         })
-        .await
+        .await?
     else {
-        return;
+        return Ok(());
     };
     let node_completed = WorkflowEvent::NodeCompleted {
         run_id: run_id.clone(),
@@ -83,31 +92,29 @@ pub(super) async fn record_step(inner: &Inner, run_id: &RunId, completion: StepC
             workflow_id: completed.workflow_id,
         });
     }
-    release_schedule(inner, completed.schedule_id).await;
+    Ok(())
 }
 
-pub(super) async fn record_failure(inner: &Inner, run_id: &RunId, failure: RunFailure) {
+pub(super) async fn record_failure(
+    inner: &Inner,
+    run_id: &RunId,
+    failure: RunFailure,
+) -> Result<(), WorkflowError> {
     let message = failure.message;
     let Some(failed) = inner
         .state
         .run_history
         .fail_run(run_id, failure.step_id, message.clone())
-        .await
+        .await?
     else {
-        return;
+        return Ok(());
     };
     let _ = inner.events.send(WorkflowEvent::RunFailed {
         run_id: run_id.clone(),
         workflow_id: failed.workflow_id,
         message,
     });
-    release_schedule(inner, failed.schedule_id).await;
-}
-
-async fn release_schedule(inner: &Inner, schedule_id: Option<String>) {
-    if let Some(schedule_id) = schedule_id {
-        inner.state.schedule_leases.release(&schedule_id).await;
-    }
+    Ok(())
 }
 
 fn matching_edge(

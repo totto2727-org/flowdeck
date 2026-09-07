@@ -4,7 +4,7 @@ mod hooks;
 
 use crate::{WorkflowError, workflows::WorkflowRegistration};
 
-pub(super) use definition::{DEFINITION, WORKFLOW_ID, default_input, input_form};
+pub(super) use definition::{DEFINITION, WORKFLOW_ID, default_input, input_form, parse_input};
 
 pub(crate) fn registration() -> Result<WorkflowRegistration, WorkflowError> {
     Ok(WorkflowRegistration::new(

@@ -5,7 +5,6 @@ use croner::{
     Cron,
     parser::{CronParser, Seconds},
 };
-use serde::Serialize;
 use serde_json::Value;
 use tokio::task::JoinSet;
 
@@ -24,7 +23,7 @@ pub(super) enum UnstartedScheduleStatus {
 }
 
 /// Policy applied when one schedule fires while its prior run is still active.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ScheduleOverlapPolicy {
     /// Retain a skipped history entry instead of starting another run.
     #[default]
@@ -34,7 +33,7 @@ pub enum ScheduleOverlapPolicy {
 }
 
 /// Whether a schedule inherits or overrides application overlap policy.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ScheduleOverlap {
     /// Resolve through `SchedulerConfig::default_overlap_policy`.
     #[default]
@@ -71,7 +70,7 @@ impl ScheduleOverlapPolicy {
 }
 
 /// One cron schedule declared directly in the application.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ScheduleSpec {
     /// Stable schedule identifier.
     pub schedule_id: &'static str,
@@ -129,7 +128,7 @@ impl WorkflowService {
             .overlap
             .resolve(self.scheduler_config().default_overlap_policy);
         if overlap_policy == ScheduleOverlapPolicy::SkipWhileRunning
-            && !self.claim_schedule(schedule.schedule_id).await
+            && !self.claim_schedule(schedule.schedule_id).await?
         {
             return self
                 .retain_unstarted_schedule(UnstartedScheduleRun {
@@ -152,7 +151,7 @@ impl WorkflowService {
             .start(schedule.workflow_id, input, trigger.clone())
             .await;
         if result.is_err() && overlap_policy == ScheduleOverlapPolicy::SkipWhileRunning {
-            self.release_schedule(schedule.schedule_id).await;
+            self.release_schedule(schedule.schedule_id).await?;
         }
         match result {
             Err(error @ WorkflowError::ActiveRunLimit { .. }) => {

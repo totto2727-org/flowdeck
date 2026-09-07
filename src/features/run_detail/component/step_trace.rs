@@ -1,4 +1,5 @@
 use flowdeck::{RunSnapshot, StepTrace, StepTraceStatus};
+use serde::Serialize;
 use serde_json::to_string_pretty;
 use topcoat::{
     Result,
@@ -228,7 +229,15 @@ fn trace_values(
         timestamp(step.finished_at),
         step_elapsed(step),
         step.selected_edge.clone().unwrap_or_else(|| "—".to_owned()),
-        to_string_pretty(&step.state).unwrap_or_else(|_| "State serialization failed".to_owned()),
+        to_string_pretty(&StepStateDto {
+            payload: &step.state.payload,
+        })
+        .unwrap_or_else(|_| "State serialization failed".to_owned()),
         output,
     )
+}
+
+#[derive(Serialize)]
+struct StepStateDto<'a> {
+    payload: &'a serde_json::Value,
 }

@@ -27,7 +27,7 @@ struct WorkflowTail(str);
 async fn root_redirect(cx: &Cx) -> Result {
     let default_workflow_id = workflow_id();
     let service = app_context::<WorkflowService>(cx);
-    let history = service.history_view().await;
+    let history = service.history_view().await?;
     let filters = history_filters(cx)?;
     let location = latest_run_url(&history.runs, default_workflow_id)
         .unwrap_or_else(|| workflow_url(default_workflow_id, None));
@@ -38,7 +38,7 @@ async fn root_redirect(cx: &Cx) -> Result {
 async fn workflow_page(cx: &Cx) -> Result {
     let selected_workflow_id = workflow_id_from_path(cx)?;
     let service = app_context::<WorkflowService>(cx);
-    let history = service.history_view().await;
+    let history = service.history_view().await?;
     let filters = history_filters(cx)?;
     let location = latest_run_url(&history.runs, selected_workflow_id)
         .unwrap_or_else(|| workflow_url(selected_workflow_id, None));
@@ -51,7 +51,7 @@ async fn workflow_run_page(cx: &Cx) -> Result {
     let filters = history_filters(cx)?;
     let target = parse_workflow_tail(path_param::<WorkflowTail>(cx)).ok_or_else(not_found_error)?;
     let service = app_context::<WorkflowService>(cx);
-    let history = service.history_view().await;
+    let history = service.history_view().await?;
     match target {
         RunTarget::MissingRunlessSlash => Err(redirect(&navigation_url(
             &workflow_url(selected_workflow_id, None),

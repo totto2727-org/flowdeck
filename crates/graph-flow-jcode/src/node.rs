@@ -206,11 +206,11 @@ fn execute_turn(
         session,
         result: &mut result,
     })?;
-    context.add_assistant_message(result.text.clone());
-    let output = JcodeOutput::from_turn(session.session_id.clone(), result);
+    let output = JcodeOutput::from_turn(session.session_id.clone(), result)?;
+    context.add_assistant_message(output.text.clone());
     let response = output.text.clone();
     context
-        .set(JCODE_OUTPUT_KEY, output)
+        .set(JCODE_OUTPUT_KEY, output.to_dto())
         .map_err(|error| JcodeNodeError::context(&error))?;
     Ok(TaskResult::new(Some(response), policy.next_action))
 }

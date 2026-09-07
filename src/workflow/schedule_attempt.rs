@@ -67,7 +67,7 @@ impl WorkflowService {
             .state
             .run_history
             .insert_terminal(snapshot.clone())
-            .await;
+            .await?;
         let _ = self.inner.events.send(event);
         Ok(snapshot)
     }

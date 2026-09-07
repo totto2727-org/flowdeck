@@ -15,7 +15,6 @@ mod review;
 mod task;
 
 use graph_flow::GraphError;
-use serde::Serialize;
 use serde_json::Value;
 use topcoat::{
     Result,
@@ -32,7 +31,7 @@ pub(crate) const WORKFLOW_INPUT_KEY: &str = "workflow_input";
 pub(crate) const WORKFLOW_RUN_ID_KEY: &str = "workflow_run_id";
 
 /// A code-defined graph node retained independently from graph-flow.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct NodeSpec {
     /// Stable task ID.
     pub id: &'static str,
@@ -41,7 +40,7 @@ pub struct NodeSpec {
 }
 
 /// A code-defined graph edge retained independently from graph-flow.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct EdgeSpec {
     /// Stable edge ID.
     pub id: &'static str,
@@ -52,7 +51,7 @@ pub struct EdgeSpec {
 }
 
 /// One workflow definition compiled into the local application.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct WorkflowDefinition {
     /// Stable workflow ID accepted by the execution boundary.
     pub workflow_id: &'static str,
@@ -112,6 +111,21 @@ pub fn workflow_default_input(workflow_id: &str) -> Value {
         review::WORKFLOW_ID => review::default_input(),
         jcode_translation::WORKFLOW_ID => jcode_translation::default_input(),
         _ => Value::Object(serde_json::Map::new()),
+    }
+}
+
+/// Revalidate known workflow inputs without constructing graphs or live resources.
+/// Historical inputs for removed workflows remain opaque read-only payloads.
+pub(crate) fn restore_run_input(
+    workflow_id: &str,
+    value: Value,
+    summary: String,
+) -> Result<crate::RunInput, WorkflowError> {
+    match workflow_id {
+        demo::WORKFLOW_ID => demo::parse_input(value),
+        review::WORKFLOW_ID => review::parse_input(value),
+        jcode_translation::WORKFLOW_ID => jcode_translation::parse_input(value),
+        _ => Ok(crate::RunInput::new(value, summary)),
     }
 }
 

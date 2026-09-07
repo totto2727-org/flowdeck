@@ -1,6 +1,6 @@
 use garde::Validate;
 use graph_flow::{Context, GraphBuilder};
-use graph_flow_jcode::{JCODE_OUTPUT_KEY, JcodeNode, JcodeOutput, JcodeProcessScope, SessionMode};
+use graph_flow_jcode::{JcodeNode, JcodeOutput, JcodeProcessScope, SessionMode};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{path::Path, sync::Arc};
@@ -23,7 +23,7 @@ pub(crate) const WORKFLOW_ID: &str = "jcode-translation";
 
 #[derive(Debug, Deserialize, Validate)]
 #[serde(deny_unknown_fields)]
-struct TranslationInput {
+struct TranslationInputDto {
     #[garde(custom(validate_relative_file), length(chars, max = 160))]
     source_path: String,
     #[garde(custom(validate_relative_file), length(chars, max = 160))]
@@ -82,12 +82,56 @@ pub(crate) fn default_input() -> Value {
     })
 }
 
+#[derive(Debug)]
+pub(super) struct TranslationInput {
+    pub(super) source_path: String,
+    pub(super) target_path: String,
+    pub(super) target_language: String,
+}
+
+impl TranslationInput {
+    pub(super) fn decode(value: Value) -> Result<Self, WorkflowError> {
+        let dto = serde_json::from_value::<TranslationInputDto>(value)
+            .map_err(|error| invalid_input(format!("invalid JSON structure: {error}")))?;
+        dto.validate()
+            .map_err(|error| invalid_input(format!("validation failed: {error}")))?;
+        Self::try_from(dto)
+    }
+}
+
+impl TryFrom<TranslationInputDto> for TranslationInput {
+    type Error = WorkflowError;
+
+    fn try_from(input: TranslationInputDto) -> Result<Self, Self::Error> {
+        let normalize = |value: &str| {
+            Path::new(value.trim())
+                .components()
+                .filter(|component| matches!(component, std::path::Component::Normal(_)))
+                .collect::<std::path::PathBuf>()
+                .to_string_lossy()
+                .into_owned()
+        };
+        let source_path = normalize(&input.source_path);
+        let target_path = normalize(&input.target_path);
+        if source_path == target_path {
+            return Err(invalid_input(
+                "source and target must refer to different files",
+            ));
+        }
+        Ok(Self {
+            source_path,
+            target_path,
+            target_language: input.target_language.trim().to_owned(),
+        })
+    }
+}
+
 pub(crate) fn parse_input(value: Value) -> Result<RunInput, WorkflowError> {
-    let input = serde_json::from_value::<TranslationInput>(value).map_err(invalid_input)?;
-    input.validate().map_err(invalid_input)?;
-    let source_path = input.source_path.trim().to_owned();
-    let target_path = input.target_path.trim().to_owned();
-    let target_language = input.target_language.trim().to_owned();
+    let TranslationInput {
+        source_path,
+        target_path,
+        target_language,
+    } = TranslationInput::decode(value)?;
     let summary = format!("{source_path} -> {target_path} · {target_language}");
     Ok(RunInput::new(
         json!({
@@ -134,7 +178,7 @@ pub(crate) fn project_trace(context: &Context, _node_id: &str) -> Result<Value, 
         .ok_or_else(|| trace_error("translation workflow input is missing"))?;
     Ok(json!({
         "input": input,
-        "jcode_output": context.get::<JcodeOutput>(JCODE_OUTPUT_KEY),
+        "jcode_output": JcodeOutput::from_context(context).map_err(|error| trace_error(&error.to_string()))?.map(|output| output.to_dto()),
         "translation_output_path": context.get::<String>("translation_output_path"),
     }))
 }
@@ -159,6 +203,10 @@ fn validate_relative_file(value: &str, _: &()) -> garde::Result {
     let path = Path::new(value.trim());
     if value.trim().is_empty()
         || path.is_absolute()
+        || !path
+            .components()
+            .any(|part| matches!(part, std::path::Component::Normal(_)))
+        || value.contains('\0')
         || path.components().any(|part| {
             matches!(
                 part,
@@ -182,4 +230,52 @@ fn validate_non_blank(value: &str, _: &()) -> garde::Result {
         return Err(garde::Error::new("must not be blank"));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalized_source_and_target_must_be_different() {
+        assert!(matches!(
+            parse_input(json!({
+                "source_path": "README.md", "target_path": "./README.md", "target_language": "Japanese"
+            })),
+            Err(WorkflowError::InvalidInput { .. })
+        ));
+    }
+
+    #[test]
+    fn translation_normalizes_the_validated_path_and_language() {
+        let input = parse_input(json!({
+            "source_path": " ./README.md ", "target_path": "target//out.md", "target_language": " Japanese "
+        })).expect("valid translation input");
+        assert_eq!(
+            input.state(),
+            &json!({
+                "source_path": "README.md", "target_path": "target/out.md", "target_language": "Japanese"
+            })
+        );
+    }
+
+    #[test]
+    fn directory_only_path_is_rejected() {
+        assert!(matches!(
+            parse_input(json!({
+                "source_path": ".", "target_path": "out.md", "target_language": "Japanese"
+            })),
+            Err(WorkflowError::InvalidInput { .. })
+        ));
+    }
+
+    #[test]
+    fn restored_task_input_cannot_bypass_path_validation() {
+        assert!(matches!(
+            TranslationInput::decode(json!({
+                "source_path": "../secret", "target_path": "out.md", "target_language": "Japanese"
+            })),
+            Err(WorkflowError::InvalidInput { .. })
+        ));
+    }
 }

@@ -188,9 +188,11 @@ Hook errors stop that node execution and are attributed to their stable phase.
 ## 9. Output and graph context
 
 Successful execution adds the user prompt and assistant text to graph-flow chat history.
-It stores `JcodeOutput` under `JCODE_OUTPUT_KEY` and returns the output text as the graph-flow task response.
+It projects the validated `JcodeOutput` domain value into `JcodeOutputDto` under `JCODE_OUTPUT_KEY` and returns the output text as the graph-flow task response.
+Consumers use `JcodeOutput::from_context` to structurally decode and validate retained output rather than deserializing domain types directly.
+Malformed output is an error, while an absent output remains `None`.
 
-`JcodeOutput` contains the session ID, text, tool calls, usage, and finish reason supplied by the SDK result.
+`JcodeOutput` contains the session ID, response and reasoning text, tool calls, and usage supplied by the SDK result.
 It does not contain provider API keys or the complete client configuration.
 
 Applications should project only the fields required for operator-visible trace state.
