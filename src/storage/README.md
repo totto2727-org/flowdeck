@@ -11,9 +11,12 @@ Startup rejects missing or drifted definitions instead of attempting destructive
 A migration change is not complete until both fresh initialization and populated upgrade tests pass.
 
 The Turso pool has one connection for private memory databases and a process-local mutex serializes operations.
-Every operation involving multiple writes uses the same Toasty transaction, including run/session creation, completion, lease release, ordering counters, and terminal retention.
+Every operation involving multiple writes uses the same Toasty transaction, including run/session creation, completion, lease release, and ordering counters.
 File-backed services hold an exclusive OS file lock for their lifetime.
-On reopening a file, interrupted runs become failed, stale schedule leases are released, and retention is applied in one transaction.
+On reopening a file, interrupted runs become failed and stale schedule leases are released in one transaction.
+No run-count retention limit or automatic history/session deletion is applied at startup or during writes.
+This also applies to in-memory databases: storage usage grows with history.
+Existing migration SQL and completion-order metadata remain unchanged so existing database files stay compatible.
 Graphs, runtime resources, driver admission, and broadcast channels remain process-local execution infrastructure, not serialized database data.
 
 ## Remote synchronization

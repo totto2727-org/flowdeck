@@ -18,9 +18,9 @@ Line locations deliberately describe that fixed baseline rather than concurrentl
 | Store or state | Baseline location | SQLite treatment |
 | --- | --- | --- |
 | Shared graph-flow sessions | `src/workflow/state.rs:13-30`, `src/workflow/bootstrap.rs:17-24,79-90` | Replace `InMemorySessionStorage` with a `SessionStorage` adapter backed by the shared database. |
-| Active runs | `src/workflow/history.rs:19-22,45-49` | Persist active `RunSnapshot` data, never evict it through terminal retention. |
-| Terminal runs, including skipped and rejected cron attempts | `src/workflow/history.rs:19-22,51-54,66-74`, `src/workflow/schedule_attempt.rs:12-72` | Replace the terminal ring with bounded database retention in terminal-transition order. |
-| Global start-order sequence | `src/workflow/history.rs:14-16,22,34-42,86-92` | Persist a monotonic sequence independently from terminal retention order. |
+| Active runs | `src/workflow/history.rs:19-22,45-49` | Persist all active `RunSnapshot` data without automatic deletion. |
+| Terminal runs, including skipped and rejected cron attempts | `src/workflow/history.rs:19-22,51-54,66-74`, `src/workflow/schedule_attempt.rs:12-72` | Persist terminal snapshots without a count limit or automatic deletion. |
+| Global start-order sequence | `src/workflow/history.rs:14-16,22,34-42,86-92` | Persist a monotonic sequence independently from terminal-transition order. |
 | Per-run step trace, topology progress, input, status and timing | `src/lib.rs:61-126`, `src/workflow_trace.rs:11-149` | Persist through validated storage DTOs or explicit model fields, including exact `StepId`, node execution ordinal, selected edge, output, redacted state, error and times. |
 | Schedule overlap leases | `src/workflow/state.rs:185-206`, `src/workflow_scheduler.rs:118-171` | Replace the mutex-protected schedule ID set with a unique-key table and atomic claim/release. |
 | Named provider session descriptors | `crates/graph-flow-jcode/src/runtime.rs:57-76,101-132` | Distinguish serializable `SessionKey` to provider session identity/working-directory metadata from live attached sessions and their turn mutexes. The current map is an integration-owned runtime registry, not a graph session database. |
@@ -62,9 +62,9 @@ It stores opaque serialized payloads beside fields needed for indexing and concu
 | `schedule_leases` / `LeaseRow` | Unique nonblank text `id`. A file-backed service holds an exclusive file lock, so the current database has only one owning service. |
 | Migration bookkeeping | Toasty's standard `__toasty_migrations` table, owned by the migration API and read through a validation-only `MigrationRow` to reject incompatible history. |
 
-The existing ring evicts by insertion into the terminal ring, not by run start time.
-Preserve this by allocating terminal order when a run finishes or an unstarted schedule attempt is inserted, while `HistoryView` remains sorted by start order.
-A schema based only on `started_at`, UUID ordering, or the start sequence will change observable retention for runs that finish out of order.
+Application-level history eviction has been removed, including in-memory mode.
+`HistoryView` remains sorted by start order, and terminal-order metadata is preserved for compatibility with already-created databases.
+No migration rewrite is needed: terminal order no longer triggers deletion of runs or sessions.
 Use checked conversions for `u64`, `usize`, durations and timestamps because SQLite integers are signed 64-bit values.
 Keep storage DTO versioning and validation distinct from application domain models.
 JSON decode failures must be actionable storage errors, not an absent row or an empty history.
@@ -148,7 +148,7 @@ Embedded migration application tracks IDs, not runtime checksum equality, so tre
 3. Preserve graph-flow's compare-and-swap contract: every successful save, including the initial insert, stores incoming `version + 1`, and a stale save produces `GraphError::SessionConflict`.
 4. If version is stored both in a SQL column and serialized payload, update both consistently inside the same atomic operation.
 5. Use a conditional update or `INSERT ... ON CONFLICT ... DO UPDATE ... WHERE version = ?` and check affected rows, not an unconditional overwrite following a separate read.
-6. Finish/fail the snapshot, release its schedule lease, and apply terminal retention atomically where their domain boundary permits it.
+6. Finish/fail the snapshot and release its schedule lease atomically where their domain boundary permits it.
 7. Preserve broadcast notifications as post-commit invalidations rather than making their delivery part of database durability.
 8. Reconcile file-backed interrupted runs before starting cron workers, marking them failed/interrupted and releasing stale leases instead of replaying side effects automatically.
 
@@ -158,9 +158,9 @@ A process can stop after a session advances but before the visible trace finishe
 Optimistic locking cannot roll back filesystem edits, provider requests, or other external effects performed before a stale save is rejected.
 A dropped async timeout also does not terminate an already-running synchronous `spawn_blocking` agent turn.
 
-The baseline retained graph sessions after terminal history eviction and had no named jcode-session removal path.
-The SQLite implementation now deletes graph sessions associated with evicted terminal runs in the same retention transaction, while the integration's live-session lifetime remains a separately owned policy.
-On file-backed startup, the service acquires an exclusive file lock, validates retained rows, marks interrupted running snapshots and their active steps failed, clears leases, and applies retention transactionally.
+History and associated graph-flow sessions now remain in the database without a count limit or automatic deletion.
+The integration's live-session lifetime remains a separately owned policy.
+On file-backed startup, the service acquires an exclusive file lock, validates retained rows, marks interrupted running snapshots and their active steps failed, clears leases transactionally, and preserves the stored history and sessions.
 It never runs a graph task during recovery.
 Removing the single-owner restriction would require owner-aware leases and a startup-recovery ownership rule before stale-state cleanup is safe.
 Provider descriptors, durable provider homes and restartable agent conversations are tracked by [follow-up issue #3](https://github.com/totto2727-org/flowdeck/issues/3) rather than being claimed as SQLite migration guarantees.
@@ -183,7 +183,7 @@ Remote mode requires a single Flowdeck writer per remote database and is not a d
 - Graph session save/get/delete preserves graph ID, task ID, status message, context values, chat history, and version.
 - Concurrent stale session saves yield exactly one successful update and a typed conflict, including version overflow handling.
 - History round trips preserve repeated step identities, selected edges, ordering, failures, and nanosecond timing where supported by the DTO.
-- Terminal eviction follows completion order, never removes an active run, and obeys the explicit associated-session retention policy.
+- More than 100 terminal runs and their sessions survive subsequent writes and file-backed recovery; completion order does not cause deletion.
 - Schedule claims are atomic under concurrency, skipped attempts are retained, and completion/failure/start rejection release ownership.
 - File-backed reopen preserves terminal history and reconciles interrupted runs and leases without rerunning graph tasks.
 - Storage errors propagate through service, HTTP and SSE rather than being converted to an empty result or silent scheduler skip.

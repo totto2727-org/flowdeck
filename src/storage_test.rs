@@ -1,29 +1,21 @@
-use std::{
-    num::NonZeroUsize,
-    time::{Duration, SystemTime},
-};
+use std::time::{Duration, SystemTime};
 
 use graph_flow::{Session, SessionStorage};
 use serde_json::json;
 
 use super::{TursoStore, sql};
 use crate::{
-    RunHistoryConfig, RunId, RunInput, RunRetention, RunSnapshot, RunStatus, RunTrigger,
-    TursoLocation, TursoStateConfig, WorkflowError,
+    RunId, RunInput, RunSnapshot, RunStatus, RunTrigger, TursoLocation, TursoStateConfig,
+    WorkflowError,
 };
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
-fn config(capacity: usize) -> Result<TursoStateConfig, Box<dyn std::error::Error>> {
-    Ok(TursoStateConfig {
+fn config() -> TursoStateConfig {
+    TursoStateConfig {
         location: TursoLocation::Memory,
         remote: None,
-        history: RunHistoryConfig {
-            run_retention: RunRetention::KeepLatest(
-                NonZeroUsize::new(capacity).ok_or("zero capacity")?,
-            ),
-        },
-    })
+    }
 }
 
 fn snapshot(id: &str) -> RunSnapshot {
@@ -63,7 +55,7 @@ async fn insert(store: &TursoStore, id: &str) -> TestResult {
 
 #[tokio::test]
 async fn migrations_are_repeatable_and_match_the_schema() -> TestResult {
-    let store = TursoStore::open(&config(2)?).await?;
+    let store = TursoStore::open(&config()).await?;
     let db = store.db.lock().await;
     let report = super::MIGRATIONS.apply(&db).await?;
     assert_eq!(report.applied(), 0);
@@ -75,7 +67,7 @@ async fn migrations_are_repeatable_and_match_the_schema() -> TestResult {
 
 #[tokio::test]
 async fn committed_schema_rejects_invalid_rows_at_the_database_boundary() -> TestResult {
-    let store = TursoStore::open(&config(2)?).await?;
+    let store = TursoStore::open(&config()).await?;
     // Family conformance: every statement bypasses DTO validation and must be rejected by SQL.
     for statement in [
         "INSERT INTO graph_sessions VALUES ('zero-version', 0, '{}')",
@@ -103,11 +95,11 @@ async fn committed_schema_rejects_invalid_rows_at_the_database_boundary() -> Tes
 
 #[tokio::test]
 async fn independently_opened_memory_stores_do_not_share_state() -> TestResult {
-    let first = TursoStore::open(&config(2)?).await?;
+    let first = TursoStore::open(&config()).await?;
     insert(&first, "private-run").await?;
     assert!(first.claim_lease("private-schedule").await?);
 
-    let second = TursoStore::open(&config(2)?).await?;
+    let second = TursoStore::open(&config()).await?;
     assert!(second.history().await?.runs.is_empty());
     assert!(second.get("private-run").await?.is_none());
     assert!(second.claim_lease("private-schedule").await?);
@@ -120,7 +112,7 @@ async fn independently_opened_memory_stores_do_not_share_state() -> TestResult {
 
 #[tokio::test]
 async fn session_round_trip_and_optimistic_locking() -> TestResult {
-    let store = TursoStore::open(&config(2)?).await?;
+    let store = TursoStore::open(&config()).await?;
     let session = Session::new_from_task("session".to_owned(), "start");
     session.context.set(
         "nested",
@@ -150,8 +142,8 @@ async fn session_round_trip_and_optimistic_locking() -> TestResult {
 }
 
 #[tokio::test]
-async fn retention_uses_completion_order_but_history_uses_start_order() -> TestResult {
-    let store = TursoStore::open(&config(1)?).await?;
+async fn history_preserves_all_runs_in_start_order_despite_out_of_order_completion() -> TestResult {
+    let store = TursoStore::open(&config()).await?;
     for id in ["first", "second", "active"] {
         insert(&store, id).await?;
     }
@@ -168,16 +160,99 @@ async fn retention_uses_completion_order_but_history_uses_start_order() -> TestR
         .into_iter()
         .map(|run| run.run_id.to_string())
         .collect();
-    assert_eq!(ids, ["first", "active"]);
-    assert!(store.get("second").await?.is_none());
+    assert_eq!(ids, ["first", "second", "active"]);
+    assert!(store.get("second").await?.is_some());
     assert!(store.get("first").await?.is_some());
     assert!(store.get("active").await?.is_some());
     Ok(())
 }
 
 #[tokio::test]
-async fn failed_completion_rolls_back_snapshot_lease_and_retention() -> TestResult {
-    let store = TursoStore::open(&config(1)?).await?;
+async fn memory_history_keeps_more_than_one_hundred_terminal_runs_and_sessions() -> TestResult {
+    let store = TursoStore::open(&config()).await?;
+    insert(&store, "active").await?;
+    for index in 0..125 {
+        let id = format!("completed-{index}");
+        insert(&store, &id).await?;
+        store.mutate_run(&RunId(id), complete).await?;
+    }
+    assert_eq!(store.history().await?.runs.len(), 126);
+    assert_eq!(
+        store
+            .get_run(&RunId("active".to_owned()))
+            .await?
+            .ok_or("missing active run")?
+            .status,
+        RunStatus::Running
+    );
+    for index in 0..125 {
+        let id = format!("completed-{index}");
+        assert_eq!(
+            store
+                .get_run(&RunId(id.clone()))
+                .await?
+                .ok_or("missing completed run")?
+                .status,
+            RunStatus::Completed
+        );
+        assert!(store.get(&id).await?.is_some(), "missing session {id}");
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn reopening_file_keeps_more_than_one_hundred_terminal_runs_and_sessions() -> TestResult {
+    let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tmp")
+        .join(format!("history-test-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&directory)?;
+    let mut config = config();
+    config.location = TursoLocation::File(directory.join("state.sqlite"));
+    {
+        let store = TursoStore::open(&config).await?;
+        for index in 0..125 {
+            let id = format!("completed-{index}");
+            let mut run = snapshot(&id);
+            complete(&mut run);
+            store
+                .insert_run(run, Some(Session::new_from_task(id, "start")))
+                .await?;
+        }
+        insert(&store, "interrupted").await?;
+        assert_eq!(store.history().await?.runs.len(), 126);
+    }
+    {
+        let store = TursoStore::open(&config).await?;
+        assert_eq!(store.history().await?.runs.len(), 126);
+        for index in 0..125 {
+            let id = format!("completed-{index}");
+            assert_eq!(
+                store
+                    .get_run(&RunId(id.clone()))
+                    .await?
+                    .ok_or("missing completed run")?
+                    .status,
+                RunStatus::Completed
+            );
+            assert!(store.get(&id).await?.is_some(), "missing session {id}");
+        }
+        assert!(matches!(
+            store
+                .get_run(&RunId("interrupted".to_owned()))
+                .await?
+                .ok_or("missing interrupted run")?
+                .status,
+            RunStatus::Failed { .. }
+        ));
+        assert!(store.get("interrupted").await?.is_some());
+    }
+    std::fs::remove_dir_all(directory)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn failed_lease_release_rolls_back_completion_and_preserves_history() -> TestResult {
+    let store = TursoStore::open(&config()).await?;
     insert(&store, "old").await?;
     store.mutate_run(&RunId("old".to_owned()), complete).await?;
     let mut run = snapshot("new");
@@ -190,7 +265,7 @@ async fn failed_completion_rolls_back_snapshot_lease_and_retention() -> TestResu
     assert!(store.claim_lease("schedule").await?);
     {
         let mut db = store.db.lock().await;
-        sql::statement("CREATE TRIGGER reject_eviction BEFORE DELETE ON runs BEGIN SELECT RAISE(ABORT, 'injected eviction failure'); END").exec(&mut *db).await?;
+        sql::statement("CREATE TRIGGER reject_release BEFORE DELETE ON schedule_leases BEGIN SELECT RAISE(ABORT, 'injected lease release failure'); END").exec(&mut *db).await?;
         drop(db);
     }
     assert!(matches!(
@@ -213,7 +288,7 @@ async fn failed_completion_rolls_back_snapshot_lease_and_retention() -> TestResu
 
 #[tokio::test]
 async fn failed_session_insert_does_not_leave_an_orphan_run() -> TestResult {
-    let store = TursoStore::open(&config(1)?).await?;
+    let store = TursoStore::open(&config()).await?;
     let mut session = Session::new_from_task("bad".to_owned(), "start");
     session.version = u64::MAX;
     assert!(matches!(
@@ -226,7 +301,7 @@ async fn failed_session_insert_does_not_leave_an_orphan_run() -> TestResult {
 
 #[tokio::test]
 async fn schema_drift_and_corrupt_rows_are_errors() -> TestResult {
-    let store = TursoStore::open(&config(1)?).await?;
+    let store = TursoStore::open(&config()).await?;
     insert(&store, "one").await?;
     {
         let mut db = store.db.lock().await;
@@ -260,7 +335,7 @@ async fn reopening_file_recovers_interrupted_runs_and_preserves_sessions() -> Te
         .join(format!("sqlite-test-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&directory)?;
     let path = directory.join("state.sqlite");
-    let mut config = config(2)?;
+    let mut config = config();
     config.location = TursoLocation::File(path.clone());
     {
         let store = TursoStore::open(&config).await?;
@@ -310,7 +385,7 @@ async fn failed_migration_rolls_back_ddl_and_preserves_existing_rows() -> TestRe
         "0002_invalid.sql",
         "CREATE TABLE migration_probe (id TEXT PRIMARY KEY);\n-- #[toasty::breakpoint]\nINSERT INTO missing_table VALUES (1);",
     )]);
-    let store = TursoStore::open(&config(1)?).await?;
+    let store = TursoStore::open(&config()).await?;
     insert(&store, "kept").await?;
     let mut db = store.db.lock().await;
     assert!(INVALID.apply(&db).await.is_err());
@@ -326,7 +401,7 @@ async fn failed_migration_rolls_back_ddl_and_preserves_existing_rows() -> TestRe
 
 #[tokio::test]
 async fn unknown_migration_and_invalid_lease_are_rejected() -> TestResult {
-    let store = TursoStore::open(&config(1)?).await?;
+    let store = TursoStore::open(&config()).await?;
     assert!(matches!(
         store.claim_lease(" \t\n").await,
         Err(WorkflowError::Storage { .. })
@@ -343,7 +418,7 @@ async fn unknown_migration_and_invalid_lease_are_rejected() -> TestResult {
 
 #[tokio::test]
 async fn concurrent_claims_and_session_saves_have_exactly_one_winner() -> TestResult {
-    let store = TursoStore::open(&config(1)?).await?;
+    let store = TursoStore::open(&config()).await?;
     let (first, second) = tokio::join!(store.claim_lease("race"), store.claim_lease("race"));
     assert_ne!(first?, second?);
     store
@@ -387,7 +462,7 @@ async fn startup_rejects_missing_or_rewound_ordering_clocks() -> TestResult {
         "UPDATE store_clocks SET value = 0 WHERE id = 'start'",
         "UPDATE store_clocks SET value = 0 WHERE id = 'terminal'",
     ] {
-        let store = TursoStore::open(&config(2)?).await?;
+        let store = TursoStore::open(&config()).await?;
         insert(&store, "terminal").await?;
         store
             .mutate_run(&RunId("terminal".to_owned()), complete)
@@ -412,7 +487,7 @@ async fn startup_rejects_missing_or_rewound_ordering_clocks() -> TestResult {
 
 #[tokio::test]
 async fn replication_failure_does_not_orphan_local_runs_or_leases() -> TestResult {
-    let mut store = TursoStore::open(&config(2)?).await?;
+    let mut store = TursoStore::open(&config()).await?;
     // Fault injection at the driver boundary: invalid remote setup must fail to push.
     // This does not claim successful Cloud synchronization.
     store.remote = Some(toasty_driver_turso::Turso::in_memory().with_remote_url("invalid-url"));

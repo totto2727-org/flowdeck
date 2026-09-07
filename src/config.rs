@@ -23,10 +23,6 @@ const DEFAULT_WORKFLOW_EVENT_CAPACITY: NonZeroUsize = match NonZeroUsize::new(12
     Some(value) => value,
     None => NonZeroUsize::MIN,
 };
-const DEFAULT_RUN_RETENTION: NonZeroUsize = match NonZeroUsize::new(100) {
-    Some(value) => value,
-    None => NonZeroUsize::MIN,
-};
 const DEFAULT_MAX_CONCURRENT_RUNS: NonZeroUsize = match NonZeroUsize::new(100) {
     Some(value) => value,
     None => NonZeroUsize::MIN,
@@ -73,9 +69,6 @@ impl ApplicationConfig {
                 backend: StateBackendConfig::Turso(TursoStateConfig {
                     location: TursoLocation::Memory,
                     remote: None,
-                    history: RunHistoryConfig {
-                        run_retention: RunRetention::KeepLatest(DEFAULT_RUN_RETENTION),
-                    },
                 }),
             },
             scheduler: SchedulerConfig {
@@ -175,8 +168,6 @@ pub struct TursoStateConfig {
     pub location: TursoLocation,
     /// Optional embedded sync target with a single writer, not a direct SQL connection.
     pub remote: Option<TursoRemoteConfig>,
-    /// Retained run settings.
-    pub history: RunHistoryConfig,
 }
 
 /// Turso connection target.
@@ -186,20 +177,6 @@ pub enum TursoLocation {
     Memory,
     /// A database file preserved across service restarts.
     File(std::path::PathBuf),
-}
-
-/// Turso history retention policy.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RunHistoryConfig {
-    /// Terminal run snapshot retention policy.
-    pub run_retention: RunRetention,
-}
-
-/// Supported run snapshot retention policies.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum RunRetention {
-    /// Retain this many latest terminal snapshots.
-    KeepLatest(NonZeroUsize),
 }
 
 /// Scheduler startup and inherited overlap policy.
@@ -252,7 +229,7 @@ mod tests {
     use std::{net::Ipv4Addr, time::Duration};
 
     use super::{
-        ApplicationConfig, PositiveDuration, RunRetention, SchedulerMode, StateBackendConfig,
+        ApplicationConfig, PositiveDuration, SchedulerMode, StateBackendConfig, TursoLocation,
     };
     use crate::ScheduleOverlapPolicy;
 
@@ -278,10 +255,7 @@ mod tests {
             memory.remote, None,
             "local defaults must not connect remotely"
         );
-        assert!(matches!(
-            memory.history.run_retention,
-            RunRetention::KeepLatest(capacity) if capacity.get() == 100
-        ));
+        assert_eq!(memory.location, TursoLocation::Memory);
         assert_eq!(config.scheduler.mode, SchedulerMode::Enabled);
         assert_eq!(
             config.scheduler.default_overlap_policy,

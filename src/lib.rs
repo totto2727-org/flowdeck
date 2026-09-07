@@ -19,9 +19,8 @@ use std::{
 
 pub use config::{
     ApplicationConfig, ApplicationConfigError, EventConfig, ExecutionTargetDefaults, HttpConfig,
-    PositiveDuration, RunHistoryConfig, RunRetention, SchedulerConfig, SchedulerMode,
-    StateBackendConfig, StateConfig, TursoLocation, TursoRemoteConfig, TursoStateConfig,
-    WorkflowConfig, WorkflowExecutionDefaults,
+    PositiveDuration, SchedulerConfig, SchedulerMode, StateBackendConfig, StateConfig,
+    TursoLocation, TursoRemoteConfig, TursoStateConfig, WorkflowConfig, WorkflowExecutionDefaults,
 };
 pub use workflow::{HistoryView, WorkflowEvent, WorkflowService};
 pub use workflow_limits::{ExecutionLimit, WorkflowExecutionLimits};

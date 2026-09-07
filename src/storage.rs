@@ -17,8 +17,8 @@ use toasty_driver_turso::Turso;
 use tokio::sync::Mutex;
 
 use crate::{
-    HistoryView, RunId, RunRetention, RunSnapshot, RunStatus, RunTrigger, TursoLocation,
-    TursoStateConfig, WorkflowError,
+    HistoryView, RunId, RunSnapshot, RunStatus, RunTrigger, TursoLocation, TursoStateConfig,
+    WorkflowError,
 };
 
 mod models;
@@ -37,7 +37,6 @@ const MIGRATIONS: MigrationSet =
 )]
 pub(crate) struct TursoStore {
     db: Mutex<Db>,
-    terminal_capacity: i64,
     remote: Option<Turso>,
     // A file service owns its database exclusively, so startup recovery cannot interrupt another service.
     _file_lock: Option<File>,
@@ -131,10 +130,8 @@ impl TursoStore {
         }
         verify_migration_history(&mut db).await?;
         MIGRATIONS.apply(&db).await.map_err(error)?;
-        let RunRetention::KeepLatest(capacity) = config.history.run_retention;
         let store = Self {
             db: Mutex::new(db),
-            terminal_capacity: i64::try_from(capacity.get()).map_err(error)?,
             _file_lock: file_lock,
             remote,
         };
@@ -240,7 +237,6 @@ impl TursoStore {
         if let Some(session) = session {
             save_session(&mut tx, session).await.map_err(error)?;
         }
-        retain(&mut tx, self.terminal_capacity).await?;
         tx.commit().await.map_err(error)?;
         self.replicate_committed().await;
         Ok(())
@@ -297,7 +293,6 @@ impl TursoStore {
         }
         let result = mutation(&mut snapshot);
         persist_mutation(&mut tx, &snapshot).await?;
-        retain(&mut tx, self.terminal_capacity).await?;
         tx.commit().await.map_err(error)?;
         self.replicate_committed().await;
         Ok(Some(result))
@@ -372,7 +367,6 @@ impl TursoStore {
             .exec(&mut tx)
             .await
             .map_err(error)?;
-        retain(&mut tx, self.terminal_capacity).await?;
         tx.commit().await.map_err(error)?;
         self.replicate_committed().await;
         Ok(())
@@ -437,12 +431,6 @@ async fn persist_mutation(
                 .map_err(error)?;
         }
     }
-    Ok(())
-}
-
-async fn retain(executor: &mut dyn Executor, capacity: i64) -> Result<(), WorkflowError> {
-    sql::statement("DELETE FROM graph_sessions WHERE id IN (SELECT id FROM runs WHERE terminal_order IS NOT NULL ORDER BY terminal_order DESC LIMIT -1 OFFSET ?1)").bind(capacity).exec(executor).await.map_err(error)?;
-    sql::statement("DELETE FROM runs WHERE id IN (SELECT id FROM runs WHERE terminal_order IS NOT NULL ORDER BY terminal_order DESC LIMIT -1 OFFSET ?1)").bind(capacity).exec(executor).await.map_err(error)?;
     Ok(())
 }
 

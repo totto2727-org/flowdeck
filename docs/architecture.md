@@ -75,8 +75,6 @@ ApplicationConfig
 │   └── backend: StateBackendConfig
 │       └── Sqlite(TursoStateConfig)
 │           ├── location: TursoLocation
-│           └── history: RunHistoryConfig
-│               └── run_retention: RunRetention
 ├── scheduler: SchedulerConfig
 │   ├── mode: SchedulerMode
 │   └── default_overlap_policy: ScheduleOverlapPolicy
@@ -98,7 +96,7 @@ Consumers receive validated values instead of repeating zero checks.
 | Same-node execution limit | `5` per run |
 | Node timeout | `5 minutes` |
 | State backend | SQLite with `TursoLocation::Memory` |
-| Run retention | Latest `100` terminal snapshots, without evicting active runs |
+| Run retention | No application-imposed count limit or automatic deletion, including in-memory mode |
 | Concurrent run limit | `100` |
 | Scheduler mode | `Enabled` |
 | Inherited overlap policy | `SkipWhileRunning` |
@@ -223,7 +221,7 @@ The shared graph session store uses opaque globally unique run IDs and preserves
 Validated versioned DTOs form the serialization boundary for runs and graph sessions, while their row adapters check indexed metadata against the decoded payload.
 The graph session DTO's format version is independent from graph-flow's compare-and-swap version.
 Run history operations expose domain-level atomic commands rather than allowing the service to lock or mutate a collection directly.
-The storage representation retains a start-order sequence independently from terminal retention order.
+The storage representation retains start-order and terminal-transition sequences for compatibility with existing database files; neither sequence drives automatic deletion.
 Evicting a terminal run also deletes its associated graph session in the same transaction.
 Schedule leases expose `claim` and `release`, with the database enforcing unique schedule ownership.
 All storage operations distinguish database failure from a missing row or an overlap rejection.
@@ -243,7 +241,7 @@ The snapshot retains trigger, status, active topology, traversed topology, durat
 `RunHistoryStore` applies snapshot changes atomically.
 Workflow lifecycle notifications are published only after the corresponding state change succeeds.
 Both SSE endpoints subscribe before reading their initial snapshot and re-fetch authoritative state after relevant events or a lagged receiver.
-The history endpoint refreshes its bounded table on run lifecycle changes rather than maintaining a separate durable delta journal.
+The history endpoint refreshes its table without a separate row limit or pagination on run lifecycle changes rather than maintaining a separate durable delta journal.
 
 The workflow lifecycle channel contains:
 
@@ -323,7 +321,7 @@ The default SQLite location is in memory.
 Restarting the process loses its graph-flow sessions, run snapshots, and schedule leases, while code-defined registrations and schedules are rebuilt.
 An explicitly configured file-backed database can retain serializable state, but retaining a session does not make its external effects or live resources restartable.
 A file-backed service holds an exclusive file lock for its lifetime, preventing a second owning service from treating live runs as interrupted.
-Before starting cron workers, recovery validates stored rows, marks interrupted running snapshots and active steps failed, clears schedule leases, and applies terminal retention in a transaction.
+Before starting cron workers, recovery validates stored rows, marks interrupted running snapshots and active steps failed, clears schedule leases in a transaction, and preserves all existing history and sessions.
 Recovery never runs graph tasks or repeats agent or filesystem side effects.
 Provider clients, process handles, task trackers, semaphore permits, broadcast receivers, and turn mutexes are always recreated rather than serialized.
 In particular, the current process-local jcode session registry and ephemeral provider home do not provide cross-process conversation resumption.

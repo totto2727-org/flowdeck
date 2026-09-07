@@ -11,7 +11,9 @@ Start Flowdeck through one of the setup options, then open <http://127.0.0.1:300
 The bundled workflows demonstrate the interface only.
 Application developers define concrete workflows in Rust and rebuild Flowdeck to register them.
 By default, Flowdeck stores runs, traces, workflow sessions, and schedule leases in an in-memory Turso database (SQLite-compatible), so history remains available only while the application is running.
-The latest 100 terminal runs are retained without evicting active runs.
+Run history, traces, and graph-flow sessions are kept without an application-imposed count limit or automatic deletion, including in-memory mode.
+The separate concurrent-run limit remains 100 by default.
+History rendering has no separate row limit or pagination; memory and disk usage grow with stored history.
 
 ## Key features
 
