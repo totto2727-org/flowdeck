@@ -169,8 +169,8 @@ Provider descriptors, durable provider homes and restartable agent conversations
 
 The workspace uses Toasty's embedded Turso driver with a private in-memory database by default and optional local file storage.
 The committed SQLite-compatible schema and validated DTO/domain boundaries remain unchanged.
-All workspace crates share the published graph-flow dependency; no local vendor patch or Git revision override is required.
-The published graph-flow package still depends on SQLx, but the Turso driver does not introduce the conflicting native SQLite dependency used by Toasty's SQLite driver.
+All workspace crates share the published graph-flow 0.8 dependency with `default-features = false`; no local vendor patch or Git revision override is required.
+This disables graph-flow's optional PostgreSQL backend and excludes SQLx and its database drivers from Flowdeck's dependency graph. Application storage continues to use Toasty's Turso driver.
 Optional validated remote URL/token configuration uses the Turso sync driver; see the [remote synchronization contract](../../src/storage/README.md#remote-synchronization).
 Remote mode requires a single Flowdeck writer per remote database and is not a distributed storage backend.
 

@@ -57,8 +57,8 @@ impl TursoStore {
     }
 
     pub(crate) async fn open(config: &TursoStateConfig) -> Result<Self, WorkflowError> {
-        // SQLx and Turso enable different Rustls providers. Preserve an explicit
-        // application choice, otherwise select one before Turso starts its IO thread.
+        // Preserve an explicit application choice, otherwise select a Rustls
+        // provider before Turso starts its IO thread.
         if rustls::crypto::CryptoProvider::get_default().is_none() {
             let _ = rustls::crypto::ring::default_provider().install_default();
         }
