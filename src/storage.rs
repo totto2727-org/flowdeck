@@ -24,7 +24,7 @@ use crate::{
 mod models;
 mod run_dto;
 mod session_dto;
-use models::{LeaseRow, MigrationRow, RunRow, SessionRow};
+use models::{LeaseRow, MigrationRow, RunRow, RunStatusRow, SessionRow};
 
 const INITIAL_SQL: &str = include_str!("storage/migrations/0001_initial.sql");
 const CURRENT_SCHEMA: &str = include_str!("storage/schema.sql");
@@ -208,7 +208,7 @@ impl TursoStore {
             id: snapshot.run_id.to_string(),
             started_at: epoch_millis(snapshot.started_at)?,
             finished_at: snapshot.finished_at.map(epoch_millis).transpose()?,
-            status: status_name(&snapshot.status).to_owned(),
+            status: RunStatusRow::from(&snapshot.status),
             snapshot: json,
         };
         row.validate().map_err(error)?;
@@ -385,7 +385,7 @@ async fn persist_mutation(
         "UPDATE runs SET snapshot = ?1, status = ?2, started_at = ?3, finished_at = ?4 WHERE id = ?5",
     )
     .bind(json)
-    .bind(status_name(&snapshot.status))
+    .bind(RunStatusRow::from(&snapshot.status).as_str())
     .bind(epoch_millis(snapshot.started_at)?)
     .bind_typed(
         snapshot.finished_at.map(epoch_millis).transpose()?,
@@ -467,14 +467,6 @@ impl SessionStorage for TursoStore {
     }
 }
 
-const fn status_name(status: &RunStatus) -> &'static str {
-    match status {
-        RunStatus::Running => "running",
-        RunStatus::Completed => "completed",
-        RunStatus::Failed { .. } => "failed",
-        RunStatus::Skipped { .. } => "skipped",
-    }
-}
 fn error(error: impl std::fmt::Display) -> WorkflowError {
     WorkflowError::Storage {
         message: error.to_string(),

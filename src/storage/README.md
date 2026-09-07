@@ -18,6 +18,9 @@ No run-count retention limit or automatic history/session deletion is applied at
 This also applies to in-memory databases: storage usage grows with history.
 Run columns store Unix epoch milliseconds derived independently from the snapshot start and optional finish times.
 The JSON snapshot retains its original `SystemTime` precision.
+`RunRow.status` is a dedicated `RunStatusRow` unit enum derived with `toasty::Embed`, separate from the domain status and Serde DTO.
+Toasty stores its variants in the existing single text column as `running`, `completed`, `failed`, or `skipped`, with the database CHECK constraint unchanged.
+Enum decoding replaces free-form status-string validation, while row-to-snapshot conversion still checks lifecycle consistency.
 History sorts by start milliseconds ascending and then run ID ascending for ties, without unique timestamps or global sequence counters.
 The initial migration was rebuilt before merge, so earlier draft databases are incompatible and rejected without deleting or resetting them.
 There is a single initial migration and no separate generated metadata or runtime SQL checksums to update.

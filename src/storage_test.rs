@@ -635,3 +635,52 @@ async fn local_only_service_flush_is_a_successful_noop() -> TestResult {
     service.flush_storage().await?;
     Ok(())
 }
+
+#[tokio::test]
+async fn run_status_enum_round_trips_all_variants_through_the_database() -> TestResult {
+    use super::models::RunStatusRow;
+
+    let store = TursoStore::open(&config()).await?;
+    // Family conformance: every domain status maps to the same SQL label and ORM variant.
+    for (id, status, expected) in [
+        ("running", RunStatus::Running, RunStatusRow::Running),
+        ("completed", RunStatus::Completed, RunStatusRow::Completed),
+        (
+            "failed",
+            RunStatus::Failed {
+                message: "failure".to_owned(),
+            },
+            RunStatusRow::Failed,
+        ),
+        (
+            "skipped",
+            RunStatus::Skipped {
+                reason: "overlap".to_owned(),
+            },
+            RunStatusRow::Skipped,
+        ),
+    ] {
+        let mut run = snapshot(id);
+        if status != RunStatus::Running {
+            complete(&mut run);
+        }
+        run.status = status.clone();
+        store.insert_run(run, None).await?;
+        let mut db = store.db.lock().await;
+        let row = super::models::RunRow::filter_by_id(id)
+            .get(&mut *db)
+            .await?;
+        let labels = sql::query("SELECT status FROM runs WHERE id = ?1")
+            .bind(id)
+            .exec(&mut *db)
+            .await?;
+        drop(db);
+        assert_eq!(row.status, expected);
+        assert_eq!(row.into_snapshot()?.status, status);
+        let [toasty::stmt::Value::Record(label)] = labels.as_slice() else {
+            return Err("missing status label".into());
+        };
+        assert_eq!(&**label, &[toasty::stmt::Value::String(id.to_owned())]);
+    }
+    Ok(())
+}

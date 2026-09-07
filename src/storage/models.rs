@@ -1,8 +1,8 @@
 use garde::Validate;
 use graph_flow::Session;
 
-use super::{epoch_millis, error, run_dto, status_name};
-use crate::{RunSnapshot, WorkflowError};
+use super::{epoch_millis, error, run_dto};
+use crate::{RunSnapshot, RunStatus, WorkflowError};
 
 #[derive(Debug, toasty::Model, Validate)]
 #[table = "runs"]
@@ -14,8 +14,8 @@ pub(super) struct RunRow {
     pub started_at: i64,
     #[garde(range(min = 0))]
     pub finished_at: Option<i64>,
-    #[garde(custom(valid_status))]
-    pub status: String,
+    #[garde(skip)]
+    pub status: RunStatusRow,
     #[garde(length(min = 1))]
     pub snapshot: String,
 }
@@ -25,10 +25,10 @@ impl RunRow {
         self.validate().map_err(error)?;
         let snapshot = run_dto::decode(&self.snapshot)?;
         if snapshot.run_id.as_str() != self.id
-            || status_name(&snapshot.status) != self.status
+            || RunStatusRow::from(&snapshot.status) != self.status
             || epoch_millis(snapshot.started_at)? != self.started_at
             || snapshot.finished_at.map(epoch_millis).transpose()? != self.finished_at
-            || (self.status == "running") != self.finished_at.is_none()
+            || (self.status == RunStatusRow::Running) != self.finished_at.is_none()
         {
             return Err(error("run row and snapshot metadata disagree"));
         }
@@ -36,15 +36,33 @@ impl RunRow {
     }
 }
 
-#[allow(
-    clippy::trivially_copy_pass_by_ref,
-    reason = "Garde custom validators require a borrowed context."
-)]
-fn valid_status(value: &str, (): &()) -> garde::Result {
-    if matches!(value, "running" | "completed" | "failed" | "skipped") {
-        Ok(())
-    } else {
-        Err(garde::Error::new("unknown run status"))
+#[derive(Debug, Clone, Copy, PartialEq, Eq, toasty::Embed)]
+pub(super) enum RunStatusRow {
+    Running,
+    Completed,
+    Failed,
+    Skipped,
+}
+
+impl From<&RunStatus> for RunStatusRow {
+    fn from(status: &RunStatus) -> Self {
+        match status {
+            RunStatus::Running => Self::Running,
+            RunStatus::Completed => Self::Completed,
+            RunStatus::Failed { .. } => Self::Failed,
+            RunStatus::Skipped { .. } => Self::Skipped,
+        }
+    }
+}
+
+impl RunStatusRow {
+    pub(super) const fn as_str(self) -> &'static str {
+        match self {
+            Self::Running => "running",
+            Self::Completed => "completed",
+            Self::Failed => "failed",
+            Self::Skipped => "skipped",
+        }
     }
 }
 

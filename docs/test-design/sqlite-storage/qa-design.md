@@ -129,3 +129,12 @@ The full suite exposed an untyped SQL null-bind failure during running updates, 
 Tracked-source review found no remaining sequence columns, clock model/table, counter allocation, or counter verification implementation.
 No user database was reset or deleted, and no compatibility migration was added for earlier unmerged drafts.
 Browser and real Cloud synchronization were not rerun for this storage-only change, and no new evidence is claimed for those previously recorded boundaries.
+
+### Typed run-status evidence, 2026-09-07
+
+After replacing `RunRow.status: String` with the dedicated `RunStatusRow` Toasty embedded enum, `nix develop --command just ci` completed with exit code 0.
+All **148 tests passed**, including the new `run_status_enum_round_trips_all_variants_through_the_database` test.
+The test verifies Running, Completed, Failed, and Skipped through real ORM insertion and decoding, confirms their raw SQL labels, and reconstructs the corresponding domain statuses without losing failure or skip details.
+Existing schema constraints, timestamp consistency, running updates, terminal transitions, and file recovery tests remain green.
+The enum occupies the existing single text column, so the initial migration and SQL CHECK constraint are unchanged by this follow-up.
+The unit-enum representation follows the [Toasty 0.10 Embed documentation](https://docs.rs/toasty/0.10.0/toasty/derive.Embed.html#enums), verified against the locally installed version-matched macro source.
