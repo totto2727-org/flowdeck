@@ -99,7 +99,8 @@ Provider session restart/resume is tracked separately in [issue #3](https://gith
 
 The canonical pinned-environment CI passed **170 tests** with the Turso sync driver and published graph-flow dependency.
 Existing migration, memory isolation, file reopening, recovery, retention, CAS, and DTO/domain validation checks pass against Turso.
-The configuration tests cover valid HTTPS/libsql/loopback URLs, invalid authorities and credentials, token validation, and redacted debug/error output.
+The configuration tests cover nonempty settings, unchanged pass-through to the driver, and redacted debug/error output.
+URL and token formats are interpreted by Turso rather than independently restricted by application configuration.
 `remote_configuration_reaches_http_and_auth_failure_is_redacted` uses the real Turso HTTP client against a rejecting loopback endpoint to verify URL/token injection and sanitized startup failure.
 `replication_failure_does_not_orphan_local_runs_or_leases` injects a driver configuration failure to verify locally committed operations still succeed while explicit flush reports failure.
 `local_only_service_flush_is_a_successful_noop` exercises the public service API without a remote.

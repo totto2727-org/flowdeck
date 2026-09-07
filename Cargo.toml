@@ -31,7 +31,6 @@ tokio-util = { version = "0.7", features = ["rt"] }
 topcoat = { version = "0.5.0", features = ["datastar", "tailwind"] }
 toasty = { version = "0.10", default-features = false, features = ["turso", "migration"] }
 toasty-driver-turso = { version = "0.10", features = ["sync"] }
-url = "2"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 toml = "0.9"
 tracing = "0.1"

@@ -21,7 +21,8 @@ Graphs, runtime resources, driver admission, and broadcast channels remain proce
 
 ## Remote synchronization
 
-`TursoStateConfig::remote` accepts validated `TursoRemoteConfig` connection settings through `ApplicationConfig`.
+`TursoStateConfig::remote` accepts `TursoRemoteConfig` connection settings through `ApplicationConfig`.
+Configuration requires nonempty URL/token strings and passes them unchanged to Turso; format and connection validation belong to the driver.
 The default remains `None` with an in-memory local database.
 Remote mode uses Toasty's Turso sync driver, not a remote-only SQL transport.
 Use one Flowdeck writer per remote database; a local file lock does not coordinate different machines.
