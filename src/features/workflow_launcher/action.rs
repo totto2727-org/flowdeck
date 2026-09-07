@@ -42,19 +42,22 @@ async fn start_run(
     Signals(signals): Signals<StartSignals>,
 ) -> Result<Sse<impl Stream<Item = Result<Event>> + use<>>> {
     let service = app_context::<WorkflowService>(cx);
-    let validation = signals.validate();
-    let workflow_id = signals.selected_workflow_id;
     let filters = HistoryFilters::from_values(&signals.history);
-    let result = match validation {
-        Ok(()) => {
-            service
-                .start(&workflow_id, signals.input, RunTrigger::Manual)
-                .await
-        }
-        Err(error) => Err(WorkflowError::InvalidInput {
-            message: format!("invalid request signals: {error}"),
-        }),
-    };
+    let result = async {
+        signals
+            .validate()
+            .map_err(|error| WorkflowError::InvalidInput {
+                message: format!("invalid request signals: {error}"),
+            })?;
+        service
+            .start(
+                &signals.selected_workflow_id,
+                signals.input,
+                RunTrigger::Manual,
+            )
+            .await
+    }
+    .await;
     let event = match result {
         Ok(run) => {
             let run_id = run.run_id.to_string();
