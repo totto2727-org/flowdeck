@@ -1,6 +1,8 @@
 mod definition;
-mod glossshift;
 mod hooks;
+mod provider;
+mod provider_bridge;
+mod task;
 
 use crate::{WorkflowError, workflows::WorkflowRegistration};
 

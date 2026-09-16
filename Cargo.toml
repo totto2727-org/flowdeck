@@ -12,26 +12,30 @@ members = [".", "crates/graph-flow-jcode", "crates/workflow-resources"]
 resolver = "3"
 
 [dependencies]
+axum = "0.8"
 async-trait = "0.1"
 async-stream = "0.3"
 chrono = "0.4.42"
 croner = "3.0.1"
 futures-core = "0.3"
+futures-util = "0.3"
 workflow-resources = { path = "crates/workflow-resources" }
 garde = { version = "0.23", features = ["derive"] }
 graph-flow = "0.6.0"
 graph-flow-jcode = { path = "crates/graph-flow-jcode" }
+llm-profiles = { git = "https://github.com/totto2727-org/llm-profiles", rev = "d3b3ede46fd823fe400aad85217537799b3ed40f" }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
 ringbuffer = "0.16.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+tempfile = "3"
+toml = "0.9"
 tokio = { version = "1.51.1", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 tokio-util = { version = "0.7", features = ["rt"] }
 topcoat = { version = "0.5.0", features = ["datastar", "tailwind"] }
-toml = "0.9"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4"] }
-xdg = "3"
 
 [build-dependencies]
 topcoat = { version = "0.5.0", default-features = false, features = ["tailwind"] }

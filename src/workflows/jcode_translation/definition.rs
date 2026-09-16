@@ -1,6 +1,6 @@
 use garde::Validate;
 use graph_flow::{Context, GraphBuilder};
-use graph_flow_jcode::{JCODE_OUTPUT_KEY, JcodeNode, JcodeOutput, JcodeProcessScope, SessionMode};
+use graph_flow_jcode::{JCODE_OUTPUT_KEY, JcodeOutput};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{path::Path, sync::Arc};
@@ -8,15 +8,11 @@ use topcoat::{
     Result,
     view::{component, view},
 };
-use workflow_resources::ResourceKey;
 
-use super::hooks::{TranslationHooks, prompt, session_options};
+use super::task::TranslationTask;
 use crate::{
     RunInput, WorkflowError,
-    workflows::{
-        EdgeSpec, NodeSpec, WORKFLOW_INPUT_KEY, WORKFLOW_RUN_ID_KEY, WorkflowDefinition,
-        graph_build_error,
-    },
+    workflows::{EdgeSpec, NodeSpec, WORKFLOW_INPUT_KEY, WorkflowDefinition, graph_build_error},
 };
 
 pub(crate) const WORKFLOW_ID: &str = "jcode-translation";
@@ -100,32 +96,11 @@ pub(crate) fn parse_input(value: Value) -> Result<RunInput, WorkflowError> {
 }
 
 pub(crate) fn build_graph() -> Result<graph_flow::Graph, WorkflowError> {
-    let node = Arc::new(
-        JcodeNode::new(
-            "translate_files",
-            ResourceKey::application("jcode-process"),
-            || {
-                let options = super::hooks::launch_options()?;
-                JcodeProcessScope::launch(options)
-            },
-            prompt,
-        )
-        .with_session_mode(shared_session)
-        .with_session_options(session_options)
-        .with_hooks(TranslationHooks)
-        .with_next_action(graph_flow::NextAction::End),
-    );
+    let node = Arc::new(TranslationTask);
     GraphBuilder::new(WORKFLOW_ID)
         .add_task(node)
         .build()
         .map_err(|error| graph_build_error(&error))
-}
-
-fn shared_session(context: &Context) -> Result<SessionMode, graph_flow_jcode::JcodeNodeError> {
-    let key = context.get::<String>(WORKFLOW_RUN_ID_KEY).ok_or_else(|| {
-        graph_flow_jcode::JcodeNodeError::configuration("run session key is missing")
-    })?;
-    SessionMode::reuse(key)
 }
 
 pub(crate) fn project_trace(context: &Context, _node_id: &str) -> Result<Value, WorkflowError> {
