@@ -1,0 +1,20 @@
+active_provider = "translation"
+
+[providers.unselected]
+base_url = "https://unused.invalid/v1"
+model = "unused-model"
+credential = "unused"
+
+[providers.translation]
+base_url = "https://gateway.invalid/custom/v1"
+model = "translation-model"
+credential = "translation-key"
+
+[providers.translation.request_parameters]
+reasoning_effort = "low"
+[providers.translation.request_parameters.chat_template_kwargs]
+thinking = true
+
+[providers.translation.headers]
+x-fixed = "synthetic-fixed-header"
+x-session = "${session_id}"

@@ -2,9 +2,9 @@ use graph_flow::Context;
 use graph_flow_jcode::{AfterRun, BeforeRun, JcodeHooks, JcodeNodeError, jcode_sdk::LaunchOptions};
 use serde::Deserialize;
 use serde_json::Value;
-use std::{fs, path::PathBuf, time::Duration};
+use std::{fs, path::PathBuf, sync::Arc, time::Duration};
 
-use super::glossshift;
+use super::{provider, provider_bridge::ProviderBridge};
 use crate::workflows::WORKFLOW_INPUT_KEY;
 
 const MAX_FILE_BYTES: u64 = 1_048_576;
@@ -16,11 +16,29 @@ pub(super) struct TranslationTaskInput {
     pub(super) target_language: String,
 }
 
-#[derive(Debug)]
-pub(super) struct TranslationHooks;
+pub(super) struct TranslationHooks {
+    bridge: Arc<ProviderBridge>,
+}
+
+impl TranslationHooks {
+    pub(super) const fn new(bridge: Arc<ProviderBridge>) -> Self {
+        Self { bridge }
+    }
+}
+
+impl std::fmt::Debug for TranslationHooks {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("TranslationHooks")
+            .finish_non_exhaustive()
+    }
+}
 
 impl JcodeHooks for TranslationHooks {
     fn before_run(&self, stage: BeforeRun<'_>) -> Result<(), JcodeNodeError> {
+        self.bridge.set_session(&stage.session.session_id)?;
+        self.bridge
+            .cancel_session_on_stop(stage.client.clone(), stage.session.session_id.clone());
         let input = task_input(stage.context)?;
         let target = workspace().join(&input.target_path);
         if let Some(parent) = target.parent() {
@@ -74,25 +92,23 @@ impl JcodeHooks for TranslationHooks {
     }
 }
 
-pub(super) fn launch_options() -> Result<LaunchOptions, JcodeNodeError> {
+pub(super) fn launch_options() -> LaunchOptions {
     let workspace = workspace();
-    let mut options = LaunchOptions {
+    LaunchOptions {
         working_dir: Some(workspace),
         inherit_logins: false,
         binary: Some(jcode_binary()),
         startup_timeout: Duration::from_mins(1),
         request_timeout: Some(Duration::from_mins(1)),
         ..LaunchOptions::default()
-    };
-    glossshift::apply_launch_environment(&mut options)?;
-    Ok(options)
+    }
 }
 
 pub(super) fn session_options(
     context: &Context,
 ) -> Result<graph_flow_jcode::SessionOptions, JcodeNodeError> {
     let _ = task_input(context)?;
-    glossshift::session_options(&workspace())
+    Ok(provider::session_options(&workspace()))
 }
 
 pub(super) fn prompt(context: &Context) -> Result<String, JcodeNodeError> {

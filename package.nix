@@ -12,6 +12,8 @@ rustPlatform.buildRustPackage {
   src = lib.cleanSource ./.;
   cargoLock = {
     lockFile = ./Cargo.lock;
+    outputHashes."llm-profiles-0.1.0" =
+      "sha256-/fYdFWQLMh1ht6yz9xTsZsxgOjGttqzEHGque/P8WeU=";
     outputHashes."jcode-harness-api-0.1.0" =
       "sha256-nDz6RvxLvl8ctFB3/BGC2F3uEQw0DZ2ynEoiefcJ4RQ=";
   };
