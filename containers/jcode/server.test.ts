@@ -1,12 +1,13 @@
 import { JcodeClient } from '@1jehuang/jcode-sdk'
-import { Effect } from 'effect'
+import { Effect, Schema, String } from 'effect'
 import { HttpEffect } from 'effect/http'
 import { describe, expect, it, vi } from 'vite-plus/test'
 
 import { Gateway, GatewayError, launchSdk } from './sdk'
 import { application } from './server'
 
-const session = { sessionId: 'one', model: 'opencode/deepseek-v4.1-flash-free', status: 'active' as const }
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+const session = { sessionId: 'one', model: 'custom-opencode-go/deepseek-v4.1-flash', status: 'active' as const }
 const fixture: Gateway['Service'] = {
   ensure: Effect.succeed(session),
   submit: (request) => Effect.succeed({ commandId: request.commandId, status: 'running' as const }),
@@ -34,7 +35,7 @@ describe('container HTTP contract', () => {
           const ensured = yield* Effect.tryPromise(() => handle(request('/session', '{}')))
           expect(yield* Effect.tryPromise(() => ensured.json())).toEqual(session)
           const accepted = yield* Effect.tryPromise(() =>
-            handle(request('/turns', JSON.stringify({ commandId: 'run:implement:1', prompt: 'work' }))),
+            handle(request('/turns', encodeJson({ commandId: 'run:implement:1', prompt: 'work' }))),
           )
           expect(accepted.status).toBe(202)
           expect(yield* Effect.tryPromise(() => accepted.json())).toEqual({
@@ -55,7 +56,7 @@ describe('container HTTP contract', () => {
     ['malformed JSON', '{'],
     ['empty prompt', '{"commandId":"one","prompt":""}'],
     ['unsafe command ID', '{"commandId":"../escape","prompt":"work"}'],
-    ['oversized prompt', JSON.stringify({ commandId: 'one', prompt: 'a'.repeat(32_769) })],
+    ['oversized prompt', encodeJson({ commandId: 'one', prompt: String.repeat(32_769)('a') })],
   ])('rejects %s without submitting a turn', async (_name, body) => {
     const submit = vi.fn(fixture.submit)
     await Effect.runPromise(
@@ -76,7 +77,7 @@ describe('container HTTP contract', () => {
         Effect.gen(function* () {
           const app = yield* application.pipe(Effect.provideService(Gateway, fixture))
           const response = yield* Effect.tryPromise(() =>
-            HttpEffect.toWebHandler(app)(request(url, 'a'.repeat(65_537))),
+            HttpEffect.toWebHandler(app)(request(url, String.repeat(65_537)('a'))),
           )
           expect(response.status).toBe(413)
         }),
@@ -114,7 +115,7 @@ describe('container HTTP contract', () => {
         workingDir: '/sandbox/workspace',
         inheritLogins: false,
         swarmModel: 'inherit',
-        env: { HOME: '/sandbox' },
+        env: { HOME: '/sandbox', CLOUDFLARE_AI_GATEWAY_API_KEY: '' },
       })
     } finally {
       launch.mockRestore()

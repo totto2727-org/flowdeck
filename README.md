@@ -34,6 +34,21 @@ These ports are bound to loopback, not the public network.
 Stopping the runtime does not deliberately delete its local shared database.
 A later explicit resume loads committed state rather than an in-memory continuation.
 
+### Optional Jcode development workflow
+
+The requested model is `custom-opencode-go/deepseek-v4.1-flash` through Cloudflare AI Gateway.
+For an approved live experiment, supply the configured runtime credentials with nested positional commands:
+
+```bash
+pass-cli exec cloudflare/account-id -- pass-cli exec cloudflare/ai-gateway-id -- pass-cli exec cloudflare/ai-gateway-api-key -- vp run dev
+```
+
+Alchemy reads the configuration during Init, registers native Worker `secret_text` bindings, and supplies `Container.env` at runtime.
+The gateway process adds the required authorization and session headers through a loopback-only inference relay.
+Jcode's launch environment clears the Gateway token, but same-user processes are not a security isolation boundary.
+Do not put credential values in Git, images, build arguments, logs, or task prompts.
+See the [sandbox setup and verification limits](docs/development-sandbox.md) before starting a live task.
+
 ## What is included
 
 - One Alchemy project for all Workers and the shared D1 database.
@@ -50,7 +65,14 @@ A later explicit resume loads committed state rather than an in-memory continuat
 
 The release-demo tasks are pure effects.
 The separate Jcode development workflow uses a private Cloudflare Container and the official Jcode TypeScript SDK.
-Its real model-driven implementation experiment is blocked until the selected provider is authorized, and the normal AMD64 image still needs validation on a native Linux builder.
+Its requested model uses Cloudflare AI Gateway rather than a direct OpenCode key or a free-model route.
+A local SDK-driven repository task completed implementation and explicit-resume verification in the same Container, SDK session, and checkout.
+Independent checks in that Container passed the target project's uncached CI task and five assertions against its built public export.
+The experiment required a temporary IPv4 registry proxy, not a maintained networking feature of Flowdeck.
+Jcode 0.98.1 cannot send the required custom headers directly, so its provider profile targets the fixed `127.0.0.1:8081` relay.
+The relay forwards only the exact configured model to the fixed Gateway endpoint and does not provide model or provider fallback.
+The normal AMD64 image still needs validation on a native Linux builder.
+Flowdeck's frontend `vp build` issue remains unresolved, separate from the target project's successful build.
 See [`docs/development-sandbox.md`](docs/development-sandbox.md) for setup, retention, trust boundaries, and verified limits.
 Cloudflare Workflows nodes remain a future workflow-owned integration.
 The inspected Effect 4 releases do not contain the official Machine API referenced by the design.

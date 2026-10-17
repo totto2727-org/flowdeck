@@ -23,9 +23,12 @@ export class JcodeContainer extends Container<JcodeContainer>()(
 export const JcodeSandboxLive = Effect.gen(function* () {
   const container = yield* JcodeContainer
   const model = yield* Config.String('FLOWDECK_JCODE_MODEL').pipe(
-    Config.withDefault('opencode/deepseek-v4.1-flash-free'),
+    Config.withDefault('custom-opencode-go/deepseek-v4.1-flash'),
   )
-  const apiKey = yield* Config.Redacted('OPENCODE_API_KEY').pipe(Config.withDefault(Redacted.make('')))
+  // Init-phase Config registers native Worker secret_text bindings, not image/build arguments.
+  const accountId = yield* Config.String('CLOUDFLARE_ACCOUNT_ID').pipe(Config.withDefault(''))
+  const gatewayId = yield* Config.String('CLOUDFLARE_AI_GATEWAY_ID').pipe(Config.withDefault(''))
+  const apiKey = yield* Config.Redacted('CLOUDFLARE_AI_GATEWAY_API_KEY').pipe(Config.withDefault(Redacted.make('')))
   return Layer.effect(
     JcodeSandbox,
     Effect.gen(function* () {
@@ -44,7 +47,12 @@ export const JcodeSandboxLive = Effect.gen(function* () {
           yield* container.start({
             enableInternet: true,
             instance: 'standard-1',
-            env: { JCODE_MODEL: model, OPENCODE_API_KEY: Redacted.value(apiKey) },
+            env: {
+              JCODE_MODEL: model,
+              CLOUDFLARE_ACCOUNT_ID: accountId,
+              CLOUDFLARE_AI_GATEWAY_ID: gatewayId,
+              CLOUDFLARE_AI_GATEWAY_API_KEY: Redacted.value(apiKey),
+            },
           })
           yield* container.setInactivityTimeout(6 * 60 * 60 * 1_000)
         }),

@@ -1,13 +1,14 @@
 import type { JcodeClient, RunOptions, SessionInfo, TurnResult } from '@1jehuang/jcode-sdk'
 import { NodeServices } from '@effect/platform-node'
-import { Array, Effect, FileSystem, Schedule } from 'effect'
+import { Array, Effect, FileSystem, Schedule, Schema, String } from 'effect'
 import { Toml } from 'effect/encoding'
 import { describe, expect, it, vi } from 'vite-plus/test'
 
-import { makeGateway, prepareSdkConfiguration } from './sdk'
+import { makeGateway, prepareRelaySession, prepareSdkConfiguration } from './sdk'
 
-const model = 'opencode/deepseek-v4.1-flash-free'
-const sdkModel = 'opencode:deepseek-v4.1-flash-free'
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+const model = 'custom-opencode-go/deepseek-v4.1-flash'
+const sdkModel = 'flowdeck:custom-opencode-go/deepseek-v4.1-flash'
 const session: SessionInfo = { session_id: 'session-one', status: 'idle', working_dir: '/sandbox/workspace' }
 const output: TurnResult = { text: 'done', finalText: 'done', messages: [], reasoning: '', toolCalls: [] }
 
@@ -47,20 +48,19 @@ describe('persistent Jcode container gateway', () => {
           yield* prepareSdkConfiguration(model, home)
           expect(Toml.parse(yield* fs.readFileString(`${home}/config.toml`))).toEqual({
             provider: {
-              default_provider: 'opencode',
-              default_model: 'deepseek-v4.1-flash-free',
+              default_provider: 'flowdeck',
+              default_model: model,
               cross_provider_failover: 'manual',
               same_provider_account_failover: false,
             },
             providers: {
-              opencode: {
+              flowdeck: {
                 type: 'openai-compatible',
-                base_url: 'https://opencode.ai/zen/v1',
-                auth: 'bearer',
-                api_key_env: 'OPENCODE_API_KEY',
-                requires_api_key: true,
-                default_model: 'deepseek-v4.1-flash-free',
-                models: [{ id: 'deepseek-v4.1-flash-free' }],
+                base_url: 'http://127.0.0.1:8081/v1',
+                auth: 'none',
+                requires_api_key: false,
+                default_model: model,
+                models: [{ id: model }],
               },
             },
           })
@@ -71,30 +71,34 @@ describe('persistent Jcode container gateway', () => {
     )
   })
 
-  it.each(['openai/model', 'opencode-go/model', 'opencode:', 'opencode/a/b', 'opencode/"injected"'])(
-    'rejects unsupported route %s before writing config or calling the SDK',
-    async (route) => {
-      await Effect.runPromise(
-        Effect.scoped(
-          Effect.gen(function* () {
-            const { fs, directory, client } = yield* fixture
-            const home = `${directory}/unconfigured`
-            expect(yield* prepareSdkConfiguration(route, home).pipe(Effect.flip)).toMatchObject({
-              status: 503,
-              code: 'unsupported_model',
-            })
-            expect(yield* fs.exists(home)).toBe(false)
-            expect(yield* makeGateway(client, route, `${directory}/unsupported`).pipe(Effect.flip)).toMatchObject({
-              status: 503,
-              code: 'unsupported_model',
-            })
-            expect(client.createSession).not.toHaveBeenCalled()
-            expect(client.setModel).not.toHaveBeenCalled()
-          }),
-        ).pipe(Effect.provide(NodeServices.layer)),
-      )
-    },
-  )
+  it.each([
+    'openai/model',
+    'opencode-go/model',
+    'opencode:',
+    'opencode/a/b',
+    'opencode/"injected"',
+    'opencode/deepseek-v4.1-flash-free',
+  ])('rejects unsupported route %s before writing config or calling the SDK', async (route) => {
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const { fs, directory, client } = yield* fixture
+          const home = `${directory}/unconfigured`
+          expect(yield* prepareSdkConfiguration(route, home).pipe(Effect.flip)).toMatchObject({
+            status: 503,
+            code: 'unsupported_model',
+          })
+          expect(yield* fs.exists(home)).toBe(false)
+          expect(yield* makeGateway(client, route, `${directory}/unsupported`).pipe(Effect.flip)).toMatchObject({
+            status: 503,
+            code: 'unsupported_model',
+          })
+          expect(client.createSession).not.toHaveBeenCalled()
+          expect(client.setModel).not.toHaveBeenCalled()
+        }),
+      ).pipe(Effect.provide(NodeServices.layer)),
+    )
+  })
   it('never sends a prompt when persisting its receipt fails', async () => {
     await Effect.runPromise(
       Effect.scoped(
@@ -121,12 +125,31 @@ describe('persistent Jcode container gateway', () => {
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
-          const { directory, client, gateway } = yield* fixture
+          const { fs, directory, client, gateway } = yield* fixture
           yield* gateway.ensure
-          const replacement = yield* makeGateway(client, 'opencode/different-model', directory)
+          const persisted = yield* fs.readFileString(`${directory}/gateway.json`)
+          yield* fs.writeFileString(`${directory}/gateway.json`, String.replace(model, 'another/model')(persisted))
+          const replacement = yield* makeGateway(client, model, directory)
           expect(yield* replacement.ensure.pipe(Effect.flip)).toMatchObject({ status: 409, code: 'model_changed' })
           expect(client.setModel).toHaveBeenCalledTimes(1)
           expect(client.run).not.toHaveBeenCalled()
+        }),
+      ).pipe(Effect.provide(NodeServices.layer)),
+    )
+  })
+
+  it('persists a header-safe inference identity across gateway replacement without credentials', async () => {
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const { fs, directory } = yield* fixture
+          const first = yield* prepareRelaySession(directory)
+          expect(first).toMatch(/^[a-f0-9-]{36}$/)
+          expect(yield* prepareRelaySession(directory)).toBe(first)
+          expect(yield* fs.readFileString(`${directory}/inference-session`)).toBe(first)
+          expect((yield* fs.stat(`${directory}/inference-session`)).mode & 0o777).toBe(0o600)
+          yield* fs.writeFileString(`${directory}/inference-session`, 'bad\r\nheader')
+          expect(yield* prepareRelaySession(directory).pipe(Effect.result)).toMatchObject({ _tag: 'Failure' })
         }),
       ).pipe(Effect.provide(NodeServices.layer)),
     )
@@ -163,6 +186,7 @@ describe('persistent Jcode container gateway', () => {
           expect(first.model).toBe(model)
           expect(client.setModel).toHaveBeenCalledWith('session-one', sdkModel)
           expect(Array.map(client.run.mock.calls, ([id]) => id)).toEqual(['session-one', 'session-one'])
+          expect(Array.map(client.run.mock.calls, ([, , options]) => options?.autoApprove)).toEqual([true, true])
         }),
       ).pipe(Effect.provide(NodeServices.layer)),
     )
@@ -219,7 +243,7 @@ describe('persistent Jcode container gateway', () => {
           yield* gateway.ensure
           yield* fs.writeFileString(
             `${directory}/gateway.json`,
-            JSON.stringify({
+            encodeJson({
               session: { sessionId: 'session-one', model, status: 'active' },
               creating: false,
               turns: { old: { digest: 'not-resubmittable', receipt: { commandId: 'old', status: 'running' } } },
@@ -319,7 +343,7 @@ describe('persistent Jcode container gateway', () => {
           const { fs, directory, client } = yield* fixture
           yield* fs.writeFileString(
             `${directory}/gateway.json`,
-            JSON.stringify({ session: null, creating: true, turns: {} }),
+            encodeJson({ session: null, creating: true, turns: {} }),
           )
           const replacement = yield* makeGateway(client, model, directory)
           expect(yield* replacement.ensure.pipe(Effect.flip)).toMatchObject({

@@ -24,16 +24,17 @@ export class GatewayError extends Data.TaggedError('GatewayError')<{
   readonly cause?: unknown
 }> {}
 
-const OpenCodeRoute = Schema.String.check(Schema.isPattern(/^opencode\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/))
+export const GatewayModel = 'custom-opencode-go/deepseek-v4.1-flash'
+const SupportedModel = Schema.Literal(GatewayModel)
 const resolveSdkModel = (model: string) =>
-  Schema.decodeUnknownEffect(OpenCodeRoute)(model).pipe(
-    Effect.map(String.replace('opencode/', 'opencode:')),
+  Schema.decodeUnknownEffect(SupportedModel)(model).pipe(
+    Effect.map((value) => `flowdeck:${value}`),
     Effect.mapError((cause) => new GatewayError({ status: 503, code: 'unsupported_model', cause })),
   )
 
 /** Container-owned configuration only. Never inspect or copy host login/config files.
  * Jcode 0.98.1, commit 1c7426eb1, uses [providers.NAME], requires_api_key and
- * <profile>:<model> selectors, not slash-qualified API model identifiers.
+ * <profile>:<model> selectors. The complete Gateway model ID includes a slash.
  * https://github.com/1jehuang/jcode/blob/1c7426eb1/crates/jcode-config-types/src/lib.rs#L475-L497
  * https://github.com/1jehuang/jcode/blob/1c7426eb1/crates/jcode-provider-metadata/src/catalog.rs#L6-L15
  * https://github.com/1jehuang/jcode/blob/1c7426eb1/crates/jcode-base/src/provider/mod.rs#L901-L924
@@ -41,30 +42,30 @@ const resolveSdkModel = (model: string) =>
 export const prepareSdkConfiguration = (model: string, home: string) =>
   Effect.gen(function* () {
     yield* resolveSdkModel(model)
-    const localModel = String.replace('opencode/', '')(model)
+    const localModel = model
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     yield* fs.makeDirectory(home, { recursive: true, mode: 0o700 })
     const filename = path.join(home, 'config.toml')
     // Only validated ASCII model identifiers enter TOML. No credential values are
-    // read or written. Even a free model requires an authorized runtime API key.
+    // read or written. Only the container-private loopback relay is unauthenticated.
+    // The relay always authenticates the fixed HTTPS upstream, with no fallback.
     const content = Array.join(
       [
         '[provider]',
-        'default_provider = "opencode"',
+        'default_provider = "flowdeck"',
         `default_model = "${localModel}"`,
         'cross_provider_failover = "manual"',
         'same_provider_account_failover = false',
         '',
-        '[providers.opencode]',
+        '[providers.flowdeck]',
         'type = "openai-compatible"',
-        'base_url = "https://opencode.ai/zen/v1"',
-        'auth = "bearer"',
-        'api_key_env = "OPENCODE_API_KEY"',
-        'requires_api_key = true',
+        'base_url = "http://127.0.0.1:8081/v1"',
+        'auth = "none"',
+        'requires_api_key = false',
         `default_model = "${localModel}"`,
         '',
-        '[[providers.opencode.models]]',
+        '[[providers.flowdeck.models]]',
         `id = "${localModel}"`,
         '',
       ],
@@ -72,6 +73,37 @@ export const prepareSdkConfiguration = (model: string, home: string) =>
     )
     yield* fs.writeFileString(`${filename}.flowdeck-next`, content, { mode: 0o600 })
     yield* fs.rename(`${filename}.flowdeck-next`, filename)
+  }).pipe(Effect.uninterruptible)
+
+/** This non-secret transport identity survives gateway and SDK reconnects. */
+export const prepareRelaySession = (directory: string) =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const crypto = yield* Crypto.Crypto
+    yield* fs.makeDirectory(directory, { recursive: true, mode: 0o700 })
+    const filename = path.join(directory, 'inference-session')
+    const identity = Schema.String.check(
+      Schema.isPattern(/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/),
+    )
+    if (yield* fs.exists(filename))
+      return yield* fs.readFileString(filename).pipe(Effect.flatMap(Schema.decodeUnknownEffect(identity)))
+    const sessionId = yield* crypto.randomUUIDv4()
+    yield* Effect.scoped(
+      Effect.gen(function* () {
+        const file = yield* fs.open(`${filename}.next`, { flag: 'w', mode: 0o600 })
+        yield* file.writeAll(new TextEncoder().encode(sessionId))
+        yield* file.sync
+      }),
+    )
+    yield* fs.rename(`${filename}.next`, filename)
+    yield* Effect.scoped(
+      Effect.gen(function* () {
+        const parent = yield* fs.open(directory, { flag: 'r' })
+        yield* parent.sync
+      }),
+    )
+    return sessionId
   }).pipe(Effect.uninterruptible)
 
 // The SDK owns child processes, Unix sockets and event callbacks. Only this adapter
@@ -84,7 +116,9 @@ export const launchSdk = Effect.acquireRelease(
       workingDir: '/sandbox/workspace',
       inheritLogins: false,
       swarmModel: 'inherit',
-      env: { HOME: '/sandbox' },
+      // SDK tools never need the Gateway credential. Only the loopback relay
+      // holds it, so do not inherit it into Jcode or its tool subprocesses.
+      env: { HOME: '/sandbox', CLOUDFLARE_AI_GATEWAY_API_KEY: '' },
     }),
   ),
   (client) => Effect.tryPromise(() => client.close()).pipe(Effect.orDie),
@@ -177,8 +211,8 @@ export const makeGateway = (client: Sdk, model: string, directory: string) =>
         attached = true
       }
       if (!configured) {
-        // Translate only the selector syntax, preserving the requested provider
-        // and model exactly. Public session.model remains the slash-qualified route.
+        // Select the fixed transport profile without splitting or rewriting the
+        // complete Gateway model ID. The public session model stays unchanged.
         yield* sdk(() => client.setModel(session.sessionId, sdkModel))
         configured = true
       }
@@ -233,6 +267,9 @@ export const makeGateway = (client: Sdk, model: string, directory: string) =>
                 let failed = false
                 const result = yield* sdk(() =>
                   client.run(session.sessionId, request.prompt, {
+                    // The operator authorizes tool execution only inside this
+                    // dedicated sandbox, with no host mounts or inherited key.
+                    autoApprove: true,
                     onEvent: (event) => {
                       if (event.ev === 'turn_done') done = true
                       if (event.ev === 'error') failed = true

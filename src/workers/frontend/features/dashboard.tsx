@@ -11,6 +11,7 @@ import { Card, CardContent } from './components/generated/card'
 import { NodeInspector, RunGraph } from './graph'
 import { eventLabel, orderedEvents, renderJson, runRecoveryAction, shortId } from './presentation'
 import { loadDashboard, resumeRun, selectRun, startRun, type DashboardData, type Result } from './server'
+import { ThemeToggle } from './theme-toggle'
 
 function Status({ value }: { readonly value: string }) {
   return (
@@ -353,10 +354,13 @@ export function Dashboard({ initial }: { readonly initial: DashboardData }) {
             <ChevronRight size={13} />
             <strong>Overview</strong>
           </div>
-          <Badge variant='outline'>
-            <span className='connection-dot' />
-            Control API
-          </Badge>
+          <div className='topbar-actions'>
+            <ThemeToggle disabled={!hydrated} />
+            <Badge variant='outline'>
+              <span className='connection-dot' />
+              Control API
+            </Badge>
+          </div>
         </header>
         <main id='main-content' className='dashboard' aria-busy={pending}>
           <div className='page-heading'>
