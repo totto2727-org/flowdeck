@@ -1,9 +1,9 @@
 name: CI
 
 on:
-  pull_request:
   push:
     branches: [main]
+  pull_request:
 
 permissions:
   contents: read
@@ -13,9 +13,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - uses: totto2727-org/monorepo/.github/actions/setup-nix@main
-      - name: Verify Flowdeck
+      - uses: totto2727-org/monorepo/.github/actions/setup-typescript@main
+      - name: Verify Vite+ project
         run: |
           eval "$(nix print-dev-env "$GITHUB_WORKSPACE#default")"
-          just ci
+          vp run --no-cache ci

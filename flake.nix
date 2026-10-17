@@ -1,56 +1,28 @@
 {
-  description = "A local workflow cockpit for running, scheduling, and tracing graph-based workflows";
+  description = "Flowdeck Effect and Cloudflare application with Vite+ tooling";
 
-  inputs.nixpkgs.url = "https://flakehub.com/f/NixOS/nixpkgs/0.1";
+  inputs = {
+    nixpkgs.url = "https://flakehub.com/f/NixOS/nixpkgs/0.1";
+    vite-plus-overlay = {
+      url = "github:ryoppippi/nix-vite-plus";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+  };
 
-  outputs =
-    { nixpkgs, ... }:
+  outputs = { nixpkgs, vite-plus-overlay, ... }:
     let
-      supportedSystems = [
-        "aarch64-darwin"
-        "aarch64-linux"
-        "x86_64-linux"
-      ];
+      supportedSystems = [ "aarch64-darwin" "aarch64-linux" "x86_64-linux" ];
       forEachSystem = nixpkgs.lib.genAttrs supportedSystems;
-      overlay = final: _previous: {
-        topcoat-cli = final.callPackage ./topcoat.nix { };
-        flowdeck = final.callPackage ./package.nix { };
-      };
-      mkPkgs =
-        system:
-        import nixpkgs {
+    in {
+      devShells = forEachSystem (system:
+        let pkgs = import nixpkgs {
           inherit system;
-          overlays = [ overlay ];
+          overlays = [ vite-plus-overlay.overlays.default ];
         };
-    in
-    {
-      overlays.default = overlay;
-
-      packages = forEachSystem (
-        system:
-        let
-          pkgs = mkPkgs system;
-        in
-        rec {
-          inherit (pkgs) topcoat-cli flowdeck;
-          default = flowdeck;
-        }
-      );
-
-      devShells = forEachSystem (
-        system:
-        let
-          pkgs = mkPkgs system;
-        in
-        {
+        in {
           default = pkgs.mkShell {
-            packages = [
-              pkgs.just
-              pkgs.rustup
-              pkgs.topcoat-cli
-            ];
+            packages = [ pkgs.nodejs_24 pkgs.pnpm pkgs.vite-plus pkgs.nixfmt ];
           };
-        }
-      );
+        });
     };
 }

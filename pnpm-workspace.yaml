@@ -1,0 +1,16 @@
+packages:
+  - .
+
+# Official Vite+ bundled toolchain: https://viteplus.dev/guide/migrate
+overrides:
+  vite@*: npm:@voidzero-dev/vite-plus-core@1.1.0
+  vitest@*: 5.0.3
+
+minimumReleaseAge: 1440
+minimumReleaseAgeStrict: true
+
+# Only the native build tools required by Cloudflare's local runtime are trusted.
+allowBuilds:
+  vite-plus: false
+  esbuild: true
+  workerd: true

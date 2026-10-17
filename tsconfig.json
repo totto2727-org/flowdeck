@@ -1,0 +1,14 @@
+{
+  "extends": ["@tsconfig/strictest/tsconfig.json", "@tsconfig/node-ts/tsconfig.json"],
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "Preserve",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "noEmit": true,
+    "types": ["node", "@cloudflare/workers-types", "vite/client"],
+    "paths": { "@/*": ["./src/web/*"] }
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx", "alchemy.ts", "alchemy.run.ts", "vite.config.ts", "tests/**/*.ts"],
+  "exclude": ["legacy", "tmp", "node_modules"]
+}
