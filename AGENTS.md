@@ -5,15 +5,14 @@
 This file serves contributors and maintainers.
 Flowdeck is one private Vite+ application and one Alchemy project.
 The application uses Effect 4, Effront, shadcn/ui, Cloudflare Workers, Durable Objects, and Kysely with a shared D1 database.
-The Rust/Topcoat implementation is an inactive reference under `legacy/rust/`.
-Do not apply its development commands or runtime rules to the new application.
 
-- `src/domain/`: wire schemas, graph definitions, shapes, and event projection.
-- `src/services/`: Kysely persistence and control-plane commands.
-- `src/workflows/`: workflow-owned version selection, node effects, and checkpoint recovery.
-- `src/api/`: Effect HTTP routes.
-- `src/runtime/`: Cloudflare binding and Durable Object adapters.
-- `src/web/`: Effront pages, ServerFns, and shadcn components.
+- `src/workers/frontend/`: Frontend entry, Access implementations, and frontend-only features.
+- `src/workers/frontend/features/`: Effront pages, ServerFns, dashboard, graph, and shadcn components.
+- `src/workers/control/`: Control entry and its HTTP routes, commands, and workflow-binding contract.
+- `src/workers/demo-workflow/`: Workflow entry, run Durable Object, and demo-only execution features.
+- `src/workers/composition.ts`: final deployment and request dependency selection.
+- `src/workers/database.ts`: the shared D1 resource declaration.
+- `src/features/workflow/`: shared wire schemas, graph projection, and Kysely persistence.
 - `migrations/`: maintained D1 schema migrations.
 - `alchemy.ts` and `alchemy.run.ts`: all application resources in one project.
 - `vite.config.ts`: canonical development and validation tasks.
@@ -21,7 +20,9 @@ Do not apply its development commands or runtime rules to the new application.
 
 ## Commands
 
-Run commands from this repository root in `nix develop`.
+Run commands from this repository root with Vite+.
+Use `vp env install` to install the versions pinned by `.node-version` and `packageManager`.
+Use `vp env current` to inspect resolution and `vp env use --unset` to clear stale session overrides.
 Use `vp install --frozen-lockfile` to install the locked dependencies.
 Use `vp run dev` for the local Alchemy application, `vp run check` for format and typed lint, `vp run test` for tests, and `vp run ci` for the complete configured checks.
 The local development server must bind to loopback.
@@ -37,6 +38,9 @@ Use native Request, Response, Promise, and Cloudflare binding interfaces only in
 Document each unavoidable interoperability boundary.
 Compose dependencies with Context services and Layers at entry points.
 Keep workflow effects independent from deployment configuration.
+Select infrastructure-specific implementations only when injecting dependencies at the final composition boundary.
+Do not branch on development flags, deployment stages, or infrastructure phases inside feature logic or request authorization.
+Keep Worker-specific features with their Worker, and put shared features under `src/features/`.
 Use Kysely for typed database queries.
 Compile queries at the D1 batch adapter when a native atomic batch is required.
 Do not replace Kysely with a second query layer.

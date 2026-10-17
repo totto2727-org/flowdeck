@@ -1,18 +1,21 @@
 import { effrontAlchemy } from '@effront/alchemy/cloudflare/vite'
 import { effrontTailwind } from '@effront/tailwind'
 import { effront } from '@effront/vite'
+import { generateIgnorePatterns } from '@totto2727/gitignore-patterns'
+import { Array } from 'effect'
 import { defineConfig } from 'vite-plus'
+
+const ignorePatterns = await generateIgnorePatterns(new URL('.', import.meta.url))
 
 export default defineConfig({
   resolve: { tsconfigPaths: true },
   // Effront client references and route providers must share the same module context.
   optimizeDeps: { exclude: ['@effront/core'] },
   plugins: [
-    effront({ application: './src/web/entry.effront.tsx' }),
+    effront({ application: './src/workers/frontend/features/entry.effront.tsx' }),
     effrontAlchemy({ worker: './alchemy.ts' }),
-    ...effrontTailwind({ stylesheet: './src/web/styles/app.css' }),
+    ...effrontTailwind({ stylesheet: './src/workers/frontend/features/styles/app.css' }),
   ],
-  environments: { ssr: { build: { rolldownOptions: { platform: 'neutral' } } } },
   fmt: {
     arrowParens: 'always',
     experimentalSortImports: { ignoreCase: true, newlinesBetween: true, order: 'asc' },
@@ -22,25 +25,16 @@ export default defineConfig({
     proseWrap: 'preserve',
     semi: false,
     singleQuote: true,
-    ignorePatterns: ['legacy/**', 'tmp/**', 'pnpm-lock.yaml'],
+    ignorePatterns: Array.append(ignorePatterns, 'pnpm-lock.yaml'),
   },
   lint: {
-    ignorePatterns: ['legacy/**', 'tmp/**'],
+    ignorePatterns,
     options: { typeAware: true, typeCheck: true },
   },
   test: {
-    projects: [
-      {
-        extends: false,
-        test: {
-          name: 'unit',
-          environment: 'node',
-          include: ['src/**/*.test.ts', 'tests/**/*.test.ts'],
-          exclude: ['src/runtime/**/*.workers.test.ts'],
-          testTimeout: 30_000,
-        },
-      },
-    ],
+    environment: 'node',
+    include: ['src/**/*.test.ts', 'tests/**/*.test.ts'],
+    testTimeout: 30_000,
   },
   run: {
     tasks: {
@@ -48,7 +42,7 @@ export default defineConfig({
       check: 'vp check',
       fix: 'vp check --fix',
       test: 'vp test run',
-      e2e: { command: 'playwright test --config tests/e2e/playwright.config.ts', cache: false },
+      e2e: 'playwright test --config tests/e2e/playwright.config.ts',
       ci: { command: '', dependsOn: ['check', 'test'] },
     },
   },

@@ -41,6 +41,14 @@ Development binds local ports 4380, 4381, and 4382 to loopback.
 Do not add dynamic workflow registration, dynamic dispatch, a common runner protocol, binary transfer, or a shared artifact store.
 Runtime resources and side-effect recovery belong to the workflow that uses them.
 
+Worker entry points and Worker-specific features live under `src/workers/<worker>/`.
+Shared workflow schemas, projections, and persistence live under `src/features/workflow/`.
+The final composition boundary in `src/workers/composition.ts` selects deployment and authorization Layers.
+The frontend always invokes the injected authorization service before dispatch.
+The Access implementation always verifies admission, audience, and identity, and never checks a development flag.
+Local authorization is a separate injected implementation, not a fallback inside Access verification.
+Feature logic does not inspect deployment stages, infrastructure phases, or development flags.
+
 ## Effect and interoperability
 
 Application logic uses Effect services, Layers, schemas, collections, Match, and HTTP APIs.
@@ -162,6 +170,10 @@ Browser mutations use authenticated Effront ServerFns, which call Control throug
 A missing Access context returns 401, a wrong audience or identity returns 403, and an unavailable identity service or invalid configuration returns 503.
 Only the local composition boundary can inject the development bypass.
 There is no public API token or browser-controlled bypass.
+Control trusts the Worker that holds its service binding, rather than authenticating an end user again.
+Every admitted frontend identity currently has access to the same runs.
+There is no per-user ownership or per-run authorization model.
+Private ingress restricts callers but does not replace user-level authorization if the application later adds separate user or tenant permissions.
 
 Cloudflare resources are not deployed by local development.
 Cloudflare credentials and account selection remain standard Alchemy inputs.

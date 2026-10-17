@@ -7,8 +7,7 @@
     "jsx": "react-jsx",
     "noEmit": true,
     "types": ["node", "@cloudflare/workers-types", "vite/client"],
-    "paths": { "@/*": ["./src/web/*"] }
+    "paths": { "@/*": ["./src/workers/frontend/features/*"] }
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "alchemy.ts", "alchemy.run.ts", "vite.config.ts", "tests/**/*.ts"],
-  "exclude": ["legacy", "tmp", "node_modules"]
+  "exclude": ["tmp", "node_modules"]
 }

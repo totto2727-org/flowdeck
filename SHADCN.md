@@ -6,14 +6,14 @@ The dashboard copies only `button.tsx`, `card.tsx`, and `badge.tsx` from the adj
 Projektor records these as shadcn CLI 4.21.1 `base-nova` / Base UI generated sources, audited against the public registry on 2026-10-10.
 This project did not rerun the generator or independently verify an immutable registry snapshot.
 The official source families are [Button](https://ui.shadcn.com/r/styles/base-nova/button.json), [Card](https://ui.shadcn.com/r/styles/base-nova/card.json), and [Badge](https://ui.shadcn.com/r/styles/base-nova/badge.json).
-Their source is maintained locally under `src/web/components/generated/` rather than imported from a runtime component service.
+Their source is maintained locally under `src/workers/frontend/features/components/generated/` rather than imported from a runtime component service.
 
 ## Local differences
 
 - The three generated components preserve Projektor's `@/lib/utils` import connection and all generated JSX, classes, variants, and Base UI behavior.
 - The source comments identify the import connection as inherited from Projektor, not a fresh generation.
-- `src/web/lib/utils.ts` connects that alias to `clsx` and `tailwind-merge`, rather than Projektor's `cn` package.
-- `src/web/styles/app.css` owns Flowdeck's colors, layout, responsive behavior, focus states, graph states, and Tailwind theme mappings.
+- `src/workers/frontend/features/lib/utils.ts` connects that alias to `clsx` and `tailwind-merge`, rather than Projektor's `cn` package.
+- `src/workers/frontend/features/styles/app.css` owns Flowdeck's colors, layout, responsive behavior, focus states, graph states, and Tailwind theme mappings.
 - The application does not copy Projektor's tenant features, branding, authentication, charts, compatibility wrappers, or preference storage.
 - Graph rendering, keyboard selection, run controls, and event/state presentations are application code outside generated UI.
 

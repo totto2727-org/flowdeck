@@ -2,15 +2,14 @@
 
 Flowdeck combines code-defined workflow control with graph, state, and event inspection.
 This version is an Effect-first Cloudflare application for local implementation experiments.
-It replaces the active Rust/Topcoat application, which remains available as an inactive reference in [`legacy/rust/`](legacy/rust/).
 
 ## Try the local application
 
 This section serves users who want to run the demo locally.
-Install Nix with flakes enabled, then run these commands from this repository:
+Install Vite+, then run these commands from this repository:
 
 ```bash
-nix develop
+vp env install
 vp install --frozen-lockfile
 vp run dev
 ```
@@ -25,8 +24,9 @@ If an interrupted run remains pending or running, select **Recover run** to load
 
 > [!NOTE]
 > `.node-version` pins Node.js 24.19.0.
-> If an existing Vite+ shell-session pin selects an older Node version, invoke the global Vite+ CLI explicitly: `vp env exec --node 24.19.0 -- ./node_modules/.bin/vp run dev`.
-> This does not change your global or session configuration.
+> A Vite+ session override takes precedence over the project pin.
+> Run `vp env current` to inspect the selected version and its source.
+> Run `vp env use --unset` to clear a stale session override and return to project pins, or `vp env use 24.19.0` to select that version for the session.
 
 Local development starts the frontend, private Control API, and private workflow Worker together.
 The local Control API listens on port 4381 for development inspection.
@@ -62,6 +62,18 @@ The domain and Access declaration are not evidence that a production service is 
 
 This section serves contributors and maintainers.
 
+### Source layout
+
+| Path                         | Responsibility                                                                                                                        |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/workers/frontend/`      | Frontend entry and Access implementations. Its `features/` directory owns the dashboard, graph, Effront ServerFns, and UI components. |
+| `src/workers/control/`       | Control entry. Its `features/` directory owns HTTP routes, run commands, and the workflow binding.                                    |
+| `src/workers/demo-workflow/` | Workflow entry and run Durable Object. Its `features/` directory owns versioned demo transitions and node observation.                |
+| `src/workers/composition.ts` | Select and inject deployment and authorization Layers. Infrastructure conditions exist only at this boundary.                         |
+| `src/features/workflow/`     | Shared schemas, graph projection, database schema, and Kysely state/event persistence.                                                |
+
+### Checks
+
 ```bash
 vp run check
 vp run test
@@ -70,6 +82,7 @@ vp run e2e
 ```
 
 The browser acceptance suite starts the actual local Alchemy stack and exercises both versions at desktop and mobile sizes.
+Use `vp run --no-cache e2e` when you need a fresh browser run instead of a cached task result.
 Install the Playwright Chromium browser with `vp exec playwright install chromium` if it is not present.
 Stop a manually started local stack before running the suite, which owns its server lifecycle.
 Screenshots, traces, and reports remain under ignored `tmp/acceptance/`.

@@ -4,7 +4,7 @@ import { Effect } from 'effect'
 
 import { WorkerResources } from './alchemy'
 
-/** Local state and no deployment task. Cloud resources are only declared for the production stage. */
+/** Local state and no deployment task. The injected composition determines cloud resource declarations. */
 export default Stack(
   'flowdeck',
   { state: localState(), providers: providers() },
