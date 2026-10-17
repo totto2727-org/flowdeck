@@ -1,82 +1,84 @@
 # Flowdeck
 
-A local workflow cockpit for running, scheduling, and inspecting code-defined workflows. Flowdeck helps you launch runs, follow their progress, explore workflow topology, review recent history, and inspect results from a local web interface.
+Flowdeck combines code-defined workflow control with graph, state, and event inspection.
+This version is an Effect-first Cloudflare application for local implementation experiments.
+It replaces the active Rust/Topcoat application, which remains available as an inactive reference in [`legacy/rust/`](legacy/rust/).
 
-## Usage
+## Try the local application
 
-![Flowdeck showing a completed sample workflow, its topology, and execution history](./docs/images/flowdeck-workflow.png)
-
-Start Flowdeck through one of the setup options, then open <http://127.0.0.1:3000/>. Choose a bundled sample, enter its run arguments, and select **Run workflow**. Follow the highlighted route as the run progresses, then select a step or transition with a pointer, Enter, or Space to inspect its status, timing, output, and errors.
-
-The bundled workflows demonstrate the interface only. Application developers define concrete workflows in Rust and rebuild Flowdeck to register them. Flowdeck is local and non-persistent, so run history remains available only while the application is running.
-
-## Key features
-
-- Run code-defined workflows from a local web interface.
-- Use a workflow-specific input form to enter and validate each run's arguments.
-- Define recurring schedules and their skip-or-overlap policy in Rust for runs that would start while an earlier run is still active.
-- Automatically laid out SVG topology with external self-loop routing and active, traversed, selected, and execution-count states.
-- Per-execution node and edge traces with timestamps, elapsed time, state, output, errors, and exact `StepId` history.
-- Review recent runs and keep selected history filters in bookmarkable URLs.
-- Navigate workflow details with a pointer or keyboard.
-- Add optional coding-agent steps, with jcode as one example.
-
-## All Code
-
-Flowdeck follows an **All Code** approach. Workflow structure, schedules, inputs, validation, and execution rules are explicit Rust code. Define the workflow you need, rebuild Flowdeck, and review every change through normal version control.
-
-Flowdeck deliberately provides no low-code or no-code workflow layer, visual workflow editor, or configuration DSL. Runtime values such as provider settings and credentials remain external inputs, but they do not define the workflow. With modern AI-assisted development, low-code and no-code representations offer no meaningful advantage in either version control or implementation cost, so Flowdeck keeps workflow definitions in Rust to maximize extensibility, compiler-checked correctness, and runtime performance.
-
-## Prerequisites
-
-- **Nix**: Install Nix with flakes enabled on `aarch64-darwin`, `aarch64-linux`, or `x86_64-linux` to run or install the packaged application.
-
-## Setup
-
-### Run without installing
+This section serves users who want to run the demo locally.
+Install Nix with flakes enabled, then run these commands from this repository:
 
 ```bash
-nix run github:totto2727-org/flowdeck
+nix develop
+vp install --frozen-lockfile
+vp run dev
 ```
 
-### Install
+Open <http://127.0.0.1:4380>.
+Select v1 or v2 and start a run.
+The first node completes and the run waits for manual approval.
+Select graph nodes with the pointer, Tab and Enter, or arrow keys.
+Inspect the committed snapshot and ordered events, then select **Resume run**.
+Refresh the page to read the persisted run history.
+If an interrupted run remains pending or running, select **Recover run** to load its committed checkpoint.
 
-```bash
-nix profile add github:totto2727-org/flowdeck
-```
+> [!NOTE]
+> `.node-version` pins Node.js 24.19.0.
+> If an existing Vite+ shell-session pin selects an older Node version, invoke the global Vite+ CLI explicitly: `vp env exec --node 24.19.0 -- ./node_modules/.bin/vp run dev`.
+> This does not change your global or session configuration.
 
-### Nix flake
+Local development starts the frontend, private Control API, and private workflow Worker together.
+The local Control API listens on port 4381 for development inspection.
+These ports are bound to loopback, not the public network.
+Stopping the runtime does not deliberately delete its local shared database.
+A later explicit resume loads committed state rather than an in-memory continuation.
 
-```nix
-{
-  inputs.flowdeck.url = "github:totto2727-org/flowdeck";
+## What is included
 
-  outputs = { flowdeck, ... }: {
-    packages = flowdeck.packages;
-  };
-}
-```
+- One Alchemy project for all Workers and the shared D1 database.
+- Effect HTTP for the Control API and Effect HttpClient over a static frontend service binding.
+- Typed static RPC from Control to the workflow entry and its run-specific Durable Object.
+- Kysely queries with D1 atomic state/event batches, revision checks, and duplicate-command receipts.
+- Immutable run graphs, common shapes, and event projection by node and execution identity.
+- Two bundled demo versions, typed checkpoints, and explicit recovery.
+- Effront pages and ServerFns with shadcn Base UI components.
+- A production Cloudflare Access declaration for `flowdeck.totto2727.dev`, with exact-email authorization and a trusted native runtime-context check.
 
-## Optional coding-agent setup
+## Scope and limits
 
-Only workflows that use the optional jcode integration need this setup. Install the revision validated by Flowdeck:
+The sample tasks are pure effects, not Container processes or remote jobs.
+Container and Cloudflare Workflows nodes remain future workflow-owned integrations.
+The inspected Effect 4 releases do not contain the official Machine API referenced by the design.
+The demo therefore uses a small workflow-owned tagged-state transition, not an official Machine integration or a new general-purpose engine.
+External side-effect replay, dynamic workflow registration, generic runner protocols, artifact transfer, and old dependency reproducibility are not provided.
+The run list and event history currently target a small local experiment, not unbounded production retention.
 
-```bash
-cargo install --git https://github.com/1jehuang/jcode --rev a63dbc4546895ecb4d1be1a285d98e6e13fb1b74 --locked jcode
-```
-
-Set `JCODE_BIN` to the installed executable, then follow the [GlossShift configuration guide](https://github.com/totto2727-org/glossshift/blob/66fad64044a49e22879fb5eceed0e9b19457fca3/README.md#configuration) to place `config.toml` and `credentials.toml` under `$XDG_CONFIG_HOME/glossshift` or `~/.config/glossshift`.
-
-## API
-
-Flowdeck currently exposes its supported interface through the local web application. It does not publish a stable external API.
+No cloud deployment, DNS change, or Access policy change is part of local startup.
+The production stack requires an explicit nonempty `FLOWDECK_ACCESS_EMAILS` allowlist and standard Alchemy Cloudflare credentials.
+The domain and Access declaration are not evidence that a production service is deployed or reachable.
 
 ## Development
 
-For repository structure and development commands, see [AGENTS.md](./AGENTS.md).
+This section serves contributors and maintainers.
+
+```bash
+vp run check
+vp run test
+vp run ci
+vp run e2e
+```
+
+The browser acceptance suite starts the actual local Alchemy stack and exercises both versions at desktop and mobile sizes.
+Install the Playwright Chromium browser with `vp exec playwright install chromium` if it is not present.
+Stop a manually started local stack before running the suite, which owns its server lifecycle.
+Screenshots, traces, and reports remain under ignored `tmp/acceptance/`.
+The test suite does not authorize a production deployment.
+
+See [`AGENTS.md`](AGENTS.md) for Effect-first implementation rules and repository commands.
+See [`docs/architecture.md`](docs/architecture.md) for persistence, versioning, recovery, security, and remaining implementation questions.
+See [`SHADCN.md`](SHADCN.md) for the generated UI component sources and changes.
 
 ## License
 
-MIT
-
-_This README was generated from the [share-artifact skill](https://raw.githubusercontent.com/totto2727-org/agent/refs/heads/main/plugins/totto2727-coding/skills/share-artifact/SKILL.md) and [README template](https://raw.githubusercontent.com/totto2727-org/agent/refs/heads/main/plugins/totto2727-coding/skills/share-artifact/readme/template.md)._
+MIT.

@@ -42,10 +42,11 @@ export default defineConfig({
   },
   run: {
     tasks: {
-      dev: { command: 'alchemy dev --config alchemy.run.ts', cache: false },
+      dev: { command: 'alchemy dev --config alchemy.run.ts --no-input', cache: false },
       check: 'vp check',
       fix: 'vp check --fix',
       test: 'vp test run',
+      e2e: { command: 'playwright test --config tests/e2e/playwright.config.ts', cache: false },
       ci: { command: '', dependsOn: ['check', 'test'] },
     },
   },
