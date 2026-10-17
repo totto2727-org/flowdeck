@@ -1,10 +1,11 @@
 import { QueryDatabase, QueryDatabaseBinding } from 'alchemy/Cloudflare/D1'
-import { DurableObject, Worker } from 'alchemy/Cloudflare/Workers'
+import { DurableObject } from 'alchemy/Cloudflare/Workers'
 import { Effect } from 'effect'
 
 import { makeD1Store } from '../../features/workflow/services/d1-store'
 import { Store } from '../../features/workflow/services/store'
 import { Database } from '../database'
+import { DemoWorkflow } from '../definitions'
 import { resumeRun, startRun } from './features/demo'
 
 /** Each logical run name resolves to one object, but no checkpoint lives in memory. */
@@ -23,8 +24,7 @@ export class FlowdeckRun extends DurableObject<FlowdeckRun>()(
 ) {}
 
 /** The entry resolves a run namespace and forwards only the fixed demo operations. */
-export default class DemoWorkflow extends Worker<DemoWorkflow>()(
-  'DemoWorkflow',
+export default DemoWorkflow.make(
   {
     main: import.meta.url,
     compatibility: { date: '2026-09-01', flags: ['nodejs_compat'] },
@@ -38,4 +38,4 @@ export default class DemoWorkflow extends Worker<DemoWorkflow>()(
       resume: (runId: string) => runs.getByName(runId).resume(runId),
     }
   }),
-) {}
+)

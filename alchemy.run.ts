@@ -8,5 +8,5 @@ import { WorkerResources } from './alchemy'
 export default Stack(
   'flowdeck',
   { state: localState(), providers: providers() },
-  WorkerResources.pipe(Effect.map(({ control, frontend }) => ({ control: control.url, frontend: frontend.url }))),
+  WorkerResources.pipe(Effect.map(({ frontend }) => ({ frontend: frontend.url }))),
 )

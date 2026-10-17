@@ -1,8 +1,9 @@
-import { Worker, WorkerEnvironment } from 'alchemy/Cloudflare/Workers'
+import { WorkerEnvironment } from 'alchemy/Cloudflare/Workers'
 import { Effect, Predicate, Schema } from 'effect'
 import { HttpServerResponse } from 'effect/http'
 
 import { FrontendAuthorizationLayer } from '../composition'
+import { Control, Frontend } from '../definitions'
 import { FrontendSecurity } from './access'
 import { FrontendAuthorization } from './access-auth'
 import { type ControlBinding, makeWebWorker } from './features/worker'
@@ -15,8 +16,7 @@ const ControlEnvironment = Schema.Struct({
 })
 
 /** A native binding is decoded and resolved only while a request is executing. */
-export default class Frontend extends Worker<Frontend>()(
-  'Frontend',
+export default Frontend.make(
   Effect.gen(function* () {
     const security = yield* FrontendSecurity
     return {
@@ -25,7 +25,7 @@ export default class Frontend extends Worker<Frontend>()(
       workersDev: { enabled: false, previewsEnabled: false },
       dev: { host: '127.0.0.1', port: 4380, strictPort: true },
       ...security,
-      env: { ...security.env, CONTROL: yield* Worker.ref('Control') },
+      env: { ...security.env, CONTROL: yield* Control },
       vite: { rootDir: '.', viteEnvironments: { entry: 'rsc', children: ['ssr'] } },
     }
   }),
@@ -44,4 +44,4 @@ export default class Frontend extends Worker<Frontend>()(
       Effect.orDie,
     ),
   }),
-) {}
+)
