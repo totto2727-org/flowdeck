@@ -150,7 +150,9 @@ export function NodeInspector({ detail, nodeId }: { readonly detail: RunDetail; 
           <dd>{execution?.attempt ?? 'Not started'}</dd>
         </div>
       </dl>
-      <p className='muted'>{events.length} persisted node events. Repeated attempts retain distinct execution IDs.</p>
+      <p className='muted'>
+        {Array.length(events)} persisted node events. Repeated attempts retain distinct execution IDs.
+      </p>
       {latest && (
         <pre className='json-view' aria-label='Latest node event payload'>
           {renderJson(latest.payload)}

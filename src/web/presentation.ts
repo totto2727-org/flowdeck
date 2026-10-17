@@ -44,12 +44,12 @@ export const nextNode = (ids: ReadonlyArray<string>, current: string, key: strin
     () => 0,
   )
   const target = Match.value(key).pipe(
-    Match.when('ArrowRight', () => Number.min(index + 1, ids.length - 1)),
-    Match.when('ArrowDown', () => Number.min(index + 1, ids.length - 1)),
+    Match.when('ArrowRight', () => Number.min(index + 1, Array.length(ids) - 1)),
+    Match.when('ArrowDown', () => Number.min(index + 1, Array.length(ids) - 1)),
     Match.when('ArrowLeft', () => Number.max(index - 1, 0)),
     Match.when('ArrowUp', () => Number.max(index - 1, 0)),
     Match.when('Home', () => 0),
-    Match.when('End', () => ids.length - 1),
+    Match.when('End', () => Array.length(ids) - 1),
     Match.orElse(() => -1),
   )
   return Option.getOrUndefined(Array.get(ids, target))

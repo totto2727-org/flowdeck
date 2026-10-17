@@ -5,6 +5,8 @@ import { defineConfig } from 'vite-plus'
 
 export default defineConfig({
   resolve: { tsconfigPaths: true },
+  // Effront client references and route providers must share the same module context.
+  optimizeDeps: { exclude: ['@effront/core'] },
   plugins: [
     effront({ application: './src/web/entry.effront.tsx' }),
     effrontAlchemy({ worker: './alchemy.ts' }),

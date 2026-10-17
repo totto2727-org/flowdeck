@@ -52,7 +52,7 @@ describe('workflow presentation', () => {
     const events = [event(3, 'prepare', 'second'), event(1, null, null), event(2, 'prepare', 'first')]
     expect(Array.map(orderedEvents(events), (item) => item.sequence)).toEqual([1, 2, 3])
     expect(Array.map(nodeEvents(events, 'prepare'), (item) => item.executionId)).toEqual(['first', 'second'])
-    expect(events[0]?.sequence).toBe(3)
+    expect(Array.getUnsafe(events, 0).sequence).toBe(3)
     expect(nodeEvents(events, 'unknown')).toEqual([])
   })
 

@@ -1,4 +1,4 @@
-import { Effect } from 'effect'
+import { Array, Effect } from 'effect'
 import { HttpClient, HttpClientResponse } from 'effect/http'
 import { describe, expect, it } from 'vite-plus/test'
 
@@ -19,7 +19,7 @@ describe('ControlApi', () => {
       ),
     )
     const value = await Effect.runPromise(api.workflows)
-    expect(value.workflows[0]?.versions).toEqual(['v1', 'v2'])
+    expect(Array.getUnsafe(value.workflows, 0).versions).toEqual(['v1', 'v2'])
   })
 
   it('does not pass malformed control responses to the dashboard', async () => {

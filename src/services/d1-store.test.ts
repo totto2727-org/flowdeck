@@ -101,8 +101,7 @@ const api = () =>
 describe('D1 persisted run store', () => {
   it('rejects duplicate event IDs inside a new commit without changing receipts, state or events', async () => {
     await seed()
-    const firstEvent = command().events[0]
-    if (firstEvent === undefined) throw new Error('Missing test event')
+    const firstEvent = Array.getUnsafe(command().events, 0)
     await expect(
       Effect.runPromise(
         store.commit(
@@ -146,7 +145,7 @@ describe('D1 persisted run store', () => {
       status: 'running',
     })
     expect(await Effect.runPromise(store.getEvents('run-1'))).toEqual([
-      { ...command().events[0], runId: 'run-1', sequence: 1 },
+      { ...Array.getUnsafe(command().events, 0), runId: 'run-1', sequence: 1 },
     ])
   })
 
@@ -207,8 +206,7 @@ describe('D1 persisted run store', () => {
   it('rolls back receipt, snapshot and all events when a later event violates uniqueness', async () => {
     await seed()
     await Effect.runPromise(store.commit(command()))
-    const duplicate = command().events[0]
-    if (duplicate === undefined) throw new Error('Missing test event')
+    const duplicate = Array.getUnsafe(command().events, 0)
     await expect(
       Effect.runPromise(
         store.commit(
@@ -371,8 +369,7 @@ describe('interrupted workflow recovery', () => {
     ).rejects.toMatchObject({ _tag: 'BindingError' })
     const runs = await Effect.runPromise(store.listRuns)
     expect(runs).toHaveLength(1)
-    const pending = runs[0]
-    if (pending === undefined) throw new Error('Missing persisted test run')
+    const pending = Array.getUnsafe(runs, 0)
     expect(pending).toMatchObject({ status: 'pending', revision: 0 })
     await run(resumeRun(pending.runId))
     expect(await Effect.runPromise(store.getRun(pending.runId))).toMatchObject({ status: 'waiting', revision: 2 })

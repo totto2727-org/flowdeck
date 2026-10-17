@@ -2,7 +2,7 @@
 
 import { Array, Effect, Match, Option } from 'effect'
 import { Activity, ArrowRight, Box, Check, ChevronRight, GitBranch, Layers, Play, RefreshCw } from 'lucide-react'
-import { useState, useTransition } from 'react'
+import { useState, useSyncExternalStore, useTransition } from 'react'
 
 import type { RunDetail, RunEvent, WorkflowVersion } from '../domain/model'
 import { Badge } from './components/generated/badge'
@@ -35,7 +35,7 @@ function Events({
   return (
     <section className='events-view' aria-label='Persisted events'>
       <div className='section-heading'>
-        <p className='muted'>{visible.length} committed events · ordered by sequence</p>
+        <p className='muted'>{Array.length(visible)} committed events · ordered by sequence</p>
         <label className='checkbox-label'>
           <input
             type='checkbox'
@@ -46,7 +46,7 @@ function Events({
           Selected node only
         </label>
       </div>
-      {visible.length === 0 ? (
+      {Array.length(visible) === 0 ? (
         <p className='empty-inline'>No events for this selection.</p>
       ) : (
         <ol className='event-list'>
@@ -180,7 +180,7 @@ function SelectedRun({
               aria-pressed={view === 'events'}
               onClick={() => setView('events')}
             >
-              Events <span className='count-pill'>{detail.events.length}</span>
+              Events <span className='count-pill'>{Array.length(detail.events)}</span>
             </Button>
             <Button
               type='button'
@@ -211,17 +211,24 @@ function SelectedRun({
   )
 }
 
+// SSR controls stay inert until React has attached their event handlers.
+const subscribeHydration = () => () => undefined
+const hydratedSnapshot = () => true
+const serverSnapshot = () => false
+
 export function Dashboard({ initial }: { readonly initial: DashboardData }) {
+  const hydrated = useSyncExternalStore(subscribeHydration, hydratedSnapshot, serverSnapshot)
   const [data, setData] = useState(initial)
   const [workflowId, setWorkflowId] = useState(Option.getOrUndefined(Array.head(initial.workflows))?.workflowId ?? '')
   const [version, setVersion] = useState<WorkflowVersion>('v1')
   const [message, setMessage] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const [pending, transition] = useTransition()
+  const [inFlight, transition] = useTransition()
+  const pending = !hydrated || inFlight
   const workflow = Option.getOrUndefined(Array.findFirst(data.workflows, (item) => item.workflowId === workflowId))
   const visibleRuns = Array.filter(data.runs, (run) => run.workflowId === workflowId)
-  const waiting = Array.filter(data.runs, (run) => run.status === 'waiting').length
-  const completed = Array.filter(data.runs, (run) => run.status === 'completed').length
+  const waiting = Array.length(Array.filter(data.runs, (run) => run.status === 'waiting'))
+  const completed = Array.length(Array.filter(data.runs, (run) => run.status === 'completed'))
   const invoke = <A,>(call: () => Promise<Result<A>>, success: (value: A) => void) => {
     setError(null)
     transition(async () => {
@@ -304,7 +311,7 @@ export function Dashboard({ initial }: { readonly initial: DashboardData }) {
           <ChevronRight size={14} />
         </a>
         <div className='nav-section-title workflow-nav-title'>
-          Workflows <span>{data.workflows.length}</span>
+          Workflows <span>{Array.length(data.workflows)}</span>
         </div>
         <nav aria-label='Registered workflows'>
           {Array.map(data.workflows, (item) => (
@@ -376,7 +383,7 @@ export function Dashboard({ initial }: { readonly initial: DashboardData }) {
                   Registered workflows
                   <Box size={16} />
                 </span>
-                <strong className='stat-value'>{data.workflows.length}</strong>
+                <strong className='stat-value'>{Array.length(data.workflows)}</strong>
                 <span className='stat-note'>Code-defined, versioned</span>
               </CardContent>
             </Card>
@@ -386,7 +393,7 @@ export function Dashboard({ initial }: { readonly initial: DashboardData }) {
                   Total runs
                   <Activity size={16} />
                 </span>
-                <strong className='stat-value'>{data.runs.length}</strong>
+                <strong className='stat-value'>{Array.length(data.runs)}</strong>
                 <span className='stat-note'>Persisted executions</span>
               </CardContent>
             </Card>
@@ -460,12 +467,12 @@ export function Dashboard({ initial }: { readonly initial: DashboardData }) {
                 <div>
                   <p className='eyebrow'>Execution history</p>
                   <h2 id='runs-heading'>
-                    Runs <span className='count-pill'>{visibleRuns.length}</span>
+                    Runs <span className='count-pill'>{Array.length(visibleRuns)}</span>
                   </h2>
                 </div>
                 <span className='muted text-small'>Newest first</span>
               </div>
-              {visibleRuns.length === 0 ? (
+              {Array.length(visibleRuns) === 0 ? (
                 <div className='empty-state'>
                   <Activity size={28} />
                   <h3>No runs yet</h3>

@@ -142,7 +142,7 @@ export const makeD1Store = (database: D1Database): StoreService => {
               eb.val(command.expectedRevision).as('expected_revision'),
               eb.val(nextRevision).as('revision'),
               query('last_sequence', '+', 1).as('first_sequence'),
-              eb.val(command.events.length).as('event_count'),
+              eb.val(Array.length(command.events)).as('event_count'),
               eb.val(commandJson).as('command_json'),
             ])
             .where('run_id', '=', command.runId),
@@ -154,7 +154,7 @@ export const makeD1Store = (database: D1Database): StoreService => {
           status: command.status,
           revision: nextRevision,
           updated_at: command.updatedAt,
-          last_sequence: eb('last_sequence', '+', command.events.length),
+          last_sequence: eb('last_sequence', '+', Array.length(command.events)),
         }))
         .where('run_id', '=', command.runId)
         .where('revision', '=', command.expectedRevision)
