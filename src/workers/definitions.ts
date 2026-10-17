@@ -12,3 +12,6 @@ export class Control extends Worker<Control, { readonly fetch: HttpEffect<Worker
   'Control',
 ) {}
 export class DemoWorkflow extends Worker<DemoWorkflow, WorkflowBinding['Service']>()('DemoWorkflow') {}
+export class DevelopmentWorkflow extends Worker<DevelopmentWorkflow, WorkflowBinding['Service']>()(
+  'DevelopmentWorkflow',
+) {}

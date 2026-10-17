@@ -10,6 +10,8 @@ The application uses Effect 4, Effront, shadcn/ui, Cloudflare Workers, Durable O
 - `src/workers/frontend/features/`: Effront pages, ServerFns, dashboard, graph, and shadcn components.
 - `src/workers/control/`: Control entry and its HTTP routes, commands, and workflow-binding contract.
 - `src/workers/demo-workflow/`: Workflow entry, run Durable Object, and demo-only execution features.
+- `src/workers/development-workflow/`: development checkpoints, run Durable Object, and native Jcode Container binding.
+- `containers/jcode/`: private Effect HTTP gateway, official Jcode SDK adapter, and Container image.
 - `src/workers/definitions.ts`: the single definition of Worker identities and contracts, shared by `.make()` implementations and static bindings.
 - `src/workers/composition.ts`: final deployment and request dependency selection.
 - `src/workers/database.ts`: the shared D1 resource declaration.

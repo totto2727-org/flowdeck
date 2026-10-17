@@ -7,9 +7,9 @@ import { HttpRouter } from 'effect/http'
 import { makeD1Store } from '../../features/workflow/services/d1-store'
 import { Store } from '../../features/workflow/services/store'
 import { Database } from '../database'
-import { Control, DemoWorkflow } from '../definitions'
+import { Control, DemoWorkflow, DevelopmentWorkflow } from '../definitions'
 import { ApiRoutes } from './features/router'
-import { WorkflowBinding } from './features/workflow-binding'
+import { DevelopmentWorkflowBinding, WorkflowBinding } from './features/workflow-binding'
 
 /** The service binding is registered once, statically, during Worker construction. */
 export default Control.make(
@@ -19,7 +19,7 @@ export default Control.make(
       compatibility: { date: '2026-09-01', flags: ['nodejs_compat'] },
       workersDev: { enabled: false, previewsEnabled: false },
       dev: { host: '127.0.0.1', port: 4381, strictPort: true },
-      env: { WORKFLOW: yield* DemoWorkflow },
+      env: { WORKFLOW: yield* DemoWorkflow, DEVELOPMENT: yield* DevelopmentWorkflow },
     }
   }),
   Effect.gen(function* () {
@@ -28,12 +28,20 @@ export default Control.make(
     const workflow = makeRpcStub<WorkflowBinding['Service']>(
       WorkerEnvironment.pipe(Effect.map((environment) => environment['WORKFLOW'])),
     )
+    const development = makeRpcStub<DevelopmentWorkflowBinding['Service']>(
+      WorkerEnvironment.pipe(Effect.map((environment) => environment['DEVELOPMENT'])),
+    )
     return {
       fetch: Effect.gen(function* () {
         const store = makeD1Store(yield* database.raw)
         const routes = ApiRoutes.pipe(
           HttpRouter.provideRequest(
-            Layer.mergeAll(BrowserCrypto.layer, Layer.succeed(Store, store), Layer.succeed(WorkflowBinding, workflow)),
+            Layer.mergeAll(
+              BrowserCrypto.layer,
+              Layer.succeed(Store, store),
+              Layer.succeed(WorkflowBinding, workflow),
+              Layer.succeed(DevelopmentWorkflowBinding, development),
+            ),
           ),
         )
         const http = yield* HttpRouter.toHttpEffect(routes)

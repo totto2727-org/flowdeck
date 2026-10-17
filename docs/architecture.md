@@ -16,16 +16,21 @@ flowchart TB
   API <--> DB[(Shared D1\nKysely)]
   Run <--> DB
   Run --> V[Workflow-owned version v1 or v2]
+  API -->|static typed RPC binding| Development[Development Workflow Worker]
+  Development -->|getByName runId| DevelopmentRun[Development Run DO]
+  DevelopmentRun <--> DB
+  DevelopmentRun -->|native Container port / Effect HTTP| Gateway[Private SDK gateway]
+  Gateway --> Session[Jcode session and shared checkout]
   V --> N[Thin observed node effects]
 ```
 
-All Workers and the D1 database belong to the `flowdeck` Alchemy project.
+All Workers, the D1 database, and the Jcode Container belong to the `flowdeck` Alchemy project.
 Each workflow has one Worker.
 The entry routes a run ID to one logical Durable Object ID.
 The application does not depend on the lifetime of a JavaScript object instance.
 Control and workflow Workers have no public domain, `workers.dev` endpoint, or preview endpoint.
 The frontend is the only public entry point.
-Development binds local ports 4380, 4381, and 4382 to loopback.
+Development binds local ports 4380 through 4383 to loopback.
 
 ## Responsibilities
 
@@ -183,8 +188,8 @@ Production DNS, Access admission, and deployment behavior require a separate aut
 ## Remaining work
 
 - Integrate an official Effect Machine API if a compatible version becomes available.
-- Add workflow-owned Cloudflare Container and Cloudflare Workflows nodes, and test their resource lifetimes and reconnection.
-- Add the next independent workflow as a second private Worker to exercise the same static composition pattern.
+- Validate the workflow-owned Jcode Container with the authorized model on a native AMD64 builder before deployment; see [development sandbox](development-sandbox.md).
+- Add Cloudflare Workflows nodes as another workflow-owned integration.
 - Establish production operating limits, retention, pagination, and old-version removal procedures before a larger deployment.
 - Authorize and validate the real production domain and Access policy before release.
 

@@ -5,9 +5,14 @@ import { graphToShapes } from '../../../features/workflow/domain/projection'
 import { Store } from '../../../features/workflow/services/store'
 import { demoGraph, demoWorkflow, initialSnapshot } from '../../demo-workflow/features/demo'
 import { timestamp } from '../../demo-workflow/features/node'
-import { WorkflowBinding } from './workflow-binding'
+import {
+  developmentGraph,
+  developmentWorkflow,
+  initialDevelopmentSnapshot,
+} from '../../development-workflow/features/development'
+import { DevelopmentWorkflowBinding, WorkflowBinding } from './workflow-binding'
 
-export const listWorkflows = Effect.succeed({ workflows: [demoWorkflow] })
+export const listWorkflows = Effect.succeed({ workflows: [demoWorkflow, developmentWorkflow] })
 export const listRuns = Effect.gen(function* () {
   const store = yield* Store
   return { runs: yield* store.listRuns }
@@ -30,11 +35,11 @@ export const getRunDetail = (runId: string) =>
 export const createRun = (input: CreateRun) =>
   Effect.gen(function* () {
     const store = yield* Store
-    const binding = yield* WorkflowBinding
+    const binding = input.workflowId === 'demo' ? yield* WorkflowBinding : yield* DevelopmentWorkflowBinding
     const crypto = yield* Crypto.Crypto
     const runId = yield* crypto.randomUUIDv4()
     const now = yield* timestamp
-    const graph = demoGraph(input.version)
+    const graph = input.workflowId === 'demo' ? demoGraph(input.version) : developmentGraph
     const run: Run = {
       runId,
       workflowId: input.workflowId,
@@ -42,7 +47,7 @@ export const createRun = (input: CreateRun) =>
       graphId: graph.graphId,
       status: 'pending',
       revision: 0,
-      snapshot: initialSnapshot(input.version),
+      snapshot: input.workflowId === 'demo' ? initialSnapshot(input.version) : initialDevelopmentSnapshot(input),
       createdAt: now,
       updatedAt: now,
     }
@@ -53,7 +58,9 @@ export const createRun = (input: CreateRun) =>
   })
 export const resumeRun = (runId: string) =>
   Effect.gen(function* () {
-    const binding = yield* WorkflowBinding
+    const store = yield* Store
+    const run = yield* store.getRun(runId)
+    const binding = run.workflowId === 'jcode-development' ? yield* DevelopmentWorkflowBinding : yield* WorkflowBinding
     yield* binding.resume(runId)
     return yield* getRunDetail(runId)
   })

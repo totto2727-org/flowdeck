@@ -13,7 +13,7 @@ export default defineConfig({
   optimizeDeps: { exclude: ['@effront/core'] },
   plugins: [
     effront({ application: './src/workers/frontend/features/entry.effront.tsx' }),
-    effrontAlchemy({ worker: './alchemy.ts' }),
+    effrontAlchemy({ worker: './src/workers/frontend/worker.ts' }),
     ...effrontTailwind({ stylesheet: './src/workers/frontend/features/styles/app.css' }),
   ],
   fmt: {
@@ -33,16 +33,24 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    include: ['src/**/*.test.ts', 'tests/**/*.test.ts'],
+    include: ['src/**/*.test.ts', 'tests/**/*.test.ts', 'containers/jcode/**/*.test.ts'],
     testTimeout: 30_000,
   },
   run: {
     tasks: {
-      dev: { command: 'alchemy dev --config alchemy.run.ts --no-input', cache: false },
+      'build:container': 'vp build --config containers/jcode/vite.config.ts',
+      dev: {
+        command: 'alchemy dev --config alchemy.run.ts --no-input',
+        dependsOn: ['build:container'],
+        cache: false,
+      },
       check: 'vp check',
       fix: 'vp check --fix',
       test: 'vp test run',
-      e2e: 'playwright test --config tests/e2e/playwright.config.ts',
+      e2e: {
+        command: 'playwright test --config tests/e2e/playwright.config.ts',
+        dependsOn: ['build:container'],
+      },
       ci: { command: '', dependsOn: ['check', 'test'] },
     },
   },

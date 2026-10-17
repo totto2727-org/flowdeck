@@ -1,6 +1,31 @@
 import { expect, test } from '@playwright/test'
 import { Array } from 'effect'
 
+test('development task inputs are usable without starting an agent', async ({ page }, info) => {
+  let pageErrors: ReadonlyArray<string> = []
+  page.on('pageerror', (error) => {
+    pageErrors = Array.append(pageErrors, error.message)
+  })
+  await page.goto('/')
+  await page
+    .getByRole('navigation', { name: 'Registered workflows' })
+    .getByRole('button', { name: 'Jcode development' })
+    .click()
+  const repository = page.getByLabel('Public GitHub repository', { exact: true })
+  const task = page.getByLabel('Development task', { exact: true })
+  await expect(repository).toBeVisible()
+  await expect(task).toBeVisible()
+  await repository.fill('https://github.com/totto2727-org/template-vite-plus-lib')
+  await task.fill('Add an add function and run its focused tests in the same checkout.')
+  await expect(repository).toHaveValue('https://github.com/totto2727-org/template-vite-plus-lib')
+  await expect(task).toHaveValue('Add an add function and run its focused tests in the same checkout.')
+  await expect(page.getByLabel('Version', { exact: true }).getByRole('option')).toHaveCount(1)
+  await expect(page.getByRole('button', { name: 'Start run', exact: true })).toBeEnabled()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  await page.screenshot({ path: info.outputPath('development-form.png'), fullPage: true })
+  expect(pageErrors).toEqual([])
+})
+
 // Playwright's Page API is the browser automation boundary, not an application HTTP client.
 Array.map(['v1', 'v2'] as const, (version) => {
   test(`${version} persists its checkpoint and resumes through the real Worker bindings`, async ({ page }, info) => {

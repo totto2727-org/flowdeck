@@ -379,6 +379,35 @@ code,
   padding: 0 14px;
   font-size: 12px;
 }
+.launch-panel.development-launch {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+.launch-panel.development-launch form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  flex: 1 1 20rem;
+  min-width: 0;
+  max-width: 32rem;
+}
+.development-launch input,
+.development-launch textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 12px;
+}
+.development-launch textarea {
+  min-height: 7rem;
+  resize: vertical;
+}
+.launch-panel.development-launch form [data-slot='button'] {
+  justify-self: start;
+  margin-left: 0;
+}
 .execution-layout {
   display: grid;
   grid-template-columns: 260px minmax(0, 1fr);

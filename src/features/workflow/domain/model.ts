@@ -109,7 +109,24 @@ export const RunDetail = Schema.Struct({
   shapes: Shapes,
 })
 export type RunDetail = typeof RunDetail.Type
-export const CreateRun = Schema.Struct({ workflowId: Schema.Literal('demo'), version: WorkflowVersion })
+export const PublicRepository = Schema.String.check(
+  Schema.isPattern(/^https:\/\/github\.com\/[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/[A-Za-z0-9_.-]+(?:\.git)?$/),
+  Schema.isMaxLength(256),
+)
+export const DevelopmentTask = Schema.String.check(
+  Schema.isMinLength(1),
+  Schema.isMaxLength(16_000),
+  Schema.isPattern(/\S/),
+)
+export const CreateRun = Schema.Union([
+  Schema.Struct({ workflowId: Schema.Literal('demo'), version: WorkflowVersion }),
+  Schema.Struct({
+    workflowId: Schema.Literal('jcode-development'),
+    version: Schema.Literal('v1'),
+    repository: PublicRepository,
+    task: DevelopmentTask,
+  }),
+])
 export type CreateRun = typeof CreateRun.Type
 export const WorkflowsResponse = Schema.Struct({ workflows: Schema.Array(WorkflowSummary) })
 export const RunsResponse = Schema.Struct({ runs: Schema.Array(Run) })

@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test'
 
 import { createRun } from '../../../workers/control/features/control'
 import { ApiRoutes } from '../../../workers/control/features/router'
-import { WorkflowBinding } from '../../../workers/control/features/workflow-binding'
+import { DevelopmentWorkflowBinding, WorkflowBinding } from '../../../workers/control/features/workflow-binding'
 import { demoGraph, initialSnapshot, resumeRun, startRun } from '../../../workers/demo-workflow/features/demo'
 import { BindingError, StoreError } from '../domain/errors'
 import { RunDetail, type Run, type WorkflowVersion } from '../domain/model'
@@ -85,12 +85,17 @@ const testBinding = () =>
     start: (runId) => startRun(runId).pipe(Effect.provideService(Store, makeD1Store(database))),
     resume: (runId) => resumeRun(runId).pipe(Effect.provideService(Store, makeD1Store(database))),
   })
+const unavailableDevelopmentBinding = Layer.succeed(DevelopmentWorkflowBinding, {
+  start: () => Effect.fail(new BindingError({ cause: 'Development workflow not selected by this fixture' })),
+  resume: () => Effect.fail(new BindingError({ cause: 'Development workflow not selected by this fixture' })),
+})
 const api = () =>
   HttpRouter.toWebHandler(
     ApiRoutes.pipe(
       HttpRouter.provideRequest(
         Layer.mergeAll(
           testBinding(),
+          unavailableDevelopmentBinding,
           Layer.succeed(Store, store),
           TestCrypto.layer('flowdeck-api').pipe(Layer.provide(BrowserCrypto.layer)),
         ),
@@ -364,6 +369,7 @@ describe('interrupted workflow recovery', () => {
             resume: () => Effect.fail(new BindingError({ cause: 'test unavailable' })),
           }),
           Effect.provide(BrowserCrypto.layer),
+          Effect.provide(unavailableDevelopmentBinding),
         ),
       ),
     ).rejects.toMatchObject({ _tag: 'BindingError' })
@@ -420,7 +426,12 @@ describe('Effect HTTP API', () => {
     try {
       const workflows = await handler.handler(new Request('http://localhost/api/workflows'))
       expect(workflows.status).toBe(200)
-      expect(await workflows.json()).toMatchObject({ workflows: [{ workflowId: 'demo', versions: ['v1', 'v2'] }] })
+      expect(await workflows.json()).toMatchObject({
+        workflows: [
+          { workflowId: 'demo', versions: ['v1', 'v2'] },
+          { workflowId: 'jcode-development', versions: ['v1'] },
+        ],
+      })
       const invalid = await handler.handler(
         new Request('http://localhost/api/runs', {
           method: 'POST',

@@ -6,6 +6,7 @@
   "license": "MIT",
   "type": "module",
   "dependencies": {
+    "@1jehuang/jcode-sdk": "^1.2.0",
     "@base-ui/react": "^1.8.0",
     "@effect/platform-browser": "^4.0.2",
     "@effront/alchemy": "^0.3.1",

@@ -221,6 +221,8 @@ export function Dashboard({ initial }: { readonly initial: DashboardData }) {
   const [data, setData] = useState(initial)
   const [workflowId, setWorkflowId] = useState(Option.getOrUndefined(Array.head(initial.workflows))?.workflowId ?? '')
   const [version, setVersion] = useState<WorkflowVersion>('v1')
+  const [repository, setRepository] = useState('')
+  const [task, setTask] = useState('')
   const [message, setMessage] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [inFlight, transition] = useTransition()
@@ -265,9 +267,13 @@ export function Dashboard({ initial }: { readonly initial: DashboardData }) {
       },
     )
   const start = () => {
-    if (workflowId !== 'demo') return
+    if (workflowId !== 'demo' && workflowId !== 'jcode-development') return
+    const input =
+      workflowId === 'demo'
+        ? ({ workflowId, version } as const)
+        : ({ workflowId, version: 'v1', repository, task } as const)
     invoke(
-      () => startRun({ workflowId, version }),
+      () => startRun(input),
       ({ detail, runs }) => {
         setData((current) => ({ ...current, runs, selected: detail }))
         setMessage(`Started ${detail.run.workflowVersion} run ${shortId(detail.run.runId)}.`)
@@ -418,7 +424,10 @@ export function Dashboard({ initial }: { readonly initial: DashboardData }) {
               </CardContent>
             </Card>
           </div>
-          <section className='launch-panel' aria-labelledby='launch-heading'>
+          <section
+            className={`launch-panel ${workflowId === 'jcode-development' ? 'development-launch' : ''}`}
+            aria-labelledby='launch-heading'
+          >
             <div>
               <span className='launch-icon'>
                 <GitBranch size={20} />
@@ -455,7 +464,31 @@ export function Dashboard({ initial }: { readonly initial: DashboardData }) {
                   </option>
                 ))}
               </select>
-              <Button type='submit' disabled={pending || workflow?.workflowId !== 'demo'}>
+              {workflowId === 'jcode-development' && (
+                <>
+                  <label htmlFor='development-repository'>Public GitHub repository</label>
+                  <input
+                    id='development-repository'
+                    type='url'
+                    placeholder='https://github.com/owner/repository'
+                    value={repository}
+                    maxLength={256}
+                    required
+                    disabled={pending}
+                    onChange={(event) => setRepository(event.target.value)}
+                  />
+                  <label htmlFor='development-task'>Development task</label>
+                  <textarea
+                    id='development-task'
+                    value={task}
+                    maxLength={16_000}
+                    required
+                    disabled={pending}
+                    onChange={(event) => setTask(event.target.value)}
+                  />
+                </>
+              )}
+              <Button type='submit' disabled={pending || !workflow}>
                 <Play size={15} />
                 Start run
               </Button>

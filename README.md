@@ -42,13 +42,17 @@ A later explicit resume loads committed state rather than an in-memory continuat
 - Kysely queries with D1 atomic state/event batches, revision checks, and duplicate-command receipts.
 - Immutable run graphs, common shapes, and event projection by node and execution identity.
 - Two bundled demo versions, typed checkpoints, and explicit recovery.
+- A workflow-owned Jcode Container integration that reuses one SDK session and checkout for implementation and verification.
 - Effront pages and ServerFns with shadcn Base UI components.
 - A production Cloudflare Access declaration for `flowdeck.totto2727.dev`, with exact-email authorization and a trusted native runtime-context check.
 
 ## Scope and limits
 
-The sample tasks are pure effects, not Container processes or remote jobs.
-Container and Cloudflare Workflows nodes remain future workflow-owned integrations.
+The release-demo tasks are pure effects.
+The separate Jcode development workflow uses a private Cloudflare Container and the official Jcode TypeScript SDK.
+Its real model-driven implementation experiment is blocked until the selected provider is authorized, and the normal AMD64 image still needs validation on a native Linux builder.
+See [`docs/development-sandbox.md`](docs/development-sandbox.md) for setup, retention, trust boundaries, and verified limits.
+Cloudflare Workflows nodes remain a future workflow-owned integration.
 The inspected Effect 4 releases do not contain the official Machine API referenced by the design.
 The demo therefore uses a small workflow-owned tagged-state transition, not an official Machine integration or a new general-purpose engine.
 External side-effect replay, dynamic workflow registration, generic runner protocols, artifact transfer, and old dependency reproducibility are not provided.
@@ -64,13 +68,15 @@ This section serves contributors and maintainers.
 
 ### Source layout
 
-| Path                         | Responsibility                                                                                                                        |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/workers/frontend/`      | Frontend entry and Access implementations. Its `features/` directory owns the dashboard, graph, Effront ServerFns, and UI components. |
-| `src/workers/control/`       | Control entry. Its `features/` directory owns HTTP routes, run commands, and the workflow binding.                                    |
-| `src/workers/demo-workflow/` | Workflow entry and run Durable Object. Its `features/` directory owns versioned demo transitions and node observation.                |
-| `src/workers/composition.ts` | Select and inject deployment and authorization Layers. Infrastructure conditions exist only at this boundary.                         |
-| `src/features/workflow/`     | Shared schemas, graph projection, database schema, and Kysely state/event persistence.                                                |
+| Path                                | Responsibility                                                                                                                        |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/workers/frontend/`             | Frontend entry and Access implementations. Its `features/` directory owns the dashboard, graph, Effront ServerFns, and UI components. |
+| `src/workers/control/`              | Control entry. Its `features/` directory owns HTTP routes, run commands, and the workflow binding.                                    |
+| `src/workers/demo-workflow/`        | Workflow entry and run Durable Object. Its `features/` directory owns versioned demo transitions and node observation.                |
+| `src/workers/development-workflow/` | Development run, native Container binding, and workflow-specific implementation and verification checkpoints.                         |
+| `containers/jcode/`                 | Container-side Effect HTTP gateway, official SDK adapter, and image definition.                                                       |
+| `src/workers/composition.ts`        | Select and inject deployment and authorization Layers. Infrastructure conditions exist only at this boundary.                         |
+| `src/features/workflow/`            | Shared schemas, graph projection, database schema, and Kysely state/event persistence.                                                |
 
 ### Checks
 
