@@ -1,324 +1,207 @@
-# Flowdeck architecture
+# Architecture
 
-## 1. Scope
+This document serves contributors and maintainers.
+It implements the direction in the Flowdeck design dated 2026-10-17.
+The current application is a local vertical-slice experiment, not a deployed service.
 
-Flowdeck is a local Topcoat application for registering, executing, scheduling, and inspecting code-defined graph-flow workflows.
-The application core does not select an agent backend or interpret graph task implementations.
-Its responsibility is to turn ordinary workflow registrations into generic graph-flow execution configurations, retain observable run state, and expose that state through HTTP, HTML, and SSE.
-
-The architecture follows four ownership rules:
-
-1. A workflow registration owns its executable graph, input contract, trace projection, and static presentation metadata.
-2. Application configuration owns process-wide operational policy, not workflow or node behavior.
-3. Application state is injected as one consistent backend bundle.
-4. Optional node integrations capture their own resources before they cross the application boundary.
-
-## 2. System overview
+## Resource boundaries
 
 ```mermaid
-flowchart LR
-    Browser["Browser"] --> HTTP["Topcoat routes"]
-    HTTP --> Service["WorkflowService"]
-    Catalog["Workflow registrations"] --> Config["GraphExecutionConfig generator"]
-    AppConfig["ApplicationConfig"] --> Config
-    State["ApplicationState"] --> Config
-    Config --> Runner["FlowRunner per registration"]
-    Service --> Runner
-    Runner --> Graph["graph-flow Graph"]
-    Runner --> Sessions["SessionStorage"]
-    Service --> History["RunHistoryStore"]
-    Service --> Leases["ScheduleLeaseStore"]
-    Service --> Events["Broadcast events"]
-    Events --> HTTP
-    History --> HTTP
+flowchart TB
+  Browser[Browser] --> Access[Cloudflare Access]
+  Access --> Web[Effront frontend\nflowdeck.totto2727.dev]
+  Web -->|static service binding / Effect HttpClient| API[Control Worker\nEffect HTTP]
+  API -->|static typed RPC binding| Entry[Demo Workflow Worker Entry]
+  Entry -->|getByName runId| Run[Run Durable Object]
+  API <--> DB[(Shared D1\nKysely)]
+  Run <--> DB
+  Run --> V[Workflow-owned version v1 or v2]
+  API -->|static typed RPC binding| Development[Development Workflow Worker]
+  Development -->|getByName runId| DevelopmentRun[Development Run DO]
+  DevelopmentRun <--> DB
+  DevelopmentRun -->|native Container port / Effect HTTP| Gateway[Private SDK gateway]
+  Gateway --> Session[Jcode session and shared checkout]
+  V --> N[Thin observed node effects]
 ```
 
-`WorkflowService` receives only registrations and generic application policy.
-It never branches on graph topology, graph task type, or a concrete agent implementation.
-Every registration follows the same `WorkflowRegistration -> GraphExecutionConfig -> FlowRunner` path.
+All Workers, the D1 database, and the Jcode Container belong to the `flowdeck` Alchemy project.
+Each workflow has one Worker.
+The entry routes a run ID to one logical Durable Object ID.
+The application does not depend on the lifetime of a JavaScript object instance.
+Control and workflow Workers have no public domain, `workers.dev` endpoint, or preview endpoint.
+The frontend is the only public entry point.
+Development binds local ports 4380 through 4383 to loopback.
 
-## 3. Startup
+## Responsibilities
 
-The executable bootstrap in `src/main.rs` performs these operations:
+| Component               | Responsibility                                                                                   |
+| ----------------------- | ------------------------------------------------------------------------------------------------ |
+| Frontend                | Render shared shapes, inspect committed state and events, start and resume runs.                 |
+| Control API             | Validate HTTP input, create run records, read shared data, call static workflow bindings.        |
+| Workflow entry          | Resolve the run DO and forward typed operations.                                                 |
+| Run DO                  | Load committed state and invoke the pinned workflow implementation.                              |
+| Workflow implementation | Define version-specific nodes, transitions, checkpoint interpretation, and recovery.             |
+| Shared DB               | Store workflow versions, immutable graphs, runs, snapshots, ordered events, and commit receipts. |
 
-1. Build `ApplicationConfig::local_default()`.
-2. Pass the configuration to `WorkflowService::with_config`.
-3. Construct the code-defined registration catalog.
-4. Build one consistent `ApplicationState` backend bundle.
-5. Generate one `GraphExecutionConfig` for every registration.
-6. Construct each `FlowRunner` through the same generic path.
-7. Load the compiled Topcoat asset bundle.
-8. Bind the configured socket address.
-9. Run the HTTP server, configured scheduler, and shutdown signal concurrently.
+Do not add dynamic workflow registration, dynamic dispatch, a common runner protocol, binary transfer, or a shared artifact store.
+Runtime resources and side-effect recovery belong to the workflow that uses them.
 
-Optional node backends are not initialized during steps 1 through 8.
-An unavailable optional backend therefore does not prevent the console, ordinary workflows, or their forms from starting.
+Worker entry points and Worker-specific features live under `src/workers/<worker>/`.
+Shared workflow schemas, projections, and persistence live under `src/features/workflow/`.
+The final composition boundary in `src/workers/composition.ts` selects deployment and authorization Layers.
+The frontend always invokes the injected authorization service before dispatch.
+The Access implementation always verifies admission, audience, and identity, and never checks a development flag.
+Local authorization is a separate injected implementation, not a fallback inside Access verification.
+Feature logic does not inspect deployment stages, infrastructure phases, or development flags.
 
-## 4. Application configuration
+## Effect and interoperability
 
-`src/config.rs` is the process-wide policy root.
-It is Rust code rather than a deserialized file so invalid and unsupported combinations remain unrepresentable in the first implementation.
+Application logic uses Effect services, Layers, schemas, collections, Match, and HTTP APIs.
+Kysely query builders remain typed library values rather than an invented query abstraction.
+The D1 adapter compiles Kysely queries into native D1 prepared statements.
+D1 `batch` provides the atomic transaction that Kysely's interactive transaction callback cannot provide on D1.
+The frontend adapts the native static binding to the Fetch implementation consumed by Effect HttpClient.
+Native Request construction exists only in that adapter.
+Alchemy owns native Worker HTTP and typed RPC bridges.
+React and Playwright remain framework boundaries.
 
-```text
-ApplicationConfig
-├── http: HttpConfig
-│   └── bind_address: SocketAddr
-├── workflows: WorkflowConfig
-│   └── execution: WorkflowExecutionDefaults
-│       ├── step_multiplier: NonZeroUsize
-│       ├── timeout_per_step: PositiveDuration
-│       └── node: ExecutionTargetDefaults
-│           ├── max_executions: NonZeroUsize
-│           └── timeout: PositiveDuration
-├── state: StateConfig
-│   └── backend: StateBackendConfig
-│       └── InMemory(InMemoryStateConfig)
-│           └── history: InMemoryHistoryConfig
-│               ├── run_retention: RunRetention
-│               └── replay_capacity: NonZeroUsize
-├── scheduler: SchedulerConfig
-│   ├── mode: SchedulerMode
-│   └── default_overlap_policy: ScheduleOverlapPolicy
-└── events: EventConfig
-    ├── workflow_capacity: NonZeroUsize
-    └── history_capacity: NonZeroUsize
-```
+### State Machine API constraint
 
-`PositiveDuration` validates non-zero durations once at the configuration boundary.
-Count values use `NonZeroUsize` for the same reason.
-Consumers receive validated values instead of repeating zero checks.
+The design references the Effect 3 experimental Machine API.
+The inspected Effect 4.0.1, 4.0.2, and the installed Effect 4.0.5 do not export a compatible Machine module.
+Do not describe this experiment as an official Machine integration.
+The demo uses a small workflow-owned tagged state with a Schema restore boundary and Match transitions.
+There is no replacement general-purpose state-machine engine.
+Official Machine integration remains unresolved until an API compatible with the application Effect version is available.
 
-### 4.1 Local defaults
+The node wrapper records start, success, and failure through persistence hooks.
+The workflow commits snapshots at its transition boundaries.
+The demo states are Ready, Preparing, Waiting, Publishing, Completed, and Failed.
+The two bundled implementations use different graph labels and task results.
+The sample task bodies are pure, so a repeated interrupted task is safe.
+This does not establish exactly-once external side effects.
 
-| Property | Default |
-| --- | --- |
-| HTTP bind address | `127.0.0.1:3000` |
-| Workflow step limit | registered node count multiplied by `5` |
-| Workflow timeout | derived maximum steps multiplied by `5 minutes` |
-| Same-node execution limit | `5` per run |
-| Node timeout | `5 minutes` |
-| State backend | `InMemory` |
-| Run retention | `Unlimited` for the process lifetime |
-| History replay capacity | `512` deltas |
-| Scheduler mode | `Enabled` |
-| Inherited overlap policy | `SkipWhileRunning` |
-| Workflow event capacity | `128` |
-| History event capacity | `512` |
+## Data and graph identity
 
-The logged server origin is derived from `http.bind_address` rather than stored as a second setting.
+| Record           | Key data                                                                      |
+| ---------------- | ----------------------------------------------------------------------------- |
+| Workflow         | Workflow ID and display name.                                                 |
+| Workflow version | Workflow ID, implementation version, graph ID.                                |
+| Graph            | Graph ID, schema version, graph JSON.                                         |
+| Run              | Run ID, pinned version, immutable graph reference, status, revision.          |
+| Run state        | Run ID, revision, snapshot.                                                   |
+| Run event        | Event ID, run ID, ordered sequence, optional node/execution/attempt, payload. |
+| Commit receipt   | Commit ID, exact command, revision, first event sequence, event count.        |
 
-### 4.2 Configuration ownership
+The current graph IDs are explicit versioned identifiers, not content hashes.
+A repeated identical graph is reused.
+Database guards reject reuse of a graph ID with different content and prevent graph or version updates.
+Change the graph ID and workflow version when a graph contract changes.
+A node ID identifies a definition.
+An execution ID and attempt identify an execution, including retries.
+Graph-to-shape conversion and event projection use these identities independently from transient UI selection.
 
-Application configuration does not contain form defaults, workflow prompts, cron expressions, graph geometry, agent credentials, or node SDK options.
-Those values remain owned by presentation code, workflow definitions, or node integrations.
-No application setting classifies a workflow as a coding, file-changing, or agent workflow.
+## Commit and acknowledgment
 
-## 5. Registration and execution configuration
+1. Construct a typed transition command with an expected revision and a stable commit ID.
+2. Compile the receipt, run update, snapshot update, and event inserts with Kysely.
+3. Submit the statements in one D1 batch.
+4. Reject a stale revision or a changed command that reuses a commit ID.
+5. Return an acknowledgment only after the batch succeeds and the receipt is read.
 
-`WorkflowRegistration` is the executable catalog boundary:
+The revision guard executes inside the database transaction.
+Duplicate event IDs within a command are rejected before the batch starts.
+An event-ID collision in another commit aborts the complete batch.
+An identical command can receive its previous receipt even after later revisions.
+State and events therefore have one commit boundary.
+Run detail reads use a revision-bounded event prefix so a newer transition cannot attach newer events to an older snapshot.
+The shared DB is canonical for Control and DO reads.
+Applied SQL migrations are immutable.
+Add a new forward migration to strengthen database guards without rewriting local or deployed history.
 
-```text
-WorkflowRegistration
-├── definition: WorkflowDefinition
-├── graph: Arc<graph_flow::Graph>
-├── input: Arc<dyn WorkflowInputContract>
-└── trace_projector: Arc<dyn TraceProjector>
-```
+## Start and recovery
 
-The input contract parses manual input and produces input for code-defined schedules.
-The trace projector converts selected graph context values into a redacted JSON payload.
-The application never serializes the complete graph-flow `Context` because it may contain prompts, credentials, or internal state.
-
-The catalog builds ordinary workflows and optional integration workflows independently, concatenates their registrations, and rejects duplicate workflow IDs.
-It does not examine graphs or classify registrations by task type.
-
-`generate_execution_config` combines a registration with application defaults and state:
-
-```text
-registration.definition + application execution defaults -> effective limits
-registration.graph + application session storage          -> FlowRunner inputs
-registration.input + registration.trace_projector         -> runtime contracts
-```
-
-Explicit workflow limit overrides remain authoritative.
-Absent overrides are derived only from the registered node count and application defaults.
-
-Presentation still looks up static forms and defaults by the selected workflow ID.
-That lookup only selects code-defined UI; it does not alter graph construction, backend ownership, or the runner execution path.
-
-## 6. Run lifecycle
+Control persists a new pending run, its version, and its graph before calling the workflow binding.
+A binding failure must leave the pending run available for explicit recovery.
+A DO call loads the last committed state instead of using a cached continuation.
+Start runs the first node and waits at the manual checkpoint.
+Resume completes the checkpoint and runs the second node.
+Preparing and Publishing snapshots identify interrupted node executions and permit the demo's safe task retry.
+Completed and Failed are terminal and cannot run again.
 
 ```mermaid
 sequenceDiagram
-    participant Caller
-    participant Service as WorkflowService
-    participant Input as WorkflowInputContract
-    participant Storage as SessionStorage
-    participant History as RunHistoryStore
-    participant Driver
-    participant Runner as FlowRunner
-    participant Projector as TraceProjector
-
-    Caller->>Service: start(workflow_id, raw_input, trigger)
-    Service->>Input: parse(raw_input)
-    Input-->>Service: normalized RunInput
-    Service->>Storage: save graph-flow Session
-    Service->>History: insert Running snapshot
-    Service-->>Caller: initial snapshot
-    Service->>Driver: spawn run driver
-    loop until terminal
-        Driver->>History: start_step(node_id)
-        Driver->>Runner: run(run_id)
-        Runner->>Storage: update graph-flow Session
-        Driver->>Storage: get(run_id)
-        Driver->>Projector: project(context, node_id)
-        Driver->>History: complete_step or fail_run
-    end
+  participant C as Control
+  participant D as Shared D1
+  participant E as Workflow entry
+  participant O as Run DO
+  C->>D: Create pending run and pin version/graph
+  C->>E: start(runId)
+  E->>O: Resolve same logical run ID
+  O->>D: Load committed snapshot
+  O->>D: Commit node events and Waiting snapshot
+  D-->>O: Atomic commit succeeds
+  O-->>C: Committed result
+  Note over O: Runtime may be replaced
+  C->>E: resume(runId)
+  E->>O: Resolve same logical run ID
+  O->>D: Reload version and Waiting snapshot
+  O->>D: Commit completion snapshot and events
 ```
 
-The initial graph context contains only generic application values:
+DO replacement does not itself trigger execution.
+The current recovery trigger is an explicit RPC through the resume operation.
+Alarms, reconnecting runners, and environment-specific checkpoints are workflow extensions, not implied common guarantees.
 
-- normalized workflow input under `workflow_input`;
-- display-safe input summary under `input_summary`;
-- generic run identity under `workflow_run_id`.
+## Version lifecycle
 
-Node integrations may interpret the generic run identity as part of their own session policy.
-The application does not write integration-specific context keys.
+New runs explicitly select v1 or v2.
+Existing runs restore their stored version rather than a mutable latest alias.
+Keep old code while a pending, active, waiting, or recoverable run references it.
+Remove an old implementation only after its resumable runs have reached a terminal state.
+The retained graph, state, and events do not guarantee execution after code removal.
+Dependency upgrades do not preserve an old runtime binary or complete historical reproducibility.
+No code-removal automation exists in this experiment.
 
-## 7. Execution limits
+## Access and domain
 
-The driver enforces both workflow-wide and node-specific limits:
+The production hostname is `flowdeck.totto2727.dev`.
+Production declares a self-hosted Cloudflare Access application and an exact-email allow policy in the same stack.
+`FLOWDECK_ACCESS_EMAILS` must be nonempty and must not contain wildcard or domain-wide grants.
+The runtime checks the trusted native Access execution context, its audience, and the admitted identity before handling any Effront request, including ServerFns.
+Caller-supplied identity headers grant no access.
+The private Control mutation routes reject browser Origin headers before parsing the body.
+Browser mutations use authenticated Effront ServerFns, which call Control through the server-side binding.
+A missing Access context returns 401, a wrong audience or identity returns 403, and an unavailable identity service or invalid configuration returns 503.
+Only the local composition boundary can inject the development bypass.
+There is no public API token or browser-controlled bypass.
+Control trusts the Worker that holds its service binding, rather than authenticating an end user again.
+Every admitted frontend identity currently has access to the same runs.
+There is no per-user ownership or per-run authorization model.
+Private ingress restricts callers but does not replace user-level authorization if the application later adds separate user or tenant permissions.
 
-- workflow wall-clock timeout;
-- workflow total node execution count;
-- node wall-clock timeout;
-- execution count for the same node ID within one run.
+Cloudflare resources are not deployed by local development.
+Cloudflare credentials and account selection remain standard Alchemy inputs.
+Do not add a deployment task or enable a cloud operation without operator authorization.
+Production DNS, Access admission, and deployment behavior require a separate authorized cloud acceptance test.
 
-The default total step limit is `node_count * 5`.
-The default workflow timeout is `max_steps * 5 minutes`.
-Each node may execute at most five times and each execution may take at most five minutes unless the workflow supplies an explicit override.
+## Remaining work
 
-Self-edges are ordinary graph edges.
-Repeated execution history is retained as separate `StepTrace` values with a stable one-based `StepId` and per-node execution count.
-The same mechanism protects both intentional loops and accidental infinite self-loops.
+- Integrate an official Effect Machine API if a compatible version becomes available.
+- Validate the workflow-owned Jcode Container with the authorized model on a native AMD64 builder before deployment; see [development sandbox](development-sandbox.md).
+- Add Cloudflare Workflows nodes as another workflow-owned integration.
+- Establish production operating limits, retention, pagination, and old-version removal procedures before a larger deployment.
+- Authorize and validate the real production domain and Access policy before release.
 
-## 8. State backend
+## Source references
 
-`ApplicationState` separates immutable policy from live state instances:
+- [Effect Machine v3](https://effect.website/docs/v3/api/experimental/Machine)
+- [Cloudflare service bindings](https://developers.cloudflare.com/workers/runtime-apis/bindings/service-bindings/)
+- [Durable Object lifecycle](https://developers.cloudflare.com/durable-objects/concepts/durable-object-lifecycle/)
+- [D1 atomic batch API](https://developers.cloudflare.com/d1/worker-api/d1-database/#batch)
+- [Cloudflare Access for Workers](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/non-http/cloudflare-workers/)
+- [Kysely D1 dialect](https://github.com/aidenwallis/kysely-d1)
+- [Vite+ migration and toolchain overrides](https://viteplus.dev/guide/migrate)
 
-```text
-ApplicationState
-├── graph_sessions: Arc<dyn SessionStorage>
-├── run_history: Arc<dyn RunHistoryStore>
-└── schedule_leases: Arc<dyn ScheduleLeaseStore>
-```
-
-The initial `StateBackendConfig::InMemory` builder creates all three stores as one consistent bundle.
-`WorkflowService` does not construct `InMemorySessionStorage`, `HistoryState`, or a schedule ID set directly.
-
-The shared graph session store is safe because run IDs are globally unique within the process.
-Run history operations expose domain-level atomic commands rather than allowing the service to lock or mutate an in-memory collection directly.
-Schedule leases expose only `claim` and `release`.
-
-The database extension point is the backend enum plus these store contracts.
-A future database backend must provide all three state categories, migrations, recovery behavior, and restart tests together.
-The current code intentionally contains no database dependency, schema, or partial hybrid mode.
-
-## 9. History, events, and replay
-
-Every accepted run immediately creates a `RunSnapshot`.
-The snapshot retains trigger, status, active topology, traversed topology, duration, and every node execution trace.
-
-`RunHistoryStore` applies state changes atomically and returns `HistoryDelta` values.
-The service publishes each delta through the configured history broadcast channel.
-The history SSE endpoint replays retained deltas after a client revision and switches to a full reload when the cursor is older than the configured replay journal.
-
-Workflow lifecycle events are a separate channel:
-
-- `RunStarted`;
-- `NodeStarted`;
-- `NodeCompleted`;
-- `RunCompleted`;
-- `RunFailed`;
-- `RunSkipped`.
-
-The selected-run SSE endpoint uses these events to refresh the inspector.
-Lagged subscribers recover from retained state instead of treating broadcast delivery as durable storage.
-
-## 10. Scheduling and overlap
-
-Each `ScheduleSpec` stores `ScheduleOverlap`:
-
-- `ApplicationDefault` resolves through `SchedulerConfig::default_overlap_policy`;
-- `Explicit(policy)` always uses the workflow-owned override.
-
-The default application policy is `SkipWhileRunning`.
-When the same schedule fires while it owns an active run, the attempt is retained as a `Skipped` snapshot with a reason and no graph steps.
-`AllowOverlap` starts every firing.
-No task category or file-changing heuristic participates in this decision.
-
-The scheduler validates every code-defined schedule, starts one worker per schedule, and waits for the first worker failure.
-`SchedulerMode::Disabled` skips schedule validation and workers while keeping manual workflow execution available.
-
-Schedule leases are released after completion, failure, and start failure.
-Skipped attempts never acquire a second lease.
-
-## 11. Topology and execution history UI
-
-The topology renderer consumes `WorkflowDefinition` and optional `RunSnapshot` data.
-`LayeredAutoLayout` calculates ranks, rows, node coordinates, routed edges, self-edge curves, and the SVG view box from the registered topology.
-Workflow definitions do not contain presentation coordinates.
-
-The renderer is behind a topology layout interface so another representation, such as Mermaid or a graph library, can replace the current SVG layout without changing workflow execution.
-Self-references use an exterior curve around the node rather than a special loop node.
-
-Each run also exposes a linear execution-history list.
-Selecting an item identifies one `StepId`, and the Step Trace execution selector can inspect repeated executions of the same node independently.
-
-## 12. Optional node integrations
-
-Agent runtimes are graph task implementation details, not application services.
-The current jcode integration is an example of this rule:
-
-1. `WorkflowTasks` attaches the application `ResourceStore` to each run driver with Tokio task-local scope.
-2. Jcode-backed graph tasks capture a provider-neutral `ResourceKey` and process factory.
-3. The bundle returns an ordinary `WorkflowRegistration`.
-4. The first executing `JcodeNode` initializes and publishes one application-scoped process resource on the blocking pool.
-5. Launch and SDK failures become failures of that exact node and run.
-
-The one-resource policy applies to the console's current jcode integration bundle, not to every user of the reusable crate.
-Another application may use multiple keys or isolated stores, and another workflow may use a completely different backend without changing `WorkflowService`.
-Serializable graph-flow context retains only workflow state and identifiers; live clients, session locks, streams, and handles remain outside graph-flow serialization.
-
-Jcode-specific lifecycle, session, SDK option, and hook details live in the [graph-flow-jcode architecture](../crates/graph-flow-jcode/docs/architecture.md).
-
-## 13. Error boundaries
-
-| Failure | Boundary |
-| --- | --- |
-| Unknown workflow or invalid input | `WorkflowError` before run insertion |
-| Invalid graph or duplicate registration | registration/bootstrap failure |
-| Invalid effective limits | bootstrap failure |
-| Session storage failure | run start or driver failure |
-| Node timeout or graph task failure | failed step and run |
-| Trace projection failure | failed step and run |
-| Invalid enabled schedule | bootstrap failure |
-| Optional backend launch failure | failed node and run, not application startup |
-
-## 14. Restart behavior
-
-The current backend is entirely in memory.
-Restarting the process loses graph-flow sessions, run snapshots, replay deltas, schedule leases, and optional integration conversations.
-The configuration and state boundaries make a future persistent backend possible, but no recovery guarantee exists until such a backend is implemented and selected.
-
-## 15. Architectural invariants
-
-- Application execution does not branch on workflow ID, graph shape, task type, or agent backend.
-- Every executable workflow crosses the application boundary as `WorkflowRegistration`.
-- Every registration uses the same `GraphExecutionConfig -> FlowRunner` construction path.
-- Application configuration contains generic operational policy only.
-- State backend selection creates one internally consistent bundle.
-- Complete graph-flow context is never retained as trace payload.
-- Scheduled overlap is determined only by explicit schedule policy or the application default.
-- Repeated node executions remain individually addressable.
-- Optional backend availability cannot block application startup or ordinary workflows.
+The toolchain starts from `template/vite-plus-app` revision `f0b8dffb085518d10cd42729a10c11de08a1736b`.
+The Effront, shadcn, and multi-Worker composition references come from Projektor revision `a8dae3d5c54b1eb67e2d7f4dd095584b309ced3a`.

@@ -6,3 +6,13 @@ target/
 .DS_Store
 result
 result-*
+node_modules/
+dist/
+.alchemy/
+.wrangler/
+.vite/
+.vite-plus/
+tmp/
+test-results/
+playwright-report/
+.dev.vars
