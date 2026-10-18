@@ -42,7 +42,7 @@ A later explicit resume loads committed state rather than an in-memory continuat
 ### Optional Pi development workflow
 
 The official PiHarness integration has passed local CI and browser validation.
-Complete coding and verification acceptance remains partial.
+A live task completed implementation and explicit-resume verification in one Container and Pi session, with remaining environment and instruction-compliance limits.
 Its run Durable Object owns durable conversation and operations through `agents/harness/pi` and `@earendil-works/pi-durable`.
 It uses `@cloudflare/computer` Workspace with `ContainerBackend` and official `createPiTools` installed in the harness registry.
 Implementation and verification reuse one run-scoped Pi root session and `/workspace/project`, with `HOME=/home/sandbox`.
@@ -85,8 +85,9 @@ New runs use runtime `pi-harness`; legacy direct-SDK histories remain inspectabl
 Official `ROOT_SESSION = '1'` is scoped by the run Durable Object, not shared across runs.
 Official Lifecycle jobs renew the six-hour native inactivity timeout every five hours for unfinished running workspaces without advancing workflow nodes or restarting stopped Containers.
 See [workspace retention](docs/development-workflow-retention.md) for cost and recovery limits.
-The local trial confirmed real source edits, five focused tests, a direct build, and four built public-export cases in the same Container.
-Dependency setup required operator assistance, the normal cached target build failed with `spawn EINVAL`, and implementation settlement, explicit-resume verification, and long-duration retention remain unverified.
+The local trial completed both Pi turns and independently confirmed five tests, format/type/lint checks, a direct build, and five built public-export cases in a temporary `nix shell` in the same Container.
+The normal cached target CI still failed with `spawn EINVAL`; Pi also used prohibited `--no-cache` flags, so policy-compliant acceptance remains incomplete.
+Nix downloads required a Container-only DNS adjustment, and unattended setup and long-duration retention remain unverified.
 Prior direct-SDK success and image smoke checks do not establish current end-to-end task acceptance.
 See [sandbox setup and acceptance limits](docs/development-sandbox.md) for the current trust boundary and qualified concern links for [#10](https://github.com/totto2727-org/flowdeck/issues/10), [#11](https://github.com/totto2727-org/flowdeck/issues/11), [#12](https://github.com/totto2727-org/flowdeck/issues/12), [#13](https://github.com/totto2727-org/flowdeck/issues/13), and [#14](https://github.com/totto2727-org/flowdeck/issues/14).
 Those issues require assessment under PiHarness, not transfer of previous-runtime results.

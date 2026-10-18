@@ -112,9 +112,10 @@ Keep the generic image unchanged in this task; its lightweight tool inventory is
 
 Read [sandbox setup and acceptance limits](docs/development-sandbox.md) before changing this integration and [workspace retention](docs/development-workflow-retention.md) before changing lifetime behavior.
 Use official Lifecycle jobs to renew the six-hour native inactivity timeout every five hours without advancing workflow nodes or restarting stopped Containers.
-The latest PiHarness implementation is **pending acceptance validation**.
-Do not transfer direct-SDK acceptance results, shim checks, or image build results into a claim of current end-to-end success.
-The coordinating root session will supply final acceptance results.
+A real PiHarness run completed both implementation and explicit-resume verification in the same Container and root session.
+Independent temporary-Nix checks passed five tests, format/type/lint checks, direct build, and five built public-export cases.
+Normal cached target CI still fails with `spawn EINVAL`, and Pi used prohibited `--no-cache` flags, so full policy-compliant acceptance remains incomplete.
+Do not transfer direct-SDK results, operation completion, or cache-disabled checks into a claim of normal target CI success.
 Track [credential isolation #10](https://github.com/totto2727-org/flowdeck/issues/10), [workspace-loss recovery #11](https://github.com/totto2727-org/flowdeck/issues/11), [local Alchemy startup #12](https://github.com/totto2727-org/flowdeck/issues/12), [native AI binding validation #13](https://github.com/totto2727-org/flowdeck/issues/13), and [dependency provisioning and cached tasks #14](https://github.com/totto2727-org/flowdeck/issues/14) as concerns requiring assessment under this architecture, not as evidence of its acceptance.
 Native AI binding validation is separate from the current pi-ai HTTPS Gateway provider.
 Keep the frontend build concern separate as well.

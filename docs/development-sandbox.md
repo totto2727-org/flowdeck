@@ -117,13 +117,20 @@ This separation is not evidence of tenant isolation, safe execution of hostile r
 Model output remains untrusted and can contain secrets.
 
 Local Flowdeck validation passed normal cached CI with 125 tests and 14 desktop/mobile browser checks.
-The real PiHarness task changed only the target function and focused tests through official Workspace tools.
-In the same Container, an operator independently confirmed five focused tests, a direct `vp pack` build, and four cases through the built public export.
-Dependency setup required operator assistance: the target repository used Bun, the temporary task requested pnpm, and Container dependency downloads failed.
-Genuine frozen Linux dependencies were provisioned through a separate Docker helper and copied into the existing Container without changing its source or lockfile.
-The normal cached target build failed with `spawn EINVAL`; direct build success does not establish normal target CI success.
-The live implementation operation had not settled at the last observation, so the explicit verification turn is not validated.
-Successful harness operation settlement also does not establish task acceptance: a model-reported blocker can still produce a completed workflow ([task acceptance #15](https://github.com/totto2727-org/flowdeck/issues/15)).
+A real Control API run completed both PiHarness turns with explicit workflow resume in the same Container, root session, and checkout.
+Pi changed only the target function and focused tests.
+After completion, an operator independently used a temporary `nix shell` to run five focused tests, format/type/lint checks, a direct `vp pack` build, and five cases through the built public export.
+The source, manifest, lockfile, and Nix configuration stayed unchanged except for the two requested source and test files.
+
+Use the target repository's `nix develop`, or a minimal temporary `nix shell`, for missing tools rather than extending the generic image.
+The local trial needed an operator's Container-only DNS adjustment before Nix cache downloads worked.
+Pi tried Nix before that adjustment, then used the repository's pinned Bun and frozen dependencies; the operator separately verified temporary Nix tool provisioning.
+This does not establish unattended Nix setup.
+The normal cached target CI still failed with `spawn EINVAL`.
+Direct build success does not establish normal target CI success.
+Pi also used `--no-cache` despite the task's explicit prohibition; those results do not establish policy-compliant acceptance.
+Keep normal cache behavior enabled and track these failures in [dependency provisioning and cached tasks #14](https://github.com/totto2727-org/flowdeck/issues/14).
+Successful harness operation settlement does not establish task acceptance or instruction compliance ([task acceptance #15](https://github.com/totto2727-org/flowdeck/issues/15)).
 Earlier direct-SDK results do not validate the current runtime.
 Five/six-hour retention, unattended dependency setup, production deployment, Access, and DNS have not been accepted.
 
@@ -133,7 +140,7 @@ Keep these concern links, with their scope reassessed under the current architec
 - [Workspace-loss recovery #11](https://github.com/totto2727-org/flowdeck/issues/11): establish Workspace and Container-loss recovery limits without assuming durable Pi history restores shell effects.
 - [Local Alchemy startup #12](https://github.com/totto2727-org/flowdeck/issues/12): validate the current local stack and official runtime integration.
 - [Native AI binding validation #13](https://github.com/totto2727-org/flowdeck/issues/13): a separate concern, not validation of the current pi-ai HTTPS Gateway provider.
-- [Dependency provisioning and cached tasks #14](https://github.com/totto2727-org/flowdeck/issues/14): the current Container trial required operator-provisioned dependencies and reproduced `spawn EINVAL` in the normal cached target build.
+- [Dependency provisioning and cached tasks #14](https://github.com/totto2727-org/flowdeck/issues/14): temporary Nix tools work after a Container-only DNS adjustment, but the normal cached target CI still fails with `spawn EINVAL`.
 
 The frontend build concern remains separate.
 Local startup does not authorize deployment, DNS or Access changes, or image publication.
