@@ -38,6 +38,16 @@ export default defineConfig({
   },
   run: {
     tasks: {
+      'build:nix': {
+        command: 'docker build -t ghcr.io/totto2727-org/flowdeck/nix:latest -f sandbox/nix.Dockerfile sandbox',
+        cache: false,
+      },
+      'build:sandbox': {
+        command:
+          'docker build -t ghcr.io/totto2727-org/flowdeck/sandbox-base:latest -f sandbox/sandbox-base.Dockerfile .',
+        dependsOn: ['build:nix'],
+        cache: false,
+      },
       dev: {
         command: 'alchemy dev --config alchemy.run.ts --no-input',
         cache: false,

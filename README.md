@@ -48,13 +48,17 @@ It uses `@cloudflare/computer` Workspace with `ContainerBackend` and official `c
 Implementation and verification reuse one run-scoped Pi root session and `/workspace/project`, with `HOME=/home/sandbox`.
 
 The derived image in `containers/workspace/Dockerfile` runs official `computerd` 0.5.1, not an embedded Pi SDK, custom HTTP runner, or inference proxy.
-`ARG WORKSPACE_IMAGE` defaults to `ghcr.io/totto2727-org/monorepo/sandbox-base:latest`.
+`ARG WORKSPACE_IMAGE` defaults to Flowdeck's own `ghcr.io/totto2727-org/flowdeck/sandbox-base:latest`.
+Before local Pi development, run `DOCKER_DEFAULT_PLATFORM=linux/amd64 vp run build:sandbox` and then `vp run dev` with the same Docker daemon.
+The build task first builds the independent Flowdeck Nix image, then the sandbox base.
+See [sandbox image maintenance](sandbox/README.md) for source provenance and the publication required before remote workspace builds.
 Optional `FLOWDECK_WORKSPACE_IMAGE` selects a prepared official-computerd-compatible image instead of the Dockerfile build.
 This runtime image selector is distinct from the Dockerfile base argument.
 Alternate bases must satisfy the Dockerfile runtime, apt, and FUSE prerequisites, not merely be arbitrary untouched images.
 Use the target repository's `nix develop`, or a minimal temporary `nix shell`, for Node.js and other required tools instead of baking them into this image.
 The image does not supply global Vite+; frozen target dependencies supply local `vp`.
-The generic sandbox package set is unchanged, with its lightweight tool inventory deferred to [monorepo #384](https://github.com/totto2727-org/monorepo/issues/384).
+The original monorepo image is not modified.
+Its lightweight tool inventory remains tracked in [monorepo #384](https://github.com/totto2727-org/monorepo/issues/384).
 
 The fixed model is `custom-opencode-go/deepseek-v4.1-flash` through Cloudflare AI Gateway.
 The official pi-ai provider uses `cloudflareAIGatewayAuth` and `withOpenCodeSessionHeader` in the run Durable Object.

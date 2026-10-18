@@ -1,4 +1,4 @@
-ARG WORKSPACE_IMAGE=ghcr.io/totto2727-org/monorepo/sandbox-base:latest
+ARG WORKSPACE_IMAGE=ghcr.io/totto2727-org/flowdeck/sandbox-base:latest
 FROM ghcr.io/cloudflare/computer-computerd-linux-x64:0.5.1 AS computerd
 
 FROM ${WORKSPACE_IMAGE}

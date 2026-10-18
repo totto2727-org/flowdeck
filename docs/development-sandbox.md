@@ -28,7 +28,11 @@ Use the standard Alchemy Cloudflare credentials when required.
 Stop if authentication or permissions are missing and ask the operator to provide access.
 Do not attempt to bypass these prerequisites.
 
-The workspace Dockerfile accepts `ARG WORKSPACE_IMAGE`, defaulting to `ghcr.io/totto2727-org/monorepo/sandbox-base:latest`.
+The workspace Dockerfile accepts `ARG WORKSPACE_IMAGE`, defaulting to Flowdeck's own `ghcr.io/totto2727-org/flowdeck/sandbox-base:latest`.
+Flowdeck maintains its Nix and sandbox base definitions in `sandbox/`, with provisioning in `nix/sandbox/`.
+See [sandbox image maintenance](../sandbox/README.md) for source provenance, build order, and image publication.
+The current official computerd image is x64, so use a Linux amd64 base for this workspace.
+The generic base build tasks do not fix the target architecture.
 It copies `/usr/local/bin/computerd` from `ghcr.io/cloudflare/computer-computerd-linux-x64:0.5.1`.
 An alternate base must support the Dockerfile's runtime and `apt-get` installation of `fuse3`, `libfuse2t64`, and `ca-certificates`, together with the required FUSE operation.
 This is a derived-image build, not a one-call guarantee for an arbitrary untouched image.
@@ -37,13 +41,13 @@ When it is unset, Flowdeck builds the workspace Dockerfile, with `FLOWDECK_PI_DO
 The prepared-image setting differs from the Dockerfile's `WORKSPACE_IMAGE` base argument.
 Neither path supports an arbitrary untouched image without the backend runtime prerequisites.
 
-The published generic sandbox supplies Git and Nix, but does not put Node.js or Vite+ directly on `PATH`.
+The Flowdeck sandbox base supplies Git and Nix, but does not put Node.js or Vite+ directly on `PATH`.
 The derived workspace image does not add Node.js or a package manager.
 The target project's frozen dependencies supply local `vp`, not a globally installed Vite+ in the image.
 Follow that repository's declared package manager and lockfile rather than assuming pnpm.
 Use the target repository's `nix develop`, or a minimal temporary `nix shell`, for Node.js, Bun, package managers, and other required tools.
-The generic image and package set are unchanged by this work.
-A lightweight generic `sandbox-base` tool inventory is deferred to [monorepo #384](https://github.com/totto2727-org/monorepo/issues/384).
+Flowdeck manages its copied image definitions independently without modifying the original monorepo images.
+The original generic image's lightweight tool inventory remains tracked in [monorepo #384](https://github.com/totto2727-org/monorepo/issues/384).
 
 Run as `sandbox`, keep `HOME=/home/sandbox`, and use `/workspace/project` as the checkout path through Computer Workspace.
 The Container serves the official `computerd` backend on port 8080, not a custom session/turn HTTP gateway.
@@ -52,8 +56,14 @@ Keep its build context limited to `containers/workspace/`.
 ```bash
 vp env install
 vp install --frozen-lockfile
+DOCKER_DEFAULT_PLATFORM=linux/amd64 vp run build:sandbox
 vp run dev
 ```
+
+Use the same Docker daemon for the base builds and local Alchemy development.
+The local image tags do not publish registry images.
+Publish the Flowdeck sandbox base before remote or production builds that must pull it.
+Alchemy's workspace build context remains `containers/workspace/`; do not replace it with the repository root.
 
 The frontend uses loopback port 4380 and the private development Worker uses loopback port 4383.
 Select **Pi development**, enter a public GitHub repository and a task, then start a new run.

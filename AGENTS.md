@@ -103,7 +103,15 @@ Keep `Config.Redacted('CLOUDFLARE_AI_GATEWAY_API_KEY')` as a native Worker `secr
 Provider keys remain in Gateway stored BYOK.
 Do not pass inference credentials to Workspace tools, Container environment, images, build arguments, or task prompts.
 
-Use `containers/workspace/Dockerfile`, with `ARG WORKSPACE_IMAGE` defaulting to `ghcr.io/totto2727-org/monorepo/sandbox-base:latest` and official `computerd` 0.5.1 copied into the derived image.
+Use `containers/workspace/Dockerfile`, with `ARG WORKSPACE_IMAGE` defaulting to `ghcr.io/totto2727-org/flowdeck/sandbox-base:latest` and official `computerd` 0.5.1 copied into the derived image.
+Flowdeck owns `sandbox/nix.Dockerfile`, `sandbox/sandbox-base.Dockerfile`, and `nix/sandbox/` independently of the original monorepo image tags.
+Run `DOCKER_DEFAULT_PLATFORM=linux/amd64 vp run build:sandbox` before local Alchemy development to build compatible bases for the current x64 computerd in the same Docker daemon.
+Keep the generic base tasks architecture-neutral.
+Keep Vite+ task caching disabled for `build:nix` and `build:sandbox`, while retaining Docker's layer cache.
+These tasks produce Docker daemon images, not cache-restorable repository files.
+Publish the Flowdeck sandbox base before a remote or production workspace build that needs to pull it.
+See [sandbox image maintenance](sandbox/README.md) for provenance, local build order, and publication requirements.
+Keep Alchemy's workspace context at `containers/workspace`, not the repository root.
 Set optional `FLOWDECK_WORKSPACE_IMAGE` only to a prepared official-computerd-compatible image at resource composition.
 Otherwise build the workspace Dockerfile, with `FLOWDECK_PI_DOCKERFILE` available as a Dockerfile override.
 `FLOWDECK_WORKSPACE_IMAGE` is not the Dockerfile's `WORKSPACE_IMAGE` base argument.
@@ -112,7 +120,8 @@ Do not bake Node.js or a package manager into the workspace image.
 Use the target repository's `nix develop`, or a minimal temporary `nix shell`, for required development tools.
 Do not claim that the image supplies global Vite+; the target project's frozen pnpm dependencies supply local `vp`.
 Run computerd and repository tools as `sandbox`, with `HOME=/home/sandbox` and checkout `/workspace/project` through Computer Workspace.
-Keep the generic image unchanged in this task; its lightweight tool inventory is deferred to [monorepo #384](https://github.com/totto2727-org/monorepo/issues/384).
+Do not modify the original monorepo images for Flowdeck-specific requirements.
+The original generic image's lightweight tool inventory remains tracked in [monorepo #384](https://github.com/totto2727-org/monorepo/issues/384).
 
 Read [sandbox setup and acceptance limits](docs/development-sandbox.md) before changing this integration and [workspace retention](docs/development-workflow-retention.md) before changing lifetime behavior.
 Use official Lifecycle jobs to renew the six-hour native inactivity timeout every five hours without advancing workflow nodes or restarting stopped Containers.
