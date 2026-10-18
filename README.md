@@ -48,7 +48,7 @@ It uses `@cloudflare/computer` Workspace with `ContainerBackend` and official `c
 Implementation and verification reuse one run-scoped Pi root session and `/workspace/project`, with `HOME=/home/sandbox`.
 
 The derived image in `containers/workspace/Dockerfile` runs official `computerd` 0.5.1, not an embedded Pi SDK, custom HTTP runner, or inference proxy.
-`ARG WORKSPACE_IMAGE` defaults to `ghcr.io/totto2727-org/monorepo/sandbox-dev:latest`.
+`ARG WORKSPACE_IMAGE` defaults to `ghcr.io/totto2727-org/monorepo/sandbox-base:latest`.
 Optional `FLOWDECK_WORKSPACE_IMAGE` selects a prepared official-computerd-compatible image instead of the Dockerfile build.
 This runtime image selector is distinct from the Dockerfile base argument.
 Alternate bases must satisfy the Dockerfile runtime, apt, and FUSE prerequisites, not merely be arbitrary untouched images.

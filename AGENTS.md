@@ -103,7 +103,7 @@ Keep `Config.Redacted('CLOUDFLARE_AI_GATEWAY_API_KEY')` as a native Worker `secr
 Provider keys remain in Gateway stored BYOK.
 Do not pass inference credentials to Workspace tools, Container environment, images, build arguments, or task prompts.
 
-Use `containers/workspace/Dockerfile`, with `ARG WORKSPACE_IMAGE` defaulting to `ghcr.io/totto2727-org/monorepo/sandbox-dev:latest` and official `computerd` 0.5.1 copied into the derived image.
+Use `containers/workspace/Dockerfile`, with `ARG WORKSPACE_IMAGE` defaulting to `ghcr.io/totto2727-org/monorepo/sandbox-base:latest` and official `computerd` 0.5.1 copied into the derived image.
 Set optional `FLOWDECK_WORKSPACE_IMAGE` only to a prepared official-computerd-compatible image at resource composition.
 Otherwise build the workspace Dockerfile, with `FLOWDECK_PI_DOCKERFILE` available as a Dockerfile override.
 `FLOWDECK_WORKSPACE_IMAGE` is not the Dockerfile's `WORKSPACE_IMAGE` base argument.

@@ -28,7 +28,7 @@ Use the standard Alchemy Cloudflare credentials when required.
 Stop if authentication or permissions are missing and ask the operator to provide access.
 Do not attempt to bypass these prerequisites.
 
-The workspace Dockerfile accepts `ARG WORKSPACE_IMAGE`, defaulting to `ghcr.io/totto2727-org/monorepo/sandbox-dev:latest`.
+The workspace Dockerfile accepts `ARG WORKSPACE_IMAGE`, defaulting to `ghcr.io/totto2727-org/monorepo/sandbox-base:latest`.
 It copies `/usr/local/bin/computerd` from `ghcr.io/cloudflare/computer-computerd-linux-x64:0.5.1`.
 An alternate base must support the Dockerfile's runtime and `apt-get` installation of `fuse3`, `libfuse2t64`, and `ca-certificates`, together with the required FUSE operation.
 This is a derived-image build, not a one-call guarantee for an arbitrary untouched image.
@@ -44,7 +44,7 @@ Follow that repository's declared package manager and lockfile rather than assum
 Repositories that require Bun or another runtime need it in their selected workflow image or development environment.
 Use the target repository's `devShell` for its other development tools.
 The generic image and package set are unchanged by this work.
-A lightweight generic `sandbox-dev` tool inventory is deferred to [monorepo #384](https://github.com/totto2727-org/monorepo/issues/384).
+A lightweight generic `sandbox-base` tool inventory is deferred to [monorepo #384](https://github.com/totto2727-org/monorepo/issues/384).
 
 Keep `HOME=/home/sandbox` and use `/workspace/project` as the checkout path through Computer Workspace.
 The Container serves the official `computerd` backend on port 8080, not a custom session/turn HTTP gateway.
