@@ -1,68 +1,71 @@
 # Development workspace retention
 
 This document is for Flowdeck maintainers and operators.
+The current PiHarness retention integration is **pending acceptance validation**.
 
-## Container ownership
+## Workspace ownership
 
-Each Pi development run uses one `DevelopmentRun` Durable Object and its attached native Cloudflare Container.
-The persisted workflow ID remains `jcode-development` for compatibility.
-Implementation and verification use the same embedded Pi SDK session and `/home/sandbox/workspace/project` directory.
-Pi tools use the normal Container filesystem, not a Computer or Durable Object filesystem.
+Each Pi development run uses one `DevelopmentRun` Durable Object with official PiHarness and a Computer Workspace backed by `ContainerBackend`.
+PiHarness and pi-durable own durable conversation and operation state, while D1 owns workflow checkpoints and events.
+The persisted workflow ID remains `jcode-development`, and the Container resource remains `JcodeSandbox`.
+Implementation and verification reuse official `ROOT_SESSION = '1'` within that run Durable Object and the Workspace checkout at `/workspace/project`.
+The Container uses `HOME=/home/sandbox` and runs official `computerd`, not an embedded Pi SDK or a custom HTTP session gateway.
 
-A node transition does not stop the container.
-A stopped container is not automatically recreated after the persisted startup attempt marker is set.
-Inspect an interrupted run before you take recovery action.
+A node transition does not reset the workspace or conversation.
+New runs use runtime `pi-harness`.
+Legacy direct-SDK histories remain inspectable but cannot execute through the new harness.
+Inspect an interrupted run before taking recovery action.
 
-## Retention heartbeat
+## Lifecycle renewal
 
-The Durable Object saves its run ID under `active-run-id` before each start or resume operation.
-Its constructor, alarm handler, and operation finalizers read the canonical run status from the shared Store.
-A finalizer also runs when the gateway returns a binding error after container startup.
+Use official `Lifecycle` from `agents/lifecycle`, installed with PiHarness, and its jobs API rather than a separate lease alarm implementation.
+The run Durable Object saves `active-run-id` before workflow execution and schedules the `workspace-lease` job before operation admission.
+Lifecycle startup and job execution read the canonical run status from the shared Store.
 
-| Committed run status and container state | Action                                                                                                                    |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `completed`                              | Delete the alarm. Do not destroy the container.                                                                           |
-| Any other status, container running      | Set the native inactivity timeout to 21,600,000 ms, then schedule the next alarm for the current time plus 18,000,000 ms. |
-| Any other status, container stopped      | Delete the alarm. Do not restart the container or schedule another heartbeat.                                             |
-| No saved run ID                          | Delete the alarm.                                                                                                         |
+| Committed run status and Container state | Renewal action                                                                                             |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `completed`                              | Stop renewal. Explicit completion cancels the lease job without destroying the Container.                  |
+| Any other status, Container running      | Set the native inactivity timeout to 21,600,000 ms and return a reschedule time of now plus 18,000,000 ms. |
+| Any other status, Container stopped      | End renewal without starting the Container.                                                                |
+| No saved run ID                          | End renewal.                                                                                               |
 
-The heartbeat renews the six-hour native timeout every five hours.
-Pi execution inside a container is not itself a Durable Object request.
-The heartbeat does not poll Pi turns, invoke the inference Worker, submit commands, or advance workflow nodes.
-Only an explicit resume operation advances the workflow.
-A delayed or repeated alarm uses the current clock time, not an old schedule anchor.
-Missed heartbeat intervals are not replayed.
-Concurrent heartbeat calls within one object instance use a semaphore.
-A storage or native container failure remains visible as a failed alarm invocation, so native Durable Object alarm retry behavior applies.
-This does not guarantee that the runtime will deliver every alarm before the inactivity deadline.
+The job renews the six-hour native timeout every five hours.
+A start or resume operation schedules renewal before admitting work.
+The initial timeout is set after the backend accepts the authenticated `computerd` WebSocket upgrade with HTTP 101.
+For an already running Container, Lifecycle `onStart` and the lease job renew the timeout.
+This is not a promise that every job runs before the inactivity deadline.
+Use official Lifecycle scheduling and retry behavior instead of a custom alarm dispatcher.
+Delayed renewal schedules from the current time, not an old anchor.
+Renewal does not submit Pi operations, call inference, replay missed intervals, or advance workflow nodes.
+Only explicit workflow resume advances a waiting checkpoint.
+The renewal job never starts a stopped Container.
 
-## Cost and inspection
+## Cost and recovery limits
 
-**A running container continues to incur charges while its workflow is failed, waiting, pending, or running.**
-The failed status does not mean that the workspace is safe to delete.
-This policy keeps failed Pi work available for inspection.
+**A running Container continues to incur charges while its workflow is failed, waiting, pending, or running.**
+Failed work remains available for inspection.
 There is no automatic failure cleanup or retention deadline in this workflow.
 An operator must explicitly stop a workspace when it is no longer needed.
 
-A completed run stops heartbeat renewal but does not immediately destroy the container.
+A completed run stops renewal but does not immediately destroy the Container.
 The native inactivity policy can subsequently stop it.
-Do not treat the writable workspace as permanent artifact storage.
-A stopped container is not a replay checkpoint and cannot be recreated safely by the heartbeat.
-Runtime shutdown or replacement can lose the checkout, receipts, and Pi session files.
-Track [workspace-loss recovery #11](https://github.com/totto2727-org/flowdeck/issues/11) rather than adding snapshots or another filesystem layer to this migration.
+Durable Pi conversation and operation state are distinct from Workspace filesystem state and Container-local process state.
+Do not assume that a retained conversation restores lost shell effects, background processes, or all Container-local files after replacement.
+A retained Container is not a generic replay checkpoint or permanent artifact store.
+Track these limits in [workspace-loss recovery #11](https://github.com/totto2727-org/flowdeck/issues/11).
 
 ## Validation boundary
 
-The maintained lease tests use the native Alchemy API types and a controlled Effect clock.
-They verify timeout requests, alarm scheduling, completion cancellation, stopped-container behavior, failed-run retention, delayed delivery, and binding-error finalization.
-They do not prove that a real container survives a six-hour runtime interval.
-Local Pi streaming, implementation, and explicit-resume verification passed in the same Container, session, and checkout.
-This acceptance required operator-provisioned genuine frozen dependencies and does not prove unattended setup or six-hour retention.
-Normal cached target CI still fails with `spawn EINVAL`, as tracked in [provisioning and cached tasks #14](https://github.com/totto2727-org/flowdeck/issues/14).
-See [sandbox acceptance limits](development-sandbox.md#trust-and-acceptance-boundary).
+Current live implementation, explicit-resume verification, and five/six-hour retention acceptance remain **pending**.
+The coordinating root session will provide final results for the latest implementation.
+Prior direct-SDK acceptance and custom lease tests do not validate the official Lifecycle/PiHarness path.
+Synthetic boundary tests and image smoke checks do not establish workspace survival, recovery after replacement, or normal cached target CI.
+[Dependency provisioning and cached tasks #14](https://github.com/totto2727-org/flowdeck/issues/14) remains a concern requiring current evidence, not a result inherited from the previous runtime.
+See [sandbox acceptance limits](development-sandbox.md#trust-and-acceptance-boundary) for the full credential, setup, and acceptance scope.
 
 ## Sources
 
-- [Cloudflare Container Durable Object interface](https://developers.cloudflare.com/containers/platform-details/durable-object-interface/)
+- Official installed APIs: `agents/lifecycle`, `agents/harness/pi`, `@earendil-works/pi-durable`, and `@cloudflare/computer/backends/container`.
+- Integration: the runtime entry and Container resource composition under `src/workers/development-workflow/`.
+- [Cloudflare Container inactivity timeout](https://developers.cloudflare.com/containers/api/durable-object-container/#setinactivitytimeout)
 - [Cloudflare Durable Object alarms](https://developers.cloudflare.com/durable-objects/api/alarms/)
-- Native Alchemy `ContainerClient`, `DurableObjectState`, and `DurableObjectStorage` APIs used by `src/workers/development-workflow/index.ts`.

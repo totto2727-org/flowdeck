@@ -17,8 +17,8 @@ import { DevelopmentSandbox } from './sandbox'
 const base = {
   schemaVersion: Schema.Literal(1),
   version: Schema.Literal('v1'),
-  // Compatibility: legacy snapshots remain readable, but only explicitly Pi runs may execute.
-  runtime: Schema.optional(Schema.Literal('pi')),
+  // Compatibility: legacy snapshots remain readable, but only explicitly PiHarness runs may execute.
+  runtime: Schema.optional(Schema.Literals(['pi', 'pi-harness'])),
   repository: PublicRepository,
   task: DevelopmentTask,
 }
@@ -60,7 +60,7 @@ export const initialDevelopmentSnapshot = (
   _tag: 'Ready',
   schemaVersion: 1,
   version: 'v1',
-  runtime: 'pi',
+  runtime: 'pi-harness',
   repository: input.repository,
   task: input.task,
 })
@@ -145,8 +145,8 @@ const fail = (run: Run, snapshot: DevelopmentSnapshot, nodeId: 'implement' | 've
   ]).pipe(Effect.asVoid)
 const prompt = (snapshot: Extract<DevelopmentSnapshot, { _tag: 'PendingTurn' }>) =>
   snapshot.nodeId === 'implement'
-    ? `Use Pi to clone the public GitHub repository ${snapshot.repository} into /home/sandbox/workspace/project. Work only in this fixed project workspace. Use the development tools available in the Node container and follow the target repository instructions. Implement the following task. Do not push or deploy.\n\n${snapshot.task}`
-    : 'Continue with Pi in the same /home/sandbox/workspace/project repository and session. Use the development tools available in the Node container and follow the target repository instructions. Run the project checks and tests, fix failures caused by the implementation, and report checks performed and remaining limitations. Do not push or deploy.'
+    ? `Use Pi to clone the public GitHub repository ${snapshot.repository} into /workspace/project. Work only in this fixed project workspace. Use the development tools available in the Node container and follow the target repository instructions. Implement the following task. Do not push or deploy.\n\n${snapshot.task}`
+    : 'Continue with Pi in the same /workspace/project repository and session. Use the development tools available in the Node container and follow the target repository instructions. Run the project checks and tests, fix failures caused by the implementation, and report checks performed and remaining limitations. Do not push or deploy.'
 
 const submitPending = (run: Run, snapshot: Extract<DevelopmentSnapshot, { _tag: 'PendingTurn' }>) =>
   Effect.gen(function* () {
@@ -260,9 +260,10 @@ const drive = (
     const run = yield* store.getRun(runId)
     const snapshot = yield* restoreDevelopment(run)
     // Legacy Ready/Starting runs can also have accepted external work, so do not infer safety from their state.
-    if (snapshot.runtime !== 'pi')
+    if (snapshot.runtime !== 'pi-harness')
       return yield* new InvalidOperation({
-        message: 'Legacy Jcode runs cannot execute with Pi. Retain this run for inspection and create a new Pi run.',
+        message:
+          'Legacy Jcode and direct Pi SDK runs cannot execute with PiHarness. Retain this run for inspection and create a new PiHarness run.',
       })
     yield* Match.value(snapshot).pipe(
       Match.tag('Ready', 'Starting', (state) => start(run, state)),

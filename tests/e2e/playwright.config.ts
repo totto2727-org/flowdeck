@@ -18,7 +18,7 @@ export default defineConfig({
     { name: 'mobile', use: { ...devices['Pixel 7'] } },
   ],
   webServer: {
-    // The e2e task builds the image input first. Playwright owns the native host lifecycle.
+    // Playwright owns the native host lifecycle.
     command: 'alchemy dev --config alchemy.run.ts --no-input',
     cwd: '../..',
     url: 'http://127.0.0.1:4380',

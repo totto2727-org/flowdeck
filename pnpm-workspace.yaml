@@ -16,3 +16,6 @@ allowBuilds:
   vite-plus: false
   esbuild: true
   workerd: true
+  core-js-pure: false
+  '@mongodb-js/zstd': false
+  node-liblzma: false

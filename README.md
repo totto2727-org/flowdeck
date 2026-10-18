@@ -8,7 +8,7 @@ This version is an Effect-first Cloudflare application for local implementation 
 This section serves users who want to run the demo locally.
 Install Vite+ before running the commands below.
 For Pi inference, configure the existing Cloudflare account and Gateway ID and a Gateway-only key as described in the [sandbox guide](docs/development-sandbox.md#model-and-inference-transport).
-The HTTPS inference transport does not require native AI binding preview access.
+The official pi-ai Gateway provider runs in the run Durable Object without a native AI binding or Container inference proxy.
 Stop if required authentication or permissions are missing and ask the operator to provide access.
 
 Run these commands from this repository:
@@ -41,17 +41,25 @@ A later explicit resume loads committed state rather than an in-memory continuat
 
 ### Optional Pi development workflow
 
-Local Pi coding acceptance passed with operator-provisioned dependencies, not as an unattended setup.
-The workflow image embeds `@earendil-works/pi-coding-agent` 1.3.0 directly in a Node.js process on the published generic `sandbox-dev` image.
-The generic sandbox does not preinstall Node.js, Pi, pnpm, or Vite+.
-Use the target repository's `devShell` for its development tools.
-Implementation and verification share one Pi session and `/home/sandbox/workspace/project` with `HOME=/home/sandbox`.
+The official PiHarness workflow is **pending acceptance validation**.
+Its run Durable Object owns durable conversation and operations through `agents/harness/pi` and `@earendil-works/pi-durable`.
+It uses `@cloudflare/computer` Workspace with `ContainerBackend` and official `createPiTools` installed in the harness registry.
+Implementation and verification reuse one run-scoped Pi root session and `/workspace/project`, with `HOME=/home/sandbox`.
 
-The default model is `custom-opencode-go/deepseek-v4.1-flash` through Cloudflare AI Gateway.
-Pi sends OpenAI-compatible requests to a private inference Worker through native Container HTTP interception and a static service binding.
-That Worker sends one fixed HTTPS compatibility request to AI Gateway using a Gateway-only key.
-Provider credentials remain in Gateway stored BYOK, and no inference credential is passed to Pi or the Container.
-This credential boundary does not prevent unauthorized inference charges or isolate hostile repository code ([credential isolation #10](https://github.com/totto2727-org/flowdeck/issues/10)).
+The derived image in `containers/workspace/Dockerfile` runs official `computerd` 0.5.1, not an embedded Pi SDK, custom HTTP runner, or inference proxy.
+`ARG WORKSPACE_IMAGE` defaults to `ghcr.io/totto2727-org/monorepo/sandbox-dev:latest`.
+Optional `FLOWDECK_WORKSPACE_IMAGE` selects a prepared official-computerd-compatible image instead of the Dockerfile build.
+This runtime image selector is distinct from the Dockerfile base argument.
+Alternate bases must satisfy the Dockerfile runtime, apt, and FUSE prerequisites, not merely be arbitrary untouched images.
+Workflow-specific Node.js 24 and Corepack provisioning belong in this derived image.
+The image does not supply global Vite+; frozen target dependencies supply local `vp`.
+The generic sandbox package set is unchanged, with its lightweight tool inventory deferred to [monorepo #384](https://github.com/totto2727-org/monorepo/issues/384).
+
+The fixed model is `custom-opencode-go/deepseek-v4.1-flash` through Cloudflare AI Gateway.
+The official pi-ai provider uses `cloudflareAIGatewayAuth` and `withOpenCodeSessionHeader` in the run Durable Object.
+`Config.Redacted('CLOUDFLARE_AI_GATEWAY_API_KEY')` is a native Worker `secret_text` binding used only by that Durable Object.
+Provider keys remain in Gateway stored BYOK, and no inference credential is passed to Workspace tools or the Container.
+This boundary does not establish tenant isolation or prevent unauthorized inference charges ([credential isolation #10](https://github.com/totto2727-org/flowdeck/issues/10)).
 Do not put credentials in Git, images, build arguments, logs, or task prompts.
 See the [sandbox setup and acceptance limits](docs/development-sandbox.md) before starting a live task.
 
@@ -63,21 +71,24 @@ See the [sandbox setup and acceptance limits](docs/development-sandbox.md) befor
 - Kysely queries with D1 atomic state/event batches, revision checks, and duplicate-command receipts.
 - Immutable run graphs, common shapes, and event projection by node and execution identity.
 - Two bundled demo versions, typed checkpoints, and explicit recovery.
-- A workflow-owned Pi Container integration that reuses one SDK session and checkout for implementation and verification.
+- An official durable PiHarness integration with Computer Workspace tools and one run-scoped session and checkout for implementation and verification.
 - Effront pages and ServerFns with shadcn Base UI components.
 - A production Cloudflare Access declaration for `flowdeck.totto2727.dev`, with exact-email authorization and a trusted native runtime-context check.
 
 ## Scope and limits
 
 The release-demo tasks are pure effects.
-The separate Pi development workflow uses the normal Container filesystem and a private HTTP session/turn receipt gateway on port 8080.
-It does not require Cloudflare Computer, a Durable Object filesystem, or Pi Durable.
+The separate Pi development workflow uses official PiHarness, pi-durable, and Computer Workspace rather than a Container-side agent gateway.
 The persisted workflow ID `jcode-development` and infrastructure resource name `JcodeSandbox` remain unchanged for compatibility.
-Implementation and explicit-resume verification completed in the same Container, Pi session, and checkout with the requested model.
-The operator supplied genuine frozen dependencies, and normal cached target CI still fails with `spawn EINVAL` ([provisioning and cached tasks #14](https://github.com/totto2727-org/flowdeck/issues/14)).
-Independent real-tool checks passed, but shim tests and no-cache CI are not evidence of a normal cached CI pass.
-See [sandbox setup and acceptance limits](docs/development-sandbox.md) for the model, credentials, trust boundary, and recovery limits.
-Track [workspace-loss recovery #11](https://github.com/totto2727-org/flowdeck/issues/11), [local Alchemy startup #12](https://github.com/totto2727-org/flowdeck/issues/12), and [native binding validation #13](https://github.com/totto2727-org/flowdeck/issues/13) separately from this migration.
+New runs use runtime `pi-harness`; legacy direct-SDK histories remain inspectable but fail closed on execution.
+Official `ROOT_SESSION = '1'` is scoped by the run Durable Object, not shared across runs.
+Official Lifecycle jobs renew the six-hour native inactivity timeout every five hours for unfinished running workspaces without advancing workflow nodes or restarting stopped Containers.
+See [workspace retention](docs/development-workflow-retention.md) for cost and recovery limits.
+Current implementation, explicit-resume verification, and retention acceptance remain **pending** until the coordinating root session supplies final results.
+Prior direct-SDK success, image smoke checks, shim tests, and no-cache CI do not validate this architecture or normal cached target CI.
+See [sandbox setup and acceptance limits](docs/development-sandbox.md) for the current trust boundary and qualified concern links for [#10](https://github.com/totto2727-org/flowdeck/issues/10), [#11](https://github.com/totto2727-org/flowdeck/issues/11), [#12](https://github.com/totto2727-org/flowdeck/issues/12), [#13](https://github.com/totto2727-org/flowdeck/issues/13), and [#14](https://github.com/totto2727-org/flowdeck/issues/14).
+Those issues require assessment under PiHarness, not transfer of previous-runtime results.
+Native AI binding validation in #13 is separate from the current pi-ai HTTPS Gateway provider.
 The frontend build concern also remains separate.
 Cloudflare Workflows nodes remain a future workflow-owned integration.
 The inspected Effect 4 releases do not contain the official Machine API referenced by the design.
@@ -100,9 +111,8 @@ This section serves contributors and maintainers.
 | `src/workers/frontend/`             | Frontend entry and Access implementations. Its `features/` directory owns the dashboard, graph, Effront ServerFns, and UI components. |
 | `src/workers/control/`              | Control entry. Its `features/` directory owns HTTP routes, run commands, and the workflow binding.                                    |
 | `src/workers/demo-workflow/`        | Workflow entry and run Durable Object. Its `features/` directory owns versioned demo transitions and node observation.                |
-| `src/workers/development-workflow/` | Development run, native Container binding, and workflow-specific implementation and verification checkpoints.                         |
-| `src/workers/inference/`            | Private Worker with the Gateway-only credential and fixed HTTPS compatibility adapter.                                                |
-| `containers/pi/`                    | Container-side Effect HTTP gateway, embedded Pi SDK adapter, and image definition.                                                    |
+| `src/workers/development-workflow/` | Development run, official PiHarness, Computer Workspace, model configuration, and implementation and verification checkpoints.        |
+| `containers/workspace/`             | Derived workspace image with official `computerd` and repository tool prerequisites.                                                  |
 | `src/features/development/`         | Shared development session and turn receipt schemas.                                                                                  |
 | `src/workers/composition.ts`        | Select and inject deployment and authorization Layers. Infrastructure conditions exist only at this boundary.                         |
 | `src/features/workflow/`            | Shared schemas, graph projection, database schema, and Kysely state/event persistence.                                                |

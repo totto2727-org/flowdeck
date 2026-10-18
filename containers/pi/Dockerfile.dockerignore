@@ -1,6 +1,0 @@
-# The containers/pi build context contains only the workflow image inputs.
-**
-!Dockerfile
-!Dockerfile.dockerignore
-!dist/
-!dist/**

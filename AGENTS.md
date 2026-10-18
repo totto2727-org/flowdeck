@@ -10,11 +10,11 @@ The application uses Effect 4, Effront, shadcn/ui, Cloudflare Workers, Durable O
 - `src/workers/frontend/features/`: Effront pages, ServerFns, dashboard, graph, and shadcn components.
 - `src/workers/control/`: Control entry and its HTTP routes, commands, and workflow-binding contract.
 - `src/workers/demo-workflow/`: Workflow entry, run Durable Object, and demo-only execution features.
-- `src/workers/development-workflow/`: development checkpoints, run Durable Object, and native Pi Container binding.
-- `src/workers/inference/`: private Gateway-only credential and fixed HTTPS compatibility adapter.
-- `containers/pi/`: private Effect HTTP gateway, directly embedded Pi SDK adapter, and workflow image.
+- `src/workers/development-workflow/`: development checkpoints, run Durable Object, official PiHarness, and Computer Workspace integration.
+- `containers/workspace/`: workspace image with the official `computerd` runtime.
 - `src/features/development/`: shared session and turn receipt schemas.
-- `src/workers/definitions.ts`: the single definition of Worker identities and contracts, shared by `.make()` implementations and static bindings.
+- `src/workers/definitions.ts`: lightweight Worker identities and contracts for `.make()` implementations and static bindings, with only a type re-export of `DevelopmentWorkflow` to keep infrastructure out of the frontend runtime graph.
+- `src/workers/development-workflow/index.ts`: the sole external `DevelopmentWorkflow` definition, with native Durable Object exports from `worker.ts` through official Alchemy support, not custom `props.exports`.
 - `src/workers/composition.ts`: final deployment and request dependency selection.
 - `src/workers/database.ts`: the shared D1 resource declaration.
 - `src/features/workflow/`: shared wire schemas, graph projection, and Kysely persistence.
@@ -32,7 +32,7 @@ Use `vp install --frozen-lockfile` to install the locked dependencies.
 Use `vp run dev` for the local Alchemy application, `vp run check` for format and typed lint, `vp run test` for tests, and `vp run ci` for the complete configured checks.
 Use the standard Alchemy Cloudflare credentials when required.
 Set `CLOUDFLARE_AI_GATEWAY_ID` to an explicit existing Gateway ID, not a default or automatically created Gateway.
-The HTTPS inference transport does not require native AI binding preview access.
+Pi inference runs in the run Durable Object through the official pi-ai Gateway provider, not a Container proxy or native AI binding.
 Stop on missing authentication or permissions instead of trying to bypass them.
 The local development server must bind to loopback.
 Do not deploy, change DNS, or change Access policies without operator authorization.
@@ -62,7 +62,8 @@ Keep the workflow entry point a thin router to a Durable Object stub.
 Store the selected implementation version and immutable graph reference when a run is created.
 Keep node definition identity separate from execution identity and retry attempt.
 Persist state and events atomically with revision checks, and acknowledge only after commit.
-Treat committed shared-DB state as canonical, not DO memory or pending promises.
+Treat committed shared-DB workflow state as canonical, not DO memory or pending promises.
+The official PiHarness owns durable conversation and operation state in its Durable Object storage.
 Make recovery explicit and workflow-owned.
 Never promise generic replay or exactly-once external side effects.
 Do not introduce a generic runner protocol, artifact store, or a custom general-purpose state-machine engine.
@@ -82,29 +83,40 @@ Local development does not modify Cloudflare resources.
 
 ## Pi development integration
 
-Keep the migration limited to regular `@earendil-works/pi-coding-agent` 1.3.0 embedded in the existing Node Container gateway.
-Do not add a Jcode executable, daemon, Container inference relay, Computer filesystem, Durable Object filesystem, or Pi Durable harness.
-Preserve private port 8080, the session/turn receipt lifecycle, one session and checkout per run, and explicit resume.
+Use the official `PiHarness` from `agents/harness/pi` with `@earendil-works/pi-durable` `Harness` in the run Durable Object.
+The harness owns durable conversation and operation execution; D1 owns workflow checkpoints and events.
+Use `@cloudflare/computer` Workspace with `ContainerBackend` and install `createPiTools` declarations and dispatch through the official pi-durable registry.
+Do not embed the Pi SDK, a custom HTTP runner, or an inference proxy in the Container.
+The Container runs official `computerd` and repository tools, not the agent loop.
+Preserve one session and checkout per run, with explicit workflow resume.
 Keep persisted workflow ID `jcode-development` and infrastructure resource name `JcodeSandbox` for compatibility.
 Use **Pi development** for the frontend label.
+New runs use runtime `pi-harness`; legacy direct-SDK histories remain inspectable but fail closed on execution.
+Use official `ROOT_SESSION = '1'`, scoped by the run Durable Object, not a global session ID.
 
-Use `FLOWDECK_PI_MODEL`, Container `PI_MODEL` and `PI_INFERENCE_URL`, and `FLOWDECK_PI_DOCKERFILE` for configuration.
-Route `http://flowdeck-inference/compat` through native `interceptOutboundHttp` and a static service binding to the private inference Worker.
-Keep account and Gateway IDs and `Config.Redacted('CLOUDFLARE_AI_GATEWAY_API_KEY')` in the inference Worker.
-Register that Gateway-only key as a native Worker `secret_text` binding, not an image or Container environment value.
-Use one fixed HTTPS compatibility request with no runtime fallback or additional server.
-Provider keys remain in Gateway stored BYOK, and Pi and the Container receive no inference credentials.
-The generic published sandbox remains agent-neutral, and only the workflow image adds Node.js and Pi.
-Keep `HOME=/home/sandbox` and checkout `/home/sandbox/workspace/project`.
+Keep the fixed model `custom-opencode-go/deepseek-v4.1-flash` in the Durable Object's official pi-ai provider configuration.
+Use `cloudflareAIGatewayAuth` and `withOpenCodeSessionHeader` rather than a custom transport.
+Keep `Config.Redacted('CLOUDFLARE_AI_GATEWAY_API_KEY')` as a native Worker `secret_text` binding, used only by the run Durable Object.
+Provider keys remain in Gateway stored BYOK.
+Do not pass inference credentials to Workspace tools, Container environment, images, build arguments, or task prompts.
 
-When changing this integration, read [sandbox setup and acceptance limits](docs/development-sandbox.md).
-When changing Container lifetime, read [workspace retention](docs/development-workflow-retention.md).
-Local Pi implementation and explicit-resume verification passed in one Container, session, and checkout with operator-provisioned genuine frozen dependencies.
-Do not describe this as unattended setup or count shim tests or no-cache CI as a normal cached CI pass.
-Normal cached target CI still fails with `spawn EINVAL`, as tracked in [provisioning and cached tasks #14](https://github.com/totto2727-org/flowdeck/issues/14).
-Use the [sandbox acceptance boundary](docs/development-sandbox.md#trust-and-acceptance-boundary) for the verified scope.
-Track [credential isolation #10](https://github.com/totto2727-org/flowdeck/issues/10), [workspace-loss recovery #11](https://github.com/totto2727-org/flowdeck/issues/11), and [local Alchemy startup #12](https://github.com/totto2727-org/flowdeck/issues/12) separately from this migration.
-Track native AI binding validation separately in [Issue #13](https://github.com/totto2727-org/flowdeck/issues/13).
+Use `containers/workspace/Dockerfile`, with `ARG WORKSPACE_IMAGE` defaulting to `ghcr.io/totto2727-org/monorepo/sandbox-dev:latest` and official `computerd` 0.5.1 copied into the derived image.
+Set optional `FLOWDECK_WORKSPACE_IMAGE` only to a prepared official-computerd-compatible image at resource composition.
+Otherwise build the workspace Dockerfile, with `FLOWDECK_PI_DOCKERFILE` available as a Dockerfile override.
+`FLOWDECK_WORKSPACE_IMAGE` is not the Dockerfile's `WORKSPACE_IMAGE` base argument.
+An alternate base must satisfy the Dockerfile runtime, apt, and FUSE prerequisites; this is not support for any untouched image through one call.
+Keep workflow-specific Node.js 24 and Corepack provisioning in the derived image, not the generic sandbox.
+Do not claim that the image supplies global Vite+; the target project's frozen pnpm dependencies supply local `vp`.
+Use `HOME=/home/sandbox` and checkout `/workspace/project` through Computer Workspace.
+Keep the generic image unchanged in this task; its lightweight tool inventory is deferred to [monorepo #384](https://github.com/totto2727-org/monorepo/issues/384).
+
+Read [sandbox setup and acceptance limits](docs/development-sandbox.md) before changing this integration and [workspace retention](docs/development-workflow-retention.md) before changing lifetime behavior.
+Use official Lifecycle jobs to renew the six-hour native inactivity timeout every five hours without advancing workflow nodes or restarting stopped Containers.
+The latest PiHarness implementation is **pending acceptance validation**.
+Do not transfer direct-SDK acceptance results, shim checks, or image build results into a claim of current end-to-end success.
+The coordinating root session will supply final acceptance results.
+Track [credential isolation #10](https://github.com/totto2727-org/flowdeck/issues/10), [workspace-loss recovery #11](https://github.com/totto2727-org/flowdeck/issues/11), [local Alchemy startup #12](https://github.com/totto2727-org/flowdeck/issues/12), [native AI binding validation #13](https://github.com/totto2727-org/flowdeck/issues/13), and [dependency provisioning and cached tasks #14](https://github.com/totto2727-org/flowdeck/issues/14) as concerns requiring assessment under this architecture, not as evidence of its acceptance.
+Native AI binding validation is separate from the current pi-ai HTTPS Gateway provider.
 Keep the frontend build concern separate as well.
 
 ## Validation and artifacts

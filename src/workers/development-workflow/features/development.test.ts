@@ -70,7 +70,7 @@ beforeEach(async () => {
   receipts = {}
   submissions = []
   completeCalls = []
-  session = { sessionId: 'sdk-session-1', model: 'test-model', status: 'active' }
+  session = { sessionId: '1', model: 'test-model', status: 'active' }
   sandbox = {
     ensureSession: () => Effect.sync(() => session),
     getTurn: (_runId, commandId) => Effect.sync(() => receipts[commandId] ?? null),
@@ -153,7 +153,7 @@ describe('development workflow with canonical D1 checkpoints', () => {
         workflowId: 'jcode-development',
         workflowVersion: 'v1',
         status: 'waiting',
-        snapshot: { repository: input.repository, task: input.task },
+        snapshot: { runtime: 'pi-harness', sessionId: '1', repository: input.repository, task: input.task },
       })
       const resumed = await handler.handler(
         new Request(`http://localhost/api/runs/${detail.run.runId}/resume`, { method: 'POST' }),
@@ -167,59 +167,62 @@ describe('development workflow with canonical D1 checkpoints', () => {
   })
   it('persists repository, task, pinned version and immutable graph before starting', async () => {
     expect(await current()).toEqual(initialRun)
-    expect(initialRun.snapshot).toMatchObject({ runtime: 'pi' })
+    expect(initialRun.snapshot).toMatchObject({ runtime: 'pi-harness' })
     expect(await Effect.runPromise(store.getGraph(initialRun.graphId))).toEqual(developmentGraph)
   })
-  it.each([
-    ['Ready', 'pending'],
-    ['Starting', 'running'],
-    ['PendingTurn', 'running'],
-    ['AwaitingTurn', 'waiting'],
-    ['Completing', 'running'],
-    ['Completed', 'completed'],
-    ['Failed', 'failed'],
-  ] as const)('retains a legacy %s checkpoint but rejects execution before accessing Pi', async (_tag, status) => {
-    const snapshot = Schema.decodeUnknownSync(DevelopmentSnapshot)({
-      _tag,
-      schemaVersion: 1,
-      version: 'v1',
-      repository: input.repository,
-      task: input.task,
-      commandId: 'development-1:implement:1',
-      sessionId: 'legacy-jcode-session',
-      nodeId: 'implement',
-      result: 'legacy result',
-      message: 'legacy failure',
+  describe.each([undefined, 'pi'] as const)('legacy runtime %s', (runtime) => {
+    it.each([
+      ['Ready', 'pending'],
+      ['Starting', 'running'],
+      ['PendingTurn', 'running'],
+      ['AwaitingTurn', 'waiting'],
+      ['Completing', 'running'],
+      ['Completed', 'completed'],
+      ['Failed', 'failed'],
+    ] as const)('retains a legacy %s checkpoint but rejects execution before accessing Pi', async (_tag, status) => {
+      const snapshot = Schema.decodeUnknownSync(DevelopmentSnapshot)({
+        _tag,
+        runtime,
+        schemaVersion: 1,
+        version: 'v1',
+        repository: input.repository,
+        task: input.task,
+        commandId: 'development-1:implement:1',
+        sessionId: 'legacy-jcode-session',
+        nodeId: 'implement',
+        result: 'legacy result',
+        message: 'legacy failure',
+      })
+      await Effect.runPromise(
+        store.commit({
+          commitId: 'legacy-checkpoint',
+          runId: initialRun.runId,
+          expectedRevision: 0,
+          status,
+          snapshot,
+          updatedAt: timestamp,
+          events: [],
+        }),
+      )
+      const before = await current()
+      expect(await Effect.runPromise(restoreDevelopment(before))).toMatchObject({ _tag })
+      sandbox = {
+        ensureSession: () => Effect.die('Legacy run must not access Pi'),
+        submitTurn: () => Effect.die('Legacy run must not submit a Pi turn'),
+        getTurn: () => Effect.die('Legacy run must not read Pi receipts'),
+        complete: () => Effect.die('Legacy run must not complete Pi'),
+      }
+      await expect(start()).rejects.toMatchObject({
+        _tag: 'InvalidOperation',
+        message: expect.stringContaining('Legacy Jcode'),
+      })
+      await expect(resume()).rejects.toMatchObject({
+        _tag: 'InvalidOperation',
+        message: expect.stringContaining('Legacy Jcode'),
+      })
+      expect(await current()).toEqual(before)
+      expect(await Effect.runPromise(store.getEvents(initialRun.runId))).toEqual([])
     })
-    await Effect.runPromise(
-      store.commit({
-        commitId: 'legacy-checkpoint',
-        runId: initialRun.runId,
-        expectedRevision: 0,
-        status,
-        snapshot,
-        updatedAt: timestamp,
-        events: [],
-      }),
-    )
-    const before = await current()
-    expect(await Effect.runPromise(restoreDevelopment(before))).toMatchObject({ _tag })
-    sandbox = {
-      ensureSession: () => Effect.die('Legacy run must not access Pi'),
-      submitTurn: () => Effect.die('Legacy run must not submit a Pi turn'),
-      getTurn: () => Effect.die('Legacy run must not read Pi receipts'),
-      complete: () => Effect.die('Legacy run must not complete Pi'),
-    }
-    await expect(start()).rejects.toMatchObject({
-      _tag: 'InvalidOperation',
-      message: expect.stringContaining('Legacy Jcode'),
-    })
-    await expect(resume()).rejects.toMatchObject({
-      _tag: 'InvalidOperation',
-      message: expect.stringContaining('Legacy Jcode'),
-    })
-    expect(await current()).toEqual(before)
-    expect(await Effect.runPromise(store.getEvents(initialRun.runId))).toEqual([])
   })
   it('commits command identity before accepting a long-running implementation turn', async () => {
     await start()
@@ -227,8 +230,9 @@ describe('development workflow with canonical D1 checkpoints', () => {
       status: 'waiting',
       snapshot: {
         _tag: 'AwaitingTurn',
+        runtime: 'pi-harness',
         commandId: 'development-1:implement:1',
-        sessionId: 'sdk-session-1',
+        sessionId: '1',
         repository: input.repository,
         task: input.task,
       },
@@ -238,7 +242,7 @@ describe('development workflow with canonical D1 checkpoints', () => {
         runId: 'development-1',
         input: {
           commandId: 'development-1:implement:1',
-          prompt: expect.stringContaining('/home/sandbox/workspace/project'),
+          prompt: expect.stringContaining('/workspace/project'),
         },
       },
     ])
@@ -250,7 +254,7 @@ describe('development workflow with canonical D1 checkpoints', () => {
     expect(submissions[0]?.input.prompt).toContain(input.task)
     expect(submissions[0]?.input.prompt).toContain('Pi')
     expect(submissions[0]?.input.prompt).not.toContain('devShell')
-    expect(submissions[0]?.input.prompt).not.toContain('into /workspace/project')
+    expect(submissions[0]?.input.prompt).not.toContain('/home/sandbox/')
     expect(Array.map(await Effect.runPromise(store.getEvents(initialRun.runId)), (event) => event.type)).toEqual([
       'run.started',
       'node.started',
@@ -283,7 +287,7 @@ describe('development workflow with canonical D1 checkpoints', () => {
         _tag: 'AwaitingTurn',
         nodeId: 'verify',
         commandId: 'development-1:verify:1',
-        sessionId: 'sdk-session-1',
+        sessionId: '1',
       },
     })
     expect(submissions).toHaveLength(2)
@@ -291,14 +295,14 @@ describe('development workflow with canonical D1 checkpoints', () => {
       runId: initialRun.runId,
       input: {
         commandId: 'development-1:verify:1',
-        prompt: expect.stringContaining('same /home/sandbox/workspace/project'),
+        prompt: expect.stringContaining('same /workspace/project'),
       },
     })
     expect(submissions[1]?.input.prompt).toContain(
       'Use the development tools available in the Node container and follow the target repository instructions.',
     )
     expect(submissions[1]?.input.prompt).not.toContain('same /sandbox/')
-    expect(submissions[1]?.input.prompt).not.toContain('same /workspace/project')
+    expect(submissions[1]?.input.prompt).not.toContain('/home/sandbox/')
     expect(submissions[1]?.input.prompt).toContain('Pi')
     expect(submissions[1]?.input.prompt).not.toContain('devShell')
     expect(completeCalls).toEqual([])
@@ -311,7 +315,7 @@ describe('development workflow with canonical D1 checkpoints', () => {
     await resume()
     expect(await current()).toMatchObject({
       status: 'completed',
-      snapshot: { _tag: 'Completed', sessionId: 'sdk-session-1', result: 'verify result' },
+      snapshot: { _tag: 'Completed', runtime: 'pi-harness', sessionId: '1', result: 'verify result' },
     })
     expect(completeCalls).toEqual([initialRun.runId])
     expect(Array.map(await Effect.runPromise(store.getEvents(initialRun.runId)), (event) => event.type)).toEqual([
@@ -423,7 +427,7 @@ describe('development workflow with canonical D1 checkpoints', () => {
     await expect(execute(resumeDevelopmentRun(initialRun.runId), failing)).rejects.toMatchObject({ _tag: 'StoreError' })
     expect(await current()).toMatchObject({
       status: 'running',
-      snapshot: { _tag: 'Completing', sessionId: 'sdk-session-1' },
+      snapshot: { _tag: 'Completing', sessionId: '1' },
     })
     expect(session.status).toBe('completed')
     await resume()

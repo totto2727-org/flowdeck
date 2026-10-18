@@ -33,15 +33,13 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    include: ['src/**/*.test.ts', 'tests/**/*.test.ts', 'containers/pi/**/*.test.ts'],
+    include: ['src/**/*.test.ts', 'tests/**/*.test.ts'],
     testTimeout: 30_000,
   },
   run: {
     tasks: {
-      'build:container': 'vp build --config containers/pi/vite.config.ts',
       dev: {
         command: 'alchemy dev --config alchemy.run.ts --no-input',
-        dependsOn: ['build:container'],
         cache: false,
       },
       check: 'vp check',
@@ -49,7 +47,6 @@ export default defineConfig({
       test: 'vp test run',
       e2e: {
         command: 'playwright test --config tests/e2e/playwright.config.ts',
-        dependsOn: ['build:container'],
       },
       ci: { command: '', dependsOn: ['check', 'test'] },
     },
