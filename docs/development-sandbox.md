@@ -1,40 +1,42 @@
-# Jcode development sandbox
+# Pi development sandbox
 
-This integration serves a trusted operator who wants to run an implementation task and its checks in one sandbox.
-It is a local development experiment, not a production or multitenant execution service.
+This guide serves trusted operators and maintainers who run implementation and verification tasks in one sandbox.
+The Pi migration is in progress.
+Real Pi coding acceptance is pending.
+This is a local experiment, not a production or multitenant execution service.
 
 ## Components
 
-- The monorepo `sandbox-dev` image provides the generic Nix sandbox, not Jcode or repository-specific development tools.
-- `containers/jcode/` installs official Jcode, copies its own Node.js runtime, and adds an Effect HTTP gateway that uses the official `@1jehuang/jcode-sdk` package.
-- The target repository's `devShell` supplies its development tools.
-- `src/workers/development-workflow/` owns the versioned `jcode-development` workflow, its run Durable Object, and its native Alchemy Container binding.
-- Control reaches this Worker through a static service binding.
-  Neither this Worker nor its gateway has a public URL.
-- The frontend offers a public GitHub repository URL and a task prompt.
-  Both implementation and verification use `/home/sandbox/workspace/project`.
+- The published `ghcr.io/totto2727-org/monorepo/sandbox-dev:latest` image supplies the generic Nix sandbox.
+- The workflow image in `containers/pi/` adds Node.js and `@earendil-works/pi-coding-agent` 1.3.0.
+- The Node process embeds the regular Pi SDK directly and serves the private Effect HTTP gateway on Container port 8080.
+- `src/features/development/` defines the shared session and turn receipt schemas.
+- `src/workers/development-workflow/` owns checkpoints, the run Durable Object, and the native Alchemy Container binding.
+- `src/workers/inference/` owns the Gateway-only credential and fixed HTTPS compatibility adapter.
+- Control reaches the workflow Worker through a static service binding.
 
-All Workers, the shared D1 database, and the Container belong to the same Alchemy project.
-The Effront runtime evaluates its frontend-only entry instead of evaluating other Workers and their Container providers.
+There is no Jcode executable, daemon, or Container-side inference relay.
+There is no Cloudflare Computer filesystem, Durable Object filesystem, or Pi Durable harness.
+Pi tools use the Container's normal filesystem and shell.
+The persisted workflow ID `jcode-development` and infrastructure resource name `JcodeSandbox` remain unchanged for compatibility.
+The frontend label is **Pi development**.
 
 ## Local setup
 
 Use the Node.js version pinned by Vite+, and start Docker before starting Flowdeck.
-The generic sandbox does not preinstall Jcode, Node.js, pnpm, or Vite+.
-Use the target repository's `devShell` for development tools, including its required JavaScript toolchain.
-The derived gateway image installs Jcode with the official installer and copies its own Node.js runtime for the gateway.
-It also installs the `libstdc++6` runtime library required by that Node.js binary.
-The `JCODE_VERSION` build argument selects the Jcode release and defaults to `0.98.1`.
-The installer runs as `sandbox` with telemetry and server reload disabled.
-The gateway Dockerfile accepts `SANDBOX_BASE` when building an image directly.
-Its normal default is `ghcr.io/totto2727-org/monorepo/sandbox-dev:latest`.
-Use a base image with the `/home/sandbox` HOME contract.
-The derived image does not provide a `/sandbox` alias or migrate older workspaces.
+The HTTPS inference transport does not require native AI binding preview access.
+Use the standard Alchemy Cloudflare credentials when required.
+Stop if authentication or permissions are missing and ask the operator to provide access.
+Do not attempt to bypass these prerequisites.
+The generic sandbox does not preinstall Node.js, Pi, pnpm, or Vite+.
+Only the workflow image adds its Node.js runtime and Pi dependency.
+Use the target repository's `devShell` for its development tools.
 
-The gateway and Jcode run as `sandbox` with `HOME=/home/sandbox`.
-The launcher is `/home/sandbox/.local/bin/jcode`, and its configuration is `/home/sandbox/.jcode/config.toml`.
-Gateway receipts and relay identity are stored under `/home/sandbox/.flowdeck`.
-The SDK starts in `/home/sandbox/workspace` and clones the target into `/home/sandbox/workspace/project`.
+The workflow image derives from the published generic sandbox image.
+Its Dockerfile accepts `SANDBOX_BASE` for a direct image build.
+Use a base with `HOME=/home/sandbox`.
+The gateway and tools run as `sandbox` and share `/home/sandbox/workspace/project`.
+Gateway receipts and session data stay under `/home/sandbox/.flowdeck`.
 
 ```bash
 vp env install
@@ -43,150 +45,103 @@ vp run dev
 ```
 
 The `dev` task builds the gateway bundle before Alchemy builds its Container image.
-Both the image build context and Alchemy's file watcher are limited to `containers/jcode/`.
-Watching the repository root would include Alchemy's own changing state and repeatedly restart an active sandbox.
-It starts the frontend on loopback port 4380 and the private development Worker on loopback port 4383.
-Use the frontend to select **Jcode development**, enter a public GitHub repository and a task, and start a run.
-Use explicit resume to read the accepted turn receipt and advance to verification or completion.
-A waiting run does not start a second agent session.
+Keep the image build context and file watcher limited to `containers/pi/` to avoid restarts caused by Alchemy's changing state.
+The frontend uses loopback port 4380 and the private development Worker uses loopback port 4383.
+Select **Pi development**, enter a public GitHub repository and a task, then start a run.
+Explicit resume reads the accepted turn receipt and advances to verification or completion.
+A waiting run does not start a second Pi session.
 
-## Gateway model and runtime credentials
+## Model and inference transport
 
-`FLOWDECK_JCODE_MODEL` selects the model, with `custom-opencode-go/deepseek-v4.1-flash` as the current default.
-Requests use the configured Cloudflare AI Gateway, not a direct OpenCode provider key or a free-model route.
-A missing or inaccessible model must fail instead of selecting another model.
+`FLOWDECK_PI_MODEL` selects the same model for the private inference Worker and the Container's `PI_MODEL`.
+The default is `custom-opencode-go/deepseek-v4.1-flash` through Cloudflare AI Gateway.
+`FLOWDECK_PI_DOCKERFILE` selects an alternate Dockerfile at infrastructure composition.
+Neither setting changes workflow transitions or authorization.
 
-The Gateway compatibility endpoint is `https://gateway.ai.cloudflare.com/v1/<account-id>/<gateway-id>/compat/chat/completions`.
-This OpenCode Go route requires both `cf-aig-authorization: Bearer <gateway-key>` and an `x-opencode-session` header.
-The SDK adapter preserves this contract through an Effect HTTP relay at `127.0.0.1:8081/v1/chat/completions`.
-Jcode 0.98.1 cannot send the required custom headers directly to this Gateway host.
-Its generated provider profile targets `http://127.0.0.1:8081/v1` and contains no Gateway credential.
-The relay accepts only `POST /v1/chat/completions` and the exact configured model.
-It sends requests to the fixed HTTPS Gateway endpoint and adds the authorization header and a persisted UUID `x-opencode-session` value.
-Incoming URLs and headers cannot select another upstream, replace the credential, or change the model.
-The workflow gateway on private Container port 8080 does not expose the inference route.
-There is no automatic model or provider fallback.
+The Container receives `PI_MODEL` and `PI_INFERENCE_URL=http://flowdeck-inference/compat`, not inference credentials.
+Pi sends OpenAI-compatible requests to that endpoint.
+Native `interceptOutboundHttp('flowdeck-inference', serviceBinding)` routes them to the private inference Worker.
+That Worker sends a single HTTPS request to the fixed Gateway endpoint:
 
-For an approved live model experiment, inject the configured services with nested positional `pass-cli exec` commands:
+```text
+https://gateway.ai.cloudflare.com/v1/<account-id>/<gateway-id>/compat/chat/completions
+```
+
+The Worker adds `cf-aig-authorization: Bearer <gateway-key>` from its own secret binding.
+Provider credentials remain in Gateway stored BYOK.
+The adapter fixes the endpoint and configured model.
+It forwards only a validated UUID `x-opencode-session` value and discards caller authorization headers.
+There is no runtime transport fallback, provider fallback, Container relay, or additional server.
+A missing or inaccessible model must fail.
+Do not add dummy provider authorization headers or mount a host login directory.
+
+Set `CLOUDFLARE_ACCOUNT_ID` and an explicit existing `CLOUDFLARE_AI_GATEWAY_ID` with stored BYOK configuration.
+Flowdeck does not select or create a default Gateway.
+For an approved live task, provide the Gateway-only credential to Alchemy:
 
 ```bash
 pass-cli exec cloudflare/account-id -- pass-cli exec cloudflare/ai-gateway-id -- pass-cli exec cloudflare/ai-gateway-api-key -- vp run dev
 ```
 
-Use the positional service names exactly as shown.
-The hierarchical `--set` and `--from` forms are not supported by the inspected `pass-cli` version.
-The nested command has successfully supplied the required runtime configuration.
+Only the inference Worker reads `Config.Redacted('CLOUDFLARE_AI_GATEWAY_API_KEY')` and registers it as a native Worker `secret_text` binding.
+The key is not passed to Pi, the Container environment, images, or build arguments.
+Do not put credentials in Git, logs, or task prompts.
+This design has an application credential in the Worker, not a credential-free application.
+Native AI binding validation for this custom model and stored BYOK is tracked separately in [Issue #13](https://github.com/totto2727-org/flowdeck/issues/13).
 
-| Runtime variable                | Purpose                                          |
-| ------------------------------- | ------------------------------------------------ |
-| `CLOUDFLARE_ACCOUNT_ID`         | Account that owns the configured Gateway.        |
-| `CLOUDFLARE_AI_GATEWAY_ID`      | Existing Gateway identifier.                     |
-| `CLOUDFLARE_AI_GATEWAY_API_KEY` | Token authorized for the selected Gateway route. |
+## Session, receipts, and workspace lifetime
 
-Alchemy reads these values through Init-phase `Config.String` and `Config.Redacted` effects.
-These reads register native Worker `secret_text` bindings.
-The Worker resolves the bindings and passes the values to `Container.env` at runtime.
-The local binding path has been checked, but no production secret registration or deployment has been performed.
-Do not put credential values in Git, image layers, Docker build arguments, logs, or task prompts.
-No host login directory is mounted or imported.
+Each run owns one Durable Object, one native Container, and one Pi session.
+Implementation and verification reuse that session and checkout.
+The session belongs to the gateway process, not an individual HTTP request.
+The private HTTP contract retains `/health`, `/session`, `/turns`, `/turns/:commandId`, and `/complete`.
 
-`FLOWDECK_JCODE_DOCKERFILE` can select an alternate Dockerfile at the infrastructure composition boundary for a local image experiment.
-It does not change workflow transitions or authorization.
+The shared database stores workflow identity, graph, checkpoints, and ordered events.
+The workflow commits command identity before submission.
 
-## Session and workspace lifetime
+The gateway persists a receipt before starting a turn and returns while it runs.
+An exact retry returns the existing receipt.
+Conflicting command content, concurrent work, and work on a completed session are rejected.
+A running receipt becomes interrupted after a gateway restart and is not automatically resubmitted.
+These safeguards do not guarantee exactly-once external effects.
 
-Each run has one Durable Object, one native Container instance, and one SDK session.
-The implementation and verification nodes reuse that session and the same project checkout.
-The SDK client belongs to the gateway process, not an individual HTTP request.
-Completing a gateway session does not delete its files.
-
-Native Cloudflare Containers can stop when their Durable Object becomes inactive, even if an agent is still running inside the Container.
-A retention alarm refreshes the native six-hour inactivity timeout every five hours until the work is complete.
-Failed work remains available for inspection rather than being treated as completed work.
-Retaining a live Container can incur charges in a deployed environment.
-See [workspace retention](development-workflow-retention.md) for alarm behavior, failure retention, operator cleanup, and the test boundary.
-
+A retention alarm refreshes the native six-hour inactivity timeout every five hours until completion.
+Failed work remains available for inspection and can continue to incur charges.
+See [workspace retention](development-workflow-retention.md) for alarm behavior and operator cleanup.
 Retention is not durable filesystem storage.
-A platform failure, local runtime shutdown, or runtime replacement can still stop a Container and lose its writable filesystem.
-A persisted start-attempt marker prevents automatic replacement after such a stop.
-Recovery then fails visibly instead of silently cloning a new workspace or repeating an accepted command.
-This experiment does not implement filesystem snapshots, artifact transfer, or automatic disaster recovery.
+A platform failure, runtime shutdown, or replacement can lose the writable checkout and Pi session files.
+The persisted startup marker prevents automatic Container replacement.
+Filesystem snapshots and automatic recovery are outside this migration.
+Track additional recovery requirements in [workspace-loss recovery #11](https://github.com/totto2727-org/flowdeck/issues/11) instead of adding another filesystem layer here.
 
-## Checkpoints and acknowledgments
+## Trust and acceptance boundary
 
-The shared database holds workflow identity, graph, checkpoint state, and ordered events.
-The workflow commits a command identity before submitting work.
-The gateway persists a command receipt before calling the SDK and returns promptly, while the accepted turn runs in the gateway's process scope.
-An exact command retry returns its existing receipt.
-A reused command ID with different content, concurrent work, or a completed session is rejected.
-
-On restart, a previously running receipt becomes interrupted.
-It is not automatically submitted again, because the original daemon or external effect may have continued after a connection failure.
-An SDK stream ending without `turn_done` is not accepted as successful completion.
-These safeguards do not promise exactly-once external side effects.
-
-## Security boundary
-
-Only the Access-authorized frontend can invoke the private Control path in a deployed application.
-The gateway accepts bounded, schema-validated requests over its private Container port.
-Its image build context excludes host configuration, credentials, Git metadata, and unrelated workspace files.
+The Access-authorized frontend invokes the private Control path in a deployed application.
+The gateway validates bounded requests, and its build context excludes host configuration and credentials.
 Provider diagnostics are not returned as HTTP error bodies.
 
-Repository code, Jcode, and the gateway process run as the same sandbox user.
-Only the gateway process needs the Gateway token for its outbound authorization header.
-The SDK launch overrides `CLOUDFLARE_AI_GATEWAY_API_KEY` with an empty string for Jcode and its tool children.
-This prevents ordinary inheritance of that token value, not all access from processes with the same user identity.
-The loopback relay does not authenticate its local caller.
-Same-user process access, including process metadata access where permitted, is not an isolation guarantee.
-Do not treat this arrangement as a security boundary against hostile repository code or malicious tasks.
-Do not use this experiment for mutually untrusted tenants or sensitive host data.
-Model-generated output is untrusted content and is not guaranteed to be free of secrets.
-No Cloudflare deployment, DNS update, image publication, or Access policy change is performed by local startup.
+Pi, repository code, and the gateway run as the same user.
+The inference Worker holds the Gateway-only key and keeps inference credentials out of Pi and the Container.
+Provider credentials remain in Gateway stored BYOK.
+This boundary is implemented but has not passed live acceptance ([credential isolation #10](https://github.com/totto2727-org/flowdeck/issues/10)).
+Pi tools can still request inference and incur unauthorized charges.
+This is not an isolation boundary for untrusted tenants or sensitive host data.
+Model output remains untrusted and can contain secrets.
 
-## Verification status
-
-The actual-run results below used the earlier `/sandbox` image with preinstalled development tools.
-They do not validate the current `/home/sandbox` image or the target repository's `devShell` setup.
-
-The ARM64 sandbox base has run Jcode's API bridge under both Docker and Apple Container.
-The bundled SDK gateway has started a real private Jcode bridge and answered its health endpoint under Docker without importing host credentials.
-Earlier isolated SDK bridge checks failed closed without an approved provider credential and did not submit a model turn.
-The local Alchemy stack has built an ARM64-only experiment image and started a real Container from the development run Durable Object.
-A direct request to `custom-opencode-go/deepseek-v4.1-flash` through the Gateway returned HTTP 200 and the expected answer `5`.
-This direct probe verified Gateway inference and its authentication path before the SDK experiment.
-A subsequent local SDK-driven task against `totto2727-org/template-vite-plus-lib` completed both implementation and explicit-resume verification with the requested model.
-Run `543af008-2599-42a1-8e8c-92631d9e30d6` reached `completed` with ten committed events.
-Both turns used SDK session `session_retriever_1792257461408_1213c0683a874745` and Container `f2c69360700d`.
-The Container ID, start time, and image were unchanged before and after verification.
-Only `src/greet.ts` and `src/greet.test.ts` changed in the target checkout.
-The lockfile, release-age policy, and `package.json` remained unchanged.
-An independent operator check in the same Container passed `vp run --no-cache ci`, including check, five tests, build, and pack dry-run.
-Five assertions against the built public export also passed.
-These are local target-project results, not evidence of a production deployment or a successful Flowdeck frontend build.
-The maintained browser suite covers the development inputs on desktop and mobile without submitting a task, plus v1/v2 demo execution, checkpoint reload, and explicit resume.
-The unit and real D1 tests cover development checkpoint ordering, duplicate submission prevention, session identity, and the six-hour lease with five-hour renewals.
-Scoped SDK and relay tests cover the fixed upstream, mandatory headers, stable transport identity, exact-model rejection, and removal of the token from Jcode's launch environment.
-These scoped tests complement the live repository task but do not establish generic recovery or exactly-once external execution.
-
-The registry's IPv6 path failed during dependency installation in this experiment.
-The model created a temporary IPv4-only CONNECT proxy at `127.0.0.1:8899` in sandbox scratch space, after which installation succeeded without changing repository networking configuration.
-This proxy is an experiment-specific workaround, not a maintained source feature or an automatic Flowdeck networking guarantee.
-Future runs must validate registry connectivity independently.
-Flowdeck's frontend `vp build` issue remains unresolved and is separate from the target project's successful build.
-The generic sandbox base and dev images have passed native Linux ARM64 and AMD64 publication builds, and both architectures are present in their GHCR `latest` manifests.
-The derived workflow image builds from the published dev image on ARM64 and starts Node 24.19.0, Jcode 0.98.1, and Nix 2.35.3 with writable HOME and workspace under `/home/sandbox`.
-With networking disabled and dummy Gateway credentials, its HTTP server also creates a real official-SDK session, returns the same session on retry, and completes that session without submitting an inference turn.
-The official installer requires the `v0.98.1` release tag and updates shell startup files, so this derived image preserves Home Manager startup-file contents in writable copies before installation.
-This image check does not repeat the historical model-driven coding task or establish an AMD64 derived-image build.
-No production Cloudflare execution has been tested.
+Real Pi implementation and explicit-resume verification in the current image remain unverified.
+Acceptance must show the requested model, unchanged Container and session identities, the same checkout, and passing target-repository checks.
+SDK tests, a health response, or a direct inference probe alone do not establish that acceptance.
+The workflow image has passed ARM64 Docker packaging, public Pi import, and the canonical AMD64 Alchemy image build.
+A secret-free HTTP session has also reached completion without a model call.
+These image and session checks do not validate the current HTTPS inference route.
+Real Pi streaming and production Cloudflare execution remain unverified.
+Track [local Alchemy startup #12](https://github.com/totto2727-org/flowdeck/issues/12) and the separate frontend build concern outside this migration.
+Local startup does not deploy Cloudflare resources, change DNS or Access, or publish an image.
 
 ## Sources
 
-- [Official Jcode installer](https://jcode.sh/install)
-- [Official Jcode TypeScript SDK](https://github.com/1jehuang/jcode/tree/master/sdk/typescript)
-- [Jcode 0.98.1 named-provider request handling](https://github.com/1jehuang/jcode/blob/1c7426eb1/crates/jcode-provider-openrouter-runtime/src/lib.rs#L1321-L1369)
-- [Jcode 0.98.1 OpenCode session headers](https://github.com/1jehuang/jcode/blob/1c7426eb1/crates/jcode-provider-openrouter-runtime/src/request_headers.rs#L47-L78)
+- [Pi coding agent SDK](https://github.com/earendil-works/pi/tree/main/packages/coding-agent)
 - [Cloudflare AI Gateway REST requests](https://developers.cloudflare.com/ai-gateway/usage/rest-api/)
-- [Cloudflare AI Gateway custom providers](https://developers.cloudflare.com/ai-gateway/configuration/custom-providers/)
-- [Cloudflare native Container inactivity timeout](https://developers.cloudflare.com/containers/api/durable-object-container/#setinactivitytimeout)
-- [Cloudflare sandbox lifetime](https://developers.cloudflare.com/sandbox/concepts/lifetime/)
+- [Cloudflare AI Gateway OpenAI provider](https://developers.cloudflare.com/ai-gateway/usage/providers/openai/)
+- [Cloudflare AI Gateway stored BYOK](https://developers.cloudflare.com/ai-gateway/configuration/bring-your-own-keys/)
+- [Cloudflare Container inactivity timeout](https://developers.cloudflare.com/containers/api/durable-object-container/#setinactivitytimeout)

@@ -11,6 +11,8 @@ minimumReleaseAgeStrict: true
 
 # Only the native build tools required by Cloudflare's local runtime are trusted.
 allowBuilds:
+  '@google/genai': false
+  protobufjs: false
   vite-plus: false
   esbuild: true
   workerd: true

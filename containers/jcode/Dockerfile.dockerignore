@@ -1,6 +1,0 @@
-# The containers/jcode build context contains only the gateway image inputs.
-**
-!Dockerfile
-!Dockerfile.dockerignore
-!dist/
-!dist/server.mjs

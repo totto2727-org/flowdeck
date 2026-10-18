@@ -1,10 +1,9 @@
-import { JcodeClient } from '@1jehuang/jcode-sdk'
 import { NodeServices } from '@effect/platform-node'
 import { Effect, FileSystem, Schema, String } from 'effect'
 import { HttpEffect } from 'effect/http'
 import { describe, expect, it, vi } from 'vite-plus/test'
 
-import { Gateway, GatewayError, launchSdk } from './sdk'
+import { Gateway, GatewayError } from './sdk'
 import { application } from './server'
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
@@ -106,38 +105,22 @@ describe('container HTTP contract', () => {
     )
   })
 
-  it('keeps the image HOME, launcher PATH and working directory under /home/sandbox', async () => {
+  it('keeps the Pi image on the published sandbox without installing a daemon', async () => {
     await Effect.runPromise(
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem
-        const dockerfile = yield* fs.readFileString('containers/jcode/Dockerfile')
+        const dockerfile = yield* fs.readFileString('containers/pi/Dockerfile')
         expect(String.split(dockerfile, '\n')).toEqual(
           expect.arrayContaining([
-            'ARG JCODE_VERSION=v0.98.1',
+            'ARG SANDBOX_BASE=ghcr.io/totto2727-org/monorepo/sandbox-dev:latest',
             'ENV HOME=/home/sandbox',
             'ENV PATH=/home/sandbox/.local/bin:/home/sandbox/.nix-profile/bin:/usr/local/bin:/usr/bin:/bin',
             'WORKDIR /home/sandbox/workspace',
           ]),
         )
-        expect(dockerfile).toContain('JCODE_VERSION="${JCODE_VERSION}" JCODE_SKIP_SERVER_RELOAD=1 JCODE_NO_TELEMETRY=1')
+        expect(dockerfile).not.toContain('jcode')
+        expect(dockerfile).not.toContain('computerd')
       }).pipe(Effect.provide(NodeServices.layer)),
     )
-  })
-
-  it('uses the image HOME for SDK binary, configuration and workspace without inherited logins', async () => {
-    const launch = vi.spyOn(JcodeClient, 'launch').mockRejectedValue(new Error('fixture: do not start a server'))
-    try {
-      await Effect.runPromise(Effect.scoped(launchSdk.pipe(Effect.result)))
-      expect(launch).toHaveBeenCalledExactlyOnceWith({
-        binary: '/home/sandbox/.local/bin/jcode',
-        jcodeHome: '/home/sandbox/.jcode',
-        workingDir: '/home/sandbox/workspace',
-        inheritLogins: false,
-        swarmModel: 'inherit',
-        env: { HOME: '/home/sandbox', CLOUDFLARE_AI_GATEWAY_API_KEY: '' },
-      })
-    } finally {
-      launch.mockRestore()
-    }
   })
 })

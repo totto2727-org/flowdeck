@@ -1,6 +1,6 @@
 import { Array, DateTime, Effect, Match, Schema } from 'effect'
 
-import type { TurnReceipt } from '../../../features/jcode/model'
+import type { TurnReceipt } from '../../../features/development/model'
 import { InvalidOperation, InvalidSnapshot, type DomainError } from '../../../features/workflow/domain/errors'
 import {
   DevelopmentTask,
@@ -12,11 +12,13 @@ import {
   type WorkflowSummary,
 } from '../../../features/workflow/domain/model'
 import { Store, type PendingEvent } from '../../../features/workflow/services/store'
-import { JcodeSandbox } from './sandbox'
+import { DevelopmentSandbox } from './sandbox'
 
 const base = {
   schemaVersion: Schema.Literal(1),
   version: Schema.Literal('v1'),
+  // Compatibility: legacy snapshots remain readable, but only explicitly Pi runs may execute.
+  runtime: Schema.optional(Schema.Literal('pi')),
   repository: PublicRepository,
   task: DevelopmentTask,
 }
@@ -37,11 +39,13 @@ export const DevelopmentSnapshot = Schema.Union([
 ])
 export type DevelopmentSnapshot = typeof DevelopmentSnapshot.Type
 export const developmentWorkflow: WorkflowSummary = {
+  // Compatibility: persisted workflow, version and graph identities must not be renamed.
   workflowId: 'jcode-development',
-  name: 'Jcode development',
+  name: 'Pi development',
   versions: ['v1'],
 }
 export const developmentGraph: GraphDefinition = {
+  // Compatibility: existing runs pin this immutable graph reference.
   graphId: 'jcode-development:v1:graph:1',
   schemaVersion: 1,
   nodes: [
@@ -56,6 +60,7 @@ export const initialDevelopmentSnapshot = (
   _tag: 'Ready',
   schemaVersion: 1,
   version: 'v1',
+  runtime: 'pi',
   repository: input.repository,
   task: input.task,
 })
@@ -71,6 +76,7 @@ const statusFor = (snapshot: DevelopmentSnapshot): RunStatus =>
 const fields = (snapshot: DevelopmentSnapshot) => ({
   schemaVersion: 1 as const,
   version: 'v1' as const,
+  runtime: snapshot.runtime,
   repository: snapshot.repository,
   task: snapshot.task,
 })
@@ -139,19 +145,19 @@ const fail = (run: Run, snapshot: DevelopmentSnapshot, nodeId: 'implement' | 've
   ]).pipe(Effect.asVoid)
 const prompt = (snapshot: Extract<DevelopmentSnapshot, { _tag: 'PendingTurn' }>) =>
   snapshot.nodeId === 'implement'
-    ? `Clone the public GitHub repository ${snapshot.repository} into /home/sandbox/workspace/project. Work only in this fixed project workspace. Use the target repository devShell for development tools. Implement the following task. Do not push or deploy.\n\n${snapshot.task}`
-    : 'Continue in the same /home/sandbox/workspace/project repository and SDK session. Use the target repository devShell for development tools. Run the project checks and tests, fix failures caused by the implementation, and report checks performed and remaining limitations. Do not push or deploy.'
+    ? `Use Pi to clone the public GitHub repository ${snapshot.repository} into /home/sandbox/workspace/project. Work only in this fixed project workspace. Use the development tools available in the Node container and follow the target repository instructions. Implement the following task. Do not push or deploy.\n\n${snapshot.task}`
+    : 'Continue with Pi in the same /home/sandbox/workspace/project repository and session. Use the development tools available in the Node container and follow the target repository instructions. Run the project checks and tests, fix failures caused by the implementation, and report checks performed and remaining limitations. Do not push or deploy.'
 
 const submitPending = (run: Run, snapshot: Extract<DevelopmentSnapshot, { _tag: 'PendingTurn' }>) =>
   Effect.gen(function* () {
-    const sandbox = yield* JcodeSandbox
+    const sandbox = yield* DevelopmentSandbox
     const session = yield* sandbox.ensureSession(run.runId)
     if (session.sessionId !== snapshot.sessionId || session.status !== 'active') {
       return yield* fail(
         run,
         snapshot,
         snapshot.nodeId,
-        'The original active SDK session is unavailable. Container retained for inspection.',
+        'The original active Pi session is unavailable. Container retained for inspection.',
       )
     }
     // A committed command is looked up before retrying. Only authoritative absence allows the exact same submission.
@@ -166,7 +172,7 @@ const submitPending = (run: Run, snapshot: Extract<DevelopmentSnapshot, { _tag: 
   })
 const start = (run: Run, snapshot: Extract<DevelopmentSnapshot, { _tag: 'Ready' | 'Starting' }>) =>
   Effect.gen(function* () {
-    const sandbox = yield* JcodeSandbox
+    const sandbox = yield* DevelopmentSandbox
     const starting =
       snapshot._tag === 'Ready'
         ? yield* save(run, { ...fields(snapshot), _tag: 'Starting', commandId: commandId(run.runId, 'implement') }, [
@@ -176,7 +182,7 @@ const start = (run: Run, snapshot: Extract<DevelopmentSnapshot, { _tag: 'Ready' 
         : run
     const session = yield* sandbox.ensureSession(run.runId)
     if (session.status !== 'active')
-      return yield* fail(starting, snapshot, 'implement', 'SDK session is already complete')
+      return yield* fail(starting, snapshot, 'implement', 'Pi session is already complete')
     const pending: Extract<DevelopmentSnapshot, { _tag: 'PendingTurn' }> = {
       ...fields(snapshot),
       _tag: 'PendingTurn',
@@ -189,14 +195,14 @@ const start = (run: Run, snapshot: Extract<DevelopmentSnapshot, { _tag: 'Ready' 
   })
 const complete = (run: Run, snapshot: Extract<DevelopmentSnapshot, { _tag: 'Completing' }>) =>
   Effect.gen(function* () {
-    const sandbox = yield* JcodeSandbox
+    const sandbox = yield* DevelopmentSandbox
     const original = yield* sandbox.ensureSession(run.runId)
     if (original.sessionId !== snapshot.sessionId)
-      return yield* fail(run, snapshot, 'verify', 'The original SDK session is unavailable for completion')
+      return yield* fail(run, snapshot, 'verify', 'The original Pi session is unavailable for completion')
     const session = yield* sandbox.complete(run.runId)
     if (session.sessionId !== snapshot.sessionId || session.status !== 'completed')
-      return yield* fail(run, snapshot, 'verify', 'Could not complete the original SDK session')
-    // Completion marks the SDK work complete, never destroys its container or workspace.
+      return yield* fail(run, snapshot, 'verify', 'Could not complete the original Pi session')
+    // Completion marks the Pi work complete, never destroys its container or workspace.
     yield* save(run, { ...snapshot, _tag: 'Completed' }, [
       nodeEvent(run.runId, 'verify', 'node.succeeded', { output: snapshot.result }),
       runEvent(run, 'run.completed'),
@@ -205,9 +211,9 @@ const complete = (run: Run, snapshot: Extract<DevelopmentSnapshot, { _tag: 'Comp
 const poll = (
   run: Run,
   snapshot: Extract<DevelopmentSnapshot, { _tag: 'AwaitingTurn' }>,
-): Effect.Effect<void, DomainError, Store | JcodeSandbox> =>
+): Effect.Effect<void, DomainError, Store | DevelopmentSandbox> =>
   Effect.gen(function* () {
-    const sandbox = yield* JcodeSandbox
+    const sandbox = yield* DevelopmentSandbox
     const receipt: TurnReceipt | null = yield* sandbox.getTurn(run.runId, snapshot.commandId)
     if (receipt === null)
       return yield* fail(
@@ -244,12 +250,20 @@ const poll = (
     const current = yield* save(run, completing, [runEvent(run, 'run.resumed')])
     yield* complete(current, completing)
   })
-/** The only recovery input is committed shared-DB state. No long SDK turn is awaited. */
-const drive = (runId: string, operation: 'start' | 'resume'): Effect.Effect<void, DomainError, Store | JcodeSandbox> =>
+/** The only recovery input is committed shared-DB state. No long Pi turn is awaited. */
+const drive = (
+  runId: string,
+  operation: 'start' | 'resume',
+): Effect.Effect<void, DomainError, Store | DevelopmentSandbox> =>
   Effect.gen(function* () {
     const store = yield* Store
     const run = yield* store.getRun(runId)
     const snapshot = yield* restoreDevelopment(run)
+    // Legacy Ready/Starting runs can also have accepted external work, so do not infer safety from their state.
+    if (snapshot.runtime !== 'pi')
+      return yield* new InvalidOperation({
+        message: 'Legacy Jcode runs cannot execute with Pi. Retain this run for inspection and create a new Pi run.',
+      })
     yield* Match.value(snapshot).pipe(
       Match.tag('Ready', 'Starting', (state) => start(run, state)),
       Match.tag('PendingTurn', (state) => submitPending(run, state)),

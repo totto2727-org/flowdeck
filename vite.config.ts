@@ -33,12 +33,12 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    include: ['src/**/*.test.ts', 'tests/**/*.test.ts', 'containers/jcode/**/*.test.ts'],
+    include: ['src/**/*.test.ts', 'tests/**/*.test.ts', 'containers/pi/**/*.test.ts'],
     testTimeout: 30_000,
   },
   run: {
     tasks: {
-      'build:container': 'vp build --config containers/jcode/vite.config.ts',
+      'build:container': 'vp build --config containers/pi/vite.config.ts',
       dev: {
         command: 'alchemy dev --config alchemy.run.ts --no-input',
         dependsOn: ['build:container'],

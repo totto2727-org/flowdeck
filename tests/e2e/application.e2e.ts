@@ -9,7 +9,7 @@ test('development task inputs are usable without starting an agent', async ({ pa
   await page.goto('/')
   await page
     .getByRole('navigation', { name: 'Registered workflows' })
-    .getByRole('button', { name: 'Jcode development' })
+    .getByRole('button', { name: 'Pi development' })
     .click()
   const repository = page.getByLabel('Public GitHub repository', { exact: true })
   const task = page.getByLabel('Development task', { exact: true })

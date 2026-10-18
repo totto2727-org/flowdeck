@@ -1,39 +1,40 @@
+import { fromCloudflareFetcher } from 'alchemy/Cloudflare'
 import { Container } from 'alchemy/Cloudflare/Containers'
-import { DurableObjectState } from 'alchemy/Cloudflare/Workers'
+import { DurableObjectState, WorkerEnvironment } from 'alchemy/Cloudflare/Workers'
 import { RuntimeContext } from 'alchemy/RuntimeContext'
-import { Config, Effect, Layer, Redacted, Semaphore } from 'effect'
+import { Config, Effect, Layer, Semaphore } from 'effect'
 import { HttpClientRequest, HttpClientResponse } from 'effect/http'
 
-import { Session, TurnReceipt } from '../../features/jcode/model'
+import { Session, TurnReceipt } from '../../features/development/model'
 import { BindingError } from '../../features/workflow/domain/errors'
-import { JcodeSandbox } from './features/sandbox'
+import { DevelopmentSandbox } from './features/sandbox'
 
 /** Image selection is infrastructure configuration, not a workflow branch. */
-export class JcodeContainer extends Container<JcodeContainer>()(
+export class DevelopmentContainer extends Container<DevelopmentContainer>()(
+  // Compatibility: preserve the deployed resource identity to avoid replacing existing containers.
   'JcodeSandbox',
   Effect.gen(function* () {
-    const dockerfile = yield* Config.String('FLOWDECK_JCODE_DOCKERFILE').pipe(
-      Config.withDefault('containers/jcode/Dockerfile'),
+    const dockerfile = yield* Config.String('FLOWDECK_PI_DOCKERFILE').pipe(
+      Config.withDefault('containers/pi/Dockerfile'),
     )
-    return { schedulingPolicy: 'durable_object' as const, context: 'containers/jcode', dockerfile }
+    return { schedulingPolicy: 'durable_object' as const, context: 'containers/pi', dockerfile }
   }),
 ) {}
 
 /** Register the native image during construction, then capture request runtime capabilities. */
-export const JcodeSandboxLive = Effect.gen(function* () {
-  const container = yield* JcodeContainer
-  const model = yield* Config.String('FLOWDECK_JCODE_MODEL').pipe(
+export const DevelopmentSandboxLive = Effect.gen(function* () {
+  const container = yield* DevelopmentContainer
+  const environment = yield* WorkerEnvironment
+  const model = yield* Config.String('FLOWDECK_PI_MODEL').pipe(
     Config.withDefault('custom-opencode-go/deepseek-v4.1-flash'),
   )
-  // Init-phase Config registers native Worker secret_text bindings, not image/build arguments.
-  const accountId = yield* Config.String('CLOUDFLARE_ACCOUNT_ID').pipe(Config.withDefault(''))
-  const gatewayId = yield* Config.String('CLOUDFLARE_AI_GATEWAY_ID').pipe(Config.withDefault(''))
-  const apiKey = yield* Config.Redacted('CLOUDFLARE_AI_GATEWAY_API_KEY').pipe(Config.withDefault(Redacted.make('')))
   return Layer.effect(
-    JcodeSandbox,
+    DevelopmentSandbox,
     Effect.gen(function* () {
       const runtime = yield* RuntimeContext
       const state = yield* DurableObjectState
+      // This is a trusted native service binding, not an HTTP URL or an RPC proxy.
+      const inference = fromCloudflareFetcher(environment['INFERENCE'])
       const lock = yield* Semaphore.make(1)
       const start = lock.withPermit(
         Effect.gen(function* () {
@@ -48,12 +49,12 @@ export const JcodeSandboxLive = Effect.gen(function* () {
             enableInternet: true,
             instance: 'standard-1',
             env: {
-              JCODE_MODEL: model,
-              CLOUDFLARE_ACCOUNT_ID: accountId,
-              CLOUDFLARE_AI_GATEWAY_ID: gatewayId,
-              CLOUDFLARE_AI_GATEWAY_API_KEY: Redacted.value(apiKey),
+              PI_MODEL: model,
+              PI_INFERENCE_URL: 'http://flowdeck-inference/compat',
             },
           })
+          // Native interceptors are not durable across starts. Restore this exact private route every time.
+          yield* container.interceptOutboundHttp('flowdeck-inference', inference)
           yield* container.setInactivityTimeout(6 * 60 * 60 * 1_000)
         }),
       )
@@ -71,7 +72,7 @@ export const JcodeSandboxLive = Effect.gen(function* () {
           ? Effect.succeed(response)
           : Effect.fail(new BindingError({ cause: `Sandbox gateway returned ${response.status}` }))
       const bindError = (cause: unknown) => new BindingError({ cause })
-      return JcodeSandbox.of({
+      return DevelopmentSandbox.of({
         ensureSession: (_runId) =>
           request(HttpClientRequest.post('http://sandbox/session')).pipe(
             Effect.flatMap(successful),

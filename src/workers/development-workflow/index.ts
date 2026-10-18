@@ -6,22 +6,22 @@ import { Effect, Semaphore } from 'effect'
 import { makeD1Store } from '../../features/workflow/services/d1-store'
 import { Store } from '../../features/workflow/services/store'
 import { Database } from '../database'
-import { DevelopmentWorkflow } from '../definitions'
-import { JcodeContainer, JcodeSandboxLive } from './container'
+import { DevelopmentWorkflow, Inference } from '../definitions'
+import { DevelopmentContainer, DevelopmentSandboxLive } from './container'
 import { resumeDevelopmentRun, startDevelopmentRun } from './features/development'
 import { renewDevelopmentLease } from './features/lease'
-import { JcodeSandbox } from './features/sandbox'
+import { DevelopmentSandbox } from './features/sandbox'
 
-/** One run DO owns one native container handle and reuses its SDK session across nodes. */
+/** One run DO owns one native container handle and reuses its Pi session across nodes. */
 export class DevelopmentRun extends DurableObject<DevelopmentRun>()(
   'DevelopmentRun',
   Effect.gen(function* () {
     const database = yield* QueryDatabase(yield* Database)
-    const sandbox = yield* JcodeSandboxLive
-    const container = yield* JcodeContainer
+    const sandbox = yield* DevelopmentSandboxLive
+    const container = yield* DevelopmentContainer
     return Effect.gen(function* () {
       const store = makeD1Store(yield* database.raw)
-      const nativeSandbox = yield* JcodeSandbox.pipe(Effect.provide(sandbox))
+      const nativeSandbox = yield* DevelopmentSandbox.pipe(Effect.provide(sandbox))
       const state = yield* DurableObjectState
       const runtime = yield* RuntimeContext
       const lock = yield* Semaphore.make(1)
@@ -42,7 +42,7 @@ export class DevelopmentRun extends DurableObject<DevelopmentRun>()(
         }).pipe(
           Effect.ensuring(heartbeat),
           Effect.provideService(Store, store),
-          Effect.provideService(JcodeSandbox, nativeSandbox),
+          Effect.provideService(DevelopmentSandbox, nativeSandbox),
           Effect.provideService(RuntimeContext, runtime),
         )
       return {
@@ -55,12 +55,15 @@ export class DevelopmentRun extends DurableObject<DevelopmentRun>()(
 ) {}
 
 export default DevelopmentWorkflow.make(
-  {
-    main: import.meta.url,
-    compatibility: { date: '2026-09-01', flags: ['nodejs_compat'] },
-    workersDev: { enabled: false, previewsEnabled: false },
-    dev: { host: '127.0.0.1', port: 4383, strictPort: true },
-  },
+  Effect.gen(function* () {
+    return {
+      main: import.meta.url,
+      compatibility: { date: '2026-09-01', flags: ['nodejs_compat'] },
+      workersDev: { enabled: false, previewsEnabled: false },
+      dev: { host: '127.0.0.1', port: 4383, strictPort: true },
+      env: { INFERENCE: yield* Inference },
+    }
+  }),
   Effect.gen(function* () {
     const runs = yield* DevelopmentRun
     return {

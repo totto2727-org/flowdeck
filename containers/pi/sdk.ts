@@ -1,4 +1,13 @@
-import { JcodeClient } from '@1jehuang/jcode-sdk'
+import { InMemoryCredentialStore } from '@earendil-works/pi-ai'
+import { streamSimple } from '@earendil-works/pi-ai/compat'
+import {
+  createAgentSession,
+  DefaultResourceLoader,
+  ModelRuntime,
+  SessionManager,
+  SettingsManager,
+  type AgentSession,
+} from '@earendil-works/pi-coding-agent'
 import {
   Array,
   Context,
@@ -16,7 +25,7 @@ import {
 } from 'effect'
 import { Hex } from 'effect/encoding'
 
-import { Session, TurnReceipt, type TurnRequest } from '../../src/features/jcode/model'
+import { Session, TurnReceipt, type TurnRequest } from '../../src/features/development/model'
 
 export class GatewayError extends Data.TaggedError('GatewayError')<{
   readonly status: 404 | 409 | 413 | 503
@@ -28,118 +37,106 @@ export const GatewayModel = 'custom-opencode-go/deepseek-v4.1-flash'
 const SupportedModel = Schema.Literal(GatewayModel)
 const resolveSdkModel = (model: string) =>
   Schema.decodeUnknownEffect(SupportedModel)(model).pipe(
-    Effect.map((value) => `flowdeck:${value}`),
     Effect.mapError((cause) => new GatewayError({ status: 503, code: 'unsupported_model', cause })),
   )
 
-/** Container-owned configuration only. Never inspect or copy host login/config files.
- * Jcode 0.98.1, commit 1c7426eb1, uses [providers.NAME], requires_api_key and
- * <profile>:<model> selectors. The complete Gateway model ID includes a slash.
- * https://github.com/1jehuang/jcode/blob/1c7426eb1/crates/jcode-config-types/src/lib.rs#L475-L497
- * https://github.com/1jehuang/jcode/blob/1c7426eb1/crates/jcode-provider-metadata/src/catalog.rs#L6-L15
- * https://github.com/1jehuang/jcode/blob/1c7426eb1/crates/jcode-base/src/provider/mod.rs#L901-L924
+export type PiSession = Pick<AgentSession, 'sessionId' | 'sessionFile' | 'prompt' | 'subscribe' | 'abort' | 'dispose'>
+export type PiSessionFactory = (options: {
+  readonly sessionId: string
+  readonly sessionFile: string | undefined
+}) => Promise<PiSession>
+
+/** Pi's Promise APIs are the SDK interoperability boundary. Inference auth belongs to the Worker.
+ * https://github.com/earendil-works/pi/blob/main/packages/coding-agent/src/core/sdk.ts
+ * https://github.com/earendil-works/pi/blob/main/packages/coding-agent/src/core/provider-composer.ts
  */
-export const prepareSdkConfiguration = (model: string, home: string) =>
-  Effect.gen(function* () {
-    yield* resolveSdkModel(model)
-    const localModel = model
-    const fs = yield* FileSystem.FileSystem
-    const path = yield* Path.Path
-    yield* fs.makeDirectory(home, { recursive: true, mode: 0o700 })
-    const filename = path.join(home, 'config.toml')
-    // Only validated ASCII model identifiers enter TOML. No credential values are
-    // read or written. Only the container-private loopback relay is unauthenticated.
-    // The relay always authenticates the fixed HTTPS upstream, with no fallback.
-    const content = Array.join(
-      [
-        '[provider]',
-        'default_provider = "flowdeck"',
-        `default_model = "${localModel}"`,
-        'cross_provider_failover = "manual"',
-        'same_provider_account_failover = false',
-        '',
-        '[providers.flowdeck]',
-        'type = "openai-compatible"',
-        'base_url = "http://127.0.0.1:8081/v1"',
-        'auth = "none"',
-        'requires_api_key = false',
-        `default_model = "${localModel}"`,
-        '',
-        '[[providers.flowdeck.models]]',
-        `id = "${localModel}"`,
-        '',
+export const launchSdk = (config: { readonly baseUrl: string }) =>
+  Effect.tryPromise(async (): Promise<PiSessionFactory> => {
+    const cwd = '/home/sandbox/workspace'
+    const agentDir = '/home/sandbox/.pi/agent'
+    const modelRuntime = await ModelRuntime.create({
+      credentials: new InMemoryCredentialStore(),
+      modelsPath: null,
+      refreshOnCreate: false,
+    })
+    modelRuntime.registerProvider('flowdeck', {
+      api: 'openai-completions',
+      baseUrl: config.baseUrl,
+      // Pi requires a local auth marker. No credential is supplied to the Container.
+      apiKey: 'unused',
+      authHeader: false,
+      // OpenAI adds its own Bearer header even with authHeader:false. Pi's request
+      // header null sentinel suppresses that default before Worker-owned inference.
+      streamSimple: (model, context, options) =>
+        streamSimple(model, context, {
+          ...options,
+          headers: { ...options?.headers, Authorization: null },
+        }),
+      models: [
+        {
+          id: GatewayModel,
+          name: GatewayModel,
+          reasoning: false,
+          input: ['text'],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 131_072,
+          maxTokens: 8192,
+        },
       ],
-      '\n',
-    )
-    yield* fs.writeFileString(`${filename}.flowdeck-next`, content, { mode: 0o600 })
-    yield* fs.rename(`${filename}.flowdeck-next`, filename)
-  }).pipe(Effect.uninterruptible)
-
-/** This non-secret transport identity survives gateway and SDK reconnects. */
-export const prepareRelaySession = (directory: string) =>
-  Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem
-    const path = yield* Path.Path
-    const crypto = yield* Crypto.Crypto
-    yield* fs.makeDirectory(directory, { recursive: true, mode: 0o700 })
-    const filename = path.join(directory, 'inference-session')
-    const identity = Schema.String.check(
-      Schema.isPattern(/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/),
-    )
-    if (yield* fs.exists(filename))
-      return yield* fs.readFileString(filename).pipe(Effect.flatMap(Schema.decodeUnknownEffect(identity)))
-    const sessionId = yield* crypto.randomUUIDv4()
-    yield* Effect.scoped(
-      Effect.gen(function* () {
-        const file = yield* fs.open(`${filename}.next`, { flag: 'w', mode: 0o600 })
-        yield* file.writeAll(new TextEncoder().encode(sessionId))
-        yield* file.sync
-      }),
-    )
-    yield* fs.rename(`${filename}.next`, filename)
-    yield* Effect.scoped(
-      Effect.gen(function* () {
-        const parent = yield* fs.open(directory, { flag: 'r' })
-        yield* parent.sync
-      }),
-    )
-    return sessionId
-  }).pipe(Effect.uninterruptible)
-
-// The SDK owns child processes, Unix sockets and event callbacks. Only this adapter
-// crosses its Promise boundary. One scoped client lives for the container lifetime.
-export const launchSdk = Effect.acquireRelease(
-  Effect.tryPromise(() =>
-    JcodeClient.launch({
-      binary: '/home/sandbox/.local/bin/jcode',
-      jcodeHome: '/home/sandbox/.jcode',
-      workingDir: '/home/sandbox/workspace',
-      inheritLogins: false,
-      swarmModel: 'inherit',
-      // SDK tools never need the Gateway credential. Only the loopback relay
-      // holds it, so do not inherit it into Jcode or its tool subprocesses.
-      env: { HOME: '/home/sandbox', CLOUDFLARE_AI_GATEWAY_API_KEY: '' },
-    }),
-  ),
-  (client) => Effect.tryPromise(() => client.close()).pipe(Effect.orDie),
-)
+    })
+    const model = modelRuntime.getModel('flowdeck', GatewayModel)
+    if (model === undefined) throw new Error('Gateway model is unavailable')
+    return async ({ sessionId, sessionFile }) => {
+      const settingsManager = SettingsManager.inMemory({ retry: { enabled: false }, cacheWarming: 'off' })
+      const resourceLoader = new DefaultResourceLoader({
+        cwd,
+        agentDir,
+        settingsManager,
+        noExtensions: true,
+        noSkills: true,
+        noPromptTemplates: true,
+        noThemes: true,
+      })
+      await resourceLoader.reload()
+      const sessionManager =
+        sessionFile === undefined
+          ? SessionManager.create(cwd, '/home/sandbox/.flowdeck/sessions', { id: sessionId })
+          : SessionManager.open(sessionFile, undefined, cwd)
+      const { session } = await createAgentSession({
+        cwd,
+        agentDir,
+        modelRuntime,
+        // Correlation only, never authorization. The persisted SDK UUID survives reopen.
+        model: { ...model, headers: { 'x-opencode-session': sessionId } },
+        thinkingLevel: 'off',
+        tools: ['read', 'bash', 'edit', 'write'],
+        sessionManager,
+        settingsManager,
+        resourceLoader,
+      })
+      if (session.sessionId !== sessionId) {
+        session.dispose()
+        throw new Error('Session identity mismatch')
+      }
+      return session
+    }
+  })
 
 export class Gateway extends Context.Service<Gateway, Effect.Success<ReturnType<typeof makeGateway>>>()(
-  'flowdeck/JcodeGateway',
+  'flowdeck/PiGateway',
 ) {}
 
-type Sdk = Pick<JcodeClient, 'createSession' | 'attachSession' | 'setModel' | 'run'>
 const StoredTurn = Schema.Struct({ digest: Schema.String, receipt: TurnReceipt })
 const State = Schema.Struct({
   session: Schema.NullOr(Session),
-  creating: Schema.Boolean,
+  sessionFile: Schema.NullOr(Schema.String),
   turns: Schema.Record(Schema.String, StoredTurn),
 })
 type State = typeof State.Type
 
-export const makeGateway = (client: Sdk, model: string, directory: string) =>
+export const makeGateway = (factory: PiSessionFactory, model: string, directory: string) =>
   Effect.gen(function* () {
-    const sdkModel = yield* resolveSdkModel(model)
+    yield* resolveSdkModel(model)
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     const crypto = yield* Crypto.Crypto
@@ -152,9 +149,13 @@ export const makeGateway = (client: Sdk, model: string, directory: string) =>
       ? yield* fs
           .readFileString(filename)
           .pipe(Effect.flatMap(Schema.decodeUnknownEffect(Schema.fromJsonString(State))))
-      : { session: null, creating: false, turns: {} }
-    let attached = false
-    let configured = false
+      : { session: null, sessionFile: null, turns: {} }
+    let pi: PiSession | undefined
+    yield* Effect.addFinalizer(() =>
+      pi === undefined
+        ? Effect.void
+        : Effect.tryPromise(() => pi!.abort()).pipe(Effect.ensuring(Effect.sync(() => pi!.dispose())), Effect.orDie),
+    )
     // Write, fsync and rename before acknowledging or sending any model message.
     const save = (next: State) =>
       Effect.gen(function* () {
@@ -194,28 +195,30 @@ export const makeGateway = (client: Sdk, model: string, directory: string) =>
         Effect.mapError((cause) => new GatewayError({ status: 503, code: 'sdk_unavailable', cause })),
       )
     const ensure = Effect.gen(function* () {
-      if (state.creating) return yield* new GatewayError({ status: 409, code: 'session_creation_interrupted' })
       if (state.session === null) {
-        yield* save({ ...state, creating: true })
-        const created = yield* sdk(() => client.createSession({ workingDir: '/home/sandbox/workspace' }))
-        // SDK createSession already attaches. A second attach tries to restore
-        // a transcript that the new session may not have persisted yet.
-        attached = true
-        yield* save({ ...state, creating: false, session: { sessionId: created.session_id, model, status: 'active' } })
+        const sessionId = yield* crypto.randomUUIDv4()
+        yield* save({ ...state, session: { sessionId, model, status: 'active' } })
       }
       const session = state.session
       if (session === null) return yield* new GatewayError({ status: 503, code: 'session_missing' })
       if (session.model !== model) return yield* new GatewayError({ status: 409, code: 'model_changed' })
-      if (!attached) {
-        yield* sdk(() => client.attachSession(session.sessionId))
-        attached = true
+      if (pi === undefined) {
+        const transcriptExists = state.sessionFile !== null && (yield* fs.exists(state.sessionFile))
+        if (!transcriptExists && Record.size(state.turns) > 0)
+          return yield* new GatewayError({ status: 409, code: 'session_transcript_missing' })
+        pi = yield* sdk(() =>
+          factory({
+            sessionId: session.sessionId,
+            sessionFile: transcriptExists ? state.sessionFile! : undefined,
+          }),
+        )
+        if (pi.sessionId !== session.sessionId || pi.sessionFile === undefined) {
+          pi.dispose()
+          pi = undefined
+          return yield* new GatewayError({ status: 503, code: 'session_identity_mismatch' })
+        }
       }
-      if (!configured) {
-        // Select the fixed transport profile without splitting or rewriting the
-        // complete Gateway model ID. The public session model stays unchanged.
-        yield* sdk(() => client.setModel(session.sessionId, sdkModel))
-        configured = true
-      }
+      if (state.sessionFile !== pi.sessionFile) yield* save({ ...state, sessionFile: pi.sessionFile! })
       return session
     })
     const busy = () => Array.some(Record.values(state.turns), (turn) => turn.receipt.status === 'running')
@@ -250,7 +253,7 @@ export const makeGateway = (client: Sdk, model: string, directory: string) =>
                 return prior.value.receipt
               }
               if (busy()) return yield* new GatewayError({ status: 409, code: 'turn_busy' })
-              // An interrupted SDK turn may still be executing in the surviving daemon.
+              // Interrupted work requires explicit workflow-owned recovery, never replay.
               if (Array.some(Record.values(state.turns), (turn) => turn.receipt.status === 'interrupted')) {
                 return yield* new GatewayError({ status: 409, code: 'recovery_required' })
               }
@@ -261,40 +264,49 @@ export const makeGateway = (client: Sdk, model: string, directory: string) =>
               const receipt: TurnReceipt = { commandId: request.commandId, status: 'running' }
               yield* save({ ...state, turns: Record.set(state.turns, request.commandId, { digest, receipt }) })
               const execute = Effect.gen(function* () {
-                // SDK 1.2.0 can resolve run() on stream EOF without turn_done. Its typed
-                // event callback is the interoperability boundary for terminal evidence.
-                let done = false
-                let failed = false
-                const result = yield* sdk(() =>
-                  client.run(session.sessionId, request.prompt, {
-                    // The operator authorizes tool execution only inside this
-                    // dedicated sandbox, with no host mounts or inherited key.
-                    autoApprove: true,
-                    onEvent: (event) => {
-                      if (event.ev === 'turn_done') done = true
-                      if (event.ev === 'error') failed = true
-                    },
-                  }),
-                ).pipe(Effect.result)
+                const active = pi!
+                let settled = false
+                let aborted = false
+                let stopReason: string | undefined
+                let text = ''
+                const unsubscribe = active.subscribe((event) => {
+                  if (event.type === 'agent_settled') {
+                    settled = true
+                    aborted = event.aborted
+                  }
+                  if (event.type === 'message_end' && event.message.role === 'assistant') {
+                    stopReason = event.message.stopReason
+                    text = Array.join(
+                      Array.flatMap(event.message.content, (part) => (part.type === 'text' ? [part.text] : [])),
+                      '',
+                    )
+                  }
+                })
+                const result = yield* sdk(() => active.prompt(request.prompt, { expandPromptTemplates: false })).pipe(
+                  Effect.result,
+                  Effect.ensuring(Effect.sync(unsubscribe)),
+                )
                 // Never expose provider errors, tool output, runtime environment or credentials.
-                if (failed)
+                if (
+                  stopReason === 'error' ||
+                  stopReason === 'length' ||
+                  stopReason === 'toolUse' ||
+                  stopReason === 'deferred'
+                )
                   return { commandId: request.commandId, status: 'failed', error: 'sdk_failure' } satisfies TurnReceipt
-                if (Result.isFailure(result) || !done) {
+                if (Result.isFailure(result) || !settled || aborted || stopReason !== 'stop') {
                   return {
                     commandId: request.commandId,
                     status: 'interrupted',
                     error: 'runtime_interrupted',
                   } satisfies TurnReceipt
                 }
-                if (result.success.stopReason !== undefined) {
-                  return { commandId: request.commandId, status: 'failed', error: 'sdk_failure' } satisfies TurnReceipt
-                }
-                return String.length(result.success.finalText) > 131_072
+                return String.length(text) > 131_072
                   ? ({ commandId: request.commandId, status: 'failed', error: 'output_limit' } satisfies TurnReceipt)
                   : ({
                       commandId: request.commandId,
                       status: 'completed',
-                      text: result.success.finalText,
+                      text,
                     } satisfies TurnReceipt)
               }).pipe(
                 Effect.flatMap((terminal) => commitReceipt(request.commandId, terminal)),
@@ -316,7 +328,7 @@ export const makeGateway = (client: Sdk, model: string, directory: string) =>
             const session = yield* ensure
             const completed: Session = { ...session, status: 'completed' }
             yield* save({ ...state, session: completed })
-            // Completion does not close the client or delete the workspace.
+            // Completion does not delete the transcript or workspace.
             return completed
           }),
         )

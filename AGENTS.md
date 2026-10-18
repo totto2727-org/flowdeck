@@ -10,8 +10,10 @@ The application uses Effect 4, Effront, shadcn/ui, Cloudflare Workers, Durable O
 - `src/workers/frontend/features/`: Effront pages, ServerFns, dashboard, graph, and shadcn components.
 - `src/workers/control/`: Control entry and its HTTP routes, commands, and workflow-binding contract.
 - `src/workers/demo-workflow/`: Workflow entry, run Durable Object, and demo-only execution features.
-- `src/workers/development-workflow/`: development checkpoints, run Durable Object, and native Jcode Container binding.
-- `containers/jcode/`: private Effect HTTP gateway, official Jcode SDK adapter, and Container image.
+- `src/workers/development-workflow/`: development checkpoints, run Durable Object, and native Pi Container binding.
+- `src/workers/inference/`: private Gateway-only credential and fixed HTTPS compatibility adapter.
+- `containers/pi/`: private Effect HTTP gateway, directly embedded Pi SDK adapter, and workflow image.
+- `src/features/development/`: shared session and turn receipt schemas.
 - `src/workers/definitions.ts`: the single definition of Worker identities and contracts, shared by `.make()` implementations and static bindings.
 - `src/workers/composition.ts`: final deployment and request dependency selection.
 - `src/workers/database.ts`: the shared D1 resource declaration.
@@ -28,6 +30,10 @@ Use `vp env install` to install the versions pinned by `.node-version` and `pack
 Use `vp env current` to inspect resolution and `vp env use --unset` to clear stale session overrides.
 Use `vp install --frozen-lockfile` to install the locked dependencies.
 Use `vp run dev` for the local Alchemy application, `vp run check` for format and typed lint, `vp run test` for tests, and `vp run ci` for the complete configured checks.
+Use the standard Alchemy Cloudflare credentials when required.
+Set `CLOUDFLARE_AI_GATEWAY_ID` to an explicit existing Gateway ID, not a default or automatically created Gateway.
+The HTTPS inference transport does not require native AI binding preview access.
+Stop on missing authentication or permissions instead of trying to bypass them.
 The local development server must bind to loopback.
 Do not deploy, change DNS, or change Access policies without operator authorization.
 
@@ -73,6 +79,32 @@ Keep Control API and workflow Workers private, with public `workers.dev` endpoin
 Declare Cloudflare Access with the public frontend in the same Alchemy project.
 Production access must fail closed without an explicit allow policy.
 Local development does not modify Cloudflare resources.
+
+## Pi development integration
+
+Keep the migration limited to regular `@earendil-works/pi-coding-agent` 1.3.0 embedded in the existing Node Container gateway.
+Do not add a Jcode executable, daemon, Container inference relay, Computer filesystem, Durable Object filesystem, or Pi Durable harness.
+Preserve private port 8080, the session/turn receipt lifecycle, one session and checkout per run, and explicit resume.
+Keep persisted workflow ID `jcode-development` and infrastructure resource name `JcodeSandbox` for compatibility.
+Use **Pi development** for the frontend label.
+
+Use `FLOWDECK_PI_MODEL`, Container `PI_MODEL` and `PI_INFERENCE_URL`, and `FLOWDECK_PI_DOCKERFILE` for configuration.
+Route `http://flowdeck-inference/compat` through native `interceptOutboundHttp` and a static service binding to the private inference Worker.
+Keep account and Gateway IDs and `Config.Redacted('CLOUDFLARE_AI_GATEWAY_API_KEY')` in the inference Worker.
+Register that Gateway-only key as a native Worker `secret_text` binding, not an image or Container environment value.
+Use one fixed HTTPS compatibility request with no runtime fallback or additional server.
+Provider keys remain in Gateway stored BYOK, and Pi and the Container receive no inference credentials.
+The generic published sandbox remains agent-neutral, and only the workflow image adds Node.js and Pi.
+Keep `HOME=/home/sandbox` and checkout `/home/sandbox/workspace/project`.
+
+When changing this integration, read [sandbox setup and acceptance limits](docs/development-sandbox.md).
+When changing Container lifetime, read [workspace retention](docs/development-workflow-retention.md).
+Real Pi streaming and coding acceptance remain unverified.
+Image and secret-free session checks do not validate live inference.
+Coding acceptance requires implementation and explicit-resume verification in the current image.
+Track [credential isolation #10](https://github.com/totto2727-org/flowdeck/issues/10), [workspace-loss recovery #11](https://github.com/totto2727-org/flowdeck/issues/11), and [local Alchemy startup #12](https://github.com/totto2727-org/flowdeck/issues/12) separately from this migration.
+Track native AI binding validation separately in [Issue #13](https://github.com/totto2727-org/flowdeck/issues/13).
+Keep the frontend build concern separate as well.
 
 ## Validation and artifacts
 

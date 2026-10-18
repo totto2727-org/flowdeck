@@ -4,7 +4,7 @@ import { Clock, Effect } from 'effect'
 
 import type { StoreService } from '../../../features/workflow/services/store'
 
-/** Renew only a running workspace. This alarm never starts containers or advances SDK turns.
+/** Renew only a running workspace. This alarm never starts containers or advances Pi turns.
  * Refresh from wall-clock now after restoration or a delayed delivery, without replaying missed renewals. */
 export const renewDevelopmentLease = (
   runId: string | undefined,

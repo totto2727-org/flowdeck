@@ -11,6 +11,9 @@ export class Frontend extends Worker<Frontend, { readonly fetch: HttpEffect<Work
 export class Control extends Worker<Control, { readonly fetch: HttpEffect<WorkerServices | RuntimeContext> }>()(
   'Control',
 ) {}
+export class Inference extends Worker<Inference, { readonly fetch: HttpEffect<WorkerServices | RuntimeContext> }>()(
+  'Inference',
+) {}
 export class DemoWorkflow extends Worker<DemoWorkflow, WorkflowBinding['Service']>()('DemoWorkflow') {}
 export class DevelopmentWorkflow extends Worker<DevelopmentWorkflow, WorkflowBinding['Service']>()(
   'DevelopmentWorkflow',

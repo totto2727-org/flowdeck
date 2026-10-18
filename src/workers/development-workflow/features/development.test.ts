@@ -7,7 +7,7 @@ import { TestCrypto } from 'effect/testing'
 import { Miniflare } from 'miniflare'
 import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test'
 
-import type { Session, TurnReceipt, TurnRequest } from '../../../features/jcode/model'
+import type { Session, TurnReceipt, TurnRequest } from '../../../features/development/model'
 import { BindingError, StoreError } from '../../../features/workflow/domain/errors'
 import { CreateRun, RunDetail, type Run } from '../../../features/workflow/domain/model'
 import { makeD1Store } from '../../../features/workflow/services/d1-store'
@@ -22,7 +22,7 @@ import {
   resumeDevelopmentRun,
   startDevelopmentRun,
 } from './development'
-import { JcodeSandbox } from './sandbox'
+import { DevelopmentSandbox } from './sandbox'
 
 const input = {
   workflowId: 'jcode-development',
@@ -49,7 +49,7 @@ let receipts: Record<string, TurnReceipt>
 let submissions: ReadonlyArray<{ readonly runId: string; readonly input: TurnRequest }>
 let session: Session
 let completeCalls: ReadonlyArray<string>
-let sandbox: JcodeSandbox['Service']
+let sandbox: DevelopmentSandbox['Service']
 beforeEach(async () => {
   miniflare = new Miniflare({
     modules: true,
@@ -98,9 +98,12 @@ beforeEach(async () => {
 afterEach(async () => {
   await miniflare.dispose()
 })
-const execute = <A, E>(effect: Effect.Effect<A, E, Store | JcodeSandbox>, suppliedStore = makeD1Store(database)) =>
+const execute = <A, E>(
+  effect: Effect.Effect<A, E, Store | DevelopmentSandbox>,
+  suppliedStore = makeD1Store(database),
+) =>
   Effect.runPromise(
-    effect.pipe(Effect.provideService(Store, suppliedStore), Effect.provideService(JcodeSandbox, sandbox)),
+    effect.pipe(Effect.provideService(Store, suppliedStore), Effect.provideService(DevelopmentSandbox, sandbox)),
   )
 const current = () => Effect.runPromise(makeD1Store(database).getRun(initialRun.runId))
 const start = () => execute(startDevelopmentRun(initialRun.runId))
@@ -112,8 +115,11 @@ const finishTurn = (node: 'implement' | 'verify') => {
 
 describe('development workflow with canonical D1 checkpoints', () => {
   it('routes create and resume through the distinct static development binding', async () => {
-    const provide = <A, E>(effect: Effect.Effect<A, E, Store | JcodeSandbox>) =>
-      effect.pipe(Effect.provideService(Store, makeD1Store(database)), Effect.provideService(JcodeSandbox, sandbox))
+    const provide = <A, E>(effect: Effect.Effect<A, E, Store | DevelopmentSandbox>) =>
+      effect.pipe(
+        Effect.provideService(Store, makeD1Store(database)),
+        Effect.provideService(DevelopmentSandbox, sandbox),
+      )
     const handler = HttpRouter.toWebHandler(
       ApiRoutes.pipe(
         HttpRouter.provideRequest(
@@ -161,7 +167,59 @@ describe('development workflow with canonical D1 checkpoints', () => {
   })
   it('persists repository, task, pinned version and immutable graph before starting', async () => {
     expect(await current()).toEqual(initialRun)
+    expect(initialRun.snapshot).toMatchObject({ runtime: 'pi' })
     expect(await Effect.runPromise(store.getGraph(initialRun.graphId))).toEqual(developmentGraph)
+  })
+  it.each([
+    ['Ready', 'pending'],
+    ['Starting', 'running'],
+    ['PendingTurn', 'running'],
+    ['AwaitingTurn', 'waiting'],
+    ['Completing', 'running'],
+    ['Completed', 'completed'],
+    ['Failed', 'failed'],
+  ] as const)('retains a legacy %s checkpoint but rejects execution before accessing Pi', async (_tag, status) => {
+    const snapshot = Schema.decodeUnknownSync(DevelopmentSnapshot)({
+      _tag,
+      schemaVersion: 1,
+      version: 'v1',
+      repository: input.repository,
+      task: input.task,
+      commandId: 'development-1:implement:1',
+      sessionId: 'legacy-jcode-session',
+      nodeId: 'implement',
+      result: 'legacy result',
+      message: 'legacy failure',
+    })
+    await Effect.runPromise(
+      store.commit({
+        commitId: 'legacy-checkpoint',
+        runId: initialRun.runId,
+        expectedRevision: 0,
+        status,
+        snapshot,
+        updatedAt: timestamp,
+        events: [],
+      }),
+    )
+    const before = await current()
+    expect(await Effect.runPromise(restoreDevelopment(before))).toMatchObject({ _tag })
+    sandbox = {
+      ensureSession: () => Effect.die('Legacy run must not access Pi'),
+      submitTurn: () => Effect.die('Legacy run must not submit a Pi turn'),
+      getTurn: () => Effect.die('Legacy run must not read Pi receipts'),
+      complete: () => Effect.die('Legacy run must not complete Pi'),
+    }
+    await expect(start()).rejects.toMatchObject({
+      _tag: 'InvalidOperation',
+      message: expect.stringContaining('Legacy Jcode'),
+    })
+    await expect(resume()).rejects.toMatchObject({
+      _tag: 'InvalidOperation',
+      message: expect.stringContaining('Legacy Jcode'),
+    })
+    expect(await current()).toEqual(before)
+    expect(await Effect.runPromise(store.getEvents(initialRun.runId))).toEqual([])
   })
   it('commits command identity before accepting a long-running implementation turn', async () => {
     await start()
@@ -184,10 +242,14 @@ describe('development workflow with canonical D1 checkpoints', () => {
         },
       },
     ])
-    expect(submissions[0]?.input.prompt).toContain('Use the target repository devShell for development tools.')
+    expect(submissions[0]?.input.prompt).toContain(
+      'Use the development tools available in the Node container and follow the target repository instructions.',
+    )
     expect(submissions[0]?.input.prompt).not.toContain('into /sandbox/')
     expect(submissions[0]?.input.prompt).toContain(input.repository)
     expect(submissions[0]?.input.prompt).toContain(input.task)
+    expect(submissions[0]?.input.prompt).toContain('Pi')
+    expect(submissions[0]?.input.prompt).not.toContain('devShell')
     expect(submissions[0]?.input.prompt).not.toContain('into /workspace/project')
     expect(Array.map(await Effect.runPromise(store.getEvents(initialRun.runId)), (event) => event.type)).toEqual([
       'run.started',
@@ -211,7 +273,7 @@ describe('development workflow with canonical D1 checkpoints', () => {
     expect(submissions).toHaveLength(1)
     expect(await current()).toMatchObject({ snapshot: { nodeId: 'implement' } })
   })
-  it('reconstructs runtime from D1 and submits verification in the same run and SDK session', async () => {
+  it('reconstructs runtime from D1 and submits verification in the same run and Pi session', async () => {
     await start()
     finishTurn('implement')
     await resume()
@@ -232,9 +294,13 @@ describe('development workflow with canonical D1 checkpoints', () => {
         prompt: expect.stringContaining('same /home/sandbox/workspace/project'),
       },
     })
-    expect(submissions[1]?.input.prompt).toContain('Use the target repository devShell for development tools.')
+    expect(submissions[1]?.input.prompt).toContain(
+      'Use the development tools available in the Node container and follow the target repository instructions.',
+    )
     expect(submissions[1]?.input.prompt).not.toContain('same /sandbox/')
     expect(submissions[1]?.input.prompt).not.toContain('same /workspace/project')
+    expect(submissions[1]?.input.prompt).toContain('Pi')
+    expect(submissions[1]?.input.prompt).not.toContain('devShell')
     expect(completeCalls).toEqual([])
   })
   it('marks session and run complete only after verification finishes, without container destruction', async () => {
@@ -291,7 +357,7 @@ describe('development workflow with canonical D1 checkpoints', () => {
     })
     expect(submissions).toHaveLength(1)
   })
-  it('recovers an accepted turn after its awaiting-checkpoint write fails without another SDK submission', async () => {
+  it('recovers an accepted turn after its awaiting-checkpoint write fails without another Pi submission', async () => {
     const failing: StoreService = {
       ...store,
       commit: (command) =>
@@ -330,19 +396,19 @@ describe('development workflow with canonical D1 checkpoints', () => {
       ),
     ).toHaveLength(1)
   })
-  it('fails closed when verification would use a replacement SDK session', async () => {
+  it('fails closed when verification would use a replacement Pi session', async () => {
     await start()
     finishTurn('implement')
     session = { ...session, sessionId: 'replacement-session' }
     await resume()
     expect(await current()).toMatchObject({
       status: 'failed',
-      snapshot: { nodeId: 'verify', message: expect.stringContaining('original active SDK session') },
+      snapshot: { nodeId: 'verify', message: expect.stringContaining('original active Pi session') },
     })
     expect(submissions).toHaveLength(1)
     expect(completeCalls).toEqual([])
   })
-  it('recovers a completed SDK session when the final database checkpoint fails', async () => {
+  it('recovers a completed Pi session when the final database checkpoint fails', async () => {
     await start()
     finishTurn('implement')
     await resume()
@@ -370,7 +436,7 @@ describe('development workflow with canonical D1 checkpoints', () => {
       ),
     ).toHaveLength(1)
   })
-  it('does not mark a replacement SDK session complete after verification', async () => {
+  it('does not mark a replacement Pi session complete after verification', async () => {
     await start()
     finishTurn('implement')
     await resume()
