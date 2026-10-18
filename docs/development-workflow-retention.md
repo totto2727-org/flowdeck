@@ -5,7 +5,7 @@ This document is for Flowdeck maintainers and operators.
 ## Container ownership
 
 Each `jcode-development` run uses one `DevelopmentRun` Durable Object and its attached native Cloudflare Container.
-Implementation and verification use the same SDK session and `/sandbox/workspace/project` directory.
+Implementation and verification use the same SDK session and `/home/sandbox/workspace/project` directory.
 A node transition does not stop the container.
 A stopped container is not automatically recreated after the persisted startup attempt marker is set.
 Inspect an interrupted run before you take recovery action.

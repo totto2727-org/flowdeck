@@ -1,5 +1,6 @@
 import { JcodeClient } from '@1jehuang/jcode-sdk'
-import { Effect, Schema, String } from 'effect'
+import { NodeServices } from '@effect/platform-node'
+import { Effect, FileSystem, Schema, String } from 'effect'
 import { HttpEffect } from 'effect/http'
 import { describe, expect, it, vi } from 'vite-plus/test'
 
@@ -105,17 +106,35 @@ describe('container HTTP contract', () => {
     )
   })
 
-  it('uses the installed SDK private launcher without inherited login files', async () => {
+  it('keeps the image HOME, launcher PATH and working directory under /home/sandbox', async () => {
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem
+        const dockerfile = yield* fs.readFileString('containers/jcode/Dockerfile')
+        expect(String.split(dockerfile, '\n')).toEqual(
+          expect.arrayContaining([
+            'ARG JCODE_VERSION=0.98.1',
+            'ENV HOME=/home/sandbox',
+            'ENV PATH=/home/sandbox/.local/bin:/home/sandbox/.nix-profile/bin:/usr/local/bin:/usr/bin:/bin',
+            'WORKDIR /home/sandbox/workspace',
+          ]),
+        )
+        expect(dockerfile).toContain('JCODE_VERSION="${JCODE_VERSION}" JCODE_SKIP_SERVER_RELOAD=1 JCODE_NO_TELEMETRY=1')
+      }).pipe(Effect.provide(NodeServices.layer)),
+    )
+  })
+
+  it('uses the image HOME for SDK binary, configuration and workspace without inherited logins', async () => {
     const launch = vi.spyOn(JcodeClient, 'launch').mockRejectedValue(new Error('fixture: do not start a server'))
     try {
       await Effect.runPromise(Effect.scoped(launchSdk.pipe(Effect.result)))
       expect(launch).toHaveBeenCalledExactlyOnceWith({
-        binary: '/sandbox/.local/bin/jcode',
-        jcodeHome: '/sandbox/.jcode',
-        workingDir: '/sandbox/workspace',
+        binary: '/home/sandbox/.local/bin/jcode',
+        jcodeHome: '/home/sandbox/.jcode',
+        workingDir: '/home/sandbox/workspace',
         inheritLogins: false,
         swarmModel: 'inherit',
-        env: { HOME: '/sandbox', CLOUDFLARE_AI_GATEWAY_API_KEY: '' },
+        env: { HOME: '/home/sandbox', CLOUDFLARE_AI_GATEWAY_API_KEY: '' },
       })
     } finally {
       launch.mockRestore()

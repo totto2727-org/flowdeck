@@ -111,14 +111,14 @@ export const prepareRelaySession = (directory: string) =>
 export const launchSdk = Effect.acquireRelease(
   Effect.tryPromise(() =>
     JcodeClient.launch({
-      binary: '/sandbox/.local/bin/jcode',
-      jcodeHome: '/sandbox/.jcode',
-      workingDir: '/sandbox/workspace',
+      binary: '/home/sandbox/.local/bin/jcode',
+      jcodeHome: '/home/sandbox/.jcode',
+      workingDir: '/home/sandbox/workspace',
       inheritLogins: false,
       swarmModel: 'inherit',
       // SDK tools never need the Gateway credential. Only the loopback relay
       // holds it, so do not inherit it into Jcode or its tool subprocesses.
-      env: { HOME: '/sandbox', CLOUDFLARE_AI_GATEWAY_API_KEY: '' },
+      env: { HOME: '/home/sandbox', CLOUDFLARE_AI_GATEWAY_API_KEY: '' },
     }),
   ),
   (client) => Effect.tryPromise(() => client.close()).pipe(Effect.orDie),
@@ -197,7 +197,7 @@ export const makeGateway = (client: Sdk, model: string, directory: string) =>
       if (state.creating) return yield* new GatewayError({ status: 409, code: 'session_creation_interrupted' })
       if (state.session === null) {
         yield* save({ ...state, creating: true })
-        const created = yield* sdk(() => client.createSession({ workingDir: '/sandbox/workspace' }))
+        const created = yield* sdk(() => client.createSession({ workingDir: '/home/sandbox/workspace' }))
         // SDK createSession already attaches. A second attach tries to restore
         // a transcript that the new session may not have persisted yet.
         attached = true

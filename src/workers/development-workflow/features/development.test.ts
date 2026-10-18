@@ -180,10 +180,12 @@ describe('development workflow with canonical D1 checkpoints', () => {
         runId: 'development-1',
         input: {
           commandId: 'development-1:implement:1',
-          prompt: expect.stringContaining('/sandbox/workspace/project'),
+          prompt: expect.stringContaining('/home/sandbox/workspace/project'),
         },
       },
     ])
+    expect(submissions[0]?.input.prompt).toContain('Use the target repository devShell for development tools.')
+    expect(submissions[0]?.input.prompt).not.toContain('into /sandbox/')
     expect(submissions[0]?.input.prompt).toContain(input.repository)
     expect(submissions[0]?.input.prompt).toContain(input.task)
     expect(submissions[0]?.input.prompt).not.toContain('into /workspace/project')
@@ -227,9 +229,11 @@ describe('development workflow with canonical D1 checkpoints', () => {
       runId: initialRun.runId,
       input: {
         commandId: 'development-1:verify:1',
-        prompt: expect.stringContaining('same /sandbox/workspace/project'),
+        prompt: expect.stringContaining('same /home/sandbox/workspace/project'),
       },
     })
+    expect(submissions[1]?.input.prompt).toContain('Use the target repository devShell for development tools.')
+    expect(submissions[1]?.input.prompt).not.toContain('same /sandbox/')
     expect(submissions[1]?.input.prompt).not.toContain('same /workspace/project')
     expect(completeCalls).toEqual([])
   })

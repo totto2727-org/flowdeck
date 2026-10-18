@@ -36,6 +36,11 @@ A later explicit resume loads committed state rather than an in-memory continuat
 
 ### Optional Jcode development workflow
 
+The derived gateway image installs official Jcode and copies its own Node.js runtime on top of the generic `sandbox-dev` image.
+The generic sandbox does not preinstall Node.js, pnpm, or Vite+ for target projects.
+Use the target repository's `devShell` for development tools.
+Implementation and verification share `/home/sandbox/workspace/project` with `HOME=/home/sandbox`.
+
 The requested model is `custom-opencode-go/deepseek-v4.1-flash` through Cloudflare AI Gateway.
 For an approved live experiment, supply the configured runtime credentials with nested positional commands:
 
@@ -66,8 +71,9 @@ See the [sandbox setup and verification limits](docs/development-sandbox.md) bef
 The release-demo tasks are pure effects.
 The separate Jcode development workflow uses a private Cloudflare Container and the official Jcode TypeScript SDK.
 Its requested model uses Cloudflare AI Gateway rather than a direct OpenCode key or a free-model route.
-A local SDK-driven repository task completed implementation and explicit-resume verification in the same Container, SDK session, and checkout.
+A local SDK-driven repository task on the earlier `/sandbox` image completed implementation and explicit-resume verification in the same Container, SDK session, and checkout.
 Independent checks in that Container passed the target project's uncached CI task and five assertions against its built public export.
+Those results do not validate the current `/home/sandbox` image or its target-repository `devShell` setup.
 The experiment required a temporary IPv4 registry proxy, not a maintained networking feature of Flowdeck.
 Jcode 0.98.1 cannot send the required custom headers directly, so its provider profile targets the fixed `127.0.0.1:8081` relay.
 The relay forwards only the exact configured model to the fixed Gateway endpoint and does not provide model or provider fallback.
@@ -110,7 +116,7 @@ vp run e2e
 ```
 
 The browser acceptance suite starts the actual local Alchemy stack and exercises both versions at desktop and mobile sizes.
-Use `vp run --no-cache e2e` when you need a fresh browser run instead of a cached task result.
+Use `vp run e2e` for the browser suite, and use task caching by default for validation commands.
 Install the Playwright Chromium browser with `vp exec playwright install chromium` if it is not present.
 Stop a manually started local stack before running the suite, which owns its server lifecycle.
 Screenshots, traces, and reports remain under ignored `tmp/acceptance/`.

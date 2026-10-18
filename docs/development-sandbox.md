@@ -5,13 +5,14 @@ It is a local development experiment, not a production or multitenant execution 
 
 ## Components
 
-- The monorepo `sandbox-dev` image extends the official Jcode and Nix installation in `sandbox-base` with its Nix-managed development tools.
-- `containers/jcode/` adds Node.js and an Effect HTTP gateway that uses the official `@1jehuang/jcode-sdk` package.
+- The monorepo `sandbox-dev` image provides the generic Nix sandbox, not Jcode or repository-specific development tools.
+- `containers/jcode/` installs official Jcode, copies its own Node.js runtime, and adds an Effect HTTP gateway that uses the official `@1jehuang/jcode-sdk` package.
+- The target repository's `devShell` supplies its development tools.
 - `src/workers/development-workflow/` owns the versioned `jcode-development` workflow, its run Durable Object, and its native Alchemy Container binding.
 - Control reaches this Worker through a static service binding.
   Neither this Worker nor its gateway has a public URL.
 - The frontend offers a public GitHub repository URL and a task prompt.
-  Both implementation and verification use `/sandbox/workspace/project`.
+  Both implementation and verification use `/home/sandbox/workspace/project`.
 
 All Workers, the shared D1 database, and the Container belong to the same Alchemy project.
 The Effront runtime evaluates its frontend-only entry instead of evaluating other Workers and their Container providers.
@@ -19,11 +20,21 @@ The Effront runtime evaluates its frontend-only entry instead of evaluating othe
 ## Local setup
 
 Use the Node.js version pinned by Vite+, and start Docker before starting Flowdeck.
-The sandbox development image must contain the official Jcode installation and its Node.js, pnpm, and Vite+ tools.
-Build that image from the companion [monorepo pull request #383](https://github.com/totto2727-org/monorepo/pull/383) before using this integration.
+The generic sandbox does not preinstall Jcode, Node.js, pnpm, or Vite+.
+Use the target repository's `devShell` for development tools, including its required JavaScript toolchain.
+The derived gateway image installs Jcode with the official installer and copies its own Node.js runtime for the gateway.
+It also installs the `libstdc++6` runtime library required by that Node.js binary.
+The `JCODE_VERSION` build argument selects the Jcode release and defaults to `0.98.1`.
+The installer runs as `sandbox` with telemetry and server reload disabled.
 The gateway Dockerfile accepts `SANDBOX_BASE` when building an image directly.
 Its normal default is `ghcr.io/totto2727-org/monorepo/sandbox-dev:latest`.
-Do not assume an older published image contains Jcode.
+Use a base image with the `/home/sandbox` HOME contract.
+The derived image does not provide a `/sandbox` alias or migrate older workspaces.
+
+The gateway and Jcode run as `sandbox` with `HOME=/home/sandbox`.
+The launcher is `/home/sandbox/.local/bin/jcode`, and its configuration is `/home/sandbox/.jcode/config.toml`.
+Gateway receipts and relay identity are stored under `/home/sandbox/.flowdeck`.
+The SDK starts in `/home/sandbox/workspace` and clones the target into `/home/sandbox/workspace/project`.
 
 ```bash
 vp env install
@@ -133,6 +144,9 @@ Model-generated output is untrusted content and is not guaranteed to be free of 
 No Cloudflare deployment, DNS update, image publication, or Access policy change is performed by local startup.
 
 ## Verification status
+
+The actual-run results below used the earlier `/sandbox` image with preinstalled development tools.
+They do not validate the current `/home/sandbox` image or the target repository's `devShell` setup.
 
 The ARM64 sandbox base has run Jcode's API bridge under both Docker and Apple Container.
 The bundled SDK gateway has started a real private Jcode bridge and answered its health endpoint under Docker without importing host credentials.

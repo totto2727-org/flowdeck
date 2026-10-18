@@ -9,7 +9,7 @@ import { makeGateway, prepareRelaySession, prepareSdkConfiguration } from './sdk
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 const model = 'custom-opencode-go/deepseek-v4.1-flash'
 const sdkModel = 'flowdeck:custom-opencode-go/deepseek-v4.1-flash'
-const session: SessionInfo = { session_id: 'session-one', status: 'idle', working_dir: '/sandbox/workspace' }
+const session: SessionInfo = { session_id: 'session-one', status: 'idle', working_dir: '/home/sandbox/workspace' }
 const output: TurnResult = { text: 'done', finalText: 'done', messages: [], reasoning: '', toolCalls: [] }
 
 const fixture = Effect.gen(function* () {
@@ -182,7 +182,7 @@ describe('persistent Jcode container gateway', () => {
             text: 'done',
           })
           expect(client.createSession).toHaveBeenCalledTimes(1)
-          expect(client.createSession).toHaveBeenCalledWith({ workingDir: '/sandbox/workspace' })
+          expect(client.createSession).toHaveBeenCalledWith({ workingDir: '/home/sandbox/workspace' })
           expect(first.model).toBe(model)
           expect(client.setModel).toHaveBeenCalledWith('session-one', sdkModel)
           expect(Array.map(client.run.mock.calls, ([id]) => id)).toEqual(['session-one', 'session-one'])

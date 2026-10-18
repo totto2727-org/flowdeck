@@ -139,8 +139,8 @@ const fail = (run: Run, snapshot: DevelopmentSnapshot, nodeId: 'implement' | 've
   ]).pipe(Effect.asVoid)
 const prompt = (snapshot: Extract<DevelopmentSnapshot, { _tag: 'PendingTurn' }>) =>
   snapshot.nodeId === 'implement'
-    ? `Clone the public GitHub repository ${snapshot.repository} into /sandbox/workspace/project. Work only in this fixed project workspace. Implement the following task. Do not push or deploy.\n\n${snapshot.task}`
-    : 'Continue in the same /sandbox/workspace/project repository and SDK session. Run the project checks and tests, fix failures caused by the implementation, and report checks performed and remaining limitations. Do not push or deploy.'
+    ? `Clone the public GitHub repository ${snapshot.repository} into /home/sandbox/workspace/project. Work only in this fixed project workspace. Use the target repository devShell for development tools. Implement the following task. Do not push or deploy.\n\n${snapshot.task}`
+    : 'Continue in the same /home/sandbox/workspace/project repository and SDK session. Use the target repository devShell for development tools. Run the project checks and tests, fix failures caused by the implementation, and report checks performed and remaining limitations. Do not push or deploy.'
 
 const submitPending = (run: Run, snapshot: Extract<DevelopmentSnapshot, { _tag: 'PendingTurn' }>) =>
   Effect.gen(function* () {

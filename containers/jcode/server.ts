@@ -150,19 +150,19 @@ export const application = Effect.gen(function* () {
 const main = Effect.gen(function* () {
   const model = yield* Config.String('JCODE_MODEL')
   if (String.length(model) === 0) return yield* Effect.fail('JCODE_MODEL must not be empty')
-  yield* prepareSdkConfiguration(model, '/sandbox/.jcode')
+  yield* prepareSdkConfiguration(model, '/home/sandbox/.jcode')
   const endpoint = yield* gatewayEndpoint(
     yield* Config.String('CLOUDFLARE_ACCOUNT_ID'),
     yield* Config.String('CLOUDFLARE_AI_GATEWAY_ID'),
   )
   const apiKey = yield* Config.Redacted('CLOUDFLARE_AI_GATEWAY_API_KEY')
   if (String.length(Redacted.value(apiKey)) === 0) return yield* Effect.fail('Gateway authentication is required')
-  const sessionId = yield* prepareRelaySession('/sandbox/.flowdeck')
+  const sessionId = yield* prepareRelaySession('/home/sandbox/.flowdeck')
   const relay = yield* inferenceRelay(endpoint, apiKey, sessionId)
   const relayServer = yield* NodeHttpServer.make(createServer, { host: '127.0.0.1', port: 8081 })
   yield* relayServer.serve(relay)
   const client = yield* launchSdk
-  const gateway = yield* makeGateway(client, model, '/sandbox/.flowdeck')
+  const gateway = yield* makeGateway(client, model, '/home/sandbox/.flowdeck')
   const http = yield* application.pipe(Effect.provideService(Gateway, gateway))
   // Native node:http construction is the platform adapter required by NodeHttpServer.
   // This port is private to the Cloudflare Container and never a public host listener.
