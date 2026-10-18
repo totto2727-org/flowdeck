@@ -1,7 +1,8 @@
 # Pi development sandbox
 
 This guide serves trusted operators and maintainers who run implementation and verification tasks in one workspace.
-The current PiHarness implementation is **pending acceptance validation**.
+The official PiHarness integration has passed local project CI and browser validation.
+Real coding validation has confirmed source changes, focused tests, and the built public export, but the complete implementation-to-verification workflow remains unverified.
 This is a local experiment, not a production or multitenant execution service.
 
 ## Components
@@ -37,7 +38,9 @@ Neither path supports an arbitrary untouched image without the backend runtime p
 
 The published generic sandbox supplies Git and Nix, but does not put Node.js or Vite+ directly on `PATH`.
 Workflow-specific Node.js 24 and Corepack provisioning belong in the derived workspace image, not the generic base.
-The target project's frozen pnpm dependencies supply local `vp`, not a globally installed Vite+ in the image.
+The target project's frozen dependencies supply local `vp`, not a globally installed Vite+ in the image.
+Follow that repository's declared package manager and lockfile rather than assuming pnpm.
+Repositories that require Bun or another runtime need it in their selected workflow image or development environment.
 Use the target repository's `devShell` for its other development tools.
 The generic image and package set are unchanged by this work.
 A lightweight generic `sandbox-dev` tool inventory is deferred to [monorepo #384](https://github.com/totto2727-org/monorepo/issues/384).
@@ -56,7 +59,8 @@ The frontend uses loopback port 4380 and the private development Worker uses loo
 Select **Pi development**, enter a public GitHub repository and a task, then start a new run.
 Explicit resume reads the harness operation result and advances to verification or completion.
 Implementation and verification reuse the same run-scoped session and checkout.
-These steps describe the intended workflow, not completed acceptance of the current implementation.
+The local implementation trial confirmed one run-scoped Container and checkout during editing and repeated explicit polling.
+Implementation settlement and the subsequent verification turn remain unverified.
 
 ## Model and inference transport
 
@@ -112,12 +116,16 @@ Repository code and shell tools execute in the Computer Container backend.
 This separation is not evidence of tenant isolation, safe execution of hostile repositories, or protection against unauthorized inference charges.
 Model output remains untrusted and can contain secrets.
 
-Current end-to-end acceptance is **pending**.
-Successful harness operation settlement does not establish task acceptance: a model-reported blocker can still produce a completed workflow ([task acceptance #15](https://github.com/totto2727-org/flowdeck/issues/15)).
-The coordinating root session will provide final results for the latest implementation.
-Earlier direct-SDK implementation and resume results do not validate PiHarness, Computer tools, credential isolation, or current retention behavior.
-Image builds, daemon smoke checks, synthetic boundary tests, shim tests, and no-cache CI do not establish real implementation, explicit-resume verification, normal cached target CI, or five/six-hour retention.
-No unattended dependency setup, production deployment, Access, or DNS acceptance is claimed.
+Local Flowdeck validation passed normal cached CI with 125 tests and 14 desktop/mobile browser checks.
+The real PiHarness task changed only the target function and focused tests through official Workspace tools.
+In the same Container, an operator independently confirmed five focused tests, a direct `vp pack` build, and four cases through the built public export.
+Dependency setup required operator assistance: the target repository used Bun, the temporary task requested pnpm, and Container dependency downloads failed.
+Genuine frozen Linux dependencies were provisioned through a separate Docker helper and copied into the existing Container without changing its source or lockfile.
+The normal cached target build failed with `spawn EINVAL`; direct build success does not establish normal target CI success.
+The live implementation operation had not settled at the last observation, so the explicit verification turn is not validated.
+Successful harness operation settlement also does not establish task acceptance: a model-reported blocker can still produce a completed workflow ([task acceptance #15](https://github.com/totto2727-org/flowdeck/issues/15)).
+Earlier direct-SDK results do not validate the current runtime.
+Five/six-hour retention, unattended dependency setup, production deployment, Access, and DNS have not been accepted.
 
 Keep these concern links, with their scope reassessed under the current architecture:
 
@@ -125,7 +133,7 @@ Keep these concern links, with their scope reassessed under the current architec
 - [Workspace-loss recovery #11](https://github.com/totto2727-org/flowdeck/issues/11): establish Workspace and Container-loss recovery limits without assuming durable Pi history restores shell effects.
 - [Local Alchemy startup #12](https://github.com/totto2727-org/flowdeck/issues/12): validate the current local stack and official runtime integration.
 - [Native AI binding validation #13](https://github.com/totto2727-org/flowdeck/issues/13): a separate concern, not validation of the current pi-ai HTTPS Gateway provider.
-- [Dependency provisioning and cached tasks #14](https://github.com/totto2727-org/flowdeck/issues/14): unattended frozen dependency setup and normal cached CI need current evidence; previous `spawn EINVAL` observations do not establish the new runtime's outcome.
+- [Dependency provisioning and cached tasks #14](https://github.com/totto2727-org/flowdeck/issues/14): the current Container trial required operator-provisioned dependencies and reproduced `spawn EINVAL` in the normal cached target build.
 
 The frontend build concern remains separate.
 Local startup does not authorize deployment, DNS or Access changes, or image publication.
