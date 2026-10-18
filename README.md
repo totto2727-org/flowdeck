@@ -41,7 +41,7 @@ A later explicit resume loads committed state rather than an in-memory continuat
 
 ### Optional Pi development workflow
 
-The Pi migration is in progress, and real Pi coding acceptance is pending.
+Local Pi coding acceptance passed with operator-provisioned dependencies, not as an unattended setup.
 The workflow image embeds `@earendil-works/pi-coding-agent` 1.3.0 directly in a Node.js process on the published generic `sandbox-dev` image.
 The generic sandbox does not preinstall Node.js, Pi, pnpm, or Vite+.
 Use the target repository's `devShell` for its development tools.
@@ -73,8 +73,9 @@ The release-demo tasks are pure effects.
 The separate Pi development workflow uses the normal Container filesystem and a private HTTP session/turn receipt gateway on port 8080.
 It does not require Cloudflare Computer, a Durable Object filesystem, or Pi Durable.
 The persisted workflow ID `jcode-development` and infrastructure resource name `JcodeSandbox` remain unchanged for compatibility.
-Its Pi implementation and verification acceptance remain pending in the current image.
-A health response or direct inference probe alone is not coding acceptance.
+Implementation and explicit-resume verification completed in the same Container, Pi session, and checkout with the requested model.
+The operator supplied genuine frozen dependencies, and normal cached target CI still fails with `spawn EINVAL` ([provisioning and cached tasks #14](https://github.com/totto2727-org/flowdeck/issues/14)).
+Independent real-tool checks passed, but shim tests and no-cache CI are not evidence of a normal cached CI pass.
 See [sandbox setup and acceptance limits](docs/development-sandbox.md) for the model, credentials, trust boundary, and recovery limits.
 Track [workspace-loss recovery #11](https://github.com/totto2727-org/flowdeck/issues/11), [local Alchemy startup #12](https://github.com/totto2727-org/flowdeck/issues/12), and [native binding validation #13](https://github.com/totto2727-org/flowdeck/issues/13) separately from this migration.
 The frontend build concern also remains separate.

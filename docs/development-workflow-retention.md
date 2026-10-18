@@ -56,8 +56,9 @@ Track [workspace-loss recovery #11](https://github.com/totto2727-org/flowdeck/is
 The maintained lease tests use the native Alchemy API types and a controlled Effect clock.
 They verify timeout requests, alarm scheduling, completion cancellation, stopped-container behavior, failed-run retention, delayed delivery, and binding-error finalization.
 They do not prove that a real container survives a six-hour runtime interval.
-Real Pi streaming and coding acceptance through the private Worker's HTTPS transport remain pending.
-Coding acceptance must establish implementation and explicit-resume verification in the same Container, session, and checkout.
+Local Pi streaming, implementation, and explicit-resume verification passed in the same Container, session, and checkout.
+This acceptance required operator-provisioned genuine frozen dependencies and does not prove unattended setup or six-hour retention.
+Normal cached target CI still fails with `spawn EINVAL`, as tracked in [provisioning and cached tasks #14](https://github.com/totto2727-org/flowdeck/issues/14).
 See [sandbox acceptance limits](development-sandbox.md#trust-and-acceptance-boundary).
 
 ## Sources

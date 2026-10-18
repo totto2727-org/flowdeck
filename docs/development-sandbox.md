@@ -1,8 +1,8 @@
 # Pi development sandbox
 
 This guide serves trusted operators and maintainers who run implementation and verification tasks in one sandbox.
-The Pi migration is in progress.
-Real Pi coding acceptance is pending.
+Local Pi coding acceptance passed with operator-provisioned dependencies.
+This is not an unattended setup guarantee.
 This is a local experiment, not a production or multitenant execution service.
 
 ## Components
@@ -123,18 +123,33 @@ Provider diagnostics are not returned as HTTP error bodies.
 Pi, repository code, and the gateway run as the same user.
 The inference Worker holds the Gateway-only key and keeps inference credentials out of Pi and the Container.
 Provider credentials remain in Gateway stored BYOK.
-This boundary is implemented but has not passed live acceptance ([credential isolation #10](https://github.com/totto2727-org/flowdeck/issues/10)).
+Local checks found no inference credential environment variables or Pi `auth.json` in the Container ([credential isolation #10](https://github.com/totto2727-org/flowdeck/issues/10)).
+
 Pi tools can still request inference and incur unauthorized charges.
 This is not an isolation boundary for untrusted tenants or sensitive host data.
 Model output remains untrusted and can contain secrets.
 
-Real Pi implementation and explicit-resume verification in the current image remain unverified.
-Acceptance must show the requested model, unchanged Container and session identities, the same checkout, and passing target-repository checks.
-SDK tests, a health response, or a direct inference probe alone do not establish that acceptance.
-The workflow image has passed ARM64 Docker packaging, public Pi import, and the canonical AMD64 Alchemy image build.
-A secret-free HTTP session has also reached completion without a model call.
-These image and session checks do not validate the current HTTPS inference route.
-Real Pi streaming and production Cloudflare execution remain unverified.
+Local acceptance completed implementation and explicit-resume verification with `custom-opencode-go/deepseek-v4.1-flash` through the Worker's HTTPS transport.
+Both nodes used the same Container, Pi session, and project checkout.
+Only two files changed: the expected source file and its test.
+Package metadata, lockfile, Bun configuration, Nix flake, and target documentation were unchanged.
+
+The operator provisioned genuine dependencies from an ordinary Linux AMD64 builder with Bun 1.3.13 and the unchanged frozen dependency policy.
+Those dependencies were copied into the same Container before real verification.
+This acceptance does not establish unattended dependency setup.
+Shim-based tests are excluded from the evidence.
+See [dependency provisioning and cached tasks #14](https://github.com/totto2727-org/flowdeck/issues/14).
+
+Independent checks in that Container passed real Vite+ format, lint, and type checks and five Vitest tests.
+JavaScript and declaration builds and a five-file package dry-run passed.
+Six assertions against the built public export also passed.
+Normal cached target `vp run ci` still fails with `spawn EINVAL`, which the owner independently reproduced.
+The Pi agent also reported the same failure on the unmodified baseline.
+A model-reported no-cache CI result is not a normal cached CI pass, and no cache-disabling workaround was added.
+
+The current endpoint-only workflow image passed the canonical AMD64 Alchemy build and actual Pi execution.
+Flowdeck's ordinary CI passed 181 tests, and its current HTTP stack passed all 14 real browser tests.
+These checks do not validate production deployment, Cloudflare Access, or DNS.
 Track [local Alchemy startup #12](https://github.com/totto2727-org/flowdeck/issues/12) and the separate frontend build concern outside this migration.
 Local startup does not deploy Cloudflare resources, change DNS or Access, or publish an image.
 

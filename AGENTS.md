@@ -99,9 +99,10 @@ Keep `HOME=/home/sandbox` and checkout `/home/sandbox/workspace/project`.
 
 When changing this integration, read [sandbox setup and acceptance limits](docs/development-sandbox.md).
 When changing Container lifetime, read [workspace retention](docs/development-workflow-retention.md).
-Real Pi streaming and coding acceptance remain unverified.
-Image and secret-free session checks do not validate live inference.
-Coding acceptance requires implementation and explicit-resume verification in the current image.
+Local Pi implementation and explicit-resume verification passed in one Container, session, and checkout with operator-provisioned genuine frozen dependencies.
+Do not describe this as unattended setup or count shim tests or no-cache CI as a normal cached CI pass.
+Normal cached target CI still fails with `spawn EINVAL`, as tracked in [provisioning and cached tasks #14](https://github.com/totto2727-org/flowdeck/issues/14).
+Use the [sandbox acceptance boundary](docs/development-sandbox.md#trust-and-acceptance-boundary) for the verified scope.
 Track [credential isolation #10](https://github.com/totto2727-org/flowdeck/issues/10), [workspace-loss recovery #11](https://github.com/totto2727-org/flowdeck/issues/11), and [local Alchemy startup #12](https://github.com/totto2727-org/flowdeck/issues/12) separately from this migration.
 Track native AI binding validation separately in [Issue #13](https://github.com/totto2727-org/flowdeck/issues/13).
 Keep the frontend build concern separate as well.
