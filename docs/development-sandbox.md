@@ -12,7 +12,8 @@ This is a local experiment, not a production or multitenant execution service.
 - `containers/workspace/Dockerfile` supplies official `computerd` 0.5.1 and repository tool prerequisites, not an embedded Pi SDK, custom HTTP runner, or inference proxy.
 - `src/workers/development-workflow/` owns the run Durable Object, workspace integration, model configuration, checkpoints, and Container binding.
 - The shared D1 database owns workflow identity, graph, checkpoints, and ordered events.
-- Control reaches the private workflow Worker through a static service binding.
+- Control reaches the private `Workflow` integration Worker through one static service binding.
+- The integration Worker owns the catalog, initial run persistence, and fixed bindings to the individual workflow Workers.
 
 The persisted workflow ID `jcode-development` and infrastructure resource name `JcodeSandbox` remain unchanged for compatibility.
 The frontend label is **Pi development**.

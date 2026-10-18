@@ -1,7 +1,8 @@
+import type { RpcCallError, RpcDecodeError } from 'alchemy/Rpc'
 import { Effect, Schema } from 'effect'
 import { Headers, HttpBody, HttpRouter, HttpServerError, HttpServerRequest, HttpServerResponse } from 'effect/http'
 
-import type { DomainError } from '../../../features/workflow/domain/errors'
+import { BindingError, type DomainError } from '../../../features/workflow/domain/errors'
 import {
   ApiErrorResponse,
   CreateRun,
@@ -9,13 +10,17 @@ import {
   RunsResponse,
   WorkflowsResponse,
 } from '../../../features/workflow/domain/model'
-import * as Control from './control'
+import { Workflows } from '../../../features/workflow/services/workflows'
 
 type ApiFailure = DomainError | Schema.SchemaError | HttpServerError.HttpServerError | HttpBody.HttpBodyError
 const errorResponse = (status: number, error: string, message: string) =>
   HttpServerResponse.schemaJson(ApiErrorResponse)({ error, message }, { status })
 const boundary = <R>(handler: Effect.Effect<HttpServerResponse.HttpServerResponse, ApiFailure, R>) =>
   handler.pipe(
+    // makeRpcStub preserves the declared service shape, so transport failures need this wider boundary.
+    Effect.mapError((error: ApiFailure | RpcCallError | RpcDecodeError) =>
+      error._tag === 'RpcCallError' || error._tag === 'RpcDecodeError' ? new BindingError({ cause: error }) : error,
+    ),
     Effect.catchTags({
       NotFound: () => errorResponse(404, 'NotFound', 'Run or graph not found'),
       Conflict: () => errorResponse(409, 'Conflict', 'Run changed concurrently or a delivery ID was reused'),
@@ -54,12 +59,22 @@ export const ApiRoutes = HttpRouter.use((router) =>
     HttpRouter.route(
       'GET',
       '/api/workflows',
-      boundary(Control.listWorkflows.pipe(Effect.flatMap(HttpServerResponse.schemaJson(WorkflowsResponse)))),
+      boundary(
+        Workflows.pipe(
+          Effect.flatMap((workflows) => workflows.listWorkflows()),
+          Effect.flatMap(HttpServerResponse.schemaJson(WorkflowsResponse)),
+        ),
+      ),
     ),
     HttpRouter.route(
       'GET',
       '/api/runs',
-      boundary(Control.listRuns.pipe(Effect.flatMap(HttpServerResponse.schemaJson(RunsResponse)))),
+      boundary(
+        Workflows.pipe(
+          Effect.flatMap((workflows) => workflows.listRuns()),
+          Effect.flatMap(HttpServerResponse.schemaJson(RunsResponse)),
+        ),
+      ),
     ),
     HttpRouter.route(
       'POST',
@@ -67,7 +82,8 @@ export const ApiRoutes = HttpRouter.use((router) =>
       serverMutation(
         Effect.gen(function* () {
           const input = yield* HttpServerRequest.schemaBodyJson(CreateRun, { onExcessProperty: 'error' })
-          return yield* HttpServerResponse.schemaJson(RunDetail)(yield* Control.createRun(input), { status: 201 })
+          const workflows = yield* Workflows
+          return yield* HttpServerResponse.schemaJson(RunDetail)(yield* workflows.createRun(input), { status: 201 })
         }),
       ),
     ),
@@ -76,7 +92,8 @@ export const ApiRoutes = HttpRouter.use((router) =>
       '/api/runs/:runId',
       boundary(
         Effect.gen(function* () {
-          return yield* HttpServerResponse.schemaJson(RunDetail)(yield* Control.getRunDetail(yield* runId))
+          const workflows = yield* Workflows
+          return yield* HttpServerResponse.schemaJson(RunDetail)(yield* workflows.getRunDetail(yield* runId))
         }),
       ),
     ),
@@ -85,7 +102,8 @@ export const ApiRoutes = HttpRouter.use((router) =>
       '/api/runs/:runId/resume',
       serverMutation(
         Effect.gen(function* () {
-          return yield* HttpServerResponse.schemaJson(RunDetail)(yield* Control.resumeRun(yield* runId))
+          const workflows = yield* Workflows
+          return yield* HttpServerResponse.schemaJson(RunDetail)(yield* workflows.resumeRun(yield* runId))
         }),
       ),
     ),

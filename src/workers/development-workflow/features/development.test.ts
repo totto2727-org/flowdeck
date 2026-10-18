@@ -12,8 +12,10 @@ import { BindingError, StoreError } from '../../../features/workflow/domain/erro
 import { CreateRun, RunDetail, type Run } from '../../../features/workflow/domain/model'
 import { makeD1Store } from '../../../features/workflow/services/d1-store'
 import { Store, type StoreService } from '../../../features/workflow/services/store'
+import { Workflows } from '../../../features/workflow/services/workflows'
 import { ApiRoutes } from '../../control/features/router'
-import { DevelopmentWorkflowBinding, WorkflowBinding } from '../../control/features/workflow-binding'
+import { makeWorkflows } from '../../workflow/features/workflow'
+import { DevelopmentWorkflowBinding, WorkflowBinding } from '../../workflow/features/workflow-binding'
 import {
   DevelopmentSnapshot,
   developmentGraph,
@@ -123,17 +125,21 @@ describe('development workflow with canonical D1 checkpoints', () => {
     const handler = HttpRouter.toWebHandler(
       ApiRoutes.pipe(
         HttpRouter.provideRequest(
-          Layer.mergeAll(
-            Layer.succeed(Store, store),
-            Layer.succeed(DevelopmentWorkflowBinding, {
-              start: (runId) => provide(startDevelopmentRun(runId)),
-              resume: (runId) => provide(resumeDevelopmentRun(runId)),
-            }),
-            Layer.succeed(WorkflowBinding, {
-              start: () => Effect.fail(new BindingError({ cause: 'Wrong workflow binding' })),
-              resume: () => Effect.fail(new BindingError({ cause: 'Wrong workflow binding' })),
-            }),
-            TestCrypto.layer('development-api').pipe(Layer.provide(BrowserCrypto.layer)),
+          Layer.effect(Workflows, makeWorkflows).pipe(
+            Layer.provide(
+              Layer.mergeAll(
+                Layer.succeed(Store, store),
+                Layer.succeed(DevelopmentWorkflowBinding, {
+                  start: (runId) => provide(startDevelopmentRun(runId)),
+                  resume: (runId) => provide(resumeDevelopmentRun(runId)),
+                }),
+                Layer.succeed(WorkflowBinding, {
+                  start: () => Effect.fail(new BindingError({ cause: 'Wrong workflow binding' })),
+                  resume: () => Effect.fail(new BindingError({ cause: 'Wrong workflow binding' })),
+                }),
+                TestCrypto.layer('development-api').pipe(Layer.provide(BrowserCrypto.layer)),
+              ),
+            ),
           ),
         ),
       ),

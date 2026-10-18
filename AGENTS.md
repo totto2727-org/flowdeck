@@ -8,7 +8,8 @@ The application uses Effect 4, Effront, shadcn/ui, Cloudflare Workers, Durable O
 
 - `src/workers/frontend/`: Frontend entry, Access implementations, and frontend-only features.
 - `src/workers/frontend/features/`: Effront pages, ServerFns, dashboard, graph, and shadcn components.
-- `src/workers/control/`: Control entry and its HTTP routes, commands, and workflow-binding contract.
+- `src/workers/control/`: Control entry and HTTP routes, with one static binding to the integration Worker.
+- `src/workers/workflow/`: Workflow integration entry, catalog, run commands, and fixed per-workflow bindings.
 - `src/workers/demo-workflow/`: Workflow entry, run Durable Object, and demo-only execution features.
 - `src/workers/development-workflow/`: development checkpoints, run Durable Object, official PiHarness, and Computer Workspace integration.
 - `containers/workspace/`: workspace image with the official `computerd` runtime.
@@ -17,7 +18,7 @@ The application uses Effect 4, Effront, shadcn/ui, Cloudflare Workers, Durable O
 - `src/workers/development-workflow/index.ts`: the sole external `DevelopmentWorkflow` definition, with native Durable Object exports from `worker.ts` through official Alchemy support, not custom `props.exports`.
 - `src/workers/composition.ts`: final deployment and request dependency selection.
 - `src/workers/database.ts`: the shared D1 resource declaration.
-- `src/features/workflow/`: shared wire schemas, graph projection, and Kysely persistence.
+- `src/features/workflow/`: shared wire schemas, graph projection, Kysely persistence, and the `Workflows` service contract.
 - `migrations/`: maintained D1 schema migrations.
 - `alchemy.ts` and `alchemy.run.ts`: all application resources in one project.
 - `vite.config.ts`: canonical development and validation tasks.
@@ -57,6 +58,8 @@ Do not replace Kysely with a second query layer.
 ## Workflow invariants
 
 Keep one Worker per workflow and one logical Durable Object ID per run.
+Use the additional `Workflow` integration Worker as Control's only workflow service binding.
+Keep catalog, initial run persistence, and per-workflow routing in that Worker, not in Control.
 Use static service bindings only.
 Keep the workflow entry point a thin router to a Durable Object stub.
 Store the selected implementation version and immutable graph reference when a run is created.

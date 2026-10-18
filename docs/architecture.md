@@ -11,33 +11,36 @@ flowchart TB
   Browser[Browser] --> Access[Cloudflare Access]
   Access --> Web[Effront frontend\nflowdeck.totto2727.dev]
   Web -->|static service binding / Effect HttpClient| API[Control Worker\nEffect HTTP]
-  API -->|static typed RPC binding| Entry[Demo Workflow Worker Entry]
+  API -->|single static typed RPC binding| Workflow[Workflow Integration Worker]
+  Workflow -->|static typed RPC binding| Entry[Demo Workflow Worker Entry]
   Entry -->|getByName runId| Run[Run Durable Object]
-  API <--> DB[(Shared D1\nKysely)]
+  Workflow <--> DB[(Shared D1\nKysely)]
   Run <--> DB
   Run --> V[Workflow-owned version v1 or v2]
-  API -->|static typed RPC binding| Development[Development Workflow Worker]
+  Workflow -->|static typed RPC binding| Development[Development Workflow Worker]
   Development -->|getByName runId| DevelopmentRun[Development Run DO]
   DevelopmentRun <--> DB
-  DevelopmentRun -->|native Container port / Effect HTTP| Gateway[Private SDK gateway]
-  Gateway --> Session[Jcode session and shared checkout]
+  DevelopmentRun --> Pi[Official PiHarness and pi-durable]
+  Pi -->|official Computer Workspace tools| Container[computerd Container\nshared checkout]
   V --> N[Thin observed node effects]
 ```
 
-All Workers, the D1 database, and the Jcode Container belong to the `flowdeck` Alchemy project.
+All Workers, the D1 database, and the workspace Container belong to the `flowdeck` Alchemy project.
 Each workflow has one Worker.
+An additional integration Worker owns the catalog and fixed bindings to those workflow Workers.
 The entry routes a run ID to one logical Durable Object ID.
 The application does not depend on the lifetime of a JavaScript object instance.
 Control and workflow Workers have no public domain, `workers.dev` endpoint, or preview endpoint.
 The frontend is the only public entry point.
-Development binds local ports 4380 through 4383 to loopback.
+Development binds local ports 4380 through 4384 to loopback.
 
 ## Responsibilities
 
 | Component               | Responsibility                                                                                   |
 | ----------------------- | ------------------------------------------------------------------------------------------------ |
 | Frontend                | Render shared shapes, inspect committed state and events, start and resume runs.                 |
-| Control API             | Validate HTTP input, create run records, read shared data, call static workflow bindings.        |
+| Control API             | Validate HTTP input, reject browser-originated mutations, and call one workflow service binding. |
+| Workflow integration    | Expose the catalog and run operations, persist new runs, and select fixed workflow bindings.     |
 | Workflow entry          | Resolve the run DO and forward typed operations.                                                 |
 | Run DO                  | Load committed state and invoke the pinned workflow implementation.                              |
 | Workflow implementation | Define version-specific nodes, transitions, checkpoint interpretation, and recovery.             |
@@ -48,6 +51,10 @@ Runtime resources and side-effect recovery belong to the workflow that uses them
 
 Worker entry points and Worker-specific features live under `src/workers/<worker>/`.
 Shared workflow schemas, projections, and persistence live under `src/features/workflow/`.
+The shared `Workflows` service is Control's only workflow dependency.
+Workflow registration and initial snapshots live under `src/workers/workflow/`, not in Control.
+Adding a workflow requires its typed input schema, implementation, and integration registration, but no new Control binding.
+An unknown persisted workflow ID is rejected rather than sent to the demo worker.
 The final composition boundary in `src/workers/composition.ts` selects deployment and authorization Layers.
 The frontend always invokes the injected authorization service before dispatch.
 The Access implementation always verifies admission, audience, and identity, and never checks a development flag.
@@ -115,13 +122,14 @@ An event-ID collision in another commit aborts the complete batch.
 An identical command can receive its previous receipt even after later revisions.
 State and events therefore have one commit boundary.
 Run detail reads use a revision-bounded event prefix so a newer transition cannot attach newer events to an older snapshot.
-The shared DB is canonical for Control and DO reads.
+The shared DB is canonical for integration Worker and DO reads.
 Applied SQL migrations are immutable.
 Add a new forward migration to strengthen database guards without rewriting local or deployed history.
 
 ## Start and recovery
 
-Control persists a new pending run, its version, and its graph before calling the workflow binding.
+Control forwards creation to the integration Worker.
+The integration Worker persists a new pending run, its version, and its graph before calling the selected workflow binding.
 A binding failure must leave the pending run available for explicit recovery.
 A DO call loads the last committed state instead of using a cached continuation.
 Start runs the first node and waits at the manual checkpoint.
@@ -132,18 +140,25 @@ Completed and Failed are terminal and cannot run again.
 ```mermaid
 sequenceDiagram
   participant C as Control
+  participant W as Workflow integration
   participant D as Shared D1
   participant E as Workflow entry
   participant O as Run DO
-  C->>D: Create pending run and pin version/graph
-  C->>E: start(runId)
+  C->>W: createRun(input)
+  W->>D: Create pending run and pin version/graph
+  W->>E: start(runId)
   E->>O: Resolve same logical run ID
   O->>D: Load committed snapshot
   O->>D: Commit node events and Waiting snapshot
   D-->>O: Atomic commit succeeds
-  O-->>C: Committed result
+  O-->>E: Committed result
+  E-->>W: Operation acknowledged
+  W->>D: Read committed run detail
+  W-->>C: Run detail
   Note over O: Runtime may be replaced
-  C->>E: resume(runId)
+  C->>W: resumeRun(runId)
+  W->>D: Read pinned workflow ID
+  W->>E: resume(runId)
   E->>O: Resolve same logical run ID
   O->>D: Reload version and Waiting snapshot
   O->>D: Commit completion snapshot and events
@@ -188,7 +203,7 @@ Production DNS, Access admission, and deployment behavior require a separate aut
 ## Remaining work
 
 - Integrate an official Effect Machine API if a compatible version becomes available.
-- Validate the workflow-owned Jcode Container with the authorized model on a native AMD64 builder before deployment; see [development sandbox](development-sandbox.md).
+- Resolve the remaining PiHarness task acceptance and environment limits before deployment; see [development sandbox](development-sandbox.md).
 - Add Cloudflare Workflows nodes as another workflow-owned integration.
 - Establish production operating limits, retention, pagination, and old-version removal procedures before a larger deployment.
 - Authorize and validate the real production domain and Access policy before release.

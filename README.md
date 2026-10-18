@@ -68,7 +68,7 @@ See the [sandbox setup and acceptance limits](docs/development-sandbox.md) befor
 
 - One Alchemy project for all Workers and the shared D1 database.
 - Effect HTTP for the Control API and Effect HttpClient over a static frontend service binding.
-- Typed static RPC from Control to the workflow entry and its run-specific Durable Object.
+- One typed static RPC binding from Control to the `Workflow` integration Worker, which owns the catalog and routes to individual workflow Workers and their run-specific Durable Objects.
 - Kysely queries with D1 atomic state/event batches, revision checks, and duplicate-command receipts.
 - Immutable run graphs, common shapes, and event projection by node and execution identity.
 - Two bundled demo versions, typed checkpoints, and explicit recovery.

@@ -1,20 +1,22 @@
 import { readD1Migrations } from '@cloudflare/vitest-plugin'
 import type { D1Database } from '@cloudflare/workers-types'
 import { BrowserCrypto } from '@effect/platform-browser'
+import { makeRpcStub } from 'alchemy/Cloudflare/Workers'
 import { Array, Effect, Exit, Layer, Schema } from 'effect'
 import { HttpRouter } from 'effect/http'
 import { TestCrypto } from 'effect/testing'
 import { Miniflare } from 'miniflare'
-import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 
-import { createRun } from '../../../workers/control/features/control'
 import { ApiRoutes } from '../../../workers/control/features/router'
-import { DevelopmentWorkflowBinding, WorkflowBinding } from '../../../workers/control/features/workflow-binding'
 import { demoGraph, initialSnapshot, resumeRun, startRun } from '../../../workers/demo-workflow/features/demo'
+import { createRun, makeWorkflows, resumeRun as resumeWorkflowRun } from '../../../workers/workflow/features/workflow'
+import { DevelopmentWorkflowBinding, WorkflowBinding } from '../../../workers/workflow/features/workflow-binding'
 import { BindingError, StoreError } from '../domain/errors'
 import { RunDetail, type Run, type WorkflowVersion } from '../domain/model'
 import { makeD1Store } from './d1-store'
 import { type CommitCommand, Store, type StoreService } from './store'
+import { Workflows } from './workflows'
 
 const now = '2026-10-17T12:00:00.000Z'
 const newRun = (runId: string, version: WorkflowVersion = 'v1'): Run => ({
@@ -93,11 +95,15 @@ const api = () =>
   HttpRouter.toWebHandler(
     ApiRoutes.pipe(
       HttpRouter.provideRequest(
-        Layer.mergeAll(
-          testBinding(),
-          unavailableDevelopmentBinding,
-          Layer.succeed(Store, store),
-          TestCrypto.layer('flowdeck-api').pipe(Layer.provide(BrowserCrypto.layer)),
+        Layer.effect(Workflows, makeWorkflows).pipe(
+          Layer.provide(
+            Layer.mergeAll(
+              testBinding(),
+              unavailableDevelopmentBinding,
+              Layer.succeed(Store, store),
+              TestCrypto.layer('flowdeck-api').pipe(Layer.provide(BrowserCrypto.layer)),
+            ),
+          ),
         ),
       ),
     ),
@@ -329,6 +335,25 @@ describe('demo cold restoration', () => {
 })
 
 describe('interrupted workflow recovery', () => {
+  it('rejects an unregistered persisted workflow before dispatch without changing its checkpoint', async () => {
+    const unsupported = { ...newRun('unknown-run'), workflowId: 'unregistered-workflow' }
+    await Effect.runPromise(store.create(unsupported, demoGraph('v1')))
+    const resume = vi.fn(() => Effect.die('Unregistered workflows must not dispatch'))
+    const binding = { start: resume, resume }
+    await expect(
+      Effect.runPromise(
+        resumeWorkflowRun(unsupported.runId).pipe(
+          Effect.provideService(Store, store),
+          Effect.provideService(WorkflowBinding, binding),
+          Effect.provideService(DevelopmentWorkflowBinding, binding),
+        ),
+      ),
+    ).rejects.toMatchObject({ _tag: 'InvalidOperation', message: 'The persisted workflow is not registered' })
+    expect(resume).not.toHaveBeenCalled()
+    expect(await Effect.runPromise(store.getRun(unsupported.runId))).toEqual(unsupported)
+    expect(await Effect.runPromise(store.getEvents(unsupported.runId))).toEqual([])
+  })
+
   it('restores a running publish checkpoint without replaying manual approval or node start', async () => {
     await seed()
     await run(startRun('run-1'))
@@ -359,15 +384,16 @@ describe('interrupted workflow recovery', () => {
     await expect(run(startRun('run-1'))).rejects.toMatchObject({ _tag: 'InvalidOperation' })
   })
 
-  it('leaves a recoverable pending run if its static workflow binding fails', async () => {
+  it('leaves a recoverable pending run if its native static workflow RPC rejects', async () => {
+    // Promise rejection is the native service-binding boundary wrapped by the production Alchemy client.
+    const binding = makeRpcStub<WorkflowBinding['Service']>({
+      start: () => Promise.reject(new Error('Individual worker disconnected')),
+    })
     await expect(
       Effect.runPromise(
         createRun({ workflowId: 'demo', version: 'v1' }).pipe(
           Effect.provideService(Store, store),
-          Effect.provideService(WorkflowBinding, {
-            start: () => Effect.fail(new BindingError({ cause: 'test unavailable' })),
-            resume: () => Effect.fail(new BindingError({ cause: 'test unavailable' })),
-          }),
+          Effect.provideService(WorkflowBinding, binding),
           Effect.provide(BrowserCrypto.layer),
           Effect.provide(unavailableDevelopmentBinding),
         ),
@@ -379,6 +405,27 @@ describe('interrupted workflow recovery', () => {
     expect(pending).toMatchObject({ status: 'pending', revision: 0 })
     await run(resumeRun(pending.runId))
     expect(await Effect.runPromise(store.getRun(pending.runId))).toMatchObject({ status: 'waiting', revision: 2 })
+  })
+
+  it('keeps the persisted checkpoint unchanged when an individual resume RPC rejects', async () => {
+    await seed()
+    await run(startRun('run-1'))
+    const waiting = await Effect.runPromise(store.getRun('run-1'))
+    const events = await Effect.runPromise(store.getEvents('run-1'))
+    const binding = makeRpcStub<WorkflowBinding['Service']>({
+      resume: () => Promise.reject(new Error('Individual worker disconnected')),
+    })
+    await expect(
+      Effect.runPromise(
+        resumeWorkflowRun('run-1').pipe(
+          Effect.provideService(Store, store),
+          Effect.provideService(WorkflowBinding, binding),
+          Effect.provide(unavailableDevelopmentBinding),
+        ),
+      ),
+    ).rejects.toMatchObject({ _tag: 'BindingError' })
+    expect(await Effect.runPromise(store.getRun('run-1'))).toEqual(waiting)
+    expect(await Effect.runPromise(store.getEvents('run-1'))).toEqual(events)
   })
 })
 
@@ -426,10 +473,10 @@ describe('Effect HTTP API', () => {
     try {
       const workflows = await handler.handler(new Request('http://localhost/api/workflows'))
       expect(workflows.status).toBe(200)
-      expect(await workflows.json()).toMatchObject({
+      expect(await workflows.json()).toEqual({
         workflows: [
-          { workflowId: 'demo', versions: ['v1', 'v2'] },
-          { workflowId: 'jcode-development', versions: ['v1'] },
+          { workflowId: 'demo', name: 'Release checkpoint', versions: ['v1', 'v2'] },
+          { workflowId: 'jcode-development', name: 'Pi development', versions: ['v1'] },
         ],
       })
       const invalid = await handler.handler(
@@ -466,6 +513,9 @@ describe('Effect HTTP API', () => {
         state: { revision: 2 },
         shapes: { nodes: [{ state: 'succeeded' }, { state: 'waiting' }, { state: 'idle' }] },
       })
+      const listed = await handler.handler(new Request('http://localhost/api/runs'))
+      expect(listed.status).toBe(200)
+      expect(await listed.json()).toEqual({ runs: [body.run] })
       const resumed = await handler.handler(
         new Request(`http://localhost/api/runs/${body.run.runId}/resume`, { method: 'POST' }),
       )

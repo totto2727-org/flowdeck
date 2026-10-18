@@ -2,7 +2,7 @@ import { Context, Effect } from 'effect'
 
 import type { DomainError } from '../../../features/workflow/domain/errors'
 
-/** The control worker statically provides the bundled demo workflow entry. */
+/** The integration Worker statically provides the bundled demo workflow entry. */
 export class WorkflowBinding extends Context.Service<
   WorkflowBinding,
   {
