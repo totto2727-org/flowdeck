@@ -173,8 +173,11 @@ The model created a temporary IPv4-only CONNECT proxy at `127.0.0.1:8899` in san
 This proxy is an experiment-specific workaround, not a maintained source feature or an automatic Flowdeck networking guarantee.
 Future runs must validate registry connectivity independently.
 Flowdeck's frontend `vp build` issue remains unresolved and is separate from the target project's successful build.
-The AMD64 base-image build is also unverified: this macOS host's Ubuntu 26.04 emulation fails during archive extraction with `Function not implemented`.
-A native Linux AMD64 builder must validate the normal Cloudflare image before deployment.
+The generic sandbox base and dev images have passed native Linux ARM64 and AMD64 publication builds, and both architectures are present in their GHCR `latest` manifests.
+The derived workflow image builds from the published dev image on ARM64 and starts Node 24.19.0, Jcode 0.98.1, and Nix 2.35.3 with writable HOME and workspace under `/home/sandbox`.
+With networking disabled and dummy Gateway credentials, its HTTP server also creates a real official-SDK session, returns the same session on retry, and completes that session without submitting an inference turn.
+The official installer requires the `v0.98.1` release tag and updates shell startup files, so this derived image preserves Home Manager startup-file contents in writable copies before installation.
+This image check does not repeat the historical model-driven coding task or establish an AMD64 derived-image build.
 No production Cloudflare execution has been tested.
 
 ## Sources

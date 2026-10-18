@@ -113,7 +113,7 @@ describe('container HTTP contract', () => {
         const dockerfile = yield* fs.readFileString('containers/jcode/Dockerfile')
         expect(String.split(dockerfile, '\n')).toEqual(
           expect.arrayContaining([
-            'ARG JCODE_VERSION=0.98.1',
+            'ARG JCODE_VERSION=v0.98.1',
             'ENV HOME=/home/sandbox',
             'ENV PATH=/home/sandbox/.local/bin:/home/sandbox/.nix-profile/bin:/usr/local/bin:/usr/bin:/bin',
             'WORKDIR /home/sandbox/workspace',
