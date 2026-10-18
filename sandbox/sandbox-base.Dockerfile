@@ -16,7 +16,7 @@ esac
 
 git -C /home/sandbox/nix init
 git -C /home/sandbox/nix add .
-nix run --inputs-from ~/nix/sandbox home-manager -- switch --flake ~/nix/sandbox#sandbox-${NIX_SYSTEM}
+nix run --inputs-from ~/nix/sandbox home-manager -- switch -b before-home-manager --flake ~/nix/sandbox#sandbox-${NIX_SYSTEM}
 home-manager --version
 
 nix-collect-garbage -d

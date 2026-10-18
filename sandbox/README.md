@@ -72,6 +72,10 @@ The original monorepo files and images remain unchanged.
 | `vite.config.ts`                               | Adds ordered local image-build tasks with Vite+ task caching disabled                              | Recreates Docker daemon outputs while retaining Docker layer caching                |
 | `containers/workspace/Dockerfile`              | Uses the independent Flowdeck sandbox base                                                         | Keeps the official computerd runtime source unchanged and the Alchemy context small |
 
+Home Manager activation uses the official `switch -b before-home-manager` option to preserve the initial `.bashrc` and `.profile` files created by user provisioning and the Nix installer.
+Without that option, the copied activation command refuses to replace those existing files.
+This is a demonstrated activation compatibility fix, not a forced overwrite or a change to the managed package inventory.
+
 The runtime binary remains official computerd 0.5.1.
 These changes customize image ownership and dependency provisioning, not upstream computerd runtime source.
 When updating the copied definitions, update this exact source revision and the retained-difference table in the same change.
