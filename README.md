@@ -52,7 +52,7 @@ The derived image in `containers/workspace/Dockerfile` runs official `computerd`
 Optional `FLOWDECK_WORKSPACE_IMAGE` selects a prepared official-computerd-compatible image instead of the Dockerfile build.
 This runtime image selector is distinct from the Dockerfile base argument.
 Alternate bases must satisfy the Dockerfile runtime, apt, and FUSE prerequisites, not merely be arbitrary untouched images.
-Workflow-specific Node.js 24 and Corepack provisioning belong in this derived image.
+Use the target repository's `nix develop`, or a minimal temporary `nix shell`, for Node.js and other required tools instead of baking them into this image.
 The image does not supply global Vite+; frozen target dependencies supply local `vp`.
 The generic sandbox package set is unchanged, with its lightweight tool inventory deferred to [monorepo #384](https://github.com/totto2727-org/monorepo/issues/384).
 

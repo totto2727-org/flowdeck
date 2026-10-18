@@ -38,15 +38,14 @@ The prepared-image setting differs from the Dockerfile's `WORKSPACE_IMAGE` base 
 Neither path supports an arbitrary untouched image without the backend runtime prerequisites.
 
 The published generic sandbox supplies Git and Nix, but does not put Node.js or Vite+ directly on `PATH`.
-Workflow-specific Node.js 24 and Corepack provisioning belong in the derived workspace image, not the generic base.
+The derived workspace image does not add Node.js or a package manager.
 The target project's frozen dependencies supply local `vp`, not a globally installed Vite+ in the image.
 Follow that repository's declared package manager and lockfile rather than assuming pnpm.
-Repositories that require Bun or another runtime need it in their selected workflow image or development environment.
-Use the target repository's `devShell` for its other development tools.
+Use the target repository's `nix develop`, or a minimal temporary `nix shell`, for Node.js, Bun, package managers, and other required tools.
 The generic image and package set are unchanged by this work.
 A lightweight generic `sandbox-base` tool inventory is deferred to [monorepo #384](https://github.com/totto2727-org/monorepo/issues/384).
 
-Keep `HOME=/home/sandbox` and use `/workspace/project` as the checkout path through Computer Workspace.
+Run as `sandbox`, keep `HOME=/home/sandbox`, and use `/workspace/project` as the checkout path through Computer Workspace.
 The Container serves the official `computerd` backend on port 8080, not a custom session/turn HTTP gateway.
 Keep its build context limited to `containers/workspace/`.
 

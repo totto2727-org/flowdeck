@@ -108,9 +108,10 @@ Set optional `FLOWDECK_WORKSPACE_IMAGE` only to a prepared official-computerd-co
 Otherwise build the workspace Dockerfile, with `FLOWDECK_PI_DOCKERFILE` available as a Dockerfile override.
 `FLOWDECK_WORKSPACE_IMAGE` is not the Dockerfile's `WORKSPACE_IMAGE` base argument.
 An alternate base must satisfy the Dockerfile runtime, apt, and FUSE prerequisites; this is not support for any untouched image through one call.
-Keep workflow-specific Node.js 24 and Corepack provisioning in the derived image, not the generic sandbox.
+Do not bake Node.js or a package manager into the workspace image.
+Use the target repository's `nix develop`, or a minimal temporary `nix shell`, for required development tools.
 Do not claim that the image supplies global Vite+; the target project's frozen pnpm dependencies supply local `vp`.
-Use `HOME=/home/sandbox` and checkout `/workspace/project` through Computer Workspace.
+Run computerd and repository tools as `sandbox`, with `HOME=/home/sandbox` and checkout `/workspace/project` through Computer Workspace.
 Keep the generic image unchanged in this task; its lightweight tool inventory is deferred to [monorepo #384](https://github.com/totto2727-org/monorepo/issues/384).
 
 Read [sandbox setup and acceptance limits](docs/development-sandbox.md) before changing this integration and [workspace retention](docs/development-workflow-retention.md) before changing lifetime behavior.

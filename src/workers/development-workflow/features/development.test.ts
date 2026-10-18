@@ -253,7 +253,7 @@ describe('development workflow with canonical D1 checkpoints', () => {
       },
     ])
     expect(submissions[0]?.input.prompt).toContain(
-      'Use the development tools available in the Node container and follow the target repository instructions.',
+      'Follow the target repository instructions. Use its nix develop environment, or a minimal temporary nix shell, to obtain missing runtimes and development tools.',
     )
     expect(submissions[0]?.input.prompt).not.toContain('into /sandbox/')
     expect(submissions[0]?.input.prompt).toContain(input.repository)
@@ -305,7 +305,7 @@ describe('development workflow with canonical D1 checkpoints', () => {
       },
     })
     expect(submissions[1]?.input.prompt).toContain(
-      'Use the development tools available in the Node container and follow the target repository instructions.',
+      'Follow the target repository instructions. Use its nix develop environment, or a minimal temporary nix shell, to obtain missing runtimes and development tools.',
     )
     expect(submissions[1]?.input.prompt).not.toContain('same /sandbox/')
     expect(submissions[1]?.input.prompt).not.toContain('/home/sandbox/')
