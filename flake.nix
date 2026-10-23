@@ -11,12 +11,23 @@
         "aarch64-linux"
         "x86_64-linux"
       ];
+      forEachSystem = nixpkgs.lib.genAttrs supportedSystems;
     in
     {
-      devShells = nixpkgs.lib.genAttrs supportedSystems (system: {
-        default = nixpkgs.legacyPackages.${system}.mkShell {
-          packages = [ nixpkgs.legacyPackages.${system}.nixfmt ];
-        };
-      });
+      devShells = forEachSystem (
+        system:
+        let
+          pkgs = import nixpkgs {
+            inherit system;
+          };
+        in
+        {
+          default = pkgs.mkShell {
+            packages = [
+              pkgs.nixfmt
+            ];
+          };
+        }
+      );
     };
 }
