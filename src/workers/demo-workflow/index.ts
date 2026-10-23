@@ -16,8 +16,10 @@ export class FlowdeckRun extends DurableObject<FlowdeckRun>()(
     return Effect.gen(function* () {
       const store = makeD1Store(yield* database.raw)
       return {
-        start: (runId: string) => startRun(runId).pipe(Effect.provideService(Store, store)),
-        resume: (runId: string) => resumeRun(runId).pipe(Effect.provideService(Store, store)),
+        start: (runId: string) =>
+          startRun(runId).pipe(Effect.provideService(Store, store), Effect.provide(BrowserCrypto.layer)),
+        resume: (runId: string) =>
+          resumeRun(runId).pipe(Effect.provideService(Store, store), Effect.provide(BrowserCrypto.layer)),
       }
     })
   }).pipe(Effect.provide(QueryDatabaseBinding)),
@@ -39,3 +41,4 @@ export default DemoWorkflow.make(
     }
   }),
 )
+import { BrowserCrypto } from '@effect/platform-browser'

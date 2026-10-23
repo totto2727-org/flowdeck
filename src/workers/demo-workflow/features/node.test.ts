@@ -21,7 +21,6 @@ describe('node lifecycle wrapper', () => {
     )
     expect(result).toEqual([
       {
-        eventId: 'run:prepare:1:node.started',
         type: 'node.started',
         nodeId: 'prepare',
         executionId: 'run:prepare:1',
@@ -29,7 +28,6 @@ describe('node lifecycle wrapper', () => {
         payload: {},
       },
       {
-        eventId: 'run:prepare:1:node.succeeded',
         type: 'node.succeeded',
         nodeId: 'prepare',
         executionId: 'run:prepare:1',

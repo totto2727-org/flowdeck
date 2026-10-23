@@ -8,14 +8,13 @@ export interface Execution {
   readonly executionId: string
   readonly attempt: number
 }
-export type EventDraft = Omit<PendingEvent, 'createdAt'>
+export type EventDraft = Omit<PendingEvent, 'createdAt' | 'eventId'>
 export const timestamp = DateTime.now.pipe(Effect.map(DateTime.formatIso))
 export const nodeEvent = (
   execution: Execution,
   type: 'node.started' | 'node.succeeded' | 'node.failed',
   payload: Readonly<Record<string, unknown>> = {},
 ): EventDraft => ({
-  eventId: `${execution.executionId}:${type}`,
   nodeId: execution.nodeId,
   executionId: execution.executionId,
   attempt: execution.attempt,

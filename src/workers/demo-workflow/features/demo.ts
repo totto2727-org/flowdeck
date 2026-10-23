@@ -1,4 +1,4 @@
-import { Array, Effect, Match, Ref, Schema } from 'effect'
+import { Crypto, Effect, Match, Ref, Schema } from 'effect'
 
 import { InvalidOperation, InvalidSnapshot, type DomainError } from '../../../features/workflow/domain/errors'
 import {
@@ -83,11 +83,10 @@ export const restoreDemo = (run: Run) =>
     ),
   )
 const runEvent = (
-  run: Run,
+  _run: Run,
   type: 'run.started' | 'run.waiting' | 'run.resumed' | 'run.completed' | 'run.failed',
   nodeId: string | null = null,
 ): EventDraft => ({
-  eventId: `${run.runId}:${type}:${run.revision + 1}`,
   type,
   nodeId,
   executionId: null,
@@ -97,16 +96,19 @@ const runEvent = (
 const save = (run: Run, snapshot: DemoSnapshot, events: ReadonlyArray<EventDraft>) =>
   Effect.gen(function* () {
     const store = yield* Store
+    const crypto = yield* Crypto.Crypto
     const updatedAt = yield* timestamp
     const status = statusFor(snapshot)
     yield* store.commit({
-      commitId: `${run.runId}:revision:${run.revision + 1}`,
+      commitId: yield* crypto.randomUUIDv4(),
       runId: run.runId,
       expectedRevision: run.revision,
       status,
       snapshot,
       updatedAt,
-      events: Array.map(events, (event) => ({ ...event, createdAt: updatedAt })),
+      events: yield* Effect.forEach(events, (event) =>
+        crypto.randomUUIDv4().pipe(Effect.map((eventId) => ({ ...event, eventId, createdAt: updatedAt }))),
+      ),
     })
     return { ...run, status, snapshot, revision: run.revision + 1, updatedAt } satisfies Run
   })
@@ -114,13 +116,14 @@ const save = (run: Run, snapshot: DemoSnapshot, events: ReadonlyArray<EventDraft
 const prepare = (
   run: Run,
   snapshot: Extract<DemoSnapshot, { _tag: 'Ready' | 'Preparing' }>,
-): Effect.Effect<void, DomainError, Store> =>
+): Effect.Effect<void, DomainError, Store | Crypto.Crypto> =>
   Effect.gen(function* () {
     const current = yield* Ref.make(run)
+    const crypto = yield* Crypto.Crypto
     const execution: Execution = {
       runId: run.runId,
       nodeId: 'prepare',
-      executionId: snapshot._tag === 'Preparing' ? snapshot.executionId : `${run.runId}:prepare:1`,
+      executionId: snapshot._tag === 'Preparing' ? snapshot.executionId : yield* crypto.randomUUIDv4(),
       attempt: snapshot._tag === 'Preparing' ? snapshot.attempt : 1,
     }
     // These sample tasks are pure and therefore safely retryable after a crash.
@@ -144,7 +147,7 @@ const prepare = (
       succeeded: (event, prepared) =>
         Effect.gen(function* () {
           const latest = yield* Ref.get(current)
-          const checkpointExecutionId = `${run.runId}:approval:1`
+          const checkpointExecutionId = yield* crypto.randomUUIDv4()
           yield* save(
             latest,
             { _tag: 'Waiting', schemaVersion: 1, version: snapshot.version, prepared, checkpointExecutionId },
@@ -179,13 +182,14 @@ const prepare = (
 const publish = (
   run: Run,
   snapshot: Extract<DemoSnapshot, { _tag: 'Waiting' | 'Publishing' }>,
-): Effect.Effect<void, DomainError, Store> =>
+): Effect.Effect<void, DomainError, Store | Crypto.Crypto> =>
   Effect.gen(function* () {
     const current = yield* Ref.make(run)
+    const crypto = yield* Crypto.Crypto
     const execution: Execution = {
       runId: run.runId,
       nodeId: 'publish',
-      executionId: snapshot._tag === 'Publishing' ? snapshot.executionId : `${run.runId}:publish:1`,
+      executionId: snapshot._tag === 'Publishing' ? snapshot.executionId : yield* crypto.randomUUIDv4(),
       attempt: snapshot._tag === 'Publishing' ? snapshot.attempt : 1,
     }
     yield* observeNode(execution, Effect.succeed(`published:${snapshot.prepared}`), {
@@ -240,7 +244,7 @@ const publish = (
 
 /** Each call reloads the canonical D1 state. No instance field, pending Promise,
  * or in-memory continuation is needed to recover a replaced Durable Object. */
-const drive = (runId: string, operation: 'start' | 'resume'): Effect.Effect<void, DomainError, Store> =>
+const drive = (runId: string, operation: 'start' | 'resume'): Effect.Effect<void, DomainError, Store | Crypto.Crypto> =>
   Effect.gen(function* () {
     const store = yield* Store
     const run = yield* store.getRun(runId)

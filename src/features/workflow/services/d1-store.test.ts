@@ -2,7 +2,7 @@ import { readD1Migrations } from '@cloudflare/vitest-plugin'
 import type { D1Database } from '@cloudflare/workers-types'
 import { BrowserCrypto } from '@effect/platform-browser'
 import { makeRpcStub } from 'alchemy/Cloudflare/Workers'
-import { Array, Effect, Exit, Layer, Schema } from 'effect'
+import { Array, Crypto, Effect, Exit, Layer, Schema } from 'effect'
 import { HttpRouter } from 'effect/http'
 import { TestCrypto } from 'effect/testing'
 import { Miniflare } from 'miniflare'
@@ -75,8 +75,8 @@ beforeEach(async () => {
 afterEach(async () => {
   await miniflare.dispose()
 })
-const run = <A, E>(effect: Effect.Effect<A, E, Store>) =>
-  Effect.runPromise(effect.pipe(Effect.provideService(Store, store)))
+const run = <A, E>(effect: Effect.Effect<A, E, Store | Crypto.Crypto>) =>
+  Effect.runPromise(effect.pipe(Effect.provideService(Store, store), Effect.provide(BrowserCrypto.layer)))
 const seed = (runId = 'run-1', version: WorkflowVersion = 'v1') =>
   Effect.runPromise(store.create(newRun(runId, version), demoGraph(version)))
 
@@ -84,8 +84,10 @@ const seed = (runId = 'run-1', version: WorkflowVersion = 'v1') =>
 // is the same exported workflow used by the actual Durable Object adapter.
 const testBinding = () =>
   Layer.succeed(WorkflowBinding, {
-    start: (runId) => startRun(runId).pipe(Effect.provideService(Store, makeD1Store(database))),
-    resume: (runId) => resumeRun(runId).pipe(Effect.provideService(Store, makeD1Store(database))),
+    start: (runId) =>
+      startRun(runId).pipe(Effect.provideService(Store, makeD1Store(database)), Effect.provide(BrowserCrypto.layer)),
+    resume: (runId) =>
+      resumeRun(runId).pipe(Effect.provideService(Store, makeD1Store(database)), Effect.provide(BrowserCrypto.layer)),
   })
 const unavailableDevelopmentBinding = Layer.succeed(DevelopmentWorkflowBinding, {
   start: () => Effect.fail(new BindingError({ cause: 'Development workflow not selected by this fixture' })),
@@ -276,6 +278,31 @@ describe('D1 persisted run store', () => {
 })
 
 describe('demo cold restoration', () => {
+  it('generates UUIDv4 execution, event and commit identities and ACKs an exact duplicate commit', async () => {
+    await seed()
+    const persisted = store
+    let commits: ReadonlyArray<CommitCommand> = []
+    store = {
+      ...persisted,
+      commit: (input) => {
+        commits = Array.append(commits, input)
+        return persisted.commit(input)
+      },
+    }
+    await run(startRun('run-1'))
+    await run(resumeRun('run-1'))
+    const uuid = Schema.String.check(Schema.isUUID(4))
+    expect(Array.every(commits, (input) => Schema.is(uuid)(input.commitId))).toBe(true)
+    const events = await Effect.runPromise(store.getEvents('run-1'))
+    expect(Array.every(events, (event) => Schema.is(uuid)(event.eventId))).toBe(true)
+    expect(Array.every(events, (event) => event.executionId === null || Schema.is(uuid)(event.executionId))).toBe(true)
+    const first = Array.getUnsafe(commits, 0)
+    const before = await Effect.runPromise(store.getRun('run-1'))
+    expect(await Effect.runPromise(store.commit(first))).toMatchObject({ commitId: first.commitId, revision: 1 })
+    expect(await Effect.runPromise(store.getRun('run-1'))).toEqual(before)
+    expect(await Effect.runPromise(store.getEvents('run-1'))).toEqual(events)
+  })
+
   it.each(['v1', 'v2'] as const)(
     'restores the waiting %s version in a new service and completes only after explicit resume',
     async (version) => {
@@ -366,7 +393,9 @@ describe('interrupted workflow recovery', () => {
           : persisted.commit(input),
     }
     await expect(
-      Effect.runPromise(resumeRun('run-1').pipe(Effect.provideService(Store, interrupted))),
+      Effect.runPromise(
+        resumeRun('run-1').pipe(Effect.provideService(Store, interrupted), Effect.provide(BrowserCrypto.layer)),
+      ),
     ).rejects.toMatchObject({ _tag: 'StoreError' })
     expect(await Effect.runPromise(store.getRun('run-1'))).toMatchObject({
       revision: 3,
@@ -505,6 +534,7 @@ describe('Effect HTTP API', () => {
       )
       expect(created.status).toBe(201)
       const body = await Effect.runPromise(Schema.decodeUnknownEffect(RunDetail)(await created.json()))
+      expect(Schema.is(Schema.String.check(Schema.isUUID(4)))(body.run.runId)).toBe(true)
       expect(body.run.status).toBe('waiting')
       const detail = await handler.handler(new Request(`http://localhost/api/runs/${body.run.runId}`))
       expect(detail.status).toBe(200)

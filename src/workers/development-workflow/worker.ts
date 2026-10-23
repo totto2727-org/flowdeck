@@ -1,6 +1,7 @@
 import { getWorkspace, withWorkspace, type WorkspaceOptions } from '@cloudflare/computer'
 import { ContainerBackend, withWorkspaceContainer } from '@cloudflare/computer/backends/container'
 import { createRegistry, Harness } from '@earendil-works/pi-durable'
+import { BrowserCrypto } from '@effect/platform-browser'
 import { PiHarness, ROOT_SESSION } from 'agents/harness/pi'
 import { Lifecycle, type LifecycleJobContext, type LifecycleJobOutcome } from 'agents/lifecycle'
 import { DurableObject, WorkerEntrypoint } from 'cloudflare:workers'
@@ -165,7 +166,11 @@ export class DevelopmentRun extends withWorkspace(DevelopmentContainerBase, work
           if (run.status === 'completed') {
             yield* Effect.promise(() => this.#lifecycle.jobs.cancel(LEASE_JOB))
           }
-        }).pipe(Effect.provideService(Store, this.#store), Effect.provideService(DevelopmentSandbox, this.#sandbox())),
+        }).pipe(
+          Effect.provideService(Store, this.#store),
+          Effect.provideService(DevelopmentSandbox, this.#sandbox()),
+          Effect.provide(BrowserCrypto.layer),
+        ),
       ),
     )
   }
