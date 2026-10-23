@@ -13,7 +13,6 @@ minimumReleaseAgeStrict: true
 allowBuilds:
   '@google/genai': false
   protobufjs: false
-  vite-plus: false
   esbuild: true
   workerd: true
   core-js-pure: false
