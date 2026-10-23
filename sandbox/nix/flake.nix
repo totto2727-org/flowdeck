@@ -4,14 +4,17 @@
   inputs = {
     nixpkgs.url = "https://flakehub.com/f/NixOS/nixpkgs/0.1";
     home-manager.url = "https://flakehub.com/f/nix-community/home-manager/0.1";
-    local-packages.url = "github:totto2727-org/monorepo?dir=nix/share/packages";
+    bun2nix = {
+      url = "github:nix-community/bun2nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
     {
       self,
       nixpkgs,
-      local-packages,
+      bun2nix,
       home-manager,
     }:
     let
@@ -29,7 +32,12 @@
           pkgs = import nixpkgs {
             inherit system;
             config.allowUnfree = true;
-            overlays = [ local-packages.overlays.default ];
+          };
+          monid = pkgs.callPackage ./packages/monid.nix {
+            bun2nix = bun2nix.packages.${system}.default;
+          };
+          oo-cli = pkgs.callPackage ./packages/oo-cli.nix {
+            bun2nix = bun2nix.packages.${system}.default;
           };
           docker-credential-gh = pkgs.writeShellScriptBin "docker-credential-gh" ''
             set -e
@@ -81,8 +89,8 @@
                   just
                 ])
                 ++ [
-                  pkgs.monid
-                  pkgs.oo-cli
+                  monid
+                  oo-cli
                   docker-credential-gh
                 ];
 

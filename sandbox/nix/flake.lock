@@ -4,7 +4,6 @@
       "inputs": {
         "flake-parts": "flake-parts",
         "nixpkgs": [
-          "local-packages",
           "nixpkgs"
         ],
         "systems": "systems",
@@ -27,7 +26,6 @@
     "flake-parts": {
       "inputs": {
         "nixpkgs-lib": [
-          "local-packages",
           "bun2nix",
           "nixpkgs"
         ]
@@ -63,27 +61,6 @@
         "url": "https://flakehub.com/f/nix-community/home-manager/0.1"
       }
     },
-    "local-packages": {
-      "inputs": {
-        "bun2nix": "bun2nix",
-        "nixpkgs": "nixpkgs_2"
-      },
-      "locked": {
-        "dir": "nix/share/packages",
-        "lastModified": 1792322262,
-        "narHash": "sha256-NTwsdP8e0oVrs+AUb60QwKMOuA4U5tq4smZrO4CTE7s=",
-        "owner": "totto2727-org",
-        "repo": "monorepo",
-        "rev": "79e3489d466eb31d3ec96d1d4259de70431e940b",
-        "type": "github"
-      },
-      "original": {
-        "dir": "nix/share/packages",
-        "owner": "totto2727-org",
-        "repo": "monorepo",
-        "type": "github"
-      }
-    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1790299684,
@@ -95,20 +72,6 @@
       "original": {
         "type": "tarball",
         "url": "https://channels.nixos.org/nixpkgs-unstable/nixexprs.tar.zst"
-      }
-    },
-    "nixpkgs_2": {
-      "locked": {
-        "lastModified": 1791956154,
-        "narHash": "sha256-jBYGPi4udQ9uo4KQp9m2J0546nJVQitG15gvZSaVVAs=",
-        "rev": "55bfb4d7437bd4e09ab7cba58a43bd68eb310044",
-        "revCount": 1092090,
-        "type": "tarball",
-        "url": "https://api.flakehub.com/f/pinned/NixOS/nixpkgs/0.1.1092090%2Brev-55bfb4d7437bd4e09ab7cba58a43bd68eb310044/01a13e8e-a023-7172-9d82-64cacaeab765/source.tar.gz"
-      },
-      "original": {
-        "type": "tarball",
-        "url": "https://flakehub.com/f/NixOS/nixpkgs/0.1"
       }
     },
     "nixpkgs_3": {
@@ -127,8 +90,8 @@
     },
     "root": {
       "inputs": {
+        "bun2nix": "bun2nix",
         "home-manager": "home-manager",
-        "local-packages": "local-packages",
         "nixpkgs": "nixpkgs_3"
       }
     },
@@ -150,7 +113,6 @@
     "treefmt-nix": {
       "inputs": {
         "nixpkgs": [
-          "local-packages",
           "bun2nix",
           "nixpkgs"
         ]

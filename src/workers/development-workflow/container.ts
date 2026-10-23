@@ -16,9 +16,7 @@ export class DevelopmentContainer extends Container<DevelopmentContainer>()(
   Effect.gen(function* () {
     const image = yield* Config.String('FLOWDECK_WORKSPACE_IMAGE').pipe(Config.option)
     if (Option.isSome(image)) return { schedulingPolicy: 'durable_object' as const, image: image.value }
-    const dockerfile = yield* Config.String('FLOWDECK_PI_DOCKERFILE').pipe(
-      Config.withDefault('containers/workspace/Dockerfile'),
-    )
-    return { schedulingPolicy: 'durable_object' as const, context: 'containers/workspace', dockerfile }
+    const dockerfile = yield* Config.String('FLOWDECK_PI_DOCKERFILE').pipe(Config.withDefault('sandbox/Dockerfile'))
+    return { schedulingPolicy: 'durable_object' as const, context: 'sandbox', dockerfile }
   }),
 ) {}

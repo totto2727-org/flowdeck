@@ -47,14 +47,15 @@ Its run Durable Object owns durable conversation and operations through `agents/
 It uses `@cloudflare/computer` Workspace with `ContainerBackend` and official `createPiTools` installed in the harness registry.
 Implementation and verification reuse one run-scoped Pi root session and `/workspace/project`, with `HOME=/home/sandbox`.
 
-The derived image in `containers/workspace/Dockerfile` runs official `computerd` 0.5.1, not an embedded Pi SDK, custom HTTP runner, or inference proxy.
-`ARG WORKSPACE_IMAGE` defaults to Flowdeck's own `ghcr.io/totto2727-org/flowdeck/sandbox-base:latest`.
-Before local Pi development, run `DOCKER_DEFAULT_PLATFORM=linux/amd64 vp run build:sandbox` and then `vp run dev` with the same Docker daemon.
-The build task first builds the independent Flowdeck Nix image, then the sandbox base.
-See [sandbox image maintenance](sandbox/README.md) for source provenance and the publication required before remote workspace builds.
+`sandbox/Dockerfile` builds the Ubuntu 26.04 workspace with Nix, Home Manager, and the official `computerd` 0.5.1 binary.
+It contains all three build targets: `nix`, `sandbox`, and final `workspace`.
+The official binary is copied from `ghcr.io/cloudflare/computer-computerd-linux-x64:0.5.1`; the final image is not based on that scratch image.
+The sandbox flake and custom package definitions live under `sandbox/nix/`, without a monorepo flake input.
+Start local Pi development with `DOCKER_DEFAULT_PLATFORM=linux/amd64 vp run dev` for the x64 runtime.
+Alchemy builds the complete workspace from the single Dockerfile; no separate Flowdeck base image build or publication is required.
+See [sandbox image maintenance](sandbox/README.md) for optional intermediate build targets, source provenance, and validation limits.
 Optional `FLOWDECK_WORKSPACE_IMAGE` selects a prepared official-computerd-compatible image instead of the Dockerfile build.
-This runtime image selector is distinct from the Dockerfile base argument.
-Alternate bases must satisfy the Dockerfile runtime, apt, and FUSE prerequisites, not merely be arbitrary untouched images.
+A prepared image must contain the runtime, shell, and FUSE prerequisites; an arbitrary untouched image is not supported.
 Use the target repository's `nix develop`, or a minimal temporary `nix shell`, for Node.js and other required tools instead of baking them into this image.
 The image does not supply global Vite+; frozen target dependencies supply local `vp`.
 The original monorepo image is not modified.
@@ -119,7 +120,7 @@ This section serves contributors and maintainers.
 | `src/workers/control/`              | Control entry. Its `features/` directory owns HTTP routes, run commands, and the workflow binding.                                    |
 | `src/workers/demo-workflow/`        | Workflow entry and run Durable Object. Its `features/` directory owns versioned demo transitions and node observation.                |
 | `src/workers/development-workflow/` | Development run, official PiHarness, Computer Workspace, model configuration, and implementation and verification checkpoints.        |
-| `containers/workspace/`             | Derived workspace image with official `computerd` and repository tool prerequisites.                                                  |
+| `sandbox/`                          | Derived workspace image with official `computerd` and repository tool prerequisites.                                                  |
 | `src/features/development/`         | Shared development session and turn receipt schemas.                                                                                  |
 | `src/workers/composition.ts`        | Select and inject deployment and authorization Layers. Infrastructure conditions exist only at this boundary.                         |
 | `src/features/workflow/`            | Shared schemas, graph projection, database schema, and Kysely state/event persistence.                                                |

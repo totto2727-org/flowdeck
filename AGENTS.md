@@ -12,7 +12,7 @@ The application uses Effect 4, Effront, shadcn/ui, Cloudflare Workers, Durable O
 - `src/workers/workflow/`: Workflow integration entry, catalog, run commands, and fixed per-workflow bindings.
 - `src/workers/demo-workflow/`: Workflow entry, run Durable Object, and demo-only execution features.
 - `src/workers/development-workflow/`: development checkpoints, run Durable Object, official PiHarness, and Computer Workspace integration.
-- `containers/workspace/`: workspace image with the official `computerd` runtime.
+- `sandbox/`: workspace image with the official `computerd` runtime.
 - `src/features/development/`: shared session and turn receipt schemas.
 - `src/workers/definitions.ts`: lightweight Worker identities and contracts for `.make()` implementations and static bindings, with only a type re-export of `DevelopmentWorkflow` to keep infrastructure out of the frontend runtime graph.
 - `src/workers/development-workflow/index.ts`: the sole external `DevelopmentWorkflow` definition, with native Durable Object exports from `worker.ts` through official Alchemy support, not custom `props.exports`.
@@ -103,19 +103,23 @@ Keep `Config.Redacted('CLOUDFLARE_AI_GATEWAY_API_KEY')` as a native Worker `secr
 Provider keys remain in Gateway stored BYOK.
 Do not pass inference credentials to Workspace tools, Container environment, images, build arguments, or task prompts.
 
-Use `containers/workspace/Dockerfile`, with `ARG WORKSPACE_IMAGE` defaulting to `ghcr.io/totto2727-org/flowdeck/sandbox-base:latest` and official `computerd` 0.5.1 copied into the derived image.
-Flowdeck owns `sandbox/nix.Dockerfile`, `sandbox/sandbox-base.Dockerfile`, and `nix/sandbox/` independently of the original monorepo image tags.
-Run `DOCKER_DEFAULT_PLATFORM=linux/amd64 vp run build:sandbox` before local Alchemy development to build compatible bases for the current x64 computerd in the same Docker daemon.
+Keep all image stages in `sandbox/Dockerfile`, with `ubuntu:26.04` as the operating-system base.
+Use stage `nix` for Nix installation, `sandbox` for Home Manager provisioning, and final stage `workspace` for FUSE prerequisites and the official computerd binary.
+Copy `/usr/local/bin/computerd` from `ghcr.io/cloudflare/computer-computerd-linux-x64:0.5.1`; do not copy the provisioned root filesystem into the official scratch image.
+Keep the standalone flake and custom package definitions under `sandbox/nix/`, without monorepo flake inputs or local sibling dependencies.
+Do not restore a monorepo overlay dependency.
+Use `build:nix` and `build:sandbox` to build the corresponding targets from this Dockerfile with `sandbox/` as the context.
+For the x64 workspace, use `DOCKER_DEFAULT_PLATFORM=linux/amd64` when building images or starting local Alchemy development.
+The final workspace build includes both provisioning stages; it does not require separately built or published Flowdeck base images.
 Keep the generic base tasks architecture-neutral.
 Keep Vite+ task caching disabled for `build:nix` and `build:sandbox`, while retaining Docker's layer cache.
 These tasks produce Docker daemon images, not cache-restorable repository files.
-Publish the Flowdeck sandbox base before a remote or production workspace build that needs to pull it.
-See [sandbox image maintenance](sandbox/README.md) for provenance, local build order, and publication requirements.
-Keep Alchemy's workspace context at `containers/workspace`, not the repository root.
+See [sandbox image maintenance](sandbox/README.md) for provenance, build targets, and validation limits.
+Keep Alchemy's workspace context at `sandbox`, not the repository root.
 Set optional `FLOWDECK_WORKSPACE_IMAGE` only to a prepared official-computerd-compatible image at resource composition.
 Otherwise build the workspace Dockerfile, with `FLOWDECK_PI_DOCKERFILE` available as a Dockerfile override.
-`FLOWDECK_WORKSPACE_IMAGE` is not the Dockerfile's `WORKSPACE_IMAGE` base argument.
-An alternate base must satisfy the Dockerfile runtime, apt, and FUSE prerequisites; this is not support for any untouched image through one call.
+There is no `WORKSPACE_IMAGE` Dockerfile base argument.
+A prepared image must contain the official runtime, shell, and FUSE prerequisites; this is not support for an arbitrary untouched image.
 Do not bake Node.js or a package manager into the workspace image.
 Use the target repository's `nix develop`, or a minimal temporary `nix shell`, for required development tools.
 Do not claim that the image supplies global Vite+; the target project's frozen pnpm dependencies supply local `vp`.

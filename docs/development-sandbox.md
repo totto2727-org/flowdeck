@@ -9,7 +9,7 @@ This is a local experiment, not a production or multitenant execution service.
 
 - The run Durable Object uses official `PiHarness` from `agents/harness/pi` and `Harness` from `@earendil-works/pi-durable` for durable conversation and operation execution.
 - `@cloudflare/computer` Workspace owns the filesystem interface, with `ContainerBackend` for shell execution and official `createPiTools` declarations and dispatch installed in the pi-durable registry.
-- `containers/workspace/Dockerfile` supplies official `computerd` 0.5.1 and repository tool prerequisites, not an embedded Pi SDK, custom HTTP runner, or inference proxy.
+- `sandbox/Dockerfile` supplies official `computerd` 0.5.1 and repository tool prerequisites, not an embedded Pi SDK, custom HTTP runner, or inference proxy.
 - `src/workers/development-workflow/` owns the run Durable Object, workspace integration, model configuration, checkpoints, and Container binding.
 - The shared D1 database owns workflow identity, graph, checkpoints, and ordered events.
 - Control reaches the private `Workflow` integration Worker through one static service binding.
@@ -28,18 +28,20 @@ Use the standard Alchemy Cloudflare credentials when required.
 Stop if authentication or permissions are missing and ask the operator to provide access.
 Do not attempt to bypass these prerequisites.
 
-The workspace Dockerfile accepts `ARG WORKSPACE_IMAGE`, defaulting to Flowdeck's own `ghcr.io/totto2727-org/flowdeck/sandbox-base:latest`.
-Flowdeck maintains its Nix and sandbox base definitions in `sandbox/`, with provisioning in `nix/sandbox/`.
-See [sandbox image maintenance](../sandbox/README.md) for source provenance, build order, and image publication.
-The current official computerd image is x64, so use a Linux amd64 base for this workspace.
-The generic base build tasks do not fix the target architecture.
-It copies `/usr/local/bin/computerd` from `ghcr.io/cloudflare/computer-computerd-linux-x64:0.5.1`.
-An alternate base must support the Dockerfile's runtime and `apt-get` installation of `fuse3`, `libfuse2t64`, and `ca-certificates`, together with the required FUSE operation.
-This is a derived-image build, not a one-call guarantee for an arbitrary untouched image.
+`sandbox/Dockerfile` contains all image stages, with `ubuntu:26.04` as the operating-system base.
+Stage `nix` installs Nix, stage `sandbox` applies Home Manager, and final stage `workspace` installs FUSE prerequisites and copies the official computerd binary.
+The binary source is `ghcr.io/cloudflare/computer-computerd-linux-x64:0.5.1`; the final image does not inherit the official scratch image.
+The Ubuntu environment supplies `/bin/sh`, which the official exec implementation starts with `-c` for shell commands.
+The standalone flake and custom package definitions are under `sandbox/nix/`, without a monorepo input or local sibling import.
+See [sandbox image maintenance](../sandbox/README.md) for source provenance, build targets, and validation limits.
+The current official computerd image is x64, so build and run the final workspace for Linux amd64.
+The generic `nix` and `sandbox` targets also support Linux arm64; they do not establish an arm64 computerd workspace.
+The final stage inherits `sandbox`, `/home/sandbox`, and the Nix profile `PATH` from the provisioning stages.
+It adds `fuse3`, `libfuse2t64`, and `ca-certificates`, and creates the writable workspace directory.
 `FLOWDECK_WORKSPACE_IMAGE` optionally selects a prepared official-computerd-compatible image directly at resource composition.
-When it is unset, Flowdeck builds the workspace Dockerfile, with `FLOWDECK_PI_DOCKERFILE` available as an alternate Dockerfile selector.
-The prepared-image setting differs from the Dockerfile's `WORKSPACE_IMAGE` base argument.
-Neither path supports an arbitrary untouched image without the backend runtime prerequisites.
+When it is unset, Flowdeck builds the final workspace target, with `FLOWDECK_PI_DOCKERFILE` available as an alternate Dockerfile selector.
+There is no `WORKSPACE_IMAGE` Dockerfile base argument.
+A prepared image must already contain the backend runtime, shell, and FUSE prerequisites; an arbitrary untouched image is not supported.
 
 The Flowdeck sandbox base supplies Git and Nix, but does not put Node.js or Vite+ directly on `PATH`.
 The derived workspace image does not add Node.js or a package manager.
@@ -51,19 +53,19 @@ The original generic image's lightweight tool inventory remains tracked in [mono
 
 Run as `sandbox`, keep `HOME=/home/sandbox`, and use `/workspace/project` as the checkout path through Computer Workspace.
 The Container serves the official `computerd` backend on port 8080, not a custom session/turn HTTP gateway.
-Keep its build context limited to `containers/workspace/`.
+Keep its build context limited to `sandbox/`.
 
 ```bash
 vp env install
 vp install --frozen-lockfile
-DOCKER_DEFAULT_PLATFORM=linux/amd64 vp run build:sandbox
-vp run dev
+DOCKER_DEFAULT_PLATFORM=linux/amd64 vp run dev
 ```
 
-Use the same Docker daemon for the base builds and local Alchemy development.
-The local image tags do not publish registry images.
-Publish the Flowdeck sandbox base before remote or production builds that must pull it.
-Alchemy's workspace build context remains `containers/workspace/`; do not replace it with the repository root.
+Alchemy builds all required stages from the same Dockerfile and `sandbox/` context.
+Separate `build:nix` and `build:sandbox` tasks are optional intermediate-image builds, not startup prerequisites.
+No Flowdeck base image publication is required for a remote build of this Dockerfile.
+The configured tasks do not publish images or authorize a deployment.
+Do not replace Alchemy's `sandbox/` context with the repository root.
 
 The frontend uses loopback port 4380 and the private development Worker uses loopback port 4383.
 Select **Pi development**, enter a public GitHub repository and a task, then start a new run.

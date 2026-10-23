@@ -32,20 +32,18 @@ export default defineConfig({
     options: { typeAware: true, typeCheck: true },
   },
   test: {
-    environment: 'node',
     include: ['src/**/*.test.ts', 'tests/**/*.test.ts'],
     testTimeout: 30_000,
   },
   run: {
     tasks: {
       'build:nix': {
-        command: 'docker build -t ghcr.io/totto2727-org/flowdeck/nix:latest -f sandbox/nix.Dockerfile sandbox',
+        command: 'docker build --target nix -t ghcr.io/totto2727-org/flowdeck/nix:latest -f sandbox/Dockerfile sandbox',
         cache: false,
       },
       'build:sandbox': {
         command:
-          'docker build -t ghcr.io/totto2727-org/flowdeck/sandbox-base:latest -f sandbox/sandbox-base.Dockerfile .',
-        dependsOn: ['build:nix'],
+          'docker build --target sandbox -t ghcr.io/totto2727-org/flowdeck/sandbox-base:latest -f sandbox/Dockerfile sandbox',
         cache: false,
       },
       dev: {
