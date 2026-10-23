@@ -16,9 +16,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: totto2727-org/monorepo/.github/actions/setup-nix@main
-      - uses: totto2727-org/monorepo/.github/actions/setup-typescript@main
+      - uses: totto2727-org/monorepo/.github/actions/setup-typescript@b4e0bc6b04d2ac0d9a9b89a2a308228eee6a4255 # official setup-vp
       - name: Verify Vite+ project
-        run: |
-          eval "$(nix print-dev-env "$GITHUB_WORKSPACE#default")"
-          vp run ci
+        run: vp run ci

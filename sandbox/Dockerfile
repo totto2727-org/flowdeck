@@ -74,6 +74,13 @@ RUN apt-get update \
 COPY --from=computerd /usr/local/bin/computerd /usr/local/bin/computerd
 
 USER sandbox
+ENV VP_HOME=/home/sandbox/.vite-plus
+ENV PATH="/home/sandbox/.vite-plus/bin:$PATH"
+RUN curl -fsSL https://vite.plus -o /tmp/install-vp.sh \
+ && VP_NODE_MANAGER=yes bash /tmp/install-vp.sh \
+ && rm -f /tmp/install-vp.sh \
+ && vp --version
+
 ENV PORT=8080 MOUNT_POINT=/workspace FUSE_MOUNT=auto
 EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/computerd"]

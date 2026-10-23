@@ -1,43 +1,22 @@
 {
-  description = "Flowdeck Effect and Cloudflare application with Vite+ tooling";
+  description = "Flowdeck non-JavaScript development tools";
 
-  inputs = {
-    nixpkgs.url = "https://flakehub.com/f/NixOS/nixpkgs/0.1";
-    vite-plus-overlay = {
-      url = "github:ryoppippi/nix-vite-plus";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-  };
+  inputs.nixpkgs.url = "https://flakehub.com/f/NixOS/nixpkgs/0.1";
 
   outputs =
-    { nixpkgs, vite-plus-overlay, ... }:
+    { nixpkgs, ... }:
     let
       supportedSystems = [
         "aarch64-darwin"
         "aarch64-linux"
         "x86_64-linux"
       ];
-      forEachSystem = nixpkgs.lib.genAttrs supportedSystems;
     in
     {
-      devShells = forEachSystem (
-        system:
-        let
-          pkgs = import nixpkgs {
-            inherit system;
-            overlays = [ vite-plus-overlay.overlays.default ];
-          };
-        in
-        {
-          default = pkgs.mkShell {
-            packages = [
-              pkgs.nodejs_24
-              pkgs.pnpm
-              pkgs.vite-plus
-              pkgs.nixfmt
-            ];
-          };
-        }
-      );
+      devShells = nixpkgs.lib.genAttrs supportedSystems (system: {
+        default = nixpkgs.legacyPackages.${system}.mkShell {
+          packages = [ nixpkgs.legacyPackages.${system}.nixfmt ];
+        };
+      });
     };
 }

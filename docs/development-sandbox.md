@@ -23,7 +23,10 @@ Create a new PiHarness run instead of resuming a legacy runtime.
 
 ## Local setup
 
-Use the Node.js version pinned by Vite+, and start Docker before starting Flowdeck.
+Install official Vite+ locally with `curl -fsSL https://vite.plus | bash`, then open a new shell.
+Use `vp env install` to resolve the project's Node.js and package-manager versions, and start Docker before starting Flowdeck.
+Do not provision Vite+, Node.js, pnpm, Bun, or Deno through Nix.
+The Flowdeck image does not install Deno directly; do not assume that Vite+ manages it.
 Use the standard Alchemy Cloudflare credentials when required.
 Stop if authentication or permissions are missing and ask the operator to provide access.
 Do not attempt to bypass these prerequisites.
@@ -43,11 +46,14 @@ When it is unset, Flowdeck builds the final workspace target, with `FLOWDECK_PI_
 There is no `WORKSPACE_IMAGE` Dockerfile base argument.
 A prepared image must already contain the backend runtime, shell, and FUSE prerequisites; an arbitrary untouched image is not supported.
 
-The Flowdeck sandbox base supplies Git and Nix, but does not put Node.js or Vite+ directly on `PATH`.
-The derived workspace image does not add Node.js or a package manager.
-The target project's frozen dependencies supply local `vp`, not a globally installed Vite+ in the image.
+The Flowdeck sandbox base supplies Git and Nix.
+The final workspace stage installs official Vite+ as `sandbox`, with `VP_HOME=/home/sandbox/.vite-plus` and `VP_NODE_MANAGER=yes`.
+Its `bin` directory is on `PATH`, so the workspace supplies global `vp`.
+The image does not bake in fixed project Node.js or package-manager versions.
+In the target checkout, use `vp env install` to resolve those versions from the project's configuration.
 Follow that repository's declared package manager and lockfile rather than assuming pnpm.
-Use the target repository's `nix develop`, or a minimal temporary `nix shell`, for Node.js, Bun, package managers, and other required tools.
+Use `nix develop` or a minimal temporary `nix shell` only for required non-JavaScript tools.
+Nix's internal Bun dependency for the existing oo and Monid builds does not provide user-facing Bun management.
 Flowdeck manages its copied image definitions independently without modifying the original monorepo images.
 The original generic image's lightweight tool inventory remains tracked in [monorepo #384](https://github.com/totto2727-org/monorepo/issues/384).
 
@@ -66,6 +72,8 @@ Separate `build:nix` and `build:sandbox` tasks are optional intermediate-image b
 No Flowdeck base image publication is required for a remote build of this Dockerfile.
 The configured tasks do not publish images or authorize a deployment.
 Do not replace Alchemy's `sandbox/` context with the repository root.
+Flowdeck CI uses the shared `setup-typescript` action, which delegates Vite+ setup and project version resolution to `setup-vp`.
+It does not need separate `setup-node`, Nix setup or evaluation, or forced JavaScript version inputs.
 
 The frontend uses loopback port 4380 and the private development Worker uses loopback port 4383.
 Select **Pi development**, enter a public GitHub repository and a task, then start a new run.
@@ -131,11 +139,12 @@ Model output remains untrusted and can contain secrets.
 Local Flowdeck validation passed normal cached CI with 125 tests and 14 desktop/mobile browser checks.
 A real Control API run completed both PiHarness turns with explicit workflow resume in the same Container, root session, and checkout.
 Pi changed only the target function and focused tests.
+This trial preceded the official Vite+ provisioning change.
 After completion, an operator independently used a temporary `nix shell` to run five focused tests, format/type/lint checks, a direct `vp pack` build, and five cases through the built public export.
 The source, manifest, lockfile, and Nix configuration stayed unchanged except for the two requested source and test files.
 
-Use the target repository's `nix develop`, or a minimal temporary `nix shell`, for missing tools rather than extending the generic image.
-The local trial needed an operator's Container-only DNS adjustment before Nix cache downloads worked.
+The following provisioning results describe that earlier trial, not the current official Vite+ setup.
+The trial needed an operator's Container-only DNS adjustment before Nix cache downloads worked.
 Pi tried Nix before that adjustment, then used the repository's pinned Bun and frozen dependencies; the operator separately verified temporary Nix tool provisioning.
 This does not establish unattended Nix setup.
 The normal cached target CI still failed with `spawn EINVAL`.
@@ -152,7 +161,7 @@ Keep these concern links, with their scope reassessed under the current architec
 - [Workspace-loss recovery #11](https://github.com/totto2727-org/flowdeck/issues/11): establish Workspace and Container-loss recovery limits without assuming durable Pi history restores shell effects.
 - [Local Alchemy startup #12](https://github.com/totto2727-org/flowdeck/issues/12): validate the current local stack and official runtime integration.
 - [Native AI binding validation #13](https://github.com/totto2727-org/flowdeck/issues/13): a separate concern, not validation of the current pi-ai HTTPS Gateway provider.
-- [Dependency provisioning and cached tasks #14](https://github.com/totto2727-org/flowdeck/issues/14): temporary Nix tools work after a Container-only DNS adjustment, but the normal cached target CI still fails with `spawn EINVAL`.
+- [Dependency provisioning and cached tasks #14](https://github.com/totto2727-org/flowdeck/issues/14): the earlier temporary-Nix trial required a Container-only DNS adjustment and its normal cached target CI failed with `spawn EINVAL`; the current official Vite+ setup requires separate acceptance.
 
 The frontend build concern remains separate.
 Local startup does not authorize deployment, DNS or Access changes, or image publication.

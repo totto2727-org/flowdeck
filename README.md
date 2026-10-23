@@ -6,7 +6,8 @@ This version is an Effect-first Cloudflare application for local implementation 
 ## Try the local application
 
 This section serves users who want to run the demo locally.
-Install Vite+ before running the commands below.
+Install the official Vite+ CLI with `curl -fsSL https://vite.plus | bash`, then open a new shell before running the commands below.
+Vite+ resolves Node.js and the package manager from this project's configuration; no Nix-managed JavaScript tools or separate Node.js setup are required.
 For Pi inference, configure the existing Cloudflare account and Gateway ID and a Gateway-only key as described in the [sandbox guide](docs/development-sandbox.md#model-and-inference-transport).
 The official pi-ai Gateway provider runs in the run Durable Object without a native AI binding or Container inference proxy.
 Stop if required authentication or permissions are missing and ask the operator to provide access.
@@ -28,10 +29,11 @@ Refresh the page to read the persisted run history.
 If an interrupted run remains pending or running, select **Recover run** to load its committed checkpoint.
 
 > [!NOTE]
-> `.node-version` pins Node.js 24.19.0.
-> A Vite+ session override takes precedence over the project pin.
+> `engines.node` and `packageManager` in `package.json` define Node.js compatibility and the package-manager version.
+> Vite+ resolves Node.js from the engine constraint without a separate `.node-version` file.
+> A Vite+ session override takes precedence over the project settings.
 > Run `vp env current` to inspect the selected version and its source.
-> Run `vp env use --unset` to clear a stale session override and return to project pins, or `vp env use 24.19.0` to select that version for the session.
+> Run `vp env use --unset` to clear a stale session override and return to project settings.
 
 Local development starts the frontend, private Control API, and private workflow Worker together.
 The local Control API listens on port 4381 for development inspection.
@@ -56,8 +58,10 @@ Alchemy builds the complete workspace from the single Dockerfile; no separate Fl
 See [sandbox image maintenance](sandbox/README.md) for optional intermediate build targets, source provenance, and validation limits.
 Optional `FLOWDECK_WORKSPACE_IMAGE` selects a prepared official-computerd-compatible image instead of the Dockerfile build.
 A prepared image must contain the runtime, shell, and FUSE prerequisites; an arbitrary untouched image is not supported.
-Use the target repository's `nix develop`, or a minimal temporary `nix shell`, for Node.js and other required tools instead of baking them into this image.
-The image does not supply global Vite+; frozen target dependencies supply local `vp`.
+The final workspace installs official Vite+ as `sandbox` under `/home/sandbox/.vite-plus` and supplies global `vp` on `PATH`.
+Use the target repository's `vp env` configuration to resolve Node.js and package-manager versions; the image does not bake in fixed project versions.
+Use `nix develop` or a minimal temporary `nix shell` only for required non-JavaScript tools, not for Vite+, Node.js, pnpm, Bun, or Deno.
+The image does not install Deno directly; this does not imply that Vite+ manages Deno.
 The original monorepo image is not modified.
 Its lightweight tool inventory remains tracked in [monorepo #384](https://github.com/totto2727-org/monorepo/issues/384).
 
@@ -90,7 +94,8 @@ New runs use runtime `pi-harness`; legacy direct-SDK histories remain inspectabl
 Official `ROOT_SESSION = '1'` is scoped by the run Durable Object, not shared across runs.
 Official Lifecycle jobs renew the six-hour native inactivity timeout every five hours for unfinished running workspaces without advancing workflow nodes or restarting stopped Containers.
 See [workspace retention](docs/development-workflow-retention.md) for cost and recovery limits.
-The local trial completed both Pi turns and independently confirmed five tests, format/type/lint checks, a direct build, and five built public-export cases in a temporary `nix shell` in the same Container.
+The local trial below preceded the official Vite+ provisioning change.
+It completed both Pi turns and independently confirmed five tests, format/type/lint checks, a direct build, and five built public-export cases in a temporary `nix shell` in the same Container.
 The normal cached target CI still failed with `spawn EINVAL`; Pi also used prohibited `--no-cache` flags, so policy-compliant acceptance remains incomplete.
 Nix downloads required a Container-only DNS adjustment, and unattended setup and long-duration retention remain unverified.
 Prior direct-SDK success and image smoke checks do not establish current end-to-end task acceptance.
@@ -111,6 +116,7 @@ The domain and Access declaration are not evidence that a production service is 
 ## Development
 
 This section serves contributors and maintainers.
+The root Nix development shell supplies `nixfmt`, not JavaScript runtimes or package managers.
 
 ### Source layout
 
@@ -140,6 +146,8 @@ Install the Playwright Chromium browser with `vp exec playwright install chromiu
 Stop a manually started local stack before running the suite, which owns its server lifecycle.
 Screenshots, traces, and reports remain under ignored `tmp/acceptance/`.
 The test suite does not authorize a production deployment.
+CI uses the shared `setup-typescript` action and its `setup-vp` step to install Vite+ and resolve project versions.
+Flowdeck CI does not need separate `setup-node`, Nix setup or evaluation, or forced Node.js and package-manager version inputs.
 
 See [`AGENTS.md`](AGENTS.md) for Effect-first implementation rules and repository commands.
 See [`docs/architecture.md`](docs/architecture.md) for persistence, versioning, recovery, security, and remaining implementation questions.

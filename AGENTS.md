@@ -27,7 +27,12 @@ The application uses Effect 4, Effront, shadcn/ui, Cloudflare Workers, Durable O
 ## Commands
 
 Run commands from this repository root with Vite+.
-Use `vp env install` to install the versions pinned by `.node-version` and `packageManager`.
+Install the official Vite+ CLI locally with `curl -fsSL https://vite.plus | bash` before using these commands.
+Let Vite+ resolve Node.js and the package manager from the target project's configuration.
+Do not manage Vite+, Node.js, pnpm, Bun, or Deno with Nix.
+Do not install Deno directly in the Flowdeck image or assume that Vite+ manages Deno.
+The root Nix development shell supplies only non-JavaScript tools, currently `nixfmt`.
+Use `vp env install` to resolve Node.js from `engines.node` and the package manager from `packageManager` in `package.json`.
 Use `vp env current` to inspect resolution and `vp env use --unset` to clear stale session overrides.
 Use `vp install --frozen-lockfile` to install the locked dependencies.
 Use `vp run dev` for the local Alchemy application, `vp run check` for format and typed lint, `vp run test` for tests, and `vp run ci` for the complete configured checks.
@@ -120,9 +125,12 @@ Set optional `FLOWDECK_WORKSPACE_IMAGE` only to a prepared official-computerd-co
 Otherwise build the workspace Dockerfile, with `FLOWDECK_PI_DOCKERFILE` available as a Dockerfile override.
 There is no `WORKSPACE_IMAGE` Dockerfile base argument.
 A prepared image must contain the official runtime, shell, and FUSE prerequisites; this is not support for an arbitrary untouched image.
-Do not bake Node.js or a package manager into the workspace image.
-Use the target repository's `nix develop`, or a minimal temporary `nix shell`, for required development tools.
-Do not claim that the image supplies global Vite+; the target project's frozen pnpm dependencies supply local `vp`.
+Install official Vite+ in the final workspace stage as `sandbox`, with `VP_HOME=/home/sandbox/.vite-plus` and `VP_NODE_MANAGER=yes`.
+Keep its `bin` directory on `PATH`; the workspace supplies global `vp`.
+Do not bake fixed project Node.js or package-manager versions into the image.
+Use the target project's `vp env` configuration to resolve them, and preserve its declared package manager and lockfile.
+Use `nix develop` or a minimal temporary `nix shell` only for required non-JavaScript tools.
+Nix's internal Bun build dependency for the existing oo and Monid packages is separate from user-facing Bun management.
 Run computerd and repository tools as `sandbox`, with `HOME=/home/sandbox` and checkout `/workspace/project` through Computer Workspace.
 Do not modify the original monorepo images for Flowdeck-specific requirements.
 The original generic image's lightweight tool inventory remains tracked in [monorepo #384](https://github.com/totto2727-org/monorepo/issues/384).
@@ -130,7 +138,7 @@ The original generic image's lightweight tool inventory remains tracked in [mono
 Read [sandbox setup and acceptance limits](docs/development-sandbox.md) before changing this integration and [workspace retention](docs/development-workflow-retention.md) before changing lifetime behavior.
 Use official Lifecycle jobs to renew the six-hour native inactivity timeout every five hours without advancing workflow nodes or restarting stopped Containers.
 A real PiHarness run completed both implementation and explicit-resume verification in the same Container and root session.
-Independent temporary-Nix checks passed five tests, format/type/lint checks, direct build, and five built public-export cases.
+Before the official Vite+ provisioning change, independent temporary-Nix checks passed five tests, format/type/lint checks, direct build, and five built public-export cases.
 Normal cached target CI still fails with `spawn EINVAL`, and Pi used prohibited `--no-cache` flags, so full policy-compliant acceptance remains incomplete.
 Do not transfer direct-SDK results, operation completion, or cache-disabled checks into a claim of normal target CI success.
 Track [credential isolation #10](https://github.com/totto2727-org/flowdeck/issues/10), [workspace-loss recovery #11](https://github.com/totto2727-org/flowdeck/issues/11), [local Alchemy startup #12](https://github.com/totto2727-org/flowdeck/issues/12), [native AI binding validation #13](https://github.com/totto2727-org/flowdeck/issues/13), and [dependency provisioning and cached tasks #14](https://github.com/totto2727-org/flowdeck/issues/14) as concerns requiring assessment under this architecture, not as evidence of its acceptance.
@@ -139,6 +147,8 @@ Keep the frontend build concern separate as well.
 
 ## Validation and artifacts
 
+Keep CI JavaScript setup in the shared `setup-typescript` action, which delegates to `setup-vp`.
+Do not add separate `setup-node`, Nix setup or evaluation, or forced JavaScript version inputs to Flowdeck CI.
 Follow the workspace coding and test skills.
 Apply every skill in the workspace's DietrichGebert/ponytail skill set when reviewing changes, and record inapplicable checks with a reason.
 Use observable tests for version pinning, commit/ACK ordering, conflicts, duplicate events, graph projection, and recovery after runtime replacement.
