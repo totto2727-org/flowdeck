@@ -26,6 +26,11 @@
             packages = [
               pkgs.nixfmt
             ];
+
+            shellHook = ''
+              # Enable Git Hook
+              vp config
+            '';
           };
         }
       );
