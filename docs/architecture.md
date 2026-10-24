@@ -16,7 +16,7 @@ flowchart TB
   Entry -->|getByName runId| Run[Run Durable Object]
   Workflow <--> DB[(Shared D1\nKysely)]
   Run <--> DB
-  Run --> V[Workflow-owned version v1 or v2]
+  Run --> V[Workflow-owned pinned implementation version]
   Workflow -->|static typed RPC binding| Development[Development Workflow Worker]
   Development -->|getByName runId| DevelopmentRun[Development Run DO]
   DevelopmentRun <--> DB
@@ -52,7 +52,15 @@ Runtime resources and side-effect recovery belong to the workflow that uses them
 Worker entry points and Worker-specific features live under `src/workers/<worker>/`.
 Shared workflow schemas, projections, and persistence live under `src/features/workflow/`.
 The shared `Workflows` service is Control's only workflow dependency.
-Workflow registration and initial snapshots live under `src/workers/workflow/`, not in Control.
+The application follows modular-monolith boundaries: each workflow is an independent application module behind a shared interface.
+Workflow IDs, supported versions, input validation, initial snapshots, and graphs live under that workflow's own `features/input.ts` and `features/definition.ts`.
+`src/features/workflow/services/workflow-definition.ts` defines only the neutral definition, executor, and registry contracts.
+`src/workers/workflow/features/registration.ts` combines the workflow-provided definitions and fixed execution bindings into an array.
+The integration service uses registry lookup for catalog, create, and resume operations without branching on workflow IDs.
+The frontend renders version choices and input descriptors from the catalog without importing workflow implementations.
+The shared create schema validates only the routing envelope and semantic version format; the selected definition validates all workflow-specific fields before persistence or dispatch.
+New versions use strings parsed by Effect `SemVer`, not a shared version enumeration.
+Legacy stored versions remain readable and are interpreted only by their owning workflow.
 Adding a workflow requires its typed input schema, implementation, and integration registration, but no new Control binding.
 An unknown persisted workflow ID is rejected rather than sent to the demo worker.
 The final composition boundary in `src/workers/composition.ts` selects deployment and authorization Layers.
@@ -64,6 +72,10 @@ Feature logic does not inspect deployment stages, infrastructure phases, or deve
 ## Effect and interoperability
 
 Application logic uses Effect services, Layers, schemas, collections, Match, and HTTP APIs.
+External storage and service failures use `ExternalError` with required operation, cause, and kind fields.
+Domain rejections such as `Conflict` and `InvalidSnapshot` have no optional cause field.
+The HTTP boundary returns safe messages rather than external causes, retaining 500 for storage failures and 502 for service failures.
+State-dependent fields belong to explicit tagged variants; optional properties are reserved for genuinely optional metadata.
 Kysely query builders remain typed library values rather than an invented query abstraction.
 The D1 adapter compiles Kysely queries into native D1 prepared statements.
 D1 `batch` provides the atomic transaction that Kysely's interactive transaction callback cannot provide on D1.
@@ -75,7 +87,7 @@ React and Playwright remain framework boundaries.
 ### State Machine API constraint
 
 The design references the Effect 3 experimental Machine API.
-The inspected Effect 4.0.1, 4.0.2, and the installed Effect 4.0.5 do not export a compatible Machine module.
+The inspected Effect 4.0.1, 4.0.2, 4.0.5, and installed 4.0.6 do not export a compatible Machine module.
 Do not describe this experiment as an official Machine integration.
 The demo uses a small workflow-owned tagged state with a Schema restore boundary and Match transitions.
 There is no replacement general-purpose state-machine engine.
@@ -168,9 +180,19 @@ DO replacement does not itself trigger execution.
 The current recovery trigger is an explicit RPC through the resume operation.
 Alarms, reconnecting runners, and environment-specific checkpoints are workflow extensions, not implied common guarantees.
 
+## Frontend styling
+
+Application components use Tailwind utilities and the local shadcn/ui components.
+`src/workers/frontend/features/styles/app.css` contains only Tailwind imports, shadcn theme mappings, and base configuration, not application selectors.
+Graph canvas dimensions and node coordinates come from persisted graph projections at runtime.
+These unbounded numeric values cannot be enumerated as statically discovered Tailwind classes, so the graph uses a documented inline geometry boundary while Tailwind controls its appearance, state, and interaction styling.
+Each unavoidable nonstandard implementation must document its purpose, rejected standard alternatives, and exact scope beside the code before review.
+
 ## Version lifecycle
 
-New runs explicitly select v1 or v2.
+New runs explicitly select a semantic version advertised by their workflow definition.
+The demo advertises `1.0.0` and `2.0.0`; the development workflow advertises `1.0.0`.
+Only each workflow's restore boundary interprets its retained legacy `v1` or `v2` identities.
 Existing runs restore their stored version rather than a mutable latest alias.
 Keep old code while a pending, active, waiting, or recoverable run references it.
 Remove an old implementation only after its resumable runs have reached a terminal state.

@@ -1,16 +1,12 @@
 import { Crypto, Effect, Match, Ref, Schema } from 'effect'
 
 import { InvalidOperation, InvalidSnapshot, type DomainError } from '../../../features/workflow/domain/errors'
-import {
-  type GraphDefinition,
-  type Run,
-  WorkflowVersion,
-  type WorkflowSummary,
-} from '../../../features/workflow/domain/model'
+import { type GraphDefinition, type Run, type WorkflowSummary } from '../../../features/workflow/domain/model'
 import { Store } from '../../../features/workflow/services/store'
+import { DemoWorkflowVersion } from './input'
 import { type EventDraft, type Execution, nodeEvent, observeNode, timestamp } from './node'
 
-const fields = { schemaVersion: Schema.Literal(1), version: WorkflowVersion }
+const fields = { schemaVersion: Schema.Literal(1), version: DemoWorkflowVersion }
 export const DemoSnapshot = Schema.Union([
   Schema.TaggedStruct('Ready', fields),
   Schema.TaggedStruct('Preparing', {
@@ -33,25 +29,34 @@ export type DemoSnapshot = typeof DemoSnapshot.Type
 export const demoWorkflow: WorkflowSummary = {
   workflowId: 'demo',
   name: 'Release checkpoint',
-  versions: ['v1', 'v2'],
+  versions: ['1.0.0', '2.0.0'],
+  inputs: [],
 }
 
 /** Both implementations are deliberately bundled. Run records select their
  * original version, never a mutable latest alias. */
-export const demoGraph = (version: WorkflowVersion): GraphDefinition => ({
+export const demoGraph = (version: DemoWorkflowVersion): GraphDefinition => ({
   graphId: `demo:${version}:graph:1`,
   schemaVersion: 1,
   nodes: [
-    { nodeId: 'prepare', label: version === 'v1' ? 'Prepare release' : 'Enrich release', kind: 'task' },
+    {
+      nodeId: 'prepare',
+      label: version === 'v1' || version === '1.0.0' ? 'Prepare release' : 'Enrich release',
+      kind: 'task',
+    },
     { nodeId: 'approval', label: 'Manual approval', kind: 'checkpoint' },
-    { nodeId: 'publish', label: version === 'v1' ? 'Publish release' : 'Publish enriched release', kind: 'task' },
+    {
+      nodeId: 'publish',
+      label: version === 'v1' || version === '1.0.0' ? 'Publish release' : 'Publish enriched release',
+      kind: 'task',
+    },
   ],
   edges: [
     { edgeId: 'prepare-approval', source: 'prepare', target: 'approval', label: 'prepared' },
     { edgeId: 'approval-publish', source: 'approval', target: 'publish', label: 'resume' },
   ],
 })
-export const initialSnapshot = (version: WorkflowVersion): DemoSnapshot => ({
+export const initialSnapshot = (version: DemoWorkflowVersion): DemoSnapshot => ({
   _tag: 'Ready',
   schemaVersion: 1,
   version,
@@ -72,7 +77,7 @@ const statusFor = (snapshot: DemoSnapshot) =>
  * API. The durable Schema is the complete restore boundary. */
 export const restoreDemo = (run: Run) =>
   Schema.decodeUnknownEffect(DemoSnapshot)(run.snapshot).pipe(
-    Effect.mapError((cause) => new InvalidSnapshot({ message: 'Invalid demo snapshot', cause })),
+    Effect.mapError(() => new InvalidSnapshot({ message: 'Invalid demo snapshot' })),
     Effect.flatMap((snapshot) =>
       run.workflowId !== 'demo' ||
       snapshot.version !== run.workflowVersion ||
@@ -128,7 +133,9 @@ const prepare = (
     }
     // These sample tasks are pure and therefore safely retryable after a crash.
     // Real workflow nodes must own their side-effect idempotency/reconnection.
-    const task = Effect.succeed(snapshot.version === 'v1' ? 'draft:v1' : 'draft:v2:reviewed')
+    const task = Effect.succeed(
+      snapshot.version === 'v1' || snapshot.version === '1.0.0' ? 'draft:v1' : 'draft:v2:reviewed',
+    )
     yield* observeNode(execution, task, {
       started: (event) =>
         snapshot._tag === 'Preparing'

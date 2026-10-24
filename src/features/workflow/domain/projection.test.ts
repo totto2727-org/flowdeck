@@ -18,17 +18,20 @@ const event = (sequence: number, nodeId: string, type: EventType): RunEvent => (
 })
 
 describe('graph projections', () => {
-  it('creates stable node and edge geometry without mutating the version graph', () => {
-    const graph = demoGraph('v1')
-    const shapes = graphToShapes(graph)
-    expect(Array.map(shapes.nodes, (node) => ({ id: node.nodeId, state: node.state, x: node.x }))).toEqual([
-      { id: 'prepare', state: 'idle', x: 48 },
-      { id: 'approval', state: 'idle', x: 328 },
-      { id: 'publish', state: 'idle', x: 608 },
-    ])
-    expect(Array.map(shapes.edges, (edge) => edge.traversed)).toEqual([false, false])
-    expect(graph).toEqual(demoGraph('v1'))
-  })
+  it.each(['v1', 'v2', '1.0.0', '2.0.0'] as const)(
+    'creates stable node and edge geometry without mutating the %s version graph',
+    (version) => {
+      const graph = demoGraph(version)
+      const shapes = graphToShapes(graph)
+      expect(Array.map(shapes.nodes, (node) => ({ id: node.nodeId, state: node.state, x: node.x }))).toEqual([
+        { id: 'prepare', state: 'idle', x: 48 },
+        { id: 'approval', state: 'idle', x: 328 },
+        { id: 'publish', state: 'idle', x: 608 },
+      ])
+      expect(Array.map(shapes.edges, (edge) => edge.traversed)).toEqual([false, false])
+      expect(graph).toEqual(demoGraph(version))
+    },
+  )
 
   it('uses sequence order rather than delivery order or wall clock time', () => {
     const projection = projectEvents([

@@ -14,12 +14,14 @@ describe('ControlApi', () => {
       makeControlApi.pipe(
         Effect.provideService(
           HttpClient.HttpClient,
-          clientReturning({ workflows: [{ workflowId: 'demo', name: 'Review', versions: ['v1', 'v2'] }] }),
+          clientReturning({
+            workflows: [{ workflowId: 'review', name: 'Review', versions: ['1.0.0', '2.0.0'], inputs: [] }],
+          }),
         ),
       ),
     )
     const value = await Effect.runPromise(api.workflows)
-    expect(Array.getUnsafe(value.workflows, 0).versions).toEqual(['v1', 'v2'])
+    expect(Array.getUnsafe(value.workflows, 0).versions).toEqual(['1.0.0', '2.0.0'])
   })
 
   it('does not pass malformed control responses to the dashboard', async () => {

@@ -10,7 +10,12 @@ import './styles/app.css'
 const layout = EFFRONT.Layout.make({
   render: ({ children }) =>
     Effect.succeed(
-      <html lang='en' className='dark' data-theme='dark' suppressHydrationWarning>
+      <html
+        lang='en'
+        className='dark bg-background font-sans text-[14px] leading-normal text-foreground antialiased [font-synthesis:none] [text-rendering:optimizeLegibility] [&_button:not(:disabled)]:cursor-pointer [&_select:not(:disabled)]:cursor-pointer [&_summary]:cursor-pointer [&_button:disabled]:cursor-wait [&_:is(button,a,select,summary,input)]:[-webkit-tap-highlight-color:transparent] [&_:focus-visible]:outline-[3px] [&_:focus-visible]:outline-offset-[4px] [&_:focus-visible]:outline-[#178168] dark:[&_:focus-visible]:outline-primary motion-reduce:[&_*]:animate-none! motion-reduce:[&_*]:transition-none! motion-reduce:[&_*]:scroll-auto! motion-reduce:[&_*::before]:animate-none! motion-reduce:[&_*::after]:animate-none! motion-reduce:[&_*::before]:transition-none! motion-reduce:[&_*::after]:transition-none!'
+        data-theme='dark'
+        suppressHydrationWarning
+      >
         <head>
           <meta charSet='UTF-8' />
           <meta name='viewport' content='width=device-width,initial-scale=1' />
@@ -33,10 +38,16 @@ const overview = EFFRONT.Page.make({
       )),
       Effect.catchTag('ControlError', (error) =>
         Effect.succeed(
-          <main className='startup-error'>
-            <h1>Control plane unavailable</h1>
-            <p role='alert'>{error.message}</p>
-            <a href='/'>Retry dashboard</a>
+          <main className='mx-auto my-[15vh] max-w-[600px] p-[30px]'>
+            <h1 className='text-[30px] leading-[1.35] font-[650] tracking-[-1px] max-[620px]:text-[27px]'>
+              Control plane unavailable
+            </h1>
+            <p className='my-[18px]' role='alert'>
+              {error.message}
+            </p>
+            <a className='text-primary underline' href='/'>
+              Retry dashboard
+            </a>
           </main>,
         ),
       ),

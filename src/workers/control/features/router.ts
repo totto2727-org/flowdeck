@@ -2,7 +2,7 @@ import type { RpcCallError, RpcDecodeError } from 'alchemy/Rpc'
 import { Effect, Schema } from 'effect'
 import { Headers, HttpBody, HttpRouter, HttpServerError, HttpServerRequest, HttpServerResponse } from 'effect/http'
 
-import { BindingError, type DomainError } from '../../../features/workflow/domain/errors'
+import { ExternalError, type DomainError } from '../../../features/workflow/domain/errors'
 import {
   ApiErrorResponse,
   CreateRun,
@@ -19,7 +19,9 @@ const boundary = <R>(handler: Effect.Effect<HttpServerResponse.HttpServerRespons
   handler.pipe(
     // makeRpcStub preserves the declared service shape, so transport failures need this wider boundary.
     Effect.mapError((error: ApiFailure | RpcCallError | RpcDecodeError) =>
-      error._tag === 'RpcCallError' || error._tag === 'RpcDecodeError' ? new BindingError({ cause: error }) : error,
+      error._tag === 'RpcCallError' || error._tag === 'RpcDecodeError'
+        ? new ExternalError({ operation: 'call workflow worker', cause: error, kind: 'service' })
+        : error,
     ),
     Effect.catchTags({
       NotFound: () => errorResponse(404, 'NotFound', 'Run or graph not found'),
@@ -27,9 +29,10 @@ const boundary = <R>(handler: Effect.Effect<HttpServerResponse.HttpServerRespons
       InvalidOperation: (error) => errorResponse(409, 'InvalidOperation', error.message),
       InvalidSnapshot: () => errorResponse(409, 'InvalidSnapshot', 'Persisted workflow state is invalid'),
       PlatformError: () => errorResponse(500, 'PlatformError', 'Run identity could not be generated'),
-      StoreError: () => errorResponse(500, 'StoreError', 'Persistence operation failed'),
-      BindingError: () =>
-        errorResponse(502, 'BindingError', 'Workflow worker is unavailable. The run remains persisted'),
+      ExternalError: (error) =>
+        error.kind === 'storage'
+          ? errorResponse(500, 'ExternalError', 'Persistence operation failed')
+          : errorResponse(502, 'ExternalError', 'Workflow worker is unavailable. The run remains persisted'),
       SchemaError: () => errorResponse(400, 'InvalidRequest', 'Request does not match the API schema'),
       HttpServerError: () => errorResponse(400, 'InvalidRequest', 'Request body could not be read'),
       HttpBodyError: () => errorResponse(500, 'EncodingError', 'Response could not be encoded'),

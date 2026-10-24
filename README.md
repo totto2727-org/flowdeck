@@ -21,7 +21,7 @@ vp run dev
 ```
 
 Open <http://127.0.0.1:4380>.
-Select v1 or v2 and start a run.
+Select `1.0.0` or `2.0.0` and start a run.
 The first node completes and the run waits for manual approval.
 Select graph nodes with the pointer, Tab and Enter, or arrow keys.
 Inspect the committed snapshot and ordered events, then select **Resume run**.

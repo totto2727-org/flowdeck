@@ -1,24 +1,22 @@
 import { Crypto, DateTime, Effect, Match, Schema } from 'effect'
 
-import type { TurnReceipt } from '../../../features/development/model'
 import { InvalidOperation, InvalidSnapshot, type DomainError } from '../../../features/workflow/domain/errors'
 import {
-  DevelopmentTask,
-  PublicRepository,
-  type CreateRun,
   type GraphDefinition,
   type Run,
   type RunStatus,
   type WorkflowSummary,
 } from '../../../features/workflow/domain/model'
 import { Store, type PendingEvent } from '../../../features/workflow/services/store'
+import { DevelopmentTask, PublicRepository, DevelopmentWorkflowVersion, type DevelopmentCreateRun } from './input'
+import type { TurnReceipt } from './model'
 import { DevelopmentSandbox } from './sandbox'
 
 const base = {
   schemaVersion: Schema.Literal(1),
-  version: Schema.Literal('v1'),
+  version: DevelopmentWorkflowVersion,
   // Compatibility: legacy snapshots remain readable, but only explicitly PiHarness runs may execute.
-  runtime: Schema.optional(Schema.Literals(['pi', 'pi-harness'])),
+  runtime: Schema.Literals(['pi', 'pi-harness', 'legacy-missing']),
   repository: PublicRepository,
   task: DevelopmentTask,
 }
@@ -38,7 +36,7 @@ export const DevelopmentSnapshot = Schema.Union([
     sessionId: Schema.String,
     result: Schema.String,
     // Older checkpoints derived this identity from the run and node.
-    commandId: Schema.optional(Schema.String),
+    commandId: Schema.String,
   }),
   Schema.TaggedStruct('Completed', { ...base, sessionId: Schema.String, result: Schema.String }),
   Schema.TaggedStruct('Failed', { ...base, nodeId: Schema.Literals(['implement', 'verify']), message: Schema.String }),
@@ -48,7 +46,25 @@ export const developmentWorkflow: WorkflowSummary = {
   // Compatibility: persisted workflow, version and graph identities must not be renamed.
   workflowId: 'jcode-development',
   name: 'Pi development',
-  versions: ['v1'],
+  versions: ['1.0.0'],
+  inputs: [
+    {
+      name: 'repository',
+      label: 'Public GitHub repository',
+      kind: 'text',
+      required: true,
+      placeholder: 'https://github.com/owner/repository',
+      maxLength: 256,
+    },
+    {
+      name: 'task',
+      label: 'Development task',
+      kind: 'textarea',
+      required: true,
+      placeholder: 'Describe the change to implement and verify.',
+      maxLength: 16_000,
+    },
+  ],
 }
 export const developmentGraph: GraphDefinition = {
   // Compatibility: existing runs pin this immutable graph reference.
@@ -60,12 +76,14 @@ export const developmentGraph: GraphDefinition = {
   ],
   edges: [{ edgeId: 'implement-verify', source: 'implement', target: 'verify', label: 'implementation complete' }],
 }
-export const initialDevelopmentSnapshot = (
-  input: Extract<CreateRun, { workflowId: 'jcode-development' }>,
-): DevelopmentSnapshot => ({
+export const developmentGraphFor = (version: string): GraphDefinition => ({
+  ...developmentGraph,
+  graphId: version === 'v1' ? developmentGraph.graphId : `jcode-development:${version}:graph:1`,
+})
+export const initialDevelopmentSnapshot = (input: DevelopmentCreateRun): DevelopmentSnapshot => ({
   _tag: 'Ready',
   schemaVersion: 1,
-  version: 'v1',
+  version: input.version,
   runtime: 'pi-harness',
   repository: input.repository,
   task: input.task,
@@ -81,7 +99,7 @@ const statusFor = (snapshot: DevelopmentSnapshot): RunStatus =>
   )
 const fields = (snapshot: DevelopmentSnapshot) => ({
   schemaVersion: 1 as const,
-  version: 'v1' as const,
+  version: snapshot.version,
   runtime: snapshot.runtime,
   repository: snapshot.repository,
   task: snapshot.task,
@@ -91,12 +109,22 @@ const UUIDv4 = Schema.String.check(Schema.isUUID(4))
 const validCommand = (id: string, runId: string, nodeId: 'implement' | 'verify') =>
   Schema.is(UUIDv4)(id) || id === commandId(runId, nodeId)
 export const restoreDevelopment = (run: Run) =>
-  Schema.decodeUnknownEffect(DevelopmentSnapshot)(run.snapshot).pipe(
-    Effect.mapError((cause) => new InvalidSnapshot({ message: 'Invalid development snapshot', cause })),
+  Schema.decodeUnknownEffect(Schema.Record(Schema.String, Schema.Unknown))(run.snapshot).pipe(
+    // Persisted legacy omissions are converted once, before entering the required-field domain model.
+    Effect.flatMap((wire) =>
+      Schema.decodeUnknownEffect(DevelopmentSnapshot)({
+        ...wire,
+        runtime: 'runtime' in wire ? wire['runtime'] : 'legacy-missing',
+        ...(wire['_tag'] === 'Completing' && !('commandId' in wire)
+          ? { commandId: commandId(run.runId, 'verify') }
+          : {}),
+      }),
+    ),
+    Effect.mapError(() => new InvalidSnapshot({ message: 'Invalid development snapshot' })),
     Effect.flatMap((snapshot) =>
       run.workflowId !== 'jcode-development' ||
-      run.workflowVersion !== 'v1' ||
-      run.graphId !== developmentGraph.graphId ||
+      run.workflowVersion !== snapshot.version ||
+      run.graphId !== developmentGraphFor(snapshot.version).graphId ||
       run.status !== statusFor(snapshot) ||
       (snapshot._tag === 'Starting' && !validCommand(snapshot.commandId, run.runId, 'implement')) ||
       ((snapshot._tag === 'PendingTurn' || snapshot._tag === 'AwaitingTurn') &&
@@ -150,12 +178,9 @@ const save = (run: Run, snapshot: DevelopmentSnapshot, events: ReadonlyArray<Eve
   })
 const fail = (run: Run, snapshot: DevelopmentSnapshot, nodeId: 'implement' | 'verify', message: string) =>
   save(run, { ...fields(snapshot), _tag: 'Failed', nodeId, message }, [
-    nodeEvent(
-      'commandId' in snapshot && snapshot.commandId !== undefined ? snapshot.commandId : commandId(run.runId, nodeId),
-      nodeId,
-      'node.failed',
-      { message },
-    ),
+    nodeEvent('commandId' in snapshot ? snapshot.commandId : commandId(run.runId, nodeId), nodeId, 'node.failed', {
+      message,
+    }),
     runEvent(run, 'run.failed'),
   ]).pipe(Effect.asVoid)
 const prompt = (snapshot: Extract<DevelopmentSnapshot, { _tag: 'PendingTurn' }>) =>
@@ -226,7 +251,7 @@ const complete = (run: Run, snapshot: Extract<DevelopmentSnapshot, { _tag: 'Comp
       return yield* fail(run, snapshot, 'verify', 'Could not complete the original Pi session')
     // Completion marks the Pi work complete, never destroys its container or workspace.
     yield* save(run, { ...snapshot, _tag: 'Completed' }, [
-      nodeEvent(snapshot.commandId ?? commandId(run.runId, 'verify'), 'verify', 'node.succeeded', {
+      nodeEvent(snapshot.commandId, 'verify', 'node.succeeded', {
         output: snapshot.result,
       }),
       runEvent(run, 'run.completed'),

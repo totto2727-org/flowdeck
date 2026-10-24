@@ -1,7 +1,5 @@
 import * as React from 'react'
 
-// Projektor customization: route class merging through the configured app utility alias.
-// Generated shadcn 4.21.1 base-nova behavior and styling are otherwise unchanged.
 import { cn } from '@/lib/utils'
 
 function Card({ className, size = 'default', ...props }: React.ComponentProps<'div'> & { size?: 'default' | 'sm' }) {

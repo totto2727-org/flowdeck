@@ -1,15 +1,9 @@
-import { Context, Effect } from 'effect'
+import { Context } from 'effect'
 
-import type { DomainError } from '../../../features/workflow/domain/errors'
+import type { WorkflowExecutor } from '../../../features/workflow/services/workflow-definition'
 
 /** The integration Worker statically provides the bundled demo workflow entry. */
-export class WorkflowBinding extends Context.Service<
-  WorkflowBinding,
-  {
-    readonly start: (runId: string) => Effect.Effect<void, DomainError>
-    readonly resume: (runId: string) => Effect.Effect<void, DomainError>
-  }
->()('flowdeck/WorkflowBinding') {}
+export class WorkflowBinding extends Context.Service<WorkflowBinding, WorkflowExecutor>()('flowdeck/WorkflowBinding') {}
 
 /** A distinct static service binding, never a dynamic Worker reference. */
 export class DevelopmentWorkflowBinding extends Context.Service<

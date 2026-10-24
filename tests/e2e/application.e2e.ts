@@ -20,14 +20,33 @@ test('development task inputs are usable without starting an agent', async ({ pa
   await expect(repository).toHaveValue('https://github.com/totto2727-org/template-vite-plus-lib')
   await expect(task).toHaveValue('Add an add function and run its focused tests in the same checkout.')
   await expect(page.getByLabel('Version', { exact: true }).getByRole('option')).toHaveCount(1)
+  await expect(page.getByLabel('Version', { exact: true })).toHaveValue('1.0.0')
   await expect(page.getByRole('button', { name: 'Start run', exact: true })).toBeEnabled()
+
+  await page
+    .getByRole('navigation', { name: 'Registered workflows' })
+    .getByRole('button', { name: 'Release checkpoint' })
+    .click()
+  await expect(repository).toHaveCount(0)
+  await expect(task).toHaveCount(0)
+  await expect(page.getByLabel('Version', { exact: true }).getByRole('option')).toHaveCount(2)
+  await page.getByLabel('Version', { exact: true }).selectOption('2.0.0')
+  await page
+    .getByRole('navigation', { name: 'Registered workflows' })
+    .getByRole('button', { name: 'Pi development' })
+    .click()
+  await expect(repository).toHaveValue('')
+  await expect(task).toHaveValue('')
+  await expect(page.getByLabel('Version', { exact: true })).toHaveValue('1.0.0')
+  await repository.fill('https://github.com/totto2727-org/template-vite-plus-lib')
+  await task.fill('Add an add function and run its focused tests in the same checkout.')
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   await page.screenshot({ path: info.outputPath('development-form.png'), fullPage: true })
   expect(pageErrors).toEqual([])
 })
 
 // Playwright's Page API is the browser automation boundary, not an application HTTP client.
-Array.map(['v1', 'v2'] as const, (version) => {
+Array.map(['1.0.0', '2.0.0'] as const, (version) => {
   test(`${version} persists its checkpoint and resumes through the real Worker bindings`, async ({ page }, info) => {
     let pageErrors: ReadonlyArray<string> = []
     page.on('pageerror', (error) => {

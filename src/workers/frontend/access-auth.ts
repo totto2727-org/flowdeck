@@ -13,7 +13,8 @@ export class AccessDenied extends Data.TaggedError('AccessDenied')<{
 
 interface AccessAdmission<R> {
   readonly aud: string
-  readonly getIdentity: () => Effect.Effect<{ readonly email?: string } | undefined, unknown, R>
+  // The native Access identity is decoded at this platform boundary before use.
+  readonly getIdentity: () => Effect.Effect<unknown, unknown, R>
 }
 
 /** Verify native platform admission and the configured application identity boundary. */
@@ -32,10 +33,15 @@ export const authorizeAccess = <R>(
     if (access.aud !== settings.FLOWDECK_ACCESS_AUD) {
       return yield* new AccessDenied({ status: 403, message: 'This Access application is not authorized.' })
     }
-    const identity = yield* access
-      .getIdentity()
-      .pipe(Effect.mapError(() => new AccessDenied({ status: 503, message: 'Access identity could not be verified.' })))
-    if (identity?.email === undefined || !Array.contains(settings.FLOWDECK_ACCESS_EMAILS, identity.email)) {
+    const identity = yield* access.getIdentity().pipe(
+      Effect.mapError(() => new AccessDenied({ status: 503, message: 'Access identity could not be verified.' })),
+      Effect.flatMap((identity) =>
+        Schema.decodeUnknownEffect(Schema.Struct({ email: Schema.String }))(identity).pipe(
+          Effect.mapError(() => new AccessDenied({ status: 403, message: 'This identity is not authorized.' })),
+        ),
+      ),
+    )
+    if (!Array.contains(settings.FLOWDECK_ACCESS_EMAILS, identity.email)) {
       return yield* new AccessDenied({ status: 403, message: 'This identity is not authorized.' })
     }
   })

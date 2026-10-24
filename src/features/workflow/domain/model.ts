@@ -1,10 +1,16 @@
-import { Schema } from 'effect'
+import { Result, Schema, SemVer } from 'effect'
 
 const Revision = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 const PositiveInt = Schema.Int.check(Schema.isGreaterThan(0))
 
-export const WorkflowVersion = Schema.Literals(['v1', 'v2'])
+/** Version strings are owned by each workflow. Existing persisted versions remain readable. */
+export const WorkflowVersion = Schema.String.check(Schema.isMinLength(1))
 export type WorkflowVersion = typeof WorkflowVersion.Type
+export const SemanticVersion = Schema.String.check(
+  Schema.makeFilter((version) => Result.isSuccess(SemVer.parse(version)), {
+    message: 'Expected a Semantic Versioning 2.0.0 version',
+  }),
+)
 export const RunStatus = Schema.Literals(['pending', 'running', 'waiting', 'completed', 'failed'])
 export type RunStatus = typeof RunStatus.Type
 export const JsonObject = Schema.Record(Schema.String, Schema.Unknown)
@@ -33,7 +39,17 @@ export type GraphDefinition = typeof GraphDefinition.Type
 export const WorkflowSummary = Schema.Struct({
   workflowId: Schema.String,
   name: Schema.String,
-  versions: Schema.Array(WorkflowVersion),
+  versions: Schema.Array(SemanticVersion),
+  inputs: Schema.Array(
+    Schema.Struct({
+      name: Schema.String,
+      label: Schema.String,
+      kind: Schema.Literals(['text', 'textarea']),
+      required: Schema.Boolean,
+      placeholder: Schema.optional(Schema.String),
+      maxLength: PositiveInt,
+    }),
+  ),
 })
 export type WorkflowSummary = typeof WorkflowSummary.Type
 export const Run = Schema.Struct({
@@ -109,24 +125,11 @@ export const RunDetail = Schema.Struct({
   shapes: Shapes,
 })
 export type RunDetail = typeof RunDetail.Type
-export const PublicRepository = Schema.String.check(
-  Schema.isPattern(/^https:\/\/github\.com\/[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/[A-Za-z0-9_.-]+(?:\.git)?$/),
-  Schema.isMaxLength(256),
+/** Routing envelope only. The selected workflow validates all remaining input fields. */
+export const CreateRun = Schema.StructWithRest(
+  Schema.Struct({ workflowId: Schema.String.check(Schema.isMinLength(1)), version: SemanticVersion }),
+  [Schema.Record(Schema.String, Schema.Unknown)],
 )
-export const DevelopmentTask = Schema.String.check(
-  Schema.isMinLength(1),
-  Schema.isMaxLength(16_000),
-  Schema.isPattern(/\S/),
-)
-export const CreateRun = Schema.Union([
-  Schema.Struct({ workflowId: Schema.Literal('demo'), version: WorkflowVersion }),
-  Schema.Struct({
-    workflowId: Schema.Literal('jcode-development'),
-    version: Schema.Literal('v1'),
-    repository: PublicRepository,
-    task: DevelopmentTask,
-  }),
-])
 export type CreateRun = typeof CreateRun.Type
 export const WorkflowsResponse = Schema.Struct({ workflows: Schema.Array(WorkflowSummary) })
 export const RunsResponse = Schema.Struct({ runs: Schema.Array(Run) })

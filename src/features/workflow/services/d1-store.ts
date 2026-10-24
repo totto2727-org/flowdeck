@@ -1,9 +1,9 @@
 import type { D1Database } from '@cloudflare/workers-types'
-import { Array, Effect, Schema, String } from 'effect'
+import { Array, Effect, Match, Schema, String } from 'effect'
 import { Kysely, type Compilable } from 'kysely'
 import { D1Dialect } from 'kysely-d1'
 
-import { Conflict, NotFound, StoreError } from '../domain/errors'
+import { Conflict, NotFound, ExternalError } from '../domain/errors'
 import { GraphDefinition, JsonObject, Run, RunEvent } from '../domain/model'
 import type { Database } from './database'
 import type { CommitCommand, StoreService } from './store'
@@ -16,8 +16,8 @@ const decodeJson = Schema.decodeUnknownEffect(Json)
 const databaseFailure = (operation: string, cause: unknown) => {
   const message = cause instanceof Error ? cause.message : 'Database operation failed'
   return String.includes('flowdeck_')(message) || String.includes('UNIQUE constraint')(message)
-    ? new Conflict({ message, cause })
-    : new StoreError({ operation, cause })
+    ? new Conflict({ message })
+    : new ExternalError({ operation, cause, kind: 'storage' })
 }
 
 /** Kysely owns all query construction. D1's batch is the only transactional
@@ -39,12 +39,16 @@ export const makeD1Store = (database: D1Database): StoreService => {
     )
   const decode = <S extends Schema.Constraint>(schema: S, value: unknown) =>
     Schema.decodeUnknownEffect(schema)(value).pipe(
-      Effect.mapError((cause) => new StoreError({ operation: 'decode persisted data', cause })),
+      Effect.mapError((cause) => new ExternalError({ operation: 'decode persisted data', cause, kind: 'storage' })),
     )
   const json = (value: unknown) =>
-    encodeJson(value).pipe(Effect.mapError((cause) => new StoreError({ operation: 'encode persisted data', cause })))
+    encodeJson(value).pipe(
+      Effect.mapError((cause) => new ExternalError({ operation: 'encode persisted data', cause, kind: 'storage' })),
+    )
   const fromJson = (value: string) =>
-    decodeJson(value).pipe(Effect.mapError((cause) => new StoreError({ operation: 'decode persisted JSON', cause })))
+    decodeJson(value).pipe(
+      Effect.mapError((cause) => new ExternalError({ operation: 'decode persisted JSON', cause, kind: 'storage' })),
+    )
   const runsQuery = () =>
     db
       .selectFrom('runs')
@@ -74,7 +78,7 @@ export const makeD1Store = (database: D1Database): StoreService => {
       return yield* decodeRun(row)
     })
 
-  const create: StoreService['create'] = (run, graph) =>
+  const create: StoreService['create'] = (run, graph, workflowName) =>
     Effect.gen(function* () {
       if (run.graphId !== graph.graphId || run.revision !== 0 || run.status !== 'pending') {
         return yield* Effect.fail(
@@ -86,7 +90,7 @@ export const makeD1Store = (database: D1Database): StoreService => {
       yield* batch([
         db
           .insertInto('workflows')
-          .values({ workflow_id: run.workflowId, name: 'Checkpoint demo' })
+          .values({ workflow_id: run.workflowId, name: workflowName })
           .onConflict((conflict) => conflict.column('workflow_id').doNothing()),
         db
           .insertInto('graphs')
@@ -113,9 +117,7 @@ export const makeD1Store = (database: D1Database): StoreService => {
   const commit: StoreService['commit'] = (command: CommitCommand) =>
     Effect.gen(function* () {
       yield* Schema.decodeUnknownEffect(EventIds)(Array.map(command.events, (event) => event.eventId)).pipe(
-        Effect.mapError(
-          (cause) => new Conflict({ message: 'Event IDs must be nonempty and unique within a commit', cause }),
-        ),
+        Effect.mapError(() => new Conflict({ message: 'Event IDs must be nonempty and unique within a commit' })),
       )
       const snapshotJson = yield* json(command.snapshot)
       // Store the entire command, not just its ID, to reject mutated duplicate deliveries.
@@ -263,15 +265,19 @@ export const makeD1Store = (database: D1Database): StoreService => {
         if (!row) return yield* Effect.fail(new NotFound({ resource: `graph:${graphId}` }))
         return yield* decode(GraphDefinition, yield* fromJson(row.graph_json))
       }),
-    getEvents: (runId, throughRevision) =>
+    getEvents: (runId, range) =>
       Effect.gen(function* () {
-        let query = db
+        const query = db
           .selectFrom('run_events')
           .innerJoin('commit_receipts', 'run_events.commit_id', 'commit_receipts.commit_id')
           .selectAll('run_events')
           .where('run_events.run_id', '=', runId)
-        if (throughRevision !== undefined) query = query.where('commit_receipts.revision', '<=', throughRevision)
-        const rows = yield* io('get events', () => query.orderBy('sequence').execute())
+        const selected = Match.value(range).pipe(
+          Match.tag('All', () => query),
+          Match.tag('ThroughRevision', ({ revision }) => query.where('commit_receipts.revision', '<=', revision)),
+          Match.exhaustive,
+        )
+        const rows = yield* io('get events', () => selected.orderBy('sequence').execute())
         return yield* Effect.forEach(rows, (row) =>
           Effect.gen(function* () {
             const payload = yield* decode(JsonObject, yield* fromJson(row.payload_json))

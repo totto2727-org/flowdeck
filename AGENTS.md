@@ -13,7 +13,7 @@ The application uses Effect 4, Effront, shadcn/ui, Cloudflare Workers, Durable O
 - `src/workers/demo-workflow/`: Workflow entry, run Durable Object, and demo-only execution features.
 - `src/workers/development-workflow/`: development checkpoints, run Durable Object, official PiHarness, and Computer Workspace integration.
 - `sandbox/`: workspace image with the official `computerd` runtime.
-- `src/features/development/`: shared session and turn receipt schemas.
+- `src/workers/development-workflow/features/model.ts`: development-owned session and turn receipt schemas.
 - `src/workers/definitions.ts`: lightweight Worker identities and contracts for `.make()` implementations and static bindings, with only a type re-export of `DevelopmentWorkflow` to keep infrastructure out of the frontend runtime graph.
 - `src/workers/development-workflow/index.ts`: the sole external `DevelopmentWorkflow` definition, with native Durable Object exports from `worker.ts` through official Alchemy support, not custom `props.exports`.
 - `src/workers/composition.ts`: final deployment and request dependency selection.
@@ -47,6 +47,12 @@ Do not deploy, change DNS, or change Access policies without operator authorizat
 
 Write Effect programs, not imperative TypeScript with Effect wrappers.
 Use Effect Array, String, Record, Match, Schema, Clock, and collection APIs instead of equivalent standard-library APIs.
+Use `Schema.isUUID(4)`, `Schema.URLFromString`, and Effect `SemVer` instead of custom identity, URL, or version parsers.
+Do not validate URLs with regular expressions.
+Use ordinary string operations for business constraints after parsing.
+Use a regular expression only when no suitable existing API or simple string operation fits, and document the specific reason beside it.
+Represent state differences with tagged unions, not optional properties.
+An optional property may represent genuinely optional metadata, but its presence must not select a system state or execution path.
 Use a simple `if` when it is clearer, but do not introduce `for` loops or `switch` statements.
 Use Effect HttpClient for HTTP clients and Effect HTTP for API routing and responses.
 Use native Request, Response, Promise, and Cloudflare binding interfaces only in the smallest adapters required by the runtime or a typed library.
@@ -65,6 +71,12 @@ Do not replace Kysely with a second query layer.
 Keep one Worker per workflow and one logical Durable Object ID per run.
 Use the additional `Workflow` integration Worker as Control's only workflow service binding.
 Keep catalog, initial run persistence, and per-workflow routing in that Worker, not in Control.
+Treat each workflow as an independent application module.
+Keep workflow IDs, supported versions, input schemas, initial snapshots, and graphs in that workflow's own feature files.
+The shared `WorkflowDefinition` and `WorkflowExecutor` interfaces contain no individual workflow knowledge.
+Compose workflow-provided definitions and static bindings only in `src/workers/workflow/features/registration.ts`.
+The integration service and frontend consume that registry and its catalog mechanically, without workflow-specific branches.
+New run versions are SemVer strings; only workflow-owned restore boundaries handle legacy version identities.
 Use static service bindings only.
 Keep the workflow entry point a thin router to a Durable Object stub.
 Store the selected implementation version and immutable graph reference when a run is created.
@@ -81,6 +93,12 @@ Keep the demo checkpoint transitions workflow-specific and identify official Mac
 ## Frontend and infrastructure
 
 Use Effront and the shadcn Base UI components referenced in `SHADCN.md`.
+Use Tailwind utilities and components for application styling.
+Keep `features/styles/app.css` limited to Tailwind imports and shadcn theme tokens and base configuration.
+Do not add application-specific selectors or global component styles there.
+Do not write application-specific raw CSS when Tailwind utilities or normal components can express it.
+For a structurally unavoidable exception, document its purpose, why standard alternatives cannot satisfy the requirement, why the chosen solution is appropriate, and its exact scope beside the implementation.
+An undocumented exception is not permitted; documenting one makes it reviewable, not automatically approved.
 Keep canonical data on the server and client state limited to selections, drafts, and operation feedback.
 Preserve independent active, traversed, and selected graph states with pointer and keyboard access.
 Use `flowdeck.totto2727.dev` as the public frontend domain.

@@ -4,14 +4,21 @@ import { Effect, Layer } from 'effect'
 import { HttpRouter } from 'effect/http'
 import { describe, expect, it, vi } from 'vite-plus/test'
 
-import { BindingError, InvalidOperation } from '../../../features/workflow/domain/errors'
+import { ExternalError, InvalidOperation } from '../../../features/workflow/domain/errors'
 import { Workflows } from '../../../features/workflow/services/workflows'
 import { ApiRoutes } from './router'
 
 const api = (workflows: Workflows['Service']) =>
   HttpRouter.toWebHandler(ApiRoutes.pipe(HttpRouter.provideRequest(Layer.succeed(Workflows, workflows))))
 
-const unavailable = () => Effect.fail(new BindingError({ cause: 'Workflow integration worker unavailable' }))
+const unavailable = () =>
+  Effect.fail(
+    new ExternalError({
+      operation: 'call workflow worker',
+      cause: 'Workflow integration worker unavailable',
+      kind: 'service',
+    }),
+  )
 const unavailableWorkflows: Workflows['Service'] = {
   listWorkflows: unavailable,
   listRuns: unavailable,
@@ -26,7 +33,7 @@ describe('Control aggregate Workflow service boundary', () => {
     ['GET', '/api/workflows', undefined],
     ['GET', '/api/runs', undefined],
     ['GET', '/api/runs/run-1', undefined],
-    ['POST', '/api/runs', '{"workflowId":"demo","version":"v1"}'],
+    ['POST', '/api/runs', '{"workflowId":"demo","version":"1.0.0"}'],
     ['POST', '/api/runs/run-1/resume', undefined],
   ] as const)('returns 502 for %s %s when native RPC transport rejects', async (method, path, body) => {
     // Native promises model the Cloudflare RPC target, not an Effect service failure.
@@ -48,13 +55,23 @@ describe('Control aggregate Workflow service boundary', () => {
         ),
       )
       expect(response.status).toBe(502)
-      expect(await response.json()).toMatchObject({ error: 'BindingError' })
+      expect(await response.json()).toMatchObject({ error: 'ExternalError' })
     } finally {
       await handler.dispose()
     }
   })
 
   it.each([
+    [
+      new ExternalError({ operation: 'read run', cause: 'Database unavailable', kind: 'storage' }),
+      500,
+      { error: 'ExternalError', message: 'Persistence operation failed' },
+    ],
+    [
+      new ExternalError({ operation: 'call workflow worker', cause: 'Disconnected', kind: 'service' }),
+      502,
+      { error: 'ExternalError', message: 'Workflow worker is unavailable. The run remains persisted' },
+    ],
     [
       new InvalidOperation({ message: 'Explicit workflow recovery is required' }),
       409,
@@ -67,7 +84,8 @@ describe('Control aggregate Workflow service boundary', () => {
       new RpcCallError({ method: 'resume', cause: 'Individual worker disconnected' }),
       502,
       {
-        error: 'BindingError',
+        error: 'ExternalError',
+        message: 'Workflow worker is unavailable. The run remains persisted',
       },
     ],
   ] as const)('preserves the remote %s error envelope at the aggregate boundary', async (error, status, expected) => {
@@ -79,7 +97,7 @@ describe('Control aggregate Workflow service boundary', () => {
     try {
       const response = await handler.handler(new Request('http://localhost/api/runs/run-1/resume', { method: 'POST' }))
       expect(response.status).toBe(status)
-      expect(await response.json()).toMatchObject(expected)
+      expect(await response.json()).toEqual(expected)
     } finally {
       await handler.dispose()
     }
@@ -89,7 +107,7 @@ describe('Control aggregate Workflow service boundary', () => {
     ['GET', '/api/workflows', undefined],
     ['GET', '/api/runs', undefined],
     ['GET', '/api/runs/run-1', undefined],
-    ['POST', '/api/runs', '{"workflowId":"demo","version":"v1"}'],
+    ['POST', '/api/runs', '{"workflowId":"demo","version":"1.0.0"}'],
     ['POST', '/api/runs/run-1/resume', undefined],
   ] as const)('returns 502 for %s %s when the aggregate worker is unavailable', async (method, path, body) => {
     const handler = api(unavailableWorkflows)
@@ -101,14 +119,14 @@ describe('Control aggregate Workflow service boundary', () => {
         ),
       )
       expect(response.status).toBe(502)
-      expect(await response.json()).toMatchObject({ error: 'BindingError' })
+      expect(await response.json()).toMatchObject({ error: 'ExternalError' })
     } finally {
       await handler.dispose()
     }
   })
 
   it.each([
-    ['/api/runs', '{"workflowId":"demo","version":"v1"}'],
+    ['/api/runs', '{"workflowId":"demo","version":"1.0.0"}'],
     ['/api/runs', 'not JSON'],
     ['/api/runs/run-1/resume', undefined],
   ] as const)('rejects browser-originated %s requests before calling Workflows with body %s', async (path, body) => {

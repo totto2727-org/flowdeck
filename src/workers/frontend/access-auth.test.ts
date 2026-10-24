@@ -40,19 +40,22 @@ describe('frontend Access admission', () => {
     ).rejects.toMatchObject({ _tag: 'AccessDenied', status: 403 })
   })
 
-  it('rejects admission without an identity', async () => {
-    await expect(
-      Effect.runPromise(
-        authorizeAccess(
-          production,
-          Effect.succeed({
-            aud: 'flowdeck-audience',
-            getIdentity: () => Effect.succeed(undefined),
-          }),
+  it.each([undefined, {}, { email: undefined }, { email: null }, { email: 42 }])(
+    'rejects admission without a valid identity email: %j',
+    async (identity) => {
+      await expect(
+        Effect.runPromise(
+          authorizeAccess(
+            production,
+            Effect.succeed({
+              aud: 'flowdeck-audience',
+              getIdentity: () => Effect.succeed(identity),
+            }),
+          ),
         ),
-      ),
-    ).rejects.toMatchObject({ _tag: 'AccessDenied', status: 403 })
-  })
+      ).rejects.toMatchObject({ _tag: 'AccessDenied', status: 403 })
+    },
+  )
 
   it('reports an unavailable identity service without admitting the caller', async () => {
     await expect(

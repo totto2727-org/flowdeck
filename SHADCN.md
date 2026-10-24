@@ -10,10 +10,11 @@ Their source is maintained locally under `src/workers/frontend/features/componen
 
 ## Local differences
 
-- The three generated components preserve Projektor's `@/lib/utils` import connection and all generated JSX, classes, variants, and Base UI behavior.
-- The source comments identify the import connection as inherited from Projektor, not a fresh generation.
-- `src/workers/frontend/features/lib/utils.ts` connects that alias to `clsx` and `tailwind-merge`, rather than Projektor's `cn` package.
-- `src/workers/frontend/features/styles/app.css` owns Flowdeck's colors, layout, responsive behavior, focus states, graph states, and Tailwind theme mappings.
+- The three generated components use the configured `@/lib/utils` application alias without changing generated JSX, variants, or Base UI behavior.
+- The import uses the normal application utility connection; source components contain no upstream-application customization comments.
+- `src/workers/frontend/features/lib/utils.ts` supplies `cn` through `clsx` and `tailwind-merge`.
+- `src/workers/frontend/features/styles/app.css` is limited to Tailwind imports, shadcn theme tokens, and base configuration.
+- Application components own layout, responsive behavior, focus states, and graph states through Tailwind utilities.
 - The application does not copy Projektor's tenant features, branding, authentication, charts, compatibility wrappers, or preference storage.
 - Graph rendering, keyboard selection, run controls, and event/state presentations are application code outside generated UI.
 

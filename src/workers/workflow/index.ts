@@ -6,10 +6,12 @@ import { Effect } from 'effect'
 
 import { makeD1Store } from '../../features/workflow/services/d1-store'
 import { Store } from '../../features/workflow/services/store'
+import { WorkflowRegistry } from '../../features/workflow/services/workflow-definition'
 import type { WorkflowService } from '../../features/workflow/services/workflows'
 import { Database } from '../database'
 import { DemoWorkflow, Workflow } from '../definitions'
 import { DevelopmentWorkflow } from '../development-workflow'
+import { makeWorkflowRegistry } from './features/registration'
 import { makeWorkflows } from './features/workflow'
 import { DevelopmentWorkflowBinding, WorkflowBinding } from './features/workflow-binding'
 
@@ -32,14 +34,17 @@ export default Workflow.make(
     const development = makeRpcStub<DevelopmentWorkflowBinding['Service']>(
       WorkerEnvironment.pipe(Effect.map((environment) => environment['DEVELOPMENT'])),
     )
+    const registry = yield* makeWorkflowRegistry.pipe(
+      Effect.provideService(WorkflowBinding, demo),
+      Effect.provideService(DevelopmentWorkflowBinding, development),
+    )
     // Resolve runtime-only D1 access inside each RPC call, never during Worker construction.
     const service = database.raw.pipe(
       Effect.map(makeD1Store),
       Effect.flatMap((store) =>
         makeWorkflows.pipe(
           Effect.provideService(Store, store),
-          Effect.provideService(WorkflowBinding, demo),
-          Effect.provideService(DevelopmentWorkflowBinding, development),
+          Effect.provideService(WorkflowRegistry, registry),
           Effect.provide(BrowserCrypto.layer),
         ),
       ),

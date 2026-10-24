@@ -7,12 +7,12 @@ import { Lifecycle, type LifecycleJobContext, type LifecycleJobOutcome } from 'a
 import { DurableObject, WorkerEntrypoint } from 'cloudflare:workers'
 import { Array, Effect, Semaphore } from 'effect'
 
-import type { Session, TurnReceipt } from '../../features/development/model'
-import { BindingError } from '../../features/workflow/domain/errors'
+import { ExternalError } from '../../features/workflow/domain/errors'
 import { makeD1Store } from '../../features/workflow/services/d1-store'
 import { Store } from '../../features/workflow/services/store'
 import type { DevelopmentEnvironment } from './container'
 import { resumeDevelopmentRun, startDevelopmentRun } from './features/development'
+import type { Session, TurnReceipt } from './features/model'
 import { makeDevelopmentModels } from './features/models'
 import { DevelopmentSandbox } from './features/sandbox'
 import { CONTAINER_BACKEND, createWorkspaceTools } from './features/workspace'
@@ -104,7 +104,10 @@ export class DevelopmentRun extends withWorkspace(DevelopmentContainerBase, work
 
   #sandbox(): DevelopmentSandbox['Service'] {
     const io = <A>(evaluate: () => Promise<A>) =>
-      Effect.tryPromise({ try: evaluate, catch: (cause) => new BindingError({ cause }) })
+      Effect.tryPromise({
+        try: evaluate,
+        catch: (cause) => new ExternalError({ operation: 'access development sandbox', cause, kind: 'service' }),
+      })
     const session = (status: Session['status']): Session => ({
       sessionId: ROOT_SESSION,
       model: this.#modelId,
