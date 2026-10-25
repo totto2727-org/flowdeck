@@ -1,12 +1,13 @@
-import { Schema } from 'effect'
+import { Result, Schema } from 'effect'
 
 import { UserDefinedId } from '../../identity/id'
 
 const Revision = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 const PositiveInt = Schema.Int.check(Schema.isGreaterThan(0))
 
-/** Validate with the official codec, then encode back to the public string representation. */
-export const WorkflowVersion = Schema.SemVerFromString.pipe(Schema.decodeTo(Schema.flip(Schema.SemVerFromString)))
+const decodeSemVer = Schema.decodeUnknownResult(Schema.SemVerFromString)
+/** Validate once with the official codec while preserving the public string representation. */
+export const WorkflowVersion = Schema.String.check(Schema.makeFilter((value) => Result.isSuccess(decodeSemVer(value))))
 export type WorkflowVersion = typeof WorkflowVersion.Type
 export const RunStatus = Schema.Literals(['pending', 'running', 'waiting', 'completed', 'failed'])
 export type RunStatus = typeof RunStatus.Type
