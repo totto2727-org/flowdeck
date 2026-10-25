@@ -105,14 +105,14 @@ const save = (run: Run, snapshot: DemoSnapshot, events: ReadonlyArray<EventDraft
     const updatedAt = yield* timestamp
     const status = statusFor(snapshot)
     yield* store.commit({
-      commitId: yield* makeCommitId(),
+      commitId: yield* makeCommitId,
       runId: run.runId,
       expectedRevision: run.revision,
       status,
       snapshot,
       updatedAt,
       events: yield* Effect.forEach(events, (event) =>
-        makeEventId().pipe(Effect.map((eventId) => ({ ...event, eventId, createdAt: updatedAt }))),
+        makeEventId.pipe(Effect.map((eventId) => ({ ...event, eventId, createdAt: updatedAt }))),
       ),
     })
     return { ...run, status, snapshot, revision: run.revision + 1, updatedAt } satisfies Run
@@ -127,7 +127,7 @@ const prepare = (
     const execution: Execution = {
       runId: run.runId,
       nodeId: 'prepare',
-      executionId: snapshot._tag === 'Preparing' ? snapshot.executionId : yield* makeExecutionId(),
+      executionId: snapshot._tag === 'Preparing' ? snapshot.executionId : yield* makeExecutionId,
       attempt: snapshot._tag === 'Preparing' ? snapshot.attempt : 1,
     }
     // These sample tasks are pure and therefore safely retryable after a crash.
@@ -153,7 +153,7 @@ const prepare = (
       succeeded: (event, prepared) =>
         Effect.gen(function* () {
           const latest = yield* Ref.get(current)
-          const checkpointExecutionId = yield* makeExecutionId()
+          const checkpointExecutionId = yield* makeExecutionId
           yield* save(
             latest,
             { _tag: 'Waiting', schemaVersion: 1, version: snapshot.version, prepared, checkpointExecutionId },
@@ -194,7 +194,7 @@ const publish = (
     const execution: Execution = {
       runId: run.runId,
       nodeId: 'publish',
-      executionId: snapshot._tag === 'Publishing' ? snapshot.executionId : yield* makeExecutionId(),
+      executionId: snapshot._tag === 'Publishing' ? snapshot.executionId : yield* makeExecutionId,
       attempt: snapshot._tag === 'Publishing' ? snapshot.attempt : 1,
     }
     yield* observeNode(execution, Effect.succeed(`published:${snapshot.prepared}`), {

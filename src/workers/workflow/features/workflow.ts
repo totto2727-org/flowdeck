@@ -53,7 +53,7 @@ export const createRun = (input: CreateRun) =>
     // Workflow-owned validation must finish before any identity or persistence side effect.
     const prepared = yield* workflow.prepare(input)
     const store = yield* Store
-    const runId = yield* makeRunId()
+    const runId = yield* makeRunId
     const now = yield* DateTime.now.pipe(Effect.map(DateTime.formatIso))
     const run: Run = {
       runId,

@@ -164,14 +164,14 @@ const save = (run: Run, snapshot: DevelopmentSnapshot, events: ReadonlyArray<Eve
     const updatedAt = yield* now
     const status = statusFor(snapshot)
     yield* store.commit({
-      commitId: yield* makeCommitId(),
+      commitId: yield* makeCommitId,
       runId: run.runId,
       expectedRevision: run.revision,
       status,
       snapshot,
       updatedAt,
       events: yield* Effect.forEach(events, (event) =>
-        makeEventId().pipe(Effect.map((eventId) => ({ ...event, eventId, createdAt: updatedAt }))),
+        makeEventId.pipe(Effect.map((eventId) => ({ ...event, eventId, createdAt: updatedAt }))),
       ),
     })
     return { ...run, status, snapshot, revision: run.revision + 1, updatedAt } satisfies Run
@@ -213,7 +213,7 @@ const submitPending = (run: Run, snapshot: Extract<DevelopmentSnapshot, { _tag: 
 const start = (run: Run, snapshot: Extract<DevelopmentSnapshot, { _tag: 'Ready' | 'Starting' }>) =>
   Effect.gen(function* () {
     const sandbox = yield* DevelopmentSandbox
-    const implementationId = snapshot._tag === 'Starting' ? snapshot.commandId : yield* makeCommandId()
+    const implementationId = snapshot._tag === 'Starting' ? snapshot.commandId : yield* makeCommandId
     const starting =
       snapshot._tag === 'Ready'
         ? yield* save(run, { ...fields(snapshot), _tag: 'Starting', commandId: implementationId }, [
@@ -279,7 +279,7 @@ const poll = (
         ...fields(snapshot),
         _tag: 'PendingTurn',
         nodeId: 'verify',
-        commandId: yield* makeCommandId(),
+        commandId: yield* makeCommandId,
         sessionId: snapshot.sessionId,
       }
       const current = yield* save(run, pending, [

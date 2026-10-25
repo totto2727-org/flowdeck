@@ -106,7 +106,10 @@ This does not establish exactly-once external side effects.
 `UserDefinedId` accepts 1 to 128 ASCII letters, digits, underscores, or hyphens and rejects unsafe input instead of silently rewriting an identity.
 `makePrefixedUUIDv4(prefix)` validates the configured prefix and returns `{ schema, make }`.
 The schema uses official `Schema.TemplateLiteral` with `Schema.isUUID(4)` for the suffix.
-The factory closes over that prefix and its decoder, created once, and produces a fresh ID through Effect Crypto on each execution.
+The factory closes over that prefix and its decoder, created once, and returns `make` as an Effect value rather than a zero-argument function.
+Use `yield* makeRunId` to generate an ID; each execution resolves the official Effect Crypto service from its current context.
+The installed Effect 4.0.6 exposes UUID generation on `Crypto.Crypto`, not a module-level `Crypto.randomUUIDv4` accessor.
+Tests can provide official `TestCrypto.layer(seed)` for reproducible UUID sequences without changing production code.
 `PrefixedUUIDv4` and the concrete `RunId`, `ExecutionId`, `EventId`, `CommitId`, and `CommandId` types are inferred from their schemas and remain strings, without brands.
 For example, `const { schema: RunId, make: makeRunId } = makePrefixedUUIDv4('run')` defines validation and generation together.
 Shared workflow identities live in `src/features/workflow/domain/identity.ts`; the development feature owns its command identity.

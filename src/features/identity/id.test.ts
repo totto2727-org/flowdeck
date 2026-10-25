@@ -1,5 +1,6 @@
 import { BrowserCrypto } from '@effect/platform-browser'
 import { Effect, Schema } from 'effect'
+import { TestCrypto } from 'effect/testing'
 import { describe, expect, it } from 'vite-plus/test'
 
 import { makePrefixedUUIDv4, UserDefinedId } from './id'
@@ -53,9 +54,9 @@ describe('prefixed cryptographic random identities', () => {
   it('keeps factories independent and generates a fresh ID when their Effects are rerun', async () => {
     const repository = makePrefixedUUIDv4('repository')
     const task = makePrefixedUUIDv4('task')
-    const nextRepository = repository.make()
+    const nextRepository = repository.make
     const [first, second, taskId] = await Effect.runPromise(
-      Effect.all([nextRepository, nextRepository, task.make()]).pipe(Effect.provide(BrowserCrypto.layer)),
+      Effect.all([nextRepository, nextRepository, task.make]).pipe(Effect.provide(BrowserCrypto.layer)),
     )
     expect(first).not.toBe(second)
     expect(Schema.is(repository.schema)(first)).toBe(true)
@@ -86,9 +87,21 @@ describe('prefixed cryptographic random identities', () => {
 
   it.each(prefixes)('generates valid distinct %s IDs through the real Crypto layer', async (kind) => {
     const { schema, make } = makePrefixedUUIDv4(kind)
-    const ids = await Effect.runPromise(Effect.all([make(), make()]).pipe(Effect.provide(BrowserCrypto.layer)))
+    const ids = await Effect.runPromise(Effect.all([make, make]).pipe(Effect.provide(BrowserCrypto.layer)))
     expect(ids[0]).not.toBe(ids[1])
     expect(Schema.is(schema)(ids[0])).toBe(true)
     expect(Schema.is(schema)(ids[1])).toBe(true)
+  })
+
+  it('uses the Crypto service supplied at execution time and supports deterministic TestCrypto', async () => {
+    const { schema, make } = makePrefixedUUIDv4('test')
+    const generate = Effect.all([make, make])
+    const runWithSeed = (seed: string) =>
+      Effect.runPromise(generate.pipe(Effect.provide(TestCrypto.layer(seed)), Effect.provide(BrowserCrypto.layer)))
+    const first = await runWithSeed('first-seed')
+    expect(await runWithSeed('first-seed')).toEqual(first)
+    expect(await runWithSeed('other-seed')).not.toEqual(first)
+    expect(first[0]).not.toBe(first[1])
+    for (const id of first) expect(Schema.is(schema)(id)).toBe(true)
   })
 })
