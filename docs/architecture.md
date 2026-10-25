@@ -117,7 +117,10 @@ The generic identity feature contains no ID-kind union, registry, or central gen
 New app-owned IDs use `run_`, `execution_`, `event_`, `commit_`, or `command_` prefixes.
 These prefixes describe origin, not authorization or creation time.
 
-Persisted history decoders keep existing IDs readable, and development recovery retains raw UUIDv4 and the exact legacy run/node command identity rather than allocating a replacement.
+Persisted run and event envelopes and HTTP run paths use `StoredRunId`, an explicit union of the new `RunId` schema and bare UUIDv4 for historical runs.
+Malformed IDs, wrong prefixes, and UUIDv7 are rejected rather than accepted as arbitrary strings.
+Workflow identifiers use `UserDefinedId` in both catalog and persisted run schemas.
+Development recovery retains raw UUIDv4 and the exact legacy run/node command identity rather than allocating a replacement.
 New command input requires the prefixed schema.
 Workflow-owned composite graph references and framework-owned Durable Object, Pi root-session, and provider-session IDs retain their native contracts.
 Run ordering uses the existing `created_at` index, and event ordering uses the indexed run/sequence columns.

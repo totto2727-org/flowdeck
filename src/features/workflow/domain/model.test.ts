@@ -35,7 +35,7 @@ describe('workflow-neutral wire schemas', () => {
 
   it('keeps legacy persisted version strings readable', () => {
     const run = {
-      runId: 'persisted-run',
+      runId: '00000000-0000-4000-8000-000000000003',
       workflowId: 'retired-workflow',
       workflowVersion: 'v1',
       graphId: 'persisted-graph',
@@ -46,5 +46,14 @@ describe('workflow-neutral wire schemas', () => {
       updatedAt: '2026-10-24T00:00:00.000Z',
     }
     expect(Schema.decodeUnknownSync(Run)(run)).toEqual(run)
+    expect(Schema.decodeUnknownSync(Run)({ ...run, runId: 'run_' + run.runId }).runId).toBe('run_' + run.runId)
+    for (const runId of ['not-a-run-id', 'event_' + run.runId, 'run_01890f2e-7b55-7cc1-8c5a-000000000001']) {
+      expect(Schema.is(Run)({ ...run, runId })).toBe(false)
+      expect(() => Schema.decodeUnknownSync(Run)({ ...run, runId })).toThrow()
+    }
+    for (const workflowId of ['', '../demo', 'two words', 'ワークフロー']) {
+      expect(Schema.is(Run)({ ...run, workflowId })).toBe(false)
+      expect(() => Schema.decodeUnknownSync(Run)({ ...run, workflowId })).toThrow()
+    }
   })
 })

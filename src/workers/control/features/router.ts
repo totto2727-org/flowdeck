@@ -3,6 +3,7 @@ import { Effect, Schema } from 'effect'
 import { Headers, HttpBody, HttpRouter, HttpServerError, HttpServerRequest, HttpServerResponse } from 'effect/http'
 
 import { ExternalError, type DomainError } from '../../../features/workflow/domain/errors'
+import { StoredRunId } from '../../../features/workflow/domain/identity'
 import {
   ApiErrorResponse,
   CreateRun,
@@ -51,7 +52,7 @@ const serverMutation = <R>(handler: Effect.Effect<HttpServerResponse.HttpServerR
     }),
   )
 const runId = HttpRouter.params.pipe(
-  Effect.flatMap(Schema.decodeUnknownEffect(Schema.Struct({ runId: Schema.String }))),
+  Effect.flatMap(Schema.decodeUnknownEffect(Schema.Struct({ runId: StoredRunId }))),
   Effect.map((params) => params.runId),
 )
 

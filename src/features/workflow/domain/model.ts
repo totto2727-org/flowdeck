@@ -1,6 +1,7 @@
 import { Result, Schema } from 'effect'
 
 import { UserDefinedId } from '../../identity/id'
+import { StoredRunId } from './identity'
 
 const Revision = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 const PositiveInt = Schema.Int.check(Schema.isGreaterThan(0))
@@ -51,8 +52,8 @@ export const WorkflowSummary = Schema.Struct({
 })
 export type WorkflowSummary = typeof WorkflowSummary.Type
 export const Run = Schema.Struct({
-  runId: Schema.String,
-  workflowId: Schema.String,
+  runId: StoredRunId,
+  workflowId: UserDefinedId,
   // Persisted histories can contain pre-SemVer workflow-owned versions such as v1/v2.
   workflowVersion: Schema.String.check(Schema.isMinLength(1)),
   graphId: Schema.String,
@@ -64,7 +65,7 @@ export const Run = Schema.Struct({
 })
 export type Run = typeof Run.Type
 export const RunState = Schema.Struct({
-  runId: Schema.String,
+  runId: StoredRunId,
   revision: Revision,
   snapshot: Schema.Unknown,
 })
@@ -82,9 +83,9 @@ export const EventType = Schema.Literals([
 export type EventType = typeof EventType.Type
 export const RunEvent = Schema.Struct({
   eventId: Schema.String,
-  runId: Schema.String,
+  runId: StoredRunId,
   sequence: PositiveInt,
-  nodeId: Schema.NullOr(Schema.String),
+  nodeId: Schema.NullOr(UserDefinedId),
   executionId: Schema.NullOr(Schema.String),
   attempt: Schema.NullOr(PositiveInt),
   type: EventType,
@@ -95,7 +96,7 @@ export type RunEvent = typeof RunEvent.Type
 export const NodeVisualState = Schema.Literals(['idle', 'running', 'succeeded', 'failed', 'waiting'])
 export type NodeVisualState = typeof NodeVisualState.Type
 export const NodeShape = Schema.Struct({
-  id: Schema.String,
+  id: UserDefinedId,
   nodeId: UserDefinedId,
   type: Schema.Literal('node'),
   label: Schema.String,
@@ -107,7 +108,7 @@ export const NodeShape = Schema.Struct({
   state: NodeVisualState,
 })
 export const EdgeShape = Schema.Struct({
-  id: Schema.String,
+  id: UserDefinedId,
   type: Schema.Literal('edge'),
   source: UserDefinedId,
   target: UserDefinedId,

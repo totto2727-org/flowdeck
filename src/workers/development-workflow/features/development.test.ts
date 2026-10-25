@@ -40,7 +40,7 @@ const input = {
 } as const
 const timestamp = '2026-10-17T12:00:00.000Z'
 const initialRun: Run = {
-  runId: 'development-1',
+  runId: 'run_00000000-0000-4000-8000-000000000002',
   workflowId: input.workflowId,
   workflowVersion: 'v1',
   graphId: developmentGraph.graphId,
@@ -126,7 +126,7 @@ const finishTurn = (node: 'implement' | 'verify') => {
 }
 
 describe('development workflow with canonical D1 checkpoints', () => {
-  it.each(['development-1:implement:1', '3d360c7a-4b1a-4df3-9633-861a220bf5b7'])(
+  it.each(['run_00000000-0000-4000-8000-000000000002:implement:1', '3d360c7a-4b1a-4df3-9633-861a220bf5b7'])(
     'resumes a historical PiHarness pending command without replacing its identity %s',
     async (commandId) => {
       await Effect.runPromise(
@@ -156,7 +156,7 @@ describe('development workflow with canonical D1 checkpoints', () => {
     },
   )
 
-  it.each(['01890f2e-7b55-7cc1-8c5a-000000000001', 'development-1:verify:1', 'not-a-uuid'])(
+  it.each(['01890f2e-7b55-7cc1-8c5a-000000000001', 'run_00000000-0000-4000-8000-000000000002:verify:1', 'not-a-uuid'])(
     'rejects a non-v4, nonmatching legacy starting identity %s',
     async (commandId) => {
       await expect(
@@ -264,7 +264,7 @@ describe('development workflow with canonical D1 checkpoints', () => {
         version: 'v1',
         repository: input.repository,
         task: input.task,
-        commandId: 'development-1:implement:1',
+        commandId: 'run_00000000-0000-4000-8000-000000000002:implement:1',
         sessionId: 'legacy-jcode-session',
         nodeId: 'implement',
         result: 'legacy result',
@@ -326,7 +326,7 @@ describe('development workflow with canonical D1 checkpoints', () => {
     })
     expect(submissions).toEqual([
       {
-        runId: 'development-1',
+        runId: 'run_00000000-0000-4000-8000-000000000002',
         input: {
           commandId: expect.any(String),
           prompt: expect.stringContaining('/workspace/project'),
@@ -579,7 +579,7 @@ describe('development workflow with canonical D1 checkpoints', () => {
     const before = await current()
     expect(await Effect.runPromise(restoreDevelopment(before))).toEqual({
       ...snapshot,
-      commandId: 'development-1:verify:1',
+      commandId: 'run_00000000-0000-4000-8000-000000000002:verify:1',
     })
     expect(await current()).toEqual(before)
     expect(submissions).toEqual([])
@@ -595,7 +595,7 @@ describe('development workflow with canonical D1 checkpoints', () => {
       expect.objectContaining({
         type: 'node.succeeded',
         nodeId: 'verify',
-        executionId: 'development-1:verify:1',
+        executionId: 'run_00000000-0000-4000-8000-000000000002:verify:1',
         payload: { output: snapshot.result },
       }),
       expect.objectContaining({ type: 'run.completed' }),

@@ -29,12 +29,31 @@ const unavailableWorkflows: Workflows['Service'] = {
 
 // Native requests exercise Control's public HTTP boundary with only its aggregate service supplied.
 describe('Control aggregate Workflow service boundary', () => {
+  it.each(['not-a-run-id', 'event_00000000-0000-4000-8000-000000000001', 'run_01890f2e-7b55-7cc1-8c5a-000000000001'])(
+    'rejects malformed run ID %s before calling the workflow service',
+    async (id) => {
+      const getRunDetail = vi.fn(unavailable)
+      const resumeRun = vi.fn(unavailable)
+      const handler = api({ ...unavailableWorkflows, getRunDetail, resumeRun })
+      try {
+        const read = await handler.handler(new Request(`http://localhost/api/runs/${id}`))
+        const resume = await handler.handler(new Request(`http://localhost/api/runs/${id}/resume`, { method: 'POST' }))
+        expect(read.status).toBe(400)
+        expect(resume.status).toBe(400)
+        expect(getRunDetail).not.toHaveBeenCalled()
+        expect(resumeRun).not.toHaveBeenCalled()
+      } finally {
+        await handler.dispose()
+      }
+    },
+  )
+
   it.each([
     ['GET', '/api/workflows', undefined],
     ['GET', '/api/runs', undefined],
-    ['GET', '/api/runs/run-1', undefined],
+    ['GET', '/api/runs/run_00000000-0000-4000-8000-000000000001', undefined],
     ['POST', '/api/runs', '{"workflowId":"demo","version":"1.0.0"}'],
-    ['POST', '/api/runs/run-1/resume', undefined],
+    ['POST', '/api/runs/run_00000000-0000-4000-8000-000000000001/resume', undefined],
   ] as const)('returns 502 for %s %s when native RPC transport rejects', async (method, path, body) => {
     // Native promises model the Cloudflare RPC target, not an Effect service failure.
     const reject = () => Promise.reject(new Error('Service binding disconnected'))
@@ -95,7 +114,9 @@ describe('Control aggregate Workflow service boundary', () => {
       }),
     )
     try {
-      const response = await handler.handler(new Request('http://localhost/api/runs/run-1/resume', { method: 'POST' }))
+      const response = await handler.handler(
+        new Request('http://localhost/api/runs/run_00000000-0000-4000-8000-000000000001/resume', { method: 'POST' }),
+      )
       expect(response.status).toBe(status)
       expect(await response.json()).toEqual(expected)
     } finally {
@@ -106,9 +127,9 @@ describe('Control aggregate Workflow service boundary', () => {
   it.each([
     ['GET', '/api/workflows', undefined],
     ['GET', '/api/runs', undefined],
-    ['GET', '/api/runs/run-1', undefined],
+    ['GET', '/api/runs/run_00000000-0000-4000-8000-000000000001', undefined],
     ['POST', '/api/runs', '{"workflowId":"demo","version":"1.0.0"}'],
-    ['POST', '/api/runs/run-1/resume', undefined],
+    ['POST', '/api/runs/run_00000000-0000-4000-8000-000000000001/resume', undefined],
   ] as const)('returns 502 for %s %s when the aggregate worker is unavailable', async (method, path, body) => {
     const handler = api(unavailableWorkflows)
     try {
@@ -128,7 +149,7 @@ describe('Control aggregate Workflow service boundary', () => {
   it.each([
     ['/api/runs', '{"workflowId":"demo","version":"1.0.0"}'],
     ['/api/runs', 'not JSON'],
-    ['/api/runs/run-1/resume', undefined],
+    ['/api/runs/run_00000000-0000-4000-8000-000000000001/resume', undefined],
   ] as const)('rejects browser-originated %s requests before calling Workflows with body %s', async (path, body) => {
     const createRun = vi.fn(unavailable)
     const resumeRun = vi.fn(unavailable)
