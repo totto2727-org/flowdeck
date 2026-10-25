@@ -85,7 +85,17 @@ describe('development definition', () => {
     })
   })
 
+  it.each(['https://github.com/example/project', 'https://github.com/example/project.git'])(
+    'preserves the validated URL string %s',
+    async (repository) => {
+      const prepared = await Effect.runPromise(developmentDefinition.prepare({ ...input, repository }))
+      expect(prepared.snapshot).toMatchObject({ repository })
+    },
+  )
+
   it.each([
+    'https://github.com:8443/example/project',
+    'https://github.com/example/%70roject',
     'http://github.com/example/project',
     'https://example.com/example/project',
     'https://user:password@github.com/example/project',

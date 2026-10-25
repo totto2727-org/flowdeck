@@ -1,17 +1,19 @@
 import { Schema } from 'effect'
 import { describe, expect, it } from 'vite-plus/test'
 
-import { CreateRun, Run, SemanticVersion } from './model'
+import { CreateRun, Run, WorkflowVersion } from './model'
 
-const decodeVersion = Schema.decodeUnknownSync(SemanticVersion)
+const decodeVersion = Schema.decodeUnknownSync(WorkflowVersion)
 
 describe('workflow-neutral wire schemas', () => {
-  it.each(['1.0.0', '2.13.7-rc.1+build.42', '0.0.0'])('accepts semantic version %s', (version) => {
+  it.each(['1.0.0', '2.13.7-rc.1+build.42', '0.0.0'])('round-trips semantic version %s', (version) => {
     expect(decodeVersion(version)).toBe(version)
+    expect(Schema.encodeSync(WorkflowVersion)(version)).toBe(version)
   })
 
   it.each(['v1', '1', '1.0', '01.0.0', '1.0.0-01', ''])('rejects malformed new version %s', (version) => {
     expect(() => decodeVersion(version)).toThrow()
+    expect(() => Schema.encodeSync(WorkflowVersion)(version)).toThrow()
   })
 
   it('preserves arbitrary workflow input without importing a workflow implementation', () => {

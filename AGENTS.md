@@ -47,7 +47,8 @@ Do not deploy, change DNS, or change Access policies without operator authorizat
 
 Write Effect programs, not imperative TypeScript with Effect wrappers.
 Use Effect Array, String, Record, Match, Schema, Clock, and collection APIs instead of equivalent standard-library APIs.
-Use `Schema.isUUID(4)`, `Schema.URLFromString`, and Effect `SemVer` instead of custom identity, URL, or version parsers.
+Use `Schema.isUUID(4)`, `Schema.URLFromString`, and `Schema.SemVerFromString` instead of custom identity, URL, or version parsers.
+When a public contract must retain strings, compose the official codec with its flipped codec rather than implementing another parser.
 Do not validate URLs with regular expressions.
 Use ordinary string operations for business constraints after parsing.
 Use a regular expression only when no suitable existing API or simple string operation fits, and document the specific reason beside it.

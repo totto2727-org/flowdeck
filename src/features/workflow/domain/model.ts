@@ -1,16 +1,11 @@
-import { Result, Schema, SemVer } from 'effect'
+import { Schema } from 'effect'
 
 const Revision = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 const PositiveInt = Schema.Int.check(Schema.isGreaterThan(0))
 
-/** Version strings are owned by each workflow. Existing persisted versions remain readable. */
-export const WorkflowVersion = Schema.String.check(Schema.isMinLength(1))
+/** Validate with the official codec, then encode back to the public string representation. */
+export const WorkflowVersion = Schema.SemVerFromString.pipe(Schema.decodeTo(Schema.flip(Schema.SemVerFromString)))
 export type WorkflowVersion = typeof WorkflowVersion.Type
-export const SemanticVersion = Schema.String.check(
-  Schema.makeFilter((version) => Result.isSuccess(SemVer.parse(version)), {
-    message: 'Expected a Semantic Versioning 2.0.0 version',
-  }),
-)
 export const RunStatus = Schema.Literals(['pending', 'running', 'waiting', 'completed', 'failed'])
 export type RunStatus = typeof RunStatus.Type
 export const JsonObject = Schema.Record(Schema.String, Schema.Unknown)
@@ -39,7 +34,7 @@ export type GraphDefinition = typeof GraphDefinition.Type
 export const WorkflowSummary = Schema.Struct({
   workflowId: Schema.String,
   name: Schema.String,
-  versions: Schema.Array(SemanticVersion),
+  versions: Schema.Array(WorkflowVersion),
   inputs: Schema.Array(
     Schema.Struct({
       name: Schema.String,
@@ -55,7 +50,8 @@ export type WorkflowSummary = typeof WorkflowSummary.Type
 export const Run = Schema.Struct({
   runId: Schema.String,
   workflowId: Schema.String,
-  workflowVersion: WorkflowVersion,
+  // Persisted histories can contain pre-SemVer workflow-owned versions such as v1/v2.
+  workflowVersion: Schema.String.check(Schema.isMinLength(1)),
   graphId: Schema.String,
   status: RunStatus,
   revision: Revision,
@@ -127,7 +123,7 @@ export const RunDetail = Schema.Struct({
 export type RunDetail = typeof RunDetail.Type
 /** Routing envelope only. The selected workflow validates all remaining input fields. */
 export const CreateRun = Schema.StructWithRest(
-  Schema.Struct({ workflowId: Schema.String.check(Schema.isMinLength(1)), version: SemanticVersion }),
+  Schema.Struct({ workflowId: Schema.String.check(Schema.isMinLength(1)), version: WorkflowVersion }),
   [Schema.Record(Schema.String, Schema.Unknown)],
 )
 export type CreateRun = typeof CreateRun.Type

@@ -1,6 +1,6 @@
 import { Array, Option, Schema, String } from 'effect'
 
-import { SemanticVersion } from '../../../features/workflow/domain/model'
+import { WorkflowVersion } from '../../../features/workflow/domain/model'
 
 /** URL is the standard parser boundary. Keep the validated public wire value unchanged. */
 export const PublicRepository = Schema.String.check(
@@ -34,7 +34,7 @@ export const DevelopmentWorkflowVersion = Schema.String.check(
 )
 export const DevelopmentCreateRun = Schema.Struct({
   workflowId: Schema.Literal('jcode-development'),
-  version: SemanticVersion.check(Schema.makeFilter((version) => Array.contains(['1.0.0'], version))),
+  version: WorkflowVersion.check(Schema.makeFilter((version) => Array.contains(['1.0.0'], version))),
   repository: PublicRepository,
   task: DevelopmentTask,
 })
