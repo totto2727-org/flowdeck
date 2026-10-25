@@ -7,8 +7,8 @@ import { TestCrypto } from 'effect/testing'
 import { Miniflare } from 'miniflare'
 import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test'
 
-import { CommandId, CommitId, EventId } from '../../../features/identity/id'
 import { ExternalError } from '../../../features/workflow/domain/errors'
+import { CommitId, EventId } from '../../../features/workflow/domain/identity'
 import { RunDetail, type Run } from '../../../features/workflow/domain/model'
 import { makeD1Store } from '../../../features/workflow/services/d1-store'
 import { Store, type StoreService } from '../../../features/workflow/services/store'
@@ -28,6 +28,7 @@ import {
   startDevelopmentRun,
 } from './development'
 import { DevelopmentCreateRun } from './input'
+import { CommandId } from './model'
 import type { Session, TurnReceipt, TurnRequest } from './model'
 import { DevelopmentSandbox } from './sandbox'
 

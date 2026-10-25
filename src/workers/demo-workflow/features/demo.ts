@@ -1,7 +1,7 @@
 import { Crypto, Effect, Match, Ref, Schema } from 'effect'
 
-import { randomId } from '../../../features/identity/id'
 import { InvalidOperation, InvalidSnapshot, type DomainError } from '../../../features/workflow/domain/errors'
+import { makeCommitId, makeEventId, makeExecutionId } from '../../../features/workflow/domain/identity'
 import { type GraphDefinition, type Run, type WorkflowSummary } from '../../../features/workflow/domain/model'
 import { Store } from '../../../features/workflow/services/store'
 import { DemoWorkflowVersion } from './input'
@@ -105,14 +105,14 @@ const save = (run: Run, snapshot: DemoSnapshot, events: ReadonlyArray<EventDraft
     const updatedAt = yield* timestamp
     const status = statusFor(snapshot)
     yield* store.commit({
-      commitId: yield* randomId('commit'),
+      commitId: yield* makeCommitId(),
       runId: run.runId,
       expectedRevision: run.revision,
       status,
       snapshot,
       updatedAt,
       events: yield* Effect.forEach(events, (event) =>
-        randomId('event').pipe(Effect.map((eventId) => ({ ...event, eventId, createdAt: updatedAt }))),
+        makeEventId().pipe(Effect.map((eventId) => ({ ...event, eventId, createdAt: updatedAt }))),
       ),
     })
     return { ...run, status, snapshot, revision: run.revision + 1, updatedAt } satisfies Run
@@ -127,7 +127,7 @@ const prepare = (
     const execution: Execution = {
       runId: run.runId,
       nodeId: 'prepare',
-      executionId: snapshot._tag === 'Preparing' ? snapshot.executionId : yield* randomId('execution'),
+      executionId: snapshot._tag === 'Preparing' ? snapshot.executionId : yield* makeExecutionId(),
       attempt: snapshot._tag === 'Preparing' ? snapshot.attempt : 1,
     }
     // These sample tasks are pure and therefore safely retryable after a crash.
@@ -153,7 +153,7 @@ const prepare = (
       succeeded: (event, prepared) =>
         Effect.gen(function* () {
           const latest = yield* Ref.get(current)
-          const checkpointExecutionId = yield* randomId('execution')
+          const checkpointExecutionId = yield* makeExecutionId()
           yield* save(
             latest,
             { _tag: 'Waiting', schemaVersion: 1, version: snapshot.version, prepared, checkpointExecutionId },
@@ -194,7 +194,7 @@ const publish = (
     const execution: Execution = {
       runId: run.runId,
       nodeId: 'publish',
-      executionId: snapshot._tag === 'Publishing' ? snapshot.executionId : yield* randomId('execution'),
+      executionId: snapshot._tag === 'Publishing' ? snapshot.executionId : yield* makeExecutionId(),
       attempt: snapshot._tag === 'Publishing' ? snapshot.attempt : 1,
     }
     yield* observeNode(execution, Effect.succeed(`published:${snapshot.prepared}`), {

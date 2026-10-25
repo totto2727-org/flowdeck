@@ -1,7 +1,7 @@
 import { Crypto, DateTime, Effect, Match, Schema } from 'effect'
 
-import { CommandId, randomId } from '../../../features/identity/id'
 import { InvalidOperation, InvalidSnapshot, type DomainError } from '../../../features/workflow/domain/errors'
+import { makeCommitId, makeEventId } from '../../../features/workflow/domain/identity'
 import {
   type GraphDefinition,
   type Run,
@@ -10,7 +10,7 @@ import {
 } from '../../../features/workflow/domain/model'
 import { Store, type PendingEvent } from '../../../features/workflow/services/store'
 import { DevelopmentTask, PublicRepository, DevelopmentWorkflowVersion, type DevelopmentCreateRun } from './input'
-import type { TurnReceipt } from './model'
+import { CommandId, makeCommandId, type TurnReceipt } from './model'
 import { DevelopmentSandbox } from './sandbox'
 
 const base = {
@@ -164,14 +164,14 @@ const save = (run: Run, snapshot: DevelopmentSnapshot, events: ReadonlyArray<Eve
     const updatedAt = yield* now
     const status = statusFor(snapshot)
     yield* store.commit({
-      commitId: yield* randomId('commit'),
+      commitId: yield* makeCommitId(),
       runId: run.runId,
       expectedRevision: run.revision,
       status,
       snapshot,
       updatedAt,
       events: yield* Effect.forEach(events, (event) =>
-        randomId('event').pipe(Effect.map((eventId) => ({ ...event, eventId, createdAt: updatedAt }))),
+        makeEventId().pipe(Effect.map((eventId) => ({ ...event, eventId, createdAt: updatedAt }))),
       ),
     })
     return { ...run, status, snapshot, revision: run.revision + 1, updatedAt } satisfies Run
@@ -213,7 +213,7 @@ const submitPending = (run: Run, snapshot: Extract<DevelopmentSnapshot, { _tag: 
 const start = (run: Run, snapshot: Extract<DevelopmentSnapshot, { _tag: 'Ready' | 'Starting' }>) =>
   Effect.gen(function* () {
     const sandbox = yield* DevelopmentSandbox
-    const implementationId = snapshot._tag === 'Starting' ? snapshot.commandId : yield* randomId('command')
+    const implementationId = snapshot._tag === 'Starting' ? snapshot.commandId : yield* makeCommandId()
     const starting =
       snapshot._tag === 'Ready'
         ? yield* save(run, { ...fields(snapshot), _tag: 'Starting', commandId: implementationId }, [
@@ -279,7 +279,7 @@ const poll = (
         ...fields(snapshot),
         _tag: 'PendingTurn',
         nodeId: 'verify',
-        commandId: yield* randomId('command'),
+        commandId: yield* makeCommandId(),
         sessionId: snapshot.sessionId,
       }
       const current = yield* save(run, pending, [

@@ -2,10 +2,10 @@ import { BrowserCrypto } from '@effect/platform-browser'
 import { Effect, Schema } from 'effect'
 import { describe, expect, it } from 'vite-plus/test'
 
-import { randomId, makePrefixedUUIDv4, UserDefinedId, type RandomIdKind } from './id'
+import { makePrefixedUUIDv4, UserDefinedId } from './id'
 
 const uuid = '3d360c7a-4b1a-4df3-9633-861a220bf5b7'
-const kinds: ReadonlyArray<RandomIdKind> = ['run', 'execution', 'event', 'commit', 'command']
+const prefixes = ['run', 'execution', 'event', 'commit', 'command', 'repository']
 
 describe('user-defined identities', () => {
   it.each(['demo', 'release-checkpoint', 'Review_42', 'a'.repeat(128)])('accepts safe ID %s', (id) => {
@@ -37,13 +37,28 @@ describe('prefixed cryptographic random identities', () => {
   )
 
   it('supports a caller-selected safe prefix without changing the factory', () => {
-    const schema = makePrefixedUUIDv4('repository')
+    const { schema } = makePrefixedUUIDv4('repository')
     expect(Schema.decodeUnknownSync(schema)(`repository_${uuid}`)).toBe(`repository_${uuid}`)
     expect(Schema.is(schema)(`run_${uuid}`)).toBe(false)
   })
 
-  it.each(kinds)('round-trips %s and uses the official v4 check for its suffix', (kind) => {
-    const schema = makePrefixedUUIDv4(kind)
+  it('keeps factories independent and generates a fresh ID when their Effects are rerun', async () => {
+    const repository = makePrefixedUUIDv4('repository')
+    const task = makePrefixedUUIDv4('task')
+    const nextRepository = repository.make()
+    const [first, second, taskId] = await Effect.runPromise(
+      Effect.all([nextRepository, nextRepository, task.make()]).pipe(Effect.provide(BrowserCrypto.layer)),
+    )
+    expect(first).not.toBe(second)
+    expect(Schema.is(repository.schema)(first)).toBe(true)
+    expect(Schema.is(repository.schema)(second)).toBe(true)
+    expect(Schema.is(task.schema)(taskId)).toBe(true)
+    expect(Schema.is(repository.schema)(taskId)).toBe(false)
+    expect(Schema.is(task.schema)(first)).toBe(false)
+  })
+
+  it.each(prefixes)('round-trips %s and uses the official v4 check for its suffix', (kind) => {
+    const { schema } = makePrefixedUUIDv4(kind)
     const id = `${kind}_${uuid}`
     expect(Schema.decodeUnknownSync(schema)(id)).toBe(id)
     expect(Schema.encodeSync(schema)(id)).toBe(id)
@@ -61,12 +76,11 @@ describe('prefixed cryptographic random identities', () => {
     }
   })
 
-  it.each(kinds)('generates valid distinct %s IDs through the real Crypto layer', async (kind) => {
-    const ids = await Effect.runPromise(
-      Effect.all([randomId(kind), randomId(kind)]).pipe(Effect.provide(BrowserCrypto.layer)),
-    )
+  it.each(prefixes)('generates valid distinct %s IDs through the real Crypto layer', async (kind) => {
+    const { schema, make } = makePrefixedUUIDv4(kind)
+    const ids = await Effect.runPromise(Effect.all([make(), make()]).pipe(Effect.provide(BrowserCrypto.layer)))
     expect(ids[0]).not.toBe(ids[1])
-    expect(Schema.is(makePrefixedUUIDv4(kind))(ids[0])).toBe(true)
-    expect(Schema.is(makePrefixedUUIDv4(kind))(ids[1])).toBe(true)
+    expect(Schema.is(schema)(ids[0])).toBe(true)
+    expect(Schema.is(schema)(ids[1])).toBe(true)
   })
 })

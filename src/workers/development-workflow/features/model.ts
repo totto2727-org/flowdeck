@@ -1,8 +1,9 @@
 import { Schema } from 'effect'
 
-import { CommandId } from '../../../features/identity/id'
+import { makePrefixedUUIDv4 } from '../../../features/identity/id'
 
-export { CommandId } from '../../../features/identity/id'
+export const { schema: CommandId, make: makeCommandId } = makePrefixedUUIDv4('command')
+export type CommandId = typeof CommandId.Type
 export const TurnRequest = Schema.Struct({
   commandId: CommandId,
   prompt: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(32_768)),

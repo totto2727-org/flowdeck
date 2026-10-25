@@ -104,10 +104,13 @@ This does not establish exactly-once external side effects.
 
 `src/features/identity/id.ts` separates caller-defined IDs from app-generated random IDs.
 `UserDefinedId` accepts 1 to 128 ASCII letters, digits, underscores, or hyphens and rejects unsafe input instead of silently rewriting an identity.
-`makePrefixedUUIDv4(prefix)` validates the configured prefix and returns an official `Schema.TemplateLiteral` with `Schema.isUUID(4)` for the suffix.
+`makePrefixedUUIDv4(prefix)` validates the configured prefix and returns `{ schema, make }`.
+The schema uses official `Schema.TemplateLiteral` with `Schema.isUUID(4)` for the suffix.
+The factory closes over that prefix and its decoder, created once, and produces a fresh ID through Effect Crypto on each execution.
 `PrefixedUUIDv4` and the concrete `RunId`, `ExecutionId`, `EventId`, `CommitId`, and `CommandId` types are inferred from their schemas and remain strings, without brands.
-For example, `makePrefixedUUIDv4('run')` validates `run_<UUIDv4>`.
-The Crypto-backed generator uses the matching named schema before returning an ID.
+For example, `const { schema: RunId, make: makeRunId } = makePrefixedUUIDv4('run')` defines validation and generation together.
+Shared workflow identities live in `src/features/workflow/domain/identity.ts`; the development feature owns its command identity.
+The generic identity feature contains no ID-kind union, registry, or central generation dispatcher.
 New app-owned IDs use `run_`, `execution_`, `event_`, `commit_`, or `command_` prefixes.
 These prefixes describe origin, not authorization or creation time.
 

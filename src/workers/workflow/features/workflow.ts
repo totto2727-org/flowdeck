@@ -1,8 +1,8 @@
 import type { RpcCallError, RpcDecodeError } from 'alchemy/Rpc'
 import { Array, Crypto, DateTime, Effect, Option } from 'effect'
 
-import { randomId } from '../../../features/identity/id'
 import { ExternalError, InvalidOperation, type DomainError } from '../../../features/workflow/domain/errors'
+import { makeRunId } from '../../../features/workflow/domain/identity'
 import type { CreateRun, Run, RunDetail } from '../../../features/workflow/domain/model'
 import { graphToShapes } from '../../../features/workflow/domain/projection'
 import { Store } from '../../../features/workflow/services/store'
@@ -53,7 +53,7 @@ export const createRun = (input: CreateRun) =>
     // Workflow-owned validation must finish before any identity or persistence side effect.
     const prepared = yield* workflow.prepare(input)
     const store = yield* Store
-    const runId = yield* randomId('run')
+    const runId = yield* makeRunId()
     const now = yield* DateTime.now.pipe(Effect.map(DateTime.formatIso))
     const run: Run = {
       runId,
