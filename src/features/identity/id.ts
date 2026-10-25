@@ -4,8 +4,9 @@ import { Crypto, Effect, Schema } from 'effect'
 export const UserDefinedId = Schema.String.check(
   Schema.isMinLength(1),
   Schema.isMaxLength(128),
-  // A fixed ASCII alphabet needs no per-character allocations. Unlike $, this end assertion rejects trailing newlines.
-  Schema.isPattern(/^[A-Za-z0-9_-]+(?![\s\S])/),
+  Schema.isTrimmed(),
+  // A fixed ASCII alphabet is clearer as a character class; isTrimmed rejects trailing line terminators.
+  Schema.isPattern(/^[A-Za-z0-9_-]+$/),
 )
 export type UserDefinedId = typeof UserDefinedId.Type
 

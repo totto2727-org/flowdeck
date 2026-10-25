@@ -18,6 +18,12 @@ describe('user-defined identities', () => {
     'a/b',
     'a\\b',
     'two words',
+    ' run',
+    'run ',
+    '\trun',
+    'run\t',
+    '\u00a0run',
+    'run\u00a0',
     'a\n',
     'a\r\n',
     'a\u2028',
@@ -26,9 +32,11 @@ describe('user-defined identities', () => {
     '日本語',
     'ｒun',
     'a'.repeat(129),
-  ])('rejects unsafe ID %s without silently changing its identity', (id) =>
-    expect(() => Schema.decodeUnknownSync(UserDefinedId)(id)).toThrow(),
-  )
+  ])('rejects unsafe ID %s without silently changing its identity', (id) => {
+    expect(Schema.is(UserDefinedId)(id)).toBe(false)
+    expect(() => Schema.decodeUnknownSync(UserDefinedId)(id)).toThrow()
+    expect(() => Schema.encodeSync(UserDefinedId)(id)).toThrow()
+  })
 })
 
 describe('prefixed cryptographic random identities', () => {
