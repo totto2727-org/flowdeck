@@ -1,14 +1,11 @@
-import { Array, Crypto, Effect, Schema, String } from 'effect'
+import { Crypto, Effect, Schema } from 'effect'
 
 /** ASCII deliberately excludes whitespace, path separators, controls and Unicode confusables. */
 export const UserDefinedId = Schema.String.check(
   Schema.isMinLength(1),
   Schema.isMaxLength(128),
-  Schema.makeFilter((value) =>
-    Array.every(String.split(value, ''), (character) =>
-      String.includes(character)('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-'),
-    ),
-  ),
+  // A fixed ASCII alphabet needs no per-character allocations. Unlike $, this end assertion rejects trailing newlines.
+  Schema.isPattern(/^[A-Za-z0-9_-]+(?![\s\S])/),
 )
 export type UserDefinedId = typeof UserDefinedId.Type
 

@@ -12,9 +12,22 @@ describe('user-defined identities', () => {
     expect(Schema.decodeUnknownSync(UserDefinedId)(id)).toBe(id)
   })
 
-  it.each(['', '../run', 'a/b', 'a\\b', 'two words', 'a\n', 'a\u0000b', '日本語', 'ｒun', 'a'.repeat(129)])(
-    'rejects unsafe ID %s without silently changing its identity',
-    (id) => expect(() => Schema.decodeUnknownSync(UserDefinedId)(id)).toThrow(),
+  it.each([
+    '',
+    '../run',
+    'a/b',
+    'a\\b',
+    'two words',
+    'a\n',
+    'a\r\n',
+    'a\u2028',
+    'a\u2029',
+    'a\u0000b',
+    '日本語',
+    'ｒun',
+    'a'.repeat(129),
+  ])('rejects unsafe ID %s without silently changing its identity', (id) =>
+    expect(() => Schema.decodeUnknownSync(UserDefinedId)(id)).toThrow(),
   )
 })
 
