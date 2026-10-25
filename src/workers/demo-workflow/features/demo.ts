@@ -1,5 +1,6 @@
 import { Crypto, Effect, Match, Ref, Schema } from 'effect'
 
+import { randomId } from '../../../features/identity/id'
 import { InvalidOperation, InvalidSnapshot, type DomainError } from '../../../features/workflow/domain/errors'
 import { type GraphDefinition, type Run, type WorkflowSummary } from '../../../features/workflow/domain/model'
 import { Store } from '../../../features/workflow/services/store'
@@ -101,18 +102,17 @@ const runEvent = (
 const save = (run: Run, snapshot: DemoSnapshot, events: ReadonlyArray<EventDraft>) =>
   Effect.gen(function* () {
     const store = yield* Store
-    const crypto = yield* Crypto.Crypto
     const updatedAt = yield* timestamp
     const status = statusFor(snapshot)
     yield* store.commit({
-      commitId: yield* crypto.randomUUIDv4(),
+      commitId: yield* randomId('commit'),
       runId: run.runId,
       expectedRevision: run.revision,
       status,
       snapshot,
       updatedAt,
       events: yield* Effect.forEach(events, (event) =>
-        crypto.randomUUIDv4().pipe(Effect.map((eventId) => ({ ...event, eventId, createdAt: updatedAt }))),
+        randomId('event').pipe(Effect.map((eventId) => ({ ...event, eventId, createdAt: updatedAt }))),
       ),
     })
     return { ...run, status, snapshot, revision: run.revision + 1, updatedAt } satisfies Run
@@ -124,11 +124,10 @@ const prepare = (
 ): Effect.Effect<void, DomainError, Store | Crypto.Crypto> =>
   Effect.gen(function* () {
     const current = yield* Ref.make(run)
-    const crypto = yield* Crypto.Crypto
     const execution: Execution = {
       runId: run.runId,
       nodeId: 'prepare',
-      executionId: snapshot._tag === 'Preparing' ? snapshot.executionId : yield* crypto.randomUUIDv4(),
+      executionId: snapshot._tag === 'Preparing' ? snapshot.executionId : yield* randomId('execution'),
       attempt: snapshot._tag === 'Preparing' ? snapshot.attempt : 1,
     }
     // These sample tasks are pure and therefore safely retryable after a crash.
@@ -154,7 +153,7 @@ const prepare = (
       succeeded: (event, prepared) =>
         Effect.gen(function* () {
           const latest = yield* Ref.get(current)
-          const checkpointExecutionId = yield* crypto.randomUUIDv4()
+          const checkpointExecutionId = yield* randomId('execution')
           yield* save(
             latest,
             { _tag: 'Waiting', schemaVersion: 1, version: snapshot.version, prepared, checkpointExecutionId },
@@ -192,11 +191,10 @@ const publish = (
 ): Effect.Effect<void, DomainError, Store | Crypto.Crypto> =>
   Effect.gen(function* () {
     const current = yield* Ref.make(run)
-    const crypto = yield* Crypto.Crypto
     const execution: Execution = {
       runId: run.runId,
       nodeId: 'publish',
-      executionId: snapshot._tag === 'Publishing' ? snapshot.executionId : yield* crypto.randomUUIDv4(),
+      executionId: snapshot._tag === 'Publishing' ? snapshot.executionId : yield* randomId('execution'),
       attempt: snapshot._tag === 'Publishing' ? snapshot.attempt : 1,
     }
     yield* observeNode(execution, Effect.succeed(`published:${snapshot.prepared}`), {

@@ -7,6 +7,7 @@ import { TestCrypto } from 'effect/testing'
 import { Miniflare } from 'miniflare'
 import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test'
 
+import { CommandId, CommitId, EventId } from '../../../features/identity/id'
 import { ExternalError } from '../../../features/workflow/domain/errors'
 import { RunDetail, type Run } from '../../../features/workflow/domain/model'
 import { makeD1Store } from '../../../features/workflow/services/d1-store'
@@ -124,33 +125,35 @@ const finishTurn = (node: 'implement' | 'verify') => {
 }
 
 describe('development workflow with canonical D1 checkpoints', () => {
-  it('resumes a historical PiHarness pending command without replacing its composite identity', async () => {
-    const commandId = 'development-1:implement:1'
-    await Effect.runPromise(
-      store.commit({
-        commitId: 'legacy-pending',
-        runId: initialRun.runId,
-        expectedRevision: 0,
-        status: 'running',
-        snapshot: {
-          ...initialDevelopmentSnapshot(input),
-          _tag: 'PendingTurn',
-          sessionId: '1',
-          nodeId: 'implement',
-          commandId,
-        },
-        updatedAt: timestamp,
-        events: [],
-      }),
-    )
-    await resume()
-    expect(submissions).toHaveLength(1)
-    expect(submissions[0]?.input.commandId).toBe(commandId)
-    const before = await current()
-    await start()
-    expect(await current()).toEqual(before)
-    expect(submissions).toHaveLength(1)
-  })
+  it.each(['development-1:implement:1', '3d360c7a-4b1a-4df3-9633-861a220bf5b7'])(
+    'resumes a historical PiHarness pending command without replacing its identity %s',
+    async (commandId) => {
+      await Effect.runPromise(
+        store.commit({
+          commitId: 'legacy-pending',
+          runId: initialRun.runId,
+          expectedRevision: 0,
+          status: 'running',
+          snapshot: {
+            ...initialDevelopmentSnapshot(input),
+            _tag: 'PendingTurn',
+            sessionId: '1',
+            nodeId: 'implement',
+            commandId,
+          },
+          updatedAt: timestamp,
+          events: [],
+        }),
+      )
+      await resume()
+      expect(submissions).toHaveLength(1)
+      expect(submissions[0]?.input.commandId).toBe(commandId)
+      const before = await current()
+      await start()
+      expect(await current()).toEqual(before)
+      expect(submissions).toHaveLength(1)
+    },
+  )
 
   it.each(['01890f2e-7b55-7cc1-8c5a-000000000001', 'development-1:verify:1', 'not-a-uuid'])(
     'rejects a non-v4, nonmatching legacy starting identity %s',
@@ -307,8 +310,8 @@ describe('development workflow with canonical D1 checkpoints', () => {
       },
     })
     expect(commitIds).toHaveLength(3)
-    expect(Array.every(commitIds, Schema.is(Schema.String.check(Schema.isUUID(4))))).toBe(true)
-    expect(Schema.is(Schema.String.check(Schema.isUUID(4)))(submissions[0]?.input.commandId)).toBe(true)
+    expect(Array.every(commitIds, Schema.is(CommitId))).toBe(true)
+    expect(Schema.is(CommandId)(submissions[0]?.input.commandId)).toBe(true)
     expect(await current()).toMatchObject({
       status: 'waiting',
       snapshot: {
@@ -372,7 +375,7 @@ describe('development workflow with canonical D1 checkpoints', () => {
       },
     })
     expect(submissions).toHaveLength(2)
-    expect(Schema.is(Schema.String.check(Schema.isUUID(4)))(submissions[1]?.input.commandId)).toBe(true)
+    expect(Schema.is(CommandId)(submissions[1]?.input.commandId)).toBe(true)
     expect(submissions[1]?.input.commandId).not.toBe(submissions[0]?.input.commandId)
     expect(submissions[1]).toEqual({
       runId: initialRun.runId,
@@ -402,7 +405,7 @@ describe('development workflow with canonical D1 checkpoints', () => {
     })
     expect(completeCalls).toEqual([initialRun.runId])
     const events = await Effect.runPromise(store.getEvents(initialRun.runId, { _tag: 'All' }))
-    expect(Array.every(events, (event) => Schema.is(Schema.String.check(Schema.isUUID(4)))(event.eventId))).toBe(true)
+    expect(Array.every(events, (event) => Schema.is(EventId)(event.eventId))).toBe(true)
     expect(
       Array.map(
         Array.filter(events, (event) => event.nodeId === 'verify'),
@@ -621,7 +624,7 @@ describe('development workflow with canonical D1 checkpoints', () => {
     const pending = Schema.decodeUnknownSync(DevelopmentSnapshot)((await current()).snapshot)
     if (pending._tag !== 'PendingTurn') throw new Error('Expected pending turn')
     const commandId = pending.commandId
-    expect(Schema.is(Schema.String.check(Schema.isUUID(4)))(commandId)).toBe(true)
+    expect(Schema.is(CommandId)(commandId)).toBe(true)
     sandbox = { ...sandbox, submitTurn: original }
     await resume()
     expect(submissions).toHaveLength(1)

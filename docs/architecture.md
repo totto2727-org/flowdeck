@@ -102,6 +102,21 @@ This does not establish exactly-once external side effects.
 
 ## Data and graph identity
 
+`src/features/identity/id.ts` separates caller-defined IDs from app-generated random IDs.
+`UserDefinedId` accepts 1 to 128 ASCII letters, digits, underscores, or hyphens and rejects unsafe input instead of silently rewriting an identity.
+`makePrefixedUUIDv4(prefix)` validates the configured prefix and returns an official `Schema.TemplateLiteral` with `Schema.isUUID(4)` for the suffix.
+`PrefixedUUIDv4` and the concrete `RunId`, `ExecutionId`, `EventId`, `CommitId`, and `CommandId` types are inferred from their schemas and remain strings, without brands.
+For example, `makePrefixedUUIDv4('run')` validates `run_<UUIDv4>`.
+The Crypto-backed generator uses the matching named schema before returning an ID.
+New app-owned IDs use `run_`, `execution_`, `event_`, `commit_`, or `command_` prefixes.
+These prefixes describe origin, not authorization or creation time.
+
+Persisted history decoders keep existing IDs readable, and development recovery retains raw UUIDv4 and the exact legacy run/node command identity rather than allocating a replacement.
+New command input requires the prefixed schema.
+Workflow-owned composite graph references and framework-owned Durable Object, Pi root-session, and provider-session IDs retain their native contracts.
+Run ordering uses the existing `created_at` index, and event ordering uses the indexed run/sequence columns.
+Neither ordering path depends on lexical ID order or UUIDv7.
+
 | Record           | Key data                                                                      |
 | ---------------- | ----------------------------------------------------------------------------- |
 | Workflow         | Workflow ID and display name.                                                 |

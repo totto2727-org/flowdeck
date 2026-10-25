@@ -1,6 +1,8 @@
 import { Schema } from 'effect'
 
-export const CommandId = Schema.String.check(Schema.isUUID(4))
+import { CommandId } from '../../../features/identity/id'
+
+export { CommandId } from '../../../features/identity/id'
 export const TurnRequest = Schema.Struct({
   commandId: CommandId,
   prompt: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(32_768)),

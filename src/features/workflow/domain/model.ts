@@ -1,5 +1,7 @@
 import { Schema } from 'effect'
 
+import { UserDefinedId } from '../../identity/id'
+
 const Revision = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 const PositiveInt = Schema.Int.check(Schema.isGreaterThan(0))
 
@@ -11,15 +13,15 @@ export type RunStatus = typeof RunStatus.Type
 export const JsonObject = Schema.Record(Schema.String, Schema.Unknown)
 
 export const GraphNode = Schema.Struct({
-  nodeId: Schema.String,
+  nodeId: UserDefinedId,
   label: Schema.String,
   kind: Schema.Literals(['task', 'checkpoint']),
 })
 export type GraphNode = typeof GraphNode.Type
 export const GraphEdge = Schema.Struct({
-  edgeId: Schema.String,
-  source: Schema.String,
-  target: Schema.String,
+  edgeId: UserDefinedId,
+  source: UserDefinedId,
+  target: UserDefinedId,
   label: Schema.String,
 })
 export type GraphEdge = typeof GraphEdge.Type
@@ -32,7 +34,7 @@ export const GraphDefinition = Schema.Struct({
 export type GraphDefinition = typeof GraphDefinition.Type
 
 export const WorkflowSummary = Schema.Struct({
-  workflowId: Schema.String,
+  workflowId: UserDefinedId,
   name: Schema.String,
   versions: Schema.Array(WorkflowVersion),
   inputs: Schema.Array(
@@ -93,7 +95,7 @@ export const NodeVisualState = Schema.Literals(['idle', 'running', 'succeeded', 
 export type NodeVisualState = typeof NodeVisualState.Type
 export const NodeShape = Schema.Struct({
   id: Schema.String,
-  nodeId: Schema.String,
+  nodeId: UserDefinedId,
   type: Schema.Literal('node'),
   label: Schema.String,
   kind: Schema.Literals(['task', 'checkpoint']),
@@ -106,8 +108,8 @@ export const NodeShape = Schema.Struct({
 export const EdgeShape = Schema.Struct({
   id: Schema.String,
   type: Schema.Literal('edge'),
-  source: Schema.String,
-  target: Schema.String,
+  source: UserDefinedId,
+  target: UserDefinedId,
   label: Schema.String,
   traversed: Schema.Boolean,
 })
@@ -122,10 +124,9 @@ export const RunDetail = Schema.Struct({
 })
 export type RunDetail = typeof RunDetail.Type
 /** Routing envelope only. The selected workflow validates all remaining input fields. */
-export const CreateRun = Schema.StructWithRest(
-  Schema.Struct({ workflowId: Schema.String.check(Schema.isMinLength(1)), version: WorkflowVersion }),
-  [Schema.Record(Schema.String, Schema.Unknown)],
-)
+export const CreateRun = Schema.StructWithRest(Schema.Struct({ workflowId: UserDefinedId, version: WorkflowVersion }), [
+  Schema.Record(Schema.String, Schema.Unknown),
+])
 export type CreateRun = typeof CreateRun.Type
 export const WorkflowsResponse = Schema.Struct({ workflows: Schema.Array(WorkflowSummary) })
 export const RunsResponse = Schema.Struct({ runs: Schema.Array(Run) })

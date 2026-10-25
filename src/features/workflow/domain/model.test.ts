@@ -6,6 +6,13 @@ import { CreateRun, Run, WorkflowVersion } from './model'
 const decodeVersion = Schema.decodeUnknownSync(WorkflowVersion)
 
 describe('workflow-neutral wire schemas', () => {
+  it.each(['../demo', 'demo/workflow', 'two words', 'ワークフロー'])(
+    'rejects unsafe caller-supplied workflow ID %s',
+    (workflowId) => {
+      expect(() => Schema.decodeUnknownSync(CreateRun)({ workflowId, version: '1.0.0' })).toThrow()
+    },
+  )
+
   it.each(['1.0.0', '2.13.7-rc.1+build.42', '0.0.0'])('round-trips semantic version %s', (version) => {
     expect(decodeVersion(version)).toBe(version)
     expect(Schema.encodeSync(WorkflowVersion)(version)).toBe(version)

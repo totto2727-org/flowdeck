@@ -82,6 +82,11 @@ Use static service bindings only.
 Keep the workflow entry point a thin router to a Durable Object stub.
 Store the selected implementation version and immutable graph reference when a run is created.
 Keep node definition identity separate from execution identity and retry attempt.
+Use `UserDefinedId` for caller-defined identifiers and `makePrefixedUUIDv4(prefix)` for app-owned random identifier schemas from `src/features/identity/id.ts`.
+Infer each ID type from its Schema, without brands or duplicate handwritten types.
+Generate run, execution, event, commit, and command identities through the shared Crypto-backed generator with the matching prefix.
+Use timestamps and indexed sequence columns for ordering, not UUIDv7 or time embedded in an ID.
+Preserve previously persisted IDs and framework-owned session, operation, and resource identity contracts during recovery.
 Persist state and events atomically with revision checks, and acknowledge only after commit.
 Treat committed shared-DB workflow state as canonical, not DO memory or pending promises.
 The official PiHarness owns durable conversation and operation state in its Durable Object storage.

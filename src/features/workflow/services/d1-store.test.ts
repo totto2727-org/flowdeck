@@ -14,6 +14,7 @@ import { demoGraph, initialSnapshot, resumeRun, startRun } from '../../../worker
 import { makeWorkflowRegistry } from '../../../workers/workflow/features/registration'
 import { createRun, makeWorkflows, resumeRun as resumeWorkflowRun } from '../../../workers/workflow/features/workflow'
 import { DevelopmentWorkflowBinding, WorkflowBinding } from '../../../workers/workflow/features/workflow-binding'
+import { CommitId, EventId, ExecutionId, RunId } from '../../identity/id'
 import { ExternalError } from '../domain/errors'
 import { RunDetail, type Run, type WorkflowVersion } from '../domain/model'
 import { makeD1Store } from './d1-store'
@@ -132,6 +133,14 @@ const api = (registry?: ReadonlyArray<RegisteredWorkflow>) =>
   )
 
 describe('D1 persisted run store', () => {
+  it('orders random run IDs by explicit creation time rather than ID value', async () => {
+    const older = { ...newRun('run_ffffffff-ffff-4fff-8fff-ffffffffffff'), createdAt: '2026-01-01T00:00:00.000Z' }
+    const newer = { ...newRun('run_00000000-0000-4000-8000-000000000000'), createdAt: '2026-01-02T00:00:00.000Z' }
+    await Effect.runPromise(store.create(newer, demoGraph('v1'), demoDefinition.summary.name))
+    await Effect.runPromise(store.create(older, demoGraph('v1'), demoDefinition.summary.name))
+    expect(Array.map(await Effect.runPromise(store.listRuns), (run) => run.runId)).toEqual([newer.runId, older.runId])
+  })
+
   it('rejects duplicate event IDs inside a new commit without changing receipts, state or events', async () => {
     await seed()
     const firstEvent = Array.getUnsafe(command().events, 0)
@@ -299,7 +308,7 @@ describe('D1 persisted run store', () => {
 })
 
 describe('demo cold restoration', () => {
-  it('generates UUIDv4 execution, event and commit identities and ACKs an exact duplicate commit', async () => {
+  it('generates prefixed UUIDv4 execution, event and commit identities and ACKs an exact duplicate commit', async () => {
     await seed()
     const persisted = store
     let commits: ReadonlyArray<CommitCommand> = []
@@ -312,11 +321,12 @@ describe('demo cold restoration', () => {
     }
     await run(startRun('run-1'))
     await run(resumeRun('run-1'))
-    const uuid = Schema.String.check(Schema.isUUID(4))
-    expect(Array.every(commits, (input) => Schema.is(uuid)(input.commitId))).toBe(true)
+    expect(Array.every(commits, (input) => Schema.is(CommitId)(input.commitId))).toBe(true)
     const events = await Effect.runPromise(store.getEvents('run-1', { _tag: 'All' }))
-    expect(Array.every(events, (event) => Schema.is(uuid)(event.eventId))).toBe(true)
-    expect(Array.every(events, (event) => event.executionId === null || Schema.is(uuid)(event.executionId))).toBe(true)
+    expect(Array.every(events, (event) => Schema.is(EventId)(event.eventId))).toBe(true)
+    expect(
+      Array.every(events, (event) => event.executionId === null || Schema.is(ExecutionId)(event.executionId)),
+    ).toBe(true)
     const first = Array.getUnsafe(commits, 0)
     const before = await Effect.runPromise(store.getRun('run-1'))
     expect(await Effect.runPromise(store.commit(first))).toMatchObject({ commitId: first.commitId, revision: 1 })
@@ -680,6 +690,14 @@ describe('Effect HTTP API', () => {
         }),
       )
       expect(invalid.status).toBe(400)
+      const unsafeId = await handler.handler(
+        new Request('http://localhost/api/runs', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ workflowId: '../demo', version: '1.0.0' }),
+        }),
+      )
+      expect(unsafeId.status).toBe(400)
       expect(await Effect.runPromise(store.listRuns)).toEqual([])
     } finally {
       await handler.dispose()
@@ -700,7 +718,7 @@ describe('Effect HTTP API', () => {
         )
         expect(created.status).toBe(201)
         const body = await Effect.runPromise(Schema.decodeUnknownEffect(RunDetail)(await created.json()))
-        expect(Schema.is(Schema.String.check(Schema.isUUID(4)))(body.run.runId)).toBe(true)
+        expect(Schema.is(RunId)(body.run.runId)).toBe(true)
         expect(body.run.status).toBe('waiting')
         const detail = await handler.handler(new Request(`http://localhost/api/runs/${body.run.runId}`))
         expect(detail.status).toBe(200)

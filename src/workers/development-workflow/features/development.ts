@@ -1,5 +1,6 @@
 import { Crypto, DateTime, Effect, Match, Schema } from 'effect'
 
+import { CommandId, randomId } from '../../../features/identity/id'
 import { InvalidOperation, InvalidSnapshot, type DomainError } from '../../../features/workflow/domain/errors'
 import {
   type GraphDefinition,
@@ -107,7 +108,7 @@ const fields = (snapshot: DevelopmentSnapshot) => ({
 const commandId = (runId: string, nodeId: 'implement' | 'verify') => `${runId}:${nodeId}:1`
 const UUIDv4 = Schema.String.check(Schema.isUUID(4))
 const validCommand = (id: string, runId: string, nodeId: 'implement' | 'verify') =>
-  Schema.is(UUIDv4)(id) || id === commandId(runId, nodeId)
+  Schema.is(CommandId)(id) || Schema.is(UUIDv4)(id) || id === commandId(runId, nodeId)
 export const restoreDevelopment = (run: Run) =>
   Schema.decodeUnknownEffect(Schema.Record(Schema.String, Schema.Unknown))(run.snapshot).pipe(
     // Persisted legacy omissions are converted once, before entering the required-field domain model.
@@ -160,18 +161,17 @@ const runEvent = (
 const save = (run: Run, snapshot: DevelopmentSnapshot, events: ReadonlyArray<EventDraft>) =>
   Effect.gen(function* () {
     const store = yield* Store
-    const crypto = yield* Crypto.Crypto
     const updatedAt = yield* now
     const status = statusFor(snapshot)
     yield* store.commit({
-      commitId: yield* crypto.randomUUIDv4(),
+      commitId: yield* randomId('commit'),
       runId: run.runId,
       expectedRevision: run.revision,
       status,
       snapshot,
       updatedAt,
       events: yield* Effect.forEach(events, (event) =>
-        crypto.randomUUIDv4().pipe(Effect.map((eventId) => ({ ...event, eventId, createdAt: updatedAt }))),
+        randomId('event').pipe(Effect.map((eventId) => ({ ...event, eventId, createdAt: updatedAt }))),
       ),
     })
     return { ...run, status, snapshot, revision: run.revision + 1, updatedAt } satisfies Run
@@ -213,8 +213,7 @@ const submitPending = (run: Run, snapshot: Extract<DevelopmentSnapshot, { _tag: 
 const start = (run: Run, snapshot: Extract<DevelopmentSnapshot, { _tag: 'Ready' | 'Starting' }>) =>
   Effect.gen(function* () {
     const sandbox = yield* DevelopmentSandbox
-    const crypto = yield* Crypto.Crypto
-    const implementationId = snapshot._tag === 'Starting' ? snapshot.commandId : yield* crypto.randomUUIDv4()
+    const implementationId = snapshot._tag === 'Starting' ? snapshot.commandId : yield* randomId('command')
     const starting =
       snapshot._tag === 'Ready'
         ? yield* save(run, { ...fields(snapshot), _tag: 'Starting', commandId: implementationId }, [
@@ -276,12 +275,11 @@ const poll = (
     if (receipt.status === 'running') return
     if (receipt.status !== 'completed') return yield* fail(run, snapshot, snapshot.nodeId, receipt.error)
     if (snapshot.nodeId === 'implement') {
-      const crypto = yield* Crypto.Crypto
       const pending: Extract<DevelopmentSnapshot, { _tag: 'PendingTurn' }> = {
         ...fields(snapshot),
         _tag: 'PendingTurn',
         nodeId: 'verify',
-        commandId: yield* crypto.randomUUIDv4(),
+        commandId: yield* randomId('command'),
         sessionId: snapshot.sessionId,
       }
       const current = yield* save(run, pending, [
