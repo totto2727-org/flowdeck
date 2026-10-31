@@ -17,7 +17,7 @@ D1 integration tests exercise the trigger contracts against the actual migration
 
 ## Local analysis and checks
 
-Install the [official Atlas CLI](https://atlasgo.io/getting-started/) and the official Vite+ CLI.
+Install the [official Atlas CLI](https://atlasgo.io/getting-started/), the official Vite+ CLI, and upstream Reylo's nub 0.9.6 on Node 24.
 The maintained Reylo fork checkout is at `../../fork/package/reylo` relative to this checkout.
 Both `reylo` and `@reylosql/sqlite` link to its built distributions, `dist/reylo` and `dist/sqlite`, as declared in `pnpm-workspace.yaml`.
 Prepare and build that checkout before installing Flowdeck dependencies:
@@ -26,20 +26,20 @@ Prepare and build that checkout before installing Flowdeck dependencies:
 git clone https://github.com/totto2727-org/reylo.git ../../fork/package/reylo
 # Check out the exact Reylo revision pinned by .github/workflows/ci.yml.
 git -C ../../fork/package/reylo checkout --detach <pinned-revision>
+(cd ../../fork/package/reylo && nub install --frozen-lockfile)
+(cd ../../fork/package/reylo/site && nub install --frozen-lockfile)
+(cd ../../fork/package/reylo && nub run build)
 vp env install
 eval "$(vp env print)"
-pnpm --dir ../../fork/package/reylo install --ignore-workspace --ignore-scripts --frozen-lockfile
-node ../../fork/package/reylo/scripts/build.ts --sqlite
 vp install --frozen-lockfile
 vp run ci
 ```
 
 Reuse an existing fork checkout instead of cloning over it.
-The fork install uses `--ignore-workspace` so a containing pnpm workspace cannot substitute its own dependency installation.
-It disables dependency lifecycle scripts with `--ignore-scripts`; the SQLite package build uses the locked package contents, including esbuild's platform package, without granting new build-script permissions or changing upstream dependency policy.
-CI checks out the exact pinned fork commit at the same relative path, installs its dependencies, builds its SQLite distributions, and installs Flowdeck's locked dependencies before validation.
-The fork's existing build task accepts `--sqlite` to build the runtime, declarations, and SQLite engine without unrelated documentation or playground builds.
-The default full build remains unchanged.
+The fork retains upstream's nub workflow and dependency policy, including separate frozen installs at its root and in `site/`.
+Its standard build produces the runtime, declarations, all four engine distributions, and the bundled playground.
+CI checks out the exact pinned fork commit at the same relative path, sets up nub 0.9.6 on Node 24 with upstream's pinned setup action, and performs those installs and the full build.
+Flowdeck continues to resolve its own environment, install its locked dependencies, and run validation through Vite+.
 Rebuild these distributions after editing the fork.
 Linking its raw TypeScript source would make Flowdeck's strict compiler settings check upstream implementation files rather than the package declarations.
 The distribution boundary retains the application's strict checks without rewriting unrelated upstream code.
@@ -47,8 +47,12 @@ Do not replace these links with published 0.6.0 packages, which do not provide t
 
 Reylo reads `schema/schema.hcl` directly through the maintained fork's HCL schema source.
 The `.reylo.yaml` source is `direct_url: hcl:./schema/schema.hcl`.
-The fork parses HCL in process with its port of HashiCorp's native parser and compiles supported static Atlas SQLite declarations into an in-memory analysis catalog.
-SQL import analysis requires neither the Atlas executable nor a Go runtime, subprocess, remote service, or application database.
+The fork parses HCL in process with its port of HashiCorp's native parser and supplies supported static Atlas SQLite declarations as DDL catalog rows directly to the existing Reylo engine.
+This path opens no Node SQLite database and performs no host SQL execution.
+The engine's existing embedded SQLite parser and internal schema replay remain unchanged.
+HCL content hashes replace database fingerprint queries and invalidate cached analysis when the source changes.
+Static inference uses the embedded engine's built-in functions, not a live D1 function allowlist.
+SQL import analysis requires neither the Atlas executable nor a Go runtime, subprocess, remote service, host database, or application database.
 Unknown declarations, dynamic HCL expressions, invalid references, and syntax errors are rejected rather than ignored.
 Atlas remains the tool for migration generation and the separate migration/HCL drift check, not for Content Mapper or SQL loader analysis.
 SQL import analysis needs no separate preparation task and creates no database file.

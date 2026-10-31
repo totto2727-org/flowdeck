@@ -17,17 +17,28 @@ jobs:
       - name: Check out Reylo source dependency
         run: |
           git init ../../fork/package/reylo
-          git -C ../../fork/package/reylo fetch --depth=1 https://github.com/totto2727-org/reylo.git 3537c8fbe785d6c9a44bf4627884a298bbc920d8
+          git -C ../../fork/package/reylo fetch --depth=1 https://github.com/totto2727-org/reylo.git a9a0aa0c80f0af955dd8e72d3db486005e07a092
           git -C ../../fork/package/reylo checkout --detach FETCH_HEAD
       - uses: voidzero-dev/setup-vp@main
         with:
           run-install: false
-      - name: Build linked Reylo and install Flowdeck
+      - uses: nubjs/setup-nub@c7b970ec04655a2f0a111cd436cc182a3b660e7a # v0.6.0
+        with:
+          nub-version: '0.9.6'
+          node-version: '24'
+      - name: Install Reylo dependencies
+        run: nub install --frozen-lockfile
+        working-directory: ../../fork/package/reylo
+      - name: Install Reylo playground dependencies
+        run: nub install --frozen-lockfile
+        working-directory: ../../fork/package/reylo/site
+      - name: Build linked Reylo
+        run: nub run build
+        working-directory: ../../fork/package/reylo
+      - name: Install Flowdeck
         run: |
           vp env install
           eval "$(vp env print)"
-          pnpm --dir ../../fork/package/reylo install --ignore-workspace --ignore-scripts --frozen-lockfile
-          node ../../fork/package/reylo/scripts/build.ts --sqlite
           vp install --frozen-lockfile
       - uses: ariga/setup-atlas@v0
       - name: Verify Vite+ project
