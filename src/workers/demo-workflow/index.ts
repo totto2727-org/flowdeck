@@ -1,6 +1,7 @@
 import { QueryDatabase, QueryDatabaseBinding } from 'alchemy/Cloudflare/D1'
 import { DurableObject } from 'alchemy/Cloudflare/Workers'
 import { Effect } from 'effect'
+import reylo from 'reylo/vite'
 
 import type { RunId } from '../../features/workflow/domain/identity'
 import { makeD1Store } from '../../features/workflow/services/d1-store'
@@ -30,6 +31,7 @@ export class FlowdeckRun extends DurableObject<FlowdeckRun>()(
 export default DemoWorkflow.make(
   {
     main: import.meta.url,
+    build: { input: { plugins: [reylo()] } },
     compatibility: { date: '2026-09-01', flags: ['nodejs_compat'] },
     workersDev: { enabled: false, previewsEnabled: false },
     dev: { host: '127.0.0.1', port: 4382, strictPort: true },

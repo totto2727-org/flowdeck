@@ -3,6 +3,7 @@ import { QueryDatabase, QueryDatabaseBinding } from 'alchemy/Cloudflare/D1'
 import { makeRpcStub, WorkerEnvironment } from 'alchemy/Cloudflare/Workers'
 import type { RuntimeContext } from 'alchemy/RuntimeContext'
 import { Effect, Schema } from 'effect'
+import reylo from 'reylo/vite'
 
 import { makeD1Store } from '../../features/workflow/services/d1-store'
 import { Store } from '../../features/workflow/services/store'
@@ -31,6 +32,7 @@ export default Workflow.make(
   Effect.gen(function* () {
     return {
       main: import.meta.url,
+      build: { input: { plugins: [reylo()] } },
       compatibility: { date: '2026-09-01', flags: ['nodejs_compat'] },
       workersDev: { enabled: false, previewsEnabled: false },
       dev: { host: '127.0.0.1', port: 4384, strictPort: true },

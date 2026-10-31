@@ -18,3 +18,6 @@ allowBuilds:
   core-js-pure: false
   '@mongodb-js/zstd': false
   node-liblzma: false
+
+patchedDependencies:
+  reylo@0.6.0: patches/reylo@0.6.0.patch

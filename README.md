@@ -78,7 +78,7 @@ See the [sandbox setup and acceptance limits](docs/development-sandbox.md) befor
 - One Alchemy project for all Workers and the shared D1 database.
 - Effect HTTP for the Control API and Effect HttpClient over a static frontend service binding.
 - One typed static RPC binding from Control to the `Workflow` integration Worker, which owns the catalog and routes to individual workflow Workers and their run-specific Durable Objects.
-- Kysely queries with D1 atomic state/event batches, revision checks, and duplicate-command receipts.
+- Atlas HCL-managed SQLite schema and Reylo-typed SQL with D1 atomic state/event batches, revision checks, and duplicate-command receipts.
 - Immutable run graphs, common shapes, and event projection by node and execution identity.
 - Two bundled demo versions, typed checkpoints, and explicit recovery.
 - An official durable PiHarness integration with Computer Workspace tools and one run-scoped session and checkout for implementation and verification.
@@ -129,7 +129,7 @@ The root Nix development shell supplies `nixfmt`, not JavaScript runtimes or pac
 | `sandbox/`                          | Derived workspace image with official `computerd` and repository tool prerequisites.                                                  |
 | `src/features/development/`         | Shared development session and turn receipt schemas.                                                                                  |
 | `src/workers/composition.ts`        | Select and inject deployment and authorization Layers. Infrastructure conditions exist only at this boundary.                         |
-| `src/features/workflow/`            | Shared schemas, graph projection, database schema, and Kysely state/event persistence.                                                |
+| `src/features/workflow/`            | Shared schemas, graph projection, and Reylo-typed state/event persistence.                                                            |
 
 ### Checks
 

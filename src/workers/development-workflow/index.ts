@@ -1,5 +1,6 @@
 import { DurableObject, Worker } from 'alchemy/Cloudflare/Workers'
 import { Config, Effect } from 'effect'
+import reylo from 'reylo/vite'
 
 import { Database } from '../database'
 import { DevelopmentContainer } from './container'
@@ -11,6 +12,7 @@ export class DevelopmentWorkflow extends Worker<DevelopmentWorkflow>()(
   Effect.gen(function* () {
     return {
       main: new URL('./worker.ts', import.meta.url).href,
+      build: { input: { plugins: [reylo()] } },
       compatibility: { date: '2026-09-01', flags: ['nodejs_compat'] },
       workersDev: { enabled: false, previewsEnabled: false },
       dev: { host: '127.0.0.1', port: 4383, strictPort: true },

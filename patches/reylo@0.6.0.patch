@@ -1,0 +1,62 @@
+diff --git a/src/execute.js b/src/execute.js
+index a3c2102cd4b61cdc46326681fb7658ddf1e4306c..91fed38ebb4ad838494de80637a58618de179b54 100644
+--- a/src/execute.js
++++ b/src/execute.js
+@@ -160,6 +160,11 @@ function checkParams(query, input) {
+   const takes = keys.length ? `This statement takes { ${keys.join(", ")} }.` : "This statement takes none: leave them out.";
+   throw new ParameterError(`The parameters must be an object keyed by parameter name, or by number for positional placeholders ({ 1: ..., 2: ... }); got ${Array.isArray(input) ? "an array" : String(input)}. ${takes}`);
+ }
++export function compileStatement(query, params) {
++  checkParams(query, params);
++  const { text, values } = statement(query, params);
++  return { sql: text, parameters: values };
++}
+ function statement(query, params) {
+   const compiled = compile(query);
+   const bound = { text: compiled.text, values: compiled.order.map((name) => value(params, name)), names: compiled.order };
+diff --git a/src/index.d.ts b/src/index.d.ts
+index bb1f992589e8259ace466a16496a56ec2573fc93..49ef66185e51b172ade792c878e718e5368cd755 100644
+--- a/src/index.d.ts
++++ b/src/index.d.ts
+@@ -80,6 +80,15 @@ export interface Query<Params, Row, C extends Cardinality, D extends Dialect, E
+     try(client: ClientFor<D>, ...params: ParamsArg<Params>): Promise<TryResult<Materialize<Row, C>, E>>;
+     /** `try` on a synchronous SQLite client, as `runSync`: it returns the result itself. */
+     trySync(client: SyncClientFor<D>, ...params: ParamsArg<Params>): TryResult<Materialize<Row, C>, E>;
++    /**
++     * Binds a SQLite query without executing it, using run's parameter checks and encoding.
++     * The SQL and ordered values can be passed to a native prepared-statement batch.
++     * Does not check the live schema or decode results. Other dialects are refused.
++     */
++    compile(this: Query<Params, Row, C, "sqlite", E>, ...params: ParamsArg<Params>): {
++        readonly sql: string;
++        readonly parameters: readonly unknown[];
++    };
+     /** The statement bound to a client, such as a transaction: `const get = q.with(tx); await get({ id: 1 })`. */
+     with(client: ClientFor<D>): (...params: ParamsArg<Params>) => Promise<Materialize<Row, C>>;
+ }
+diff --git a/src/index.js b/src/index.js
+index 46fd0d9a402b6d06321d6f579ff4f11465bf5701..22bcfd68b2ad2e5381c146a898382633bb8eed44 100644
+--- a/src/index.js
++++ b/src/index.js
+@@ -1,4 +1,4 @@
+-import { compile, execute, executeSync } from "./execute.js";
++import { compile, compileStatement, execute, executeSync } from "./execute.js";
+ import { DecodeError, ParameterError } from "./values.js";
+ import { readQueryError, readQueryErrorSync } from "./query-error.js";
+ import { listening } from "./trace.js";
+@@ -78,6 +78,15 @@ export function defineQuery(def) {
+         throw error;
+       }
+     }),
++    compile: ((params) => {
++      try {
++        if (def.dialect !== "sqlite")
++          throw new TypeError("compile currently supports SQLite queries only.");
++        return compileStatement(module, params ?? {});
++      } catch (error) {
++        throw named(error);
++      }
++    }),
+     with: ((client) => (params) => run(client, params ?? {}))
+   };
+   function run(client, params) {

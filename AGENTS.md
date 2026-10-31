@@ -4,7 +4,7 @@
 
 This file serves contributors and maintainers.
 Flowdeck is one private Vite+ application and one Alchemy project.
-The application uses Effect 4, Effront, shadcn/ui, Cloudflare Workers, Durable Objects, and Kysely with a shared D1 database.
+The application uses Effect 4, Effront, shadcn/ui, Cloudflare Workers, Durable Objects, and Reylo SQL queries with a shared D1 database.
 
 - `src/workers/frontend/`: Frontend entry, Access implementations, and frontend-only features.
 - `src/workers/frontend/features/`: Effront pages, ServerFns, dashboard, graph, and shadcn components.
@@ -18,7 +18,9 @@ The application uses Effect 4, Effront, shadcn/ui, Cloudflare Workers, Durable O
 - `src/workers/development-workflow/index.ts`: the sole external `DevelopmentWorkflow` definition, with native Durable Object exports from `worker.ts` through official Alchemy support, not custom `props.exports`.
 - `src/workers/composition.ts`: final deployment and request dependency selection.
 - `src/workers/database.ts`: the shared D1 resource declaration.
-- `src/features/workflow/`: shared wire schemas, graph projection, Kysely persistence, and the `Workflows` service contract.
+- `src/features/workflow/`: shared wire schemas, graph projection, typed SQL persistence, and the `Workflows` service contract.
+- `schema/schema.hcl`: Atlas-managed SQLite tables, constraints, and indexes.
+- `src/features/workflow/services/queries/`: one Reylo-typed SQL statement per file.
 - `migrations/`: maintained D1 schema migrations.
 - `alchemy.ts` and `alchemy.run.ts`: all application resources in one project.
 - `vite.config.ts`: canonical development and validation tasks.
@@ -70,9 +72,14 @@ Keep workflow effects independent from deployment configuration.
 Select infrastructure-specific implementations only when injecting dependencies at the final composition boundary.
 Do not branch on development flags, deployment stages, or infrastructure phases inside feature logic or request authorization.
 Keep Worker-specific features with their Worker, and put shared features under `src/features/`.
-Use Kysely for typed database queries.
-Compile queries at the D1 batch adapter when a native atomic batch is required.
-Do not replace Kysely with a second query layer.
+Use Atlas HCL for SQLite tables, constraints, and indexes, with versioned SQL migrations consumed by Alchemy.
+Keep SQLite correctness triggers in reviewed migrations because Atlas Community does not model triggers.
+Use Reylo Content Mapper SQL imports for typed queries, not handwritten table interfaces or a query builder.
+Keep schema analysis local: `vp run schema:prepare` creates a disposable SQLite database from HCL, never a remote D1 connection.
+Use `vp run check` for complete TypeScript 7.1 Content Mapper checking plus Vite+ format and type-aware lint.
+Vite+'s independent TypeScript 7.0 checker cannot load Content Mappers, so it is not the application's full type checker.
+Keep receipt, state, and event writes in one native D1 batch using Reylo's checked binding path.
+The narrowly maintained Reylo batch-binding patch must not become a separate SQL compiler; see [database workflow](docs/database.md).
 
 ## Workflow invariants
 

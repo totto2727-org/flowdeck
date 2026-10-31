@@ -15,5 +15,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: totto2727-org/monorepo/.github/actions/setup-typescript@main
+      - uses: ariga/setup-atlas@v0
       - name: Verify Vite+ project
         run: vp run ci

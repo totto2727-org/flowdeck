@@ -19,7 +19,7 @@ export default defineConfig({
   ],
   webServer: {
     // Playwright owns the native host lifecycle.
-    command: 'alchemy dev --config alchemy.run.ts --no-input',
+    command: 'vp run dev',
     cwd: '../..',
     url: 'http://127.0.0.1:4380',
     timeout: 180_000,

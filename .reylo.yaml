@@ -1,0 +1,4 @@
+# Atlas builds this disposable analysis database locally. Never use a remote D1 URL.
+direct_url: file:./.atlas/schema.db
+cli:
+  include: ['src/**/*.sql']

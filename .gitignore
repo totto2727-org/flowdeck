@@ -9,6 +9,8 @@ result-*
 node_modules/
 dist/
 .alchemy/
+.atlas/
+.reylo/
 .wrangler/
 .vite/
 .vite-plus/

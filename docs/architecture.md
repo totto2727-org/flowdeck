@@ -14,7 +14,7 @@ flowchart TB
   API -->|single static typed RPC binding| Workflow[Workflow Integration Worker]
   Workflow -->|static typed RPC binding| Entry[Demo Workflow Worker Entry]
   Entry -->|getByName runId| Run[Run Durable Object]
-  Workflow <--> DB[(Shared D1\nKysely)]
+  Workflow <--> DB[(Shared D1\nReylo SQL)]
   Run <--> DB
   Run --> V[Workflow-owned pinned implementation version]
   Workflow -->|static typed RPC binding| Development[Development Workflow Worker]
@@ -77,9 +77,11 @@ External storage and service failures use `ExternalError` with required operatio
 Domain rejections such as `Conflict` and `InvalidSnapshot` have no optional cause field.
 The HTTP boundary returns safe messages rather than external causes, retaining 500 for storage failures and 502 for service failures.
 State-dependent fields belong to explicit tagged variants; optional properties are reserved for genuinely optional metadata.
-Kysely query builders remain typed library values rather than an invented query abstraction.
-The D1 adapter compiles Kysely queries into native D1 prepared statements.
-D1 `batch` provides the atomic transaction that Kysely's interactive transaction callback cannot provide on D1.
+Atlas HCL defines SQLite tables, checks, foreign keys, and indexes.
+Reylo Content Mapper infers query input and result types from SQL against an HCL-generated local SQLite database.
+The D1 adapter uses Reylo's checked binding path to produce native prepared statements.
+D1 `batch` provides atomic receipt, checkpoint, and event writes; independent query calls do not provide that transaction.
+See [database workflow](database.md) for schema generation, migration ownership, and the narrow upstream binding patch.
 The frontend adapts the native static binding to the Fetch implementation consumed by Effect HttpClient.
 Native Request construction exists only in that adapter.
 Alchemy owns native Worker HTTP and typed RPC bridges.
@@ -161,7 +163,7 @@ The routing envelope leaves workflow-specific input unknown until the selected w
 ## Commit and acknowledgment
 
 1. Construct a typed transition command with an expected revision and a stable commit ID.
-2. Compile the receipt, run update, snapshot update, and event inserts with Kysely.
+2. Bind the receipt, run update, snapshot update, and event insert SQL through Reylo.
 3. Submit the statements in one D1 batch.
 4. Reject a stale revision or a changed command that reuses a commit ID.
 5. Return an acknowledgment only after the batch succeeds and the receipt is read.
@@ -275,7 +277,8 @@ Production DNS, Access admission, and deployment behavior require a separate aut
 - [Durable Object lifecycle](https://developers.cloudflare.com/durable-objects/concepts/durable-object-lifecycle/)
 - [D1 atomic batch API](https://developers.cloudflare.com/d1/worker-api/d1-database/#batch)
 - [Cloudflare Access for Workers](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/non-http/cloudflare-workers/)
-- [Kysely D1 dialect](https://github.com/aidenwallis/kysely-d1)
+- [Reylo SQL Content Mapper](https://reylo.dev/#setup)
+- [Atlas SQLite schema management](https://atlasgo.io/getting-started/)
 - [Vite+ migration and toolchain overrides](https://viteplus.dev/guide/migrate)
 
 The toolchain starts from `template/vite-plus-app` revision `f0b8dffb085518d10cd42729a10c11de08a1736b`.

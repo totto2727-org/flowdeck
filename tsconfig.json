@@ -1,5 +1,6 @@
 {
   "extends": ["@tsconfig/strictest/tsconfig.json", "@tsconfig/node-ts/tsconfig.json"],
+  "contentMappers": [{ "package": "reylo", "extensions": [".sql", ".reylo.yaml", ".reylo.yml"] }],
   "compilerOptions": {
     "target": "ESNext",
     "module": "Preserve",
@@ -9,5 +10,5 @@
     "types": ["node", "@cloudflare/workers-types", "vite/client"],
     "paths": { "@/*": ["./src/workers/frontend/features/*"] }
   },
-  "exclude": ["tmp", "node_modules"]
+  "exclude": ["tmp", "node_modules", "migrations"]
 }
