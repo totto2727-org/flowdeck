@@ -2,18 +2,29 @@ import * as BrowserCrypto from '@effect/platform-browser/BrowserCrypto'
 import { QueryDatabase, QueryDatabaseBinding } from 'alchemy/Cloudflare/D1'
 import { makeRpcStub, WorkerEnvironment } from 'alchemy/Cloudflare/Workers'
 import type { RuntimeContext } from 'alchemy/RuntimeContext'
-import { Effect } from 'effect'
+import { Effect, Schema } from 'effect'
 
 import { makeD1Store } from '../../features/workflow/services/d1-store'
 import { Store } from '../../features/workflow/services/store'
 import { WorkflowRegistry } from '../../features/workflow/services/workflow-definition'
-import type { WorkflowService } from '../../features/workflow/services/workflows'
+import {
+  RpcCreateRun,
+  RpcRunDetail,
+  RpcRunsResponse,
+  RpcWorkflowsResponse,
+  type WireWorkflowService,
+} from '../../features/workflow/services/workflow-rpc'
 import { Database } from '../database'
 import { DemoWorkflow, Workflow } from '../definitions'
 import { DevelopmentWorkflow } from '../development-workflow'
 import { makeWorkflowRegistry } from './features/registration'
 import { makeWorkflows } from './features/workflow'
 import { DevelopmentWorkflowBinding, WorkflowBinding } from './features/workflow-binding'
+
+const encodeWorkflowsResponse = Schema.encodeEffect(RpcWorkflowsResponse)
+const encodeRunsResponse = Schema.encodeEffect(RpcRunsResponse)
+const encodeRunDetail = Schema.encodeEffect(RpcRunDetail)
+const decodeCreateRun = Schema.decodeUnknownEffect(RpcCreateRun)
 
 /** Catalog, run persistence, and fixed workflow bindings live behind one service. */
 export default Workflow.make(
@@ -50,11 +61,31 @@ export default Workflow.make(
       ),
     )
     return {
-      listWorkflows: () => service.pipe(Effect.flatMap((workflows) => workflows.listWorkflows())),
-      listRuns: () => service.pipe(Effect.flatMap((workflows) => workflows.listRuns())),
-      getRunDetail: (runId) => service.pipe(Effect.flatMap((workflows) => workflows.getRunDetail(runId))),
-      createRun: (input) => service.pipe(Effect.flatMap((workflows) => workflows.createRun(input))),
-      resumeRun: (runId) => service.pipe(Effect.flatMap((workflows) => workflows.resumeRun(runId))),
-    } satisfies WorkflowService<RuntimeContext>
+      listWorkflows: () =>
+        service.pipe(
+          Effect.flatMap((workflows) => workflows.listWorkflows()),
+          Effect.flatMap(encodeWorkflowsResponse),
+        ),
+      listRuns: () =>
+        service.pipe(
+          Effect.flatMap((workflows) => workflows.listRuns()),
+          Effect.flatMap(encodeRunsResponse),
+        ),
+      getRunDetail: (runId) =>
+        service.pipe(
+          Effect.flatMap((workflows) => workflows.getRunDetail(runId)),
+          Effect.flatMap(encodeRunDetail),
+        ),
+      createRun: (input) =>
+        decodeCreateRun(input).pipe(
+          Effect.flatMap((decoded) => service.pipe(Effect.flatMap((workflows) => workflows.createRun(decoded)))),
+          Effect.flatMap(encodeRunDetail),
+        ),
+      resumeRun: (runId) =>
+        service.pipe(
+          Effect.flatMap((workflows) => workflows.resumeRun(runId)),
+          Effect.flatMap(encodeRunDetail),
+        ),
+    } satisfies WireWorkflowService<RuntimeContext>
   }).pipe(Effect.provide(QueryDatabaseBinding)),
 )

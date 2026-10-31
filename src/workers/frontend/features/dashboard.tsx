@@ -4,7 +4,7 @@ import { Array, Effect, Option, Record } from 'effect'
 import { Activity, ArrowRight, Box, Check, ChevronRight, GitBranch, Layers, Play, RefreshCw } from 'lucide-react'
 import { Fragment, useState, useSyncExternalStore, useTransition } from 'react'
 
-import type { RunDetail, RunEvent } from '../../../features/workflow/domain/model'
+import type { NodeId, RunId } from '../../../features/workflow/domain/identity'
 import { Badge } from './components/generated/badge'
 import { Button } from './components/generated/button'
 import { Card, CardContent } from './components/generated/card'
@@ -12,6 +12,7 @@ import { NodeInspector, RunGraph } from './graph'
 import { eventLabel, orderedEvents, renderJson, runRecoveryAction, shortId } from './presentation'
 import { loadDashboard, resumeRun, selectRun, startRun, type DashboardData, type Result } from './server'
 import { ThemeToggle } from './theme-toggle'
+import type { RunDetail, RunEvent } from './view-model'
 
 function Status({ value }: { readonly value: string }) {
   return (
@@ -31,11 +32,13 @@ function Events({
   selectedNode,
 }: {
   readonly events: ReadonlyArray<RunEvent>
-  readonly selectedNode: string | null
+  readonly selectedNode: NodeId | null
 }) {
   const [nodeOnly, setNodeOnly] = useState(false)
   const visible = orderedEvents(
-    nodeOnly && selectedNode ? Array.filter(events, (event) => event.nodeId === selectedNode) : events,
+    nodeOnly && selectedNode
+      ? Array.filter(events, (event) => 'nodeId' in event && event.nodeId === selectedNode)
+      : events,
   )
   return (
     <section
@@ -71,7 +74,7 @@ function Events({
                   <span className='mr-2.5 font-[550] text-[#526c5b] capitalize dark:text-foreground'>
                     {eventLabel(event.type)}
                   </span>
-                  <code>{event.nodeId ?? 'run'}</code>
+                  <code>{'nodeId' in event ? event.nodeId : 'run'}</code>
                   <time dateTime={event.createdAt}>{event.createdAt}</time>
                 </summary>
                 <dl className='mt-[17px] grid grid-cols-2 gap-x-5 gap-y-3 [&_dt]:mb-1 [&_dt]:text-[9px] [&_dt]:tracking-[0.7px] [&_dt]:text-[#8a998e] [&_dt]:uppercase [&_dd]:m-0 [&_dd]:text-[11px] [&_dd]:wrap-anywhere [&_dd]:text-[#576f5f] dark:[&_dt]:text-muted-foreground dark:[&_dd]:text-foreground'>
@@ -84,12 +87,12 @@ function Events({
                   <div>
                     <dt>Execution ID</dt>
                     <dd>
-                      <code>{event.executionId ?? 'Run event'}</code>
+                      <code>{'executionId' in event ? event.executionId : 'Run event'}</code>
                     </dd>
                   </div>
                   <div>
                     <dt>Attempt</dt>
-                    <dd>{event.attempt ?? 'Not applicable'}</dd>
+                    <dd>{'attempt' in event ? event.attempt : 'Not applicable'}</dd>
                   </div>
                 </dl>
                 <pre className='mt-3.5 max-h-[400px] overflow-auto rounded-md border border-[#e7eee9] bg-[#f6f9f7] p-[15px] font-mono text-[10px] whitespace-pre-wrap wrap-anywhere text-[#537360] dark:border-border dark:bg-[#101a14] dark:text-[#b5e4c6]'>
@@ -113,7 +116,7 @@ function SelectedRun({
   readonly pending: boolean
   readonly onResume: () => void
 }) {
-  const [node, setNode] = useState<string | null>(null)
+  const [node, setNode] = useState<NodeId | null>(null)
   const [view, setView] = useState<'events' | 'state'>('events')
   const recoveryAction = runRecoveryAction(detail.run.status)
   return (
@@ -303,7 +306,7 @@ export function Dashboard({ initial }: { readonly initial: DashboardData }) {
         setMessage('Dashboard refreshed from the control plane.')
       },
     )
-  const chooseRun = (runId: string) =>
+  const chooseRun = (runId: RunId) =>
     invoke(
       () => selectRun(runId),
       (detail) => {

@@ -1,17 +1,39 @@
 import type { D1Database } from '@cloudflare/workers-types'
-import { Array, Effect, Match, Schema, String } from 'effect'
+import { Array, DateTime, Effect, Match, Schema, String } from 'effect'
 import { Kysely, type Compilable } from 'kysely'
 import { D1Dialect } from 'kysely-d1'
 
 import { Conflict, NotFound, ExternalError } from '../domain/errors'
+import { EventId, GraphId, RunId } from '../domain/identity'
 import { GraphDefinition, JsonObject, Run, RunEvent } from '../domain/model'
 import type { Database } from './database'
-import type { CommitCommand, StoreService } from './store'
+import { CommitAck, CommitCommand, type StoreService } from './store'
 
-const EventIds = Schema.Array(Schema.NonEmptyString).check(Schema.isUnique())
-const Json = Schema.fromJsonString(Schema.Unknown)
+const EventIds = Schema.Array(EventId).check(Schema.isUnique())
+const Json = Schema.fromJsonString(Schema.Json)
 const encodeJson = Schema.encodeEffect(Json)
 const decodeJson = Schema.decodeUnknownEffect(Json)
+const PersistedRun = Schema.toCodecJson(Run)
+const encodeVersion = Schema.encodeEffect(Schema.SemVerFromString)
+const PersistedEvent = Schema.toCodecJson(RunEvent)
+const encodeCommand = Schema.encodeEffect(Schema.toCodecJson(CommitCommand))
+const storedDecoder = <S extends Schema.Constraint>(schema: S) => {
+  const decode = Schema.decodeUnknownEffect(schema, { onExcessProperty: 'error' })
+  return (value: unknown) =>
+    decode(value).pipe(
+      Effect.mapError((cause) => new ExternalError({ operation: 'decode persisted data', cause, kind: 'storage' })),
+    )
+}
+const decodeRunId = storedDecoder(RunId)
+const decodeGraphId = storedDecoder(GraphId)
+const decodeDomainRun = storedDecoder(Run)
+const decodePersistedRun = storedDecoder(PersistedRun)
+const decodeGraph = storedDecoder(GraphDefinition)
+const decodeCommand = storedDecoder(CommitCommand)
+const decodeAck = storedDecoder(CommitAck)
+const decodeObject = storedDecoder(JsonObject)
+const decodeEvent = storedDecoder(PersistedEvent)
+const decodeEventIds = Schema.decodeUnknownEffect(EventIds)
 
 const databaseFailure = (operation: string, cause: unknown) => {
   const message = cause instanceof Error ? cause.message : 'Database operation failed'
@@ -37,11 +59,7 @@ export const makeD1Store = (database: D1Database): StoreService => {
         }),
       ),
     )
-  const decode = <S extends Schema.Constraint>(schema: S, value: unknown) =>
-    Schema.decodeUnknownEffect(schema)(value).pipe(
-      Effect.mapError((cause) => new ExternalError({ operation: 'decode persisted data', cause, kind: 'storage' })),
-    )
-  const json = (value: unknown) =>
+  const json = (value: Schema.Json) =>
     encodeJson(value).pipe(
       Effect.mapError((cause) => new ExternalError({ operation: 'encode persisted data', cause, kind: 'storage' })),
     )
@@ -67,12 +85,14 @@ export const makeD1Store = (database: D1Database): StoreService => {
   type RunRow = Awaited<ReturnType<ReturnType<typeof runsQuery>['execute']>>[number]
   const decodeRun = (row: RunRow) =>
     Effect.gen(function* () {
-      const snapshot = yield* fromJson(row.snapshotJson)
-      return yield* decode(Run, { ...row, snapshot })
+      const { snapshotJson, ...run } = row
+      const snapshot = yield* fromJson(snapshotJson)
+      return yield* decodePersistedRun({ ...run, snapshot })
     })
 
-  const getRun = (runId: string) =>
+  const getRun = (runId: RunId) =>
     Effect.gen(function* () {
+      yield* decodeRunId(runId)
       const row = yield* io('get run', () => runsQuery().where('runs.run_id', '=', runId).executeTakeFirst())
       if (!row) return yield* Effect.fail(new NotFound({ resource: `run:${runId}` }))
       return yield* decodeRun(row)
@@ -80,6 +100,11 @@ export const makeD1Store = (database: D1Database): StoreService => {
 
   const create: StoreService['create'] = (run, graph, workflowName) =>
     Effect.gen(function* () {
+      yield* decodeDomainRun(run)
+      yield* decodeGraph(graph)
+      const version = yield* encodeVersion(run.workflowVersion).pipe(
+        Effect.mapError((cause) => new ExternalError({ operation: 'encode workflow version', cause, kind: 'storage' })),
+      )
       if (run.graphId !== graph.graphId || run.revision !== 0 || run.status !== 'pending') {
         return yield* Effect.fail(
           new Conflict({ message: 'New run must reference its graph with pending revision zero' }),
@@ -98,17 +123,17 @@ export const makeD1Store = (database: D1Database): StoreService => {
           .onConflict((conflict) => conflict.column('graph_id').doNothing()),
         db
           .insertInto('workflow_versions')
-          .values({ workflow_id: run.workflowId, version: run.workflowVersion, graph_id: graph.graphId })
+          .values({ workflow_id: run.workflowId, version, graph_id: graph.graphId })
           .onConflict((conflict) => conflict.columns(['workflow_id', 'version']).doNothing()),
         db.insertInto('runs').values({
           run_id: run.runId,
           workflow_id: run.workflowId,
-          workflow_version: run.workflowVersion,
+          workflow_version: version,
           graph_id: run.graphId,
           status: run.status,
           revision: run.revision,
-          created_at: run.createdAt,
-          updated_at: run.updatedAt,
+          created_at: DateTime.formatIso(run.createdAt),
+          updated_at: DateTime.formatIso(run.updatedAt),
         }),
         db.insertInto('run_states').values({ run_id: run.runId, revision: run.revision, snapshot_json: snapshotJson }),
       ])
@@ -116,12 +141,16 @@ export const makeD1Store = (database: D1Database): StoreService => {
 
   const commit: StoreService['commit'] = (command: CommitCommand) =>
     Effect.gen(function* () {
-      yield* Schema.decodeUnknownEffect(EventIds)(Array.map(command.events, (event) => event.eventId)).pipe(
+      yield* decodeCommand(command)
+      yield* decodeEventIds(Array.map(command.events, (event) => event.eventId)).pipe(
         Effect.mapError(() => new Conflict({ message: 'Event IDs must be nonempty and unique within a commit' })),
       )
       const snapshotJson = yield* json(command.snapshot)
       // Store the entire command, not just its ID, to reject mutated duplicate deliveries.
-      const commandJson = yield* json(command)
+      const encodedCommand = yield* encodeCommand(command).pipe(
+        Effect.mapError((cause) => new ExternalError({ operation: 'encode commit command', cause, kind: 'storage' })),
+      )
+      const commandJson = yield* json(encodedCommand)
       const payloads = yield* Effect.forEach(command.events, (event) => json(event.payload))
       const nextRevision = command.expectedRevision + 1
       const receipt = db
@@ -155,7 +184,7 @@ export const makeD1Store = (database: D1Database): StoreService => {
         .set((eb) => ({
           status: command.status,
           revision: nextRevision,
-          updated_at: command.updatedAt,
+          updated_at: DateTime.formatIso(command.updatedAt),
           last_sequence: eb('last_sequence', '+', Array.length(command.events)),
         }))
         .where('run_id', '=', command.runId)
@@ -206,12 +235,12 @@ export const makeD1Store = (database: D1Database): StoreService => {
                 'run_id',
                 'commit_id',
                 query('first_sequence', '+', index).as('sequence'),
-                eb.val(event.nodeId).as('node_id'),
-                eb.val(event.executionId).as('execution_id'),
-                eb.val(event.attempt).as('attempt'),
+                eb.val('nodeId' in event ? event.nodeId : null).as('node_id'),
+                eb.val('executionId' in event ? event.executionId : null).as('execution_id'),
+                eb.val('attempt' in event ? event.attempt : null).as('attempt'),
                 eb.val(event.type).as('type'),
                 eb.val(payloads[index] ?? '{}').as('payload_json'),
-                eb.val(event.createdAt).as('created_at'),
+                eb.val(DateTime.formatIso(event.createdAt)).as('created_at'),
               ])
               .where('commit_id', '=', command.commitId)
               .where('run_id', '=', command.runId)
@@ -248,7 +277,7 @@ export const makeD1Store = (database: D1Database): StoreService => {
           .executeTakeFirst(),
       )
       if (!ack) return yield* Effect.fail(new NotFound({ resource: `run:${command.runId}` }))
-      return ack
+      return yield* decodeAck(ack)
     })
 
   return {
@@ -259,14 +288,16 @@ export const makeD1Store = (database: D1Database): StoreService => {
     ),
     getGraph: (graphId) =>
       Effect.gen(function* () {
+        yield* decodeGraphId(graphId)
         const row = yield* io('get graph', () =>
           db.selectFrom('graphs').select('graph_json').where('graph_id', '=', graphId).executeTakeFirst(),
         )
         if (!row) return yield* Effect.fail(new NotFound({ resource: `graph:${graphId}` }))
-        return yield* decode(GraphDefinition, yield* fromJson(row.graph_json))
+        return yield* decodeGraph(yield* fromJson(row.graph_json))
       }),
     getEvents: (runId, range) =>
       Effect.gen(function* () {
+        yield* decodeRunId(runId)
         const query = db
           .selectFrom('run_events')
           .innerJoin('commit_receipts', 'run_events.commit_id', 'commit_receipts.commit_id')
@@ -280,14 +311,17 @@ export const makeD1Store = (database: D1Database): StoreService => {
         const rows = yield* io('get events', () => selected.orderBy('sequence').execute())
         return yield* Effect.forEach(rows, (row) =>
           Effect.gen(function* () {
-            const payload = yield* decode(JsonObject, yield* fromJson(row.payload_json))
-            return yield* decode(RunEvent, {
+            const payload = yield* decodeObject(yield* fromJson(row.payload_json))
+            // SQL NULL represents absence only at this storage boundary, never in the domain event.
+            const execution =
+              row.node_id === null && row.execution_id === null && row.attempt === null
+                ? {}
+                : { nodeId: row.node_id, executionId: row.execution_id, attempt: row.attempt }
+            return yield* decodeEvent({
               eventId: row.event_id,
               runId: row.run_id,
               sequence: row.sequence,
-              nodeId: row.node_id,
-              executionId: row.execution_id,
-              attempt: row.attempt,
+              ...execution,
               type: row.type,
               payload,
               createdAt: row.created_at,

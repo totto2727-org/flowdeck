@@ -15,11 +15,15 @@ This is a local experiment, not a production or multitenant execution service.
 - Control reaches the private `Workflow` integration Worker through one static service binding.
 - The integration Worker owns the catalog, initial run persistence, and fixed bindings to the individual workflow Workers.
 
-The persisted workflow ID `jcode-development` and infrastructure resource name `JcodeSandbox` remain unchanged for compatibility.
+The workflow ID is `jcode-development`, and the infrastructure resource name is `JcodeSandbox`.
 The frontend label is **Pi development**.
-New runs use runtime `pi-harness`.
-Legacy Jcode and direct Pi SDK histories remain available for inspection, but execution fails closed.
-Create a new PiHarness run instead of resuming a legacy runtime.
+Runs use runtime `pi-harness`, version `1.0.0`, and graph `jcode-development-1_0_0-graph-1`.
+Snapshots and turn receipts require prefixed UUIDv4 command identities, and node events use independent prefixed UUIDv4 execution identities persisted before submission.
+The official root session identity is the literal `1`, scoped to the run Durable Object.
+Repository URLs and versions are native `URL` and `SemVer` values inside the development workflow.
+The official JSON codecs encode these values as strings only at the input and snapshot persistence boundaries.
+Run and event timestamps use native `DateTime.Utc` values, and `run.waiting` carries its actual node and execution identities.
+Legacy runtimes, versions, and command identities are rejected without migration.
 
 ## Local setup
 

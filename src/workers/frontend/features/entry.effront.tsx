@@ -1,9 +1,10 @@
-import { Effect, Layer } from 'effect'
+import { Array, Effect, Layer } from 'effect'
 
 import { ControlApi } from './control-api'
 import { Dashboard } from './dashboard'
 import { EFFRONT } from './effront'
 import { themeBootstrap } from './theme'
+import { presentRun, presentWorkflow } from './view-model'
 
 import './styles/app.css'
 
@@ -34,7 +35,13 @@ const overview = EFFRONT.Page.make({
     const api = yield* ControlApi
     return yield* Effect.all([api.workflows, api.runs], { concurrency: 2 }).pipe(
       Effect.map(([workflows, runs]) => (
-        <Dashboard initial={{ workflows: workflows.workflows, runs: runs.runs, selected: null }} />
+        <Dashboard
+          initial={{
+            workflows: Array.map(workflows.workflows, (workflow) => presentWorkflow(workflow)),
+            runs: Array.map(runs.runs, (run) => presentRun(run)),
+            selected: null,
+          }}
+        />
       )),
       Effect.catchTag('ControlError', (error) =>
         Effect.succeed(

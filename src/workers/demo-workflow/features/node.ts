@@ -1,19 +1,23 @@
-import { DateTime, Effect } from 'effect'
+import { DateTime, Effect, type Schema } from 'effect'
 
+import type { UserDefinedId } from '../../../features/identity/id'
+import type { ExecutionId, RunId } from '../../../features/workflow/domain/identity'
+import type { JsonObject } from '../../../features/workflow/domain/model'
 import type { PendingEvent } from '../../../features/workflow/services/store'
 
 export interface Execution {
-  readonly runId: string
-  readonly nodeId: string
-  readonly executionId: string
+  readonly runId: RunId
+  readonly nodeId: UserDefinedId
+  readonly executionId: ExecutionId
   readonly attempt: number
 }
-export type EventDraft = Omit<PendingEvent, 'createdAt' | 'eventId'>
-export const timestamp = DateTime.now.pipe(Effect.map(DateTime.formatIso))
+type Draft<Event> = Event extends PendingEvent ? Omit<Event, 'createdAt' | 'eventId'> : never
+export type EventDraft = Draft<PendingEvent>
+export const timestamp = DateTime.now
 export const nodeEvent = (
   execution: Execution,
   type: 'node.started' | 'node.succeeded' | 'node.failed',
-  payload: Readonly<Record<string, unknown>> = {},
+  payload: JsonObject = {},
 ): EventDraft => ({
   nodeId: execution.nodeId,
   executionId: execution.executionId,
@@ -26,7 +30,7 @@ export const nodeEvent = (
  * their typed snapshot together with these node events. A restored node may
  * skip its already committed start hook, then reconnect/retry its own work.
  */
-export const observeNode = <A, E, R, E2, R2>(
+export const observeNode = <A extends Schema.Json | void, E, R, E2, R2>(
   execution: Execution,
   task: Effect.Effect<A, E, R>,
   hooks: {
@@ -41,7 +45,8 @@ export const observeNode = <A, E, R, E2, R2>(
       Effect.matchEffect({
         onFailure: (error) =>
           hooks.failed(nodeEvent(execution, 'node.failed'), error).pipe(Effect.andThen(Effect.fail(error))),
-        onSuccess: (output) => hooks.succeeded(nodeEvent(execution, 'node.succeeded', { output }), output),
+        onSuccess: (output) =>
+          hooks.succeeded(nodeEvent(execution, 'node.succeeded', output === undefined ? {} : { output }), output),
       }),
     )
   })

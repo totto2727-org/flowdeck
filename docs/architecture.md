@@ -59,8 +59,9 @@ Workflow IDs, supported versions, input validation, initial snapshots, and graph
 The integration service uses registry lookup for catalog, create, and resume operations without branching on workflow IDs.
 The frontend renders version choices and input descriptors from the catalog without importing workflow implementations.
 The shared create schema validates only the routing envelope and semantic version format; the selected definition validates all workflow-specific fields before persistence or dispatch.
-New versions use strings parsed by Effect `SemVer`, not a shared version enumeration.
-Legacy stored versions remain readable and are interpreted only by their owning workflow.
+Workflow versions are official Effect `SemVer` values in the domain, not a shared version enumeration.
+HTTP, Worker RPC, and D1 adapters use official Schema codecs to encode strings and decode domain values.
+Serializing a domain object directly is not a substitute for those codecs.
 Adding a workflow requires its typed input schema, implementation, and integration registration, but no new Control binding.
 An unknown persisted workflow ID is rejected rather than sent to the demo worker.
 The final composition boundary in `src/workers/composition.ts` selects deployment and authorization Layers.
@@ -117,24 +118,26 @@ The generic identity feature contains no ID-kind union, registry, or central gen
 New app-owned IDs use `run_`, `execution_`, `event_`, `commit_`, or `command_` prefixes.
 These prefixes describe origin, not authorization or creation time.
 
-Persisted run and event envelopes and HTTP run paths use `StoredRunId`, an explicit union of the new `RunId` schema and bare UUIDv4 for historical runs.
-Malformed IDs, wrong prefixes, and UUIDv7 are rejected rather than accepted as arbitrary strings.
-Workflow identifiers use `UserDefinedId` in both catalog and persisted run schemas.
-Development recovery retains raw UUIDv4 and the exact legacy run/node command identity rather than allocating a replacement.
-New command input requires the prefixed schema.
-Workflow-owned composite graph references and framework-owned Durable Object, Pi root-session, and provider-session IDs retain their native contracts.
+All application-owned ID fields use their named schemas, including persisted envelopes, workflow snapshots, HTTP input, graph definitions, and UI projections.
+`WorkflowId`, `GraphId`, `NodeId`, and `EdgeId` use `UserDefinedId` because workflow implementations define them.
+`RunId`, `EventId`, `ExecutionId`, `CommitId`, and development-owned `CommandId` require their exact prefix and UUIDv4 suffix.
+Graph definitions use safe named references such as `demo-1_0_0-graph-1`, not unrestricted composite strings.
+Malformed IDs, wrong prefixes, bare UUIDs, and UUIDv7 are rejected.
+The application is unreleased and intentionally has no legacy-ID or legacy-version compatibility paths.
+D1 validates run, graph, and commit schemas before writes, and validates decoded rows and acknowledgments on read.
+Framework-owned Durable Object IDs, Pi's literal root-session ID `1`, tool-call IDs, provider model identifiers, and Cloudflare account/Gateway identifiers retain their official contracts rather than being rewritten as application UUIDs.
 Run ordering uses the existing `created_at` index, and event ordering uses the indexed run/sequence columns.
 Neither ordering path depends on lexical ID order or UUIDv7.
 
-| Record           | Key data                                                                      |
-| ---------------- | ----------------------------------------------------------------------------- |
-| Workflow         | Workflow ID and display name.                                                 |
-| Workflow version | Workflow ID, implementation version, graph ID.                                |
-| Graph            | Graph ID, schema version, graph JSON.                                         |
-| Run              | Run ID, pinned version, immutable graph reference, status, revision.          |
-| Run state        | Run ID, revision, snapshot.                                                   |
-| Run event        | Event ID, run ID, ordered sequence, optional node/execution/attempt, payload. |
-| Commit receipt   | Commit ID, exact command, revision, first event sequence, event count.        |
+| Record           | Key data                                                                       |
+| ---------------- | ------------------------------------------------------------------------------ |
+| Workflow         | Workflow ID and display name.                                                  |
+| Workflow version | Workflow ID, implementation version, graph ID.                                 |
+| Graph            | Graph ID, schema version, graph JSON.                                          |
+| Run              | Run ID, pinned version, immutable graph reference, status, revision.           |
+| Run state        | Run ID, revision, snapshot.                                                    |
+| Run event        | Event ID, run ID, ordered sequence, kind-specific execution identity, payload. |
+| Commit receipt   | Commit ID, exact command, revision, first event sequence, event count.         |
 
 The current graph IDs are explicit versioned identifiers, not content hashes.
 A repeated identical graph is reused.
@@ -143,6 +146,17 @@ Change the graph ID and workflow version when a graph contract changes.
 A node ID identifies a definition.
 An execution ID and attempt identify an execution, including retries.
 Graph-to-shape conversion and event projection use these identities independently from transient UI selection.
+Node shapes group coordinates under `position: { x, y }` and dimensions under `size: { width, height }`.
+Layout origin, horizontal step, and node size are named module-level constants in the projection file, not a separate constants module.
+
+`RunEvent` is a discriminated union keyed by `type`.
+Node lifecycle events and `run.waiting` require a node ID, execution ID, and positive attempt.
+Other run lifecycle events do not carry those fields, and boundary decoders use the official `onExcessProperty: 'error'` option to reject them, including `null` placeholders.
+SQL nullable columns are a persistence detail that the D1 adapter converts at its boundary, not a domain state representation.
+Run and event timestamps are official `DateTime.Utc` values internally, with official JSON codecs and ISO formatting at persistence and transport boundaries.
+Snapshots and event payloads use the shared official `Schema.JsonObject`, which permits nested JSON but rejects arrays or scalars as the root and rejects non-JSON nested values.
+Each workflow validates and encodes its own richer checkpoint schema before handing the resulting JSON object to shared persistence.
+The routing envelope leaves workflow-specific input unknown until the selected workflow validates it, rather than importing workflow domain knowledge into the common interface.
 
 ## Commit and acknowledgment
 
@@ -216,7 +230,7 @@ Each unavoidable nonstandard implementation must document its purpose, rejected 
 
 New runs explicitly select a semantic version advertised by their workflow definition.
 The demo advertises `1.0.0` and `2.0.0`; the development workflow advertises `1.0.0`.
-Only each workflow's restore boundary interprets its retained legacy `v1` or `v2` identities.
+Each workflow validates only its current supported semantic versions at its restore boundary.
 Existing runs restore their stored version rather than a mutable latest alias.
 Keep old code while a pending, active, waiting, or recoverable run references it.
 Remove an old implementation only after its resumable runs have reached a terminal state.

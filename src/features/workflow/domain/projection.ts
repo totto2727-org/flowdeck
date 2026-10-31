@@ -1,6 +1,11 @@
 import { Array, HashMap, Match, Number, Option, Order } from 'effect'
 
+import type { NodeId } from './identity'
 import type { GraphDefinition, NodeVisualState, RunEvent, Shapes } from './model'
+
+const LAYOUT_ORIGIN = { x: 48, y: 72 }
+const NODE_SIZE = { width: 224, height: 100 }
+const NODE_HORIZONTAL_STEP = 280
 
 /** Event order is durable sequence order, independent of wall-clock timestamps. */
 export const projectEvents = (events: ReadonlyArray<RunEvent>) =>
@@ -9,9 +14,9 @@ export const projectEvents = (events: ReadonlyArray<RunEvent>) =>
       events,
       Order.mapInput(Number.Order, (event: RunEvent) => event.sequence),
     ),
-    HashMap.empty<string, NodeVisualState>(),
+    HashMap.empty<NodeId, NodeVisualState>(),
     (states, event) => {
-      if (event.nodeId === null) return states
+      if (!('nodeId' in event)) return states
       const visual = Match.value(event.type).pipe(
         Match.when('node.started', () => 'running' as const),
         Match.when('node.succeeded', () => 'succeeded' as const),
@@ -26,7 +31,7 @@ export const projectEvents = (events: ReadonlyArray<RunEvent>) =>
 /** Layout is a pure graph projection. Selection belongs exclusively to the UI. */
 export const graphToShapes = (graph: GraphDefinition, events: ReadonlyArray<RunEvent> = []): Shapes => {
   const states = projectEvents(events)
-  const state = (nodeId: string) => HashMap.get(states, nodeId).pipe(Option.getOrElse(() => 'idle' as const))
+  const state = (nodeId: NodeId) => HashMap.get(states, nodeId).pipe(Option.getOrElse(() => 'idle' as const))
   return {
     nodes: Array.map(graph.nodes, (node, index) => ({
       id: node.nodeId,
@@ -34,10 +39,8 @@ export const graphToShapes = (graph: GraphDefinition, events: ReadonlyArray<RunE
       type: 'node' as const,
       label: node.label,
       kind: node.kind,
-      x: 48 + index * 280,
-      y: 72,
-      width: 224,
-      height: 100,
+      position: { x: LAYOUT_ORIGIN.x + index * NODE_HORIZONTAL_STEP, y: LAYOUT_ORIGIN.y },
+      size: NODE_SIZE,
       state: state(node.nodeId),
     })),
     edges: Array.map(graph.edges, (edge) => ({
@@ -47,8 +50,8 @@ export const graphToShapes = (graph: GraphDefinition, events: ReadonlyArray<RunE
       target: edge.target,
       label: edge.label,
       traversed:
-        Array.some(events, (event) => event.nodeId === edge.source && event.type === 'node.succeeded') &&
-        Array.some(events, (event) => event.nodeId === edge.target && event.type === 'node.started'),
+        Array.some(events, (event) => event.type === 'node.succeeded' && event.nodeId === edge.source) &&
+        Array.some(events, (event) => event.type === 'node.started' && event.nodeId === edge.target),
     })),
   }
 }

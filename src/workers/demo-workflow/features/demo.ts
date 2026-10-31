@@ -1,10 +1,17 @@
-import { Crypto, Effect, Match, Ref, Schema } from 'effect'
+import { Crypto, Effect, Match, Ref, Schema, SemVer } from 'effect'
 
+import { UserDefinedId } from '../../../features/identity/id'
 import { InvalidOperation, InvalidSnapshot, type DomainError } from '../../../features/workflow/domain/errors'
-import { makeCommitId, makeEventId, makeExecutionId } from '../../../features/workflow/domain/identity'
+import {
+  ExecutionId,
+  makeCommitId,
+  makeEventId,
+  makeExecutionId,
+  type RunId,
+} from '../../../features/workflow/domain/identity'
 import { type GraphDefinition, type Run, type WorkflowSummary } from '../../../features/workflow/domain/model'
 import { Store } from '../../../features/workflow/services/store'
-import { DemoWorkflowVersion } from './input'
+import { DemoWorkflowVersion, demoVersion1, demoVersion2 } from './input'
 import { type EventDraft, type Execution, nodeEvent, observeNode, timestamp } from './node'
 
 const fields = { schemaVersion: Schema.Literal(1), version: DemoWorkflowVersion }
@@ -12,43 +19,51 @@ export const DemoSnapshot = Schema.Union([
   Schema.TaggedStruct('Ready', fields),
   Schema.TaggedStruct('Preparing', {
     ...fields,
-    executionId: Schema.String,
+    executionId: ExecutionId,
     attempt: Schema.Int.check(Schema.isGreaterThan(0)),
   }),
-  Schema.TaggedStruct('Waiting', { ...fields, prepared: Schema.String, checkpointExecutionId: Schema.String }),
+  Schema.TaggedStruct('Waiting', { ...fields, prepared: Schema.String, checkpointExecutionId: ExecutionId }),
   Schema.TaggedStruct('Publishing', {
     ...fields,
     prepared: Schema.String,
-    executionId: Schema.String,
+    executionId: ExecutionId,
     attempt: Schema.Int.check(Schema.isGreaterThan(0)),
   }),
   Schema.TaggedStruct('Completed', { ...fields, result: Schema.String }),
-  Schema.TaggedStruct('Failed', { ...fields, nodeId: Schema.String, message: Schema.String }),
+  Schema.TaggedStruct('Failed', { ...fields, nodeId: UserDefinedId, message: Schema.String }),
 ])
 export type DemoSnapshot = typeof DemoSnapshot.Type
+
+const demoSnapshotCodec = Schema.toCodecJson(DemoSnapshot)
+const encodeSnapshot = Schema.encodeEffect(demoSnapshotCodec)
+const decodeSnapshot = Schema.decodeUnknownEffect(demoSnapshotCodec)
+const decodeJsonObject = Schema.decodeUnknownEffect(Schema.JsonObject)
+
+export const encodeDemoSnapshot = (snapshot: DemoSnapshot) =>
+  encodeSnapshot(snapshot).pipe(Effect.flatMap(decodeJsonObject))
 
 export const demoWorkflow: WorkflowSummary = {
   workflowId: 'demo',
   name: 'Release checkpoint',
-  versions: ['1.0.0', '2.0.0'],
+  versions: [demoVersion1, demoVersion2],
   inputs: [],
 }
 
 /** Both implementations are deliberately bundled. Run records select their
  * original version, never a mutable latest alias. */
 export const demoGraph = (version: DemoWorkflowVersion): GraphDefinition => ({
-  graphId: `demo:${version}:graph:1`,
+  graphId: SemVer.equals(version, demoVersion1) ? 'demo-1_0_0-graph-1' : 'demo-2_0_0-graph-1',
   schemaVersion: 1,
   nodes: [
     {
       nodeId: 'prepare',
-      label: version === 'v1' || version === '1.0.0' ? 'Prepare release' : 'Enrich release',
+      label: SemVer.equals(version, demoVersion1) ? 'Prepare release' : 'Enrich release',
       kind: 'task',
     },
     { nodeId: 'approval', label: 'Manual approval', kind: 'checkpoint' },
     {
       nodeId: 'publish',
-      label: version === 'v1' || version === '1.0.0' ? 'Publish release' : 'Publish enriched release',
+      label: SemVer.equals(version, demoVersion1) ? 'Publish release' : 'Publish enriched release',
       kind: 'task',
     },
   ],
@@ -77,26 +92,19 @@ const statusFor = (snapshot: DemoSnapshot) =>
  * workflow-owned tagged state, not a replacement framework or a fake Machine
  * API. The durable Schema is the complete restore boundary. */
 export const restoreDemo = (run: Run) =>
-  Schema.decodeUnknownEffect(DemoSnapshot)(run.snapshot).pipe(
+  decodeSnapshot(run.snapshot).pipe(
     Effect.mapError(() => new InvalidSnapshot({ message: 'Invalid demo snapshot' })),
     Effect.flatMap((snapshot) =>
       run.workflowId !== 'demo' ||
-      snapshot.version !== run.workflowVersion ||
+      !SemVer.equals(snapshot.version, run.workflowVersion) ||
       run.graphId !== demoGraph(snapshot.version).graphId ||
       statusFor(snapshot) !== run.status
         ? Effect.fail(new InvalidSnapshot({ message: 'Run identity, status, graph and snapshot must agree' }))
         : Effect.succeed(snapshot),
     ),
   )
-const runEvent = (
-  _run: Run,
-  type: 'run.started' | 'run.waiting' | 'run.resumed' | 'run.completed' | 'run.failed',
-  nodeId: string | null = null,
-): EventDraft => ({
+const runEvent = (type: 'run.started' | 'run.resumed' | 'run.completed' | 'run.failed'): EventDraft => ({
   type,
-  nodeId,
-  executionId: null,
-  attempt: null,
   payload: {},
 })
 const save = (run: Run, snapshot: DemoSnapshot, events: ReadonlyArray<EventDraft>) =>
@@ -104,18 +112,19 @@ const save = (run: Run, snapshot: DemoSnapshot, events: ReadonlyArray<EventDraft
     const store = yield* Store
     const updatedAt = yield* timestamp
     const status = statusFor(snapshot)
+    const encodedSnapshot = yield* encodeDemoSnapshot(snapshot).pipe(Effect.orDie)
     yield* store.commit({
       commitId: yield* makeCommitId,
       runId: run.runId,
       expectedRevision: run.revision,
       status,
-      snapshot,
+      snapshot: encodedSnapshot,
       updatedAt,
       events: yield* Effect.forEach(events, (event) =>
         makeEventId.pipe(Effect.map((eventId) => ({ ...event, eventId, createdAt: updatedAt }))),
       ),
     })
-    return { ...run, status, snapshot, revision: run.revision + 1, updatedAt } satisfies Run
+    return { ...run, status, snapshot: encodedSnapshot, revision: run.revision + 1, updatedAt } satisfies Run
   })
 
 const prepare = (
@@ -132,9 +141,7 @@ const prepare = (
     }
     // These sample tasks are pure and therefore safely retryable after a crash.
     // Real workflow nodes must own their side-effect idempotency/reconnection.
-    const task = Effect.succeed(
-      snapshot.version === 'v1' || snapshot.version === '1.0.0' ? 'draft:v1' : 'draft:v2:reviewed',
-    )
+    const task = Effect.succeed(SemVer.equals(snapshot.version, demoVersion1) ? 'draft:v1' : 'draft:v2:reviewed')
     yield* observeNode(execution, task, {
       started: (event) =>
         snapshot._tag === 'Preparing'
@@ -148,7 +155,7 @@ const prepare = (
                 executionId: execution.executionId,
                 attempt: execution.attempt,
               },
-              [runEvent(run, 'run.started'), event],
+              [runEvent('run.started'), event],
             ).pipe(Effect.flatMap((next) => Ref.set(current, next))),
       succeeded: (event, prepared) =>
         Effect.gen(function* () {
@@ -163,7 +170,13 @@ const prepare = (
                 { runId: run.runId, nodeId: 'approval', executionId: checkpointExecutionId, attempt: 1 },
                 'node.started',
               ),
-              runEvent(latest, 'run.waiting', 'approval'),
+              {
+                type: 'run.waiting',
+                nodeId: 'approval',
+                executionId: checkpointExecutionId,
+                attempt: 1,
+                payload: {},
+              },
             ],
           )
         }),
@@ -179,7 +192,7 @@ const prepare = (
               nodeId: 'prepare',
               message: 'Prepare failed',
             },
-            [event, runEvent(latest, 'run.failed')],
+            [event, runEvent('run.failed')],
           )
         }),
     })
@@ -212,7 +225,7 @@ const publish = (
                 attempt: execution.attempt,
               },
               [
-                runEvent(run, 'run.resumed'),
+                runEvent('run.resumed'),
                 nodeEvent(
                   { runId: run.runId, nodeId: 'approval', executionId: snapshot.checkpointExecutionId, attempt: 1 },
                   'node.succeeded',
@@ -226,7 +239,7 @@ const publish = (
           const latest = yield* Ref.get(current)
           yield* save(latest, { _tag: 'Completed', schemaVersion: 1, version: snapshot.version, result }, [
             event,
-            runEvent(latest, 'run.completed'),
+            runEvent('run.completed'),
           ])
         }),
       failed: (event) =>
@@ -241,7 +254,7 @@ const publish = (
               nodeId: 'publish',
               message: 'Publish failed',
             },
-            [event, runEvent(latest, 'run.failed')],
+            [event, runEvent('run.failed')],
           )
         }),
     })
@@ -249,7 +262,7 @@ const publish = (
 
 /** Each call reloads the canonical D1 state. No instance field, pending Promise,
  * or in-memory continuation is needed to recover a replaced Durable Object. */
-const drive = (runId: string, operation: 'start' | 'resume'): Effect.Effect<void, DomainError, Store | Crypto.Crypto> =>
+const drive = (runId: RunId, operation: 'start' | 'resume'): Effect.Effect<void, DomainError, Store | Crypto.Crypto> =>
   Effect.gen(function* () {
     const store = yield* Store
     const run = yield* store.getRun(runId)
@@ -266,5 +279,5 @@ const drive = (runId: string, operation: 'start' | 'resume'): Effect.Effect<void
       Match.exhaustive,
     )
   })
-export const startRun = (runId: string) => drive(runId, 'start')
-export const resumeRun = (runId: string) => drive(runId, 'resume')
+export const startRun = (runId: RunId) => drive(runId, 'start')
+export const resumeRun = (runId: RunId) => drive(runId, 'resume')

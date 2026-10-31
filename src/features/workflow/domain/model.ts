@@ -1,34 +1,32 @@
-import { Result, Schema } from 'effect'
+import { Schema, Tuple } from 'effect'
 
-import { UserDefinedId } from '../../identity/id'
-import { StoredRunId } from './identity'
+import { EdgeId, EventId, ExecutionId, GraphId, NodeId, RunId, WorkflowId } from './identity'
 
 const Revision = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
-const PositiveInt = Schema.Int.check(Schema.isGreaterThan(0))
+export const PositiveInt = Schema.Int.check(Schema.isGreaterThan(0))
 
-const decodeSemVer = Schema.decodeUnknownResult(Schema.SemVerFromString)
-/** Validate once with the official codec while preserving the public string representation. */
-export const WorkflowVersion = Schema.String.check(Schema.makeFilter((value) => Result.isSuccess(decodeSemVer(value))))
+export const WorkflowVersion = Schema.SemVer
 export type WorkflowVersion = typeof WorkflowVersion.Type
 export const RunStatus = Schema.Literals(['pending', 'running', 'waiting', 'completed', 'failed'])
 export type RunStatus = typeof RunStatus.Type
-export const JsonObject = Schema.Record(Schema.String, Schema.Unknown)
+export const JsonObject = Schema.JsonObject
+export type JsonObject = typeof JsonObject.Type
 
 export const GraphNode = Schema.Struct({
-  nodeId: UserDefinedId,
+  nodeId: NodeId,
   label: Schema.String,
   kind: Schema.Literals(['task', 'checkpoint']),
 })
 export type GraphNode = typeof GraphNode.Type
 export const GraphEdge = Schema.Struct({
-  edgeId: UserDefinedId,
-  source: UserDefinedId,
-  target: UserDefinedId,
+  edgeId: EdgeId,
+  source: NodeId,
+  target: NodeId,
   label: Schema.String,
 })
 export type GraphEdge = typeof GraphEdge.Type
 export const GraphDefinition = Schema.Struct({
-  graphId: Schema.String,
+  graphId: GraphId,
   schemaVersion: Schema.Literal(1),
   nodes: Schema.Array(GraphNode),
   edges: Schema.Array(GraphEdge),
@@ -36,7 +34,7 @@ export const GraphDefinition = Schema.Struct({
 export type GraphDefinition = typeof GraphDefinition.Type
 
 export const WorkflowSummary = Schema.Struct({
-  workflowId: UserDefinedId,
+  workflowId: WorkflowId,
   name: Schema.String,
   versions: Schema.Array(WorkflowVersion),
   inputs: Schema.Array(
@@ -52,22 +50,21 @@ export const WorkflowSummary = Schema.Struct({
 })
 export type WorkflowSummary = typeof WorkflowSummary.Type
 export const Run = Schema.Struct({
-  runId: StoredRunId,
-  workflowId: UserDefinedId,
-  // Persisted histories can contain pre-SemVer workflow-owned versions such as v1/v2.
-  workflowVersion: Schema.String.check(Schema.isMinLength(1)),
-  graphId: Schema.String,
+  runId: RunId,
+  workflowId: WorkflowId,
+  workflowVersion: WorkflowVersion,
+  graphId: GraphId,
   status: RunStatus,
   revision: Revision,
-  snapshot: Schema.Unknown,
-  createdAt: Schema.String,
-  updatedAt: Schema.String,
+  snapshot: JsonObject,
+  createdAt: Schema.DateTimeUtc,
+  updatedAt: Schema.DateTimeUtc,
 })
 export type Run = typeof Run.Type
 export const RunState = Schema.Struct({
-  runId: StoredRunId,
+  runId: RunId,
   revision: Revision,
-  snapshot: Schema.Unknown,
+  snapshot: JsonObject,
 })
 export type RunState = typeof RunState.Type
 export const EventType = Schema.Literals([
@@ -81,37 +78,52 @@ export const EventType = Schema.Literals([
   'run.failed',
 ])
 export type EventType = typeof EventType.Type
-export const RunEvent = Schema.Struct({
-  eventId: Schema.String,
-  runId: StoredRunId,
-  sequence: PositiveInt,
-  nodeId: Schema.NullOr(UserDefinedId),
-  executionId: Schema.NullOr(Schema.String),
-  attempt: Schema.NullOr(PositiveInt),
-  type: EventType,
+export const EventFields = {
+  eventId: EventId,
   payload: JsonObject,
-  createdAt: Schema.String,
-})
+  createdAt: Schema.DateTimeUtc,
+}
+export const NodeEventFields = {
+  nodeId: NodeId,
+  executionId: ExecutionId,
+  attempt: PositiveInt,
+}
+/** Each event type determines whether a node execution is part of its identity. */
+export const PendingRunEvent = Schema.Union([
+  Schema.Struct({ ...EventFields, type: Schema.Literal('run.started') }),
+  Schema.Struct({ ...EventFields, type: Schema.Literal('run.resumed') }),
+  Schema.Struct({ ...EventFields, type: Schema.Literal('run.completed') }),
+  Schema.Struct({ ...EventFields, type: Schema.Literal('run.failed') }),
+  Schema.Struct({ ...EventFields, ...NodeEventFields, type: Schema.Literal('run.waiting') }),
+  Schema.Struct({ ...EventFields, ...NodeEventFields, type: Schema.Literal('node.started') }),
+  Schema.Struct({ ...EventFields, ...NodeEventFields, type: Schema.Literal('node.succeeded') }),
+  Schema.Struct({ ...EventFields, ...NodeEventFields, type: Schema.Literal('node.failed') }),
+])
+export const RunEvent = PendingRunEvent.mapMembers(
+  Tuple.map(Schema.fieldsAssign({ runId: RunId, sequence: PositiveInt })),
+)
 export type RunEvent = typeof RunEvent.Type
 export const NodeVisualState = Schema.Literals(['idle', 'running', 'succeeded', 'failed', 'waiting'])
 export type NodeVisualState = typeof NodeVisualState.Type
+export const Position = Schema.Struct({ x: Schema.Number, y: Schema.Number })
+export type Position = typeof Position.Type
+export const Size = Schema.Struct({ width: Schema.Number, height: Schema.Number })
+export type Size = typeof Size.Type
 export const NodeShape = Schema.Struct({
-  id: UserDefinedId,
-  nodeId: UserDefinedId,
+  id: NodeId,
+  nodeId: NodeId,
   type: Schema.Literal('node'),
   label: Schema.String,
   kind: Schema.Literals(['task', 'checkpoint']),
-  x: Schema.Number,
-  y: Schema.Number,
-  width: Schema.Number,
-  height: Schema.Number,
+  position: Position,
+  size: Size,
   state: NodeVisualState,
 })
 export const EdgeShape = Schema.Struct({
-  id: UserDefinedId,
+  id: EdgeId,
   type: Schema.Literal('edge'),
-  source: UserDefinedId,
-  target: UserDefinedId,
+  source: NodeId,
+  target: NodeId,
   label: Schema.String,
   traversed: Schema.Boolean,
 })
@@ -126,8 +138,13 @@ export const RunDetail = Schema.Struct({
 })
 export type RunDetail = typeof RunDetail.Type
 /** Routing envelope only. The selected workflow validates all remaining input fields. */
-export const CreateRun = Schema.StructWithRest(Schema.Struct({ workflowId: UserDefinedId, version: WorkflowVersion }), [
-  Schema.Record(Schema.String, Schema.Unknown),
+export const CreateRun = Schema.StructWithRest(Schema.Struct({ workflowId: WorkflowId, version: WorkflowVersion }), [
+  // Additional workflow input must not reprocess the routing fields' domain codecs.
+  // This is intentionally unknown until workflow.prepare validates its own domain input, not a persisted JSON object.
+  Schema.Record(
+    Schema.String.check(Schema.makeFilter((key) => key !== 'workflowId' && key !== 'version')),
+    Schema.Unknown,
+  ),
 ])
 export type CreateRun = typeof CreateRun.Type
 export const WorkflowsResponse = Schema.Struct({ workflows: Schema.Array(WorkflowSummary) })

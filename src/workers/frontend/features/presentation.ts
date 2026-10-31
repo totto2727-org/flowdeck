@@ -1,9 +1,11 @@
 import { Array, Match, Number, Option, Order, Schema, String } from 'effect'
 
-import type { RunEvent, RunStatus, Shapes } from '../../../features/workflow/domain/model'
+import type { NodeId } from '../../../features/workflow/domain/identity'
+import type { RunStatus, Shapes } from '../../../features/workflow/domain/model'
+import type { RunEvent } from './view-model'
 
 /** Read-only display serialization uses the same Effect codec as persisted JSON. */
-export const renderJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
+export const renderJson = Schema.encodeSync(Schema.fromJsonString(Schema.Json, { space: 2 }))
 
 export const eventLabel = (type: string) => String.replaceAll('.', ' ')(type)
 export const shortId = (id: string) => String.takeRight(id, 8)
@@ -14,13 +16,14 @@ export const orderedEvents = (events: ReadonlyArray<RunEvent>) =>
   )
 
 /** Selection is presentation state. It never changes the persisted node projection. */
-export const nodeEvents = (events: ReadonlyArray<RunEvent>, nodeId: string) =>
-  orderedEvents(Array.filter(events, (event) => event.nodeId === nodeId))
+export const nodeEvents = (events: ReadonlyArray<RunEvent>, nodeId: NodeId) =>
+  orderedEvents(Array.filter(events, (event) => 'nodeId' in event && event.nodeId === nodeId))
 
 export const latestExecution = (events: ReadonlyArray<RunEvent>) =>
   Array.findLast(
     orderedEvents(events),
-    (event) => String.startsWith('node.')(event.type) && event.executionId !== null && event.attempt !== null,
+    (event): event is Extract<RunEvent, { type: 'node.started' | 'node.succeeded' | 'node.failed' }> =>
+      event.type === 'node.started' || event.type === 'node.succeeded' || event.type === 'node.failed',
   )
 
 export const runRecoveryAction = (status: RunStatus) =>
@@ -33,12 +36,12 @@ export const runRecoveryAction = (status: RunStatus) =>
 
 export const graphSize = (shapes: Shapes) =>
   Array.reduce(shapes.nodes, { width: 560, height: 220 }, (size, node) => ({
-    width: Number.max(size.width, node.x + node.width + 40),
-    height: Number.max(size.height, node.y + node.height + 40),
+    width: Number.max(size.width, node.position.x + node.size.width + 40),
+    height: Number.max(size.height, node.position.y + node.size.height + 40),
   }))
 
 /** Arrow navigation follows graph definition order, not execution status. */
-export const nextNode = (ids: ReadonlyArray<string>, current: string, key: string): string | undefined => {
+export const nextNode = (ids: ReadonlyArray<NodeId>, current: NodeId, key: string): NodeId | undefined => {
   const index = Option.getOrElse(
     Array.findFirstIndex(ids, (id) => id === current),
     () => 0,

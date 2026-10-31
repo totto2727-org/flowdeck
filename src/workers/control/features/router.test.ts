@@ -1,10 +1,11 @@
 import { makeRpcStub } from 'alchemy/Cloudflare/Workers'
 import { encodeRpcError, ErrorTag, RpcCallError } from 'alchemy/Rpc'
-import { Effect, Layer } from 'effect'
+import { Effect, Layer, Schema, DateTime } from 'effect'
 import { HttpRouter } from 'effect/http'
 import { describe, expect, it, vi } from 'vite-plus/test'
 
 import { ExternalError, InvalidOperation } from '../../../features/workflow/domain/errors'
+import { RpcCreateRun, RpcRunDetail, RpcWorkflowsResponse } from '../../../features/workflow/services/workflow-rpc'
 import { Workflows } from '../../../features/workflow/services/workflows'
 import { ApiRoutes } from './router'
 
@@ -29,24 +30,120 @@ const unavailableWorkflows: Workflows['Service'] = {
 
 // Native requests exercise Control's public HTTP boundary with only its aggregate service supplied.
 describe('Control aggregate Workflow service boundary', () => {
-  it.each(['not-a-run-id', 'event_00000000-0000-4000-8000-000000000001', 'run_01890f2e-7b55-7cc1-8c5a-000000000001'])(
-    'rejects malformed run ID %s before calling the workflow service',
-    async (id) => {
-      const getRunDetail = vi.fn(unavailable)
-      const resumeRun = vi.fn(unavailable)
-      const handler = api({ ...unavailableWorkflows, getRunDetail, resumeRun })
-      try {
-        const read = await handler.handler(new Request(`http://localhost/api/runs/${id}`))
-        const resume = await handler.handler(new Request(`http://localhost/api/runs/${id}/resume`, { method: 'POST' }))
-        expect(read.status).toBe(400)
-        expect(resume.status).toBe(400)
-        expect(getRunDetail).not.toHaveBeenCalled()
-        expect(resumeRun).not.toHaveBeenCalled()
-      } finally {
-        await handler.dispose()
-      }
-    },
-  )
+  it('serializes domain SemVer catalog values as HTTP strings', async () => {
+    const workflows = [
+      {
+        workflowId: 'demo',
+        name: 'Demo',
+        versions: [Schema.decodeUnknownSync(Schema.SemVerFromString)('1.0.0')],
+        inputs: [],
+      },
+    ]
+    const handler = api({ ...unavailableWorkflows, listWorkflows: () => Effect.succeed({ workflows }) })
+    try {
+      const response = await handler.handler(new Request('http://localhost/api/workflows'))
+      expect(response.status).toBe(200)
+      expect(await response.json()).toEqual({ workflows: [{ ...workflows[0], versions: ['1.0.0'] }] })
+    } finally {
+      await handler.dispose()
+    }
+  })
+
+  it('encodes timestamp and event variants for RPC without losing domain values', () => {
+    const runId = 'run_00000000-0000-4000-8000-000000000001'
+    const timestamp = DateTime.makeUnsafe('2026-10-31T00:00:00.000Z')
+    const snapshot = { nested: { valid: [true, null, 1] } }
+    const detail = {
+      run: {
+        runId,
+        workflowId: 'demo',
+        workflowVersion: Schema.decodeUnknownSync(Schema.SemVerFromString)('1.0.0'),
+        graphId: 'graph-1',
+        status: 'running',
+        revision: 1,
+        snapshot,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      },
+      graph: { graphId: 'graph-1', schemaVersion: 1, nodes: [], edges: [] },
+      state: { runId, revision: 1, snapshot },
+      events: [
+        {
+          eventId: 'event_00000000-0000-4000-8000-000000000001',
+          runId,
+          sequence: 1,
+          type: 'run.started',
+          payload: {},
+          createdAt: timestamp,
+        },
+        {
+          eventId: 'event_00000000-0000-4000-8000-000000000002',
+          runId,
+          sequence: 2,
+          type: 'node.started',
+          nodeId: 'prepare',
+          executionId: 'execution_00000000-0000-4000-8000-000000000001',
+          attempt: 1,
+          payload: {},
+          createdAt: timestamp,
+        },
+      ],
+      shapes: { nodes: [], edges: [] },
+    } as const
+    const encoded = Schema.encodeSync(RpcRunDetail)(detail)
+    expect(encoded).toMatchObject({
+      run: { workflowVersion: '1.0.0', createdAt: '2026-10-31T00:00:00.000Z', updatedAt: '2026-10-31T00:00:00.000Z' },
+      events: [
+        { type: 'run.started', createdAt: '2026-10-31T00:00:00.000Z' },
+        { type: 'node.started', nodeId: 'prepare', attempt: 1 },
+      ],
+    })
+    expect(Schema.decodeUnknownSync(RpcRunDetail, { onExcessProperty: 'error' })(structuredClone(encoded))).toEqual(
+      detail,
+    )
+    const invalid = {
+      ...Schema.decodeUnknownSync(Schema.JsonObject)(encoded),
+      events: [{ ...detail.events[0], createdAt: DateTime.formatIso(timestamp), nodeId: null }],
+    }
+    expect(() => Schema.decodeUnknownSync(RpcRunDetail, { onExcessProperty: 'error' })(invalid)).toThrow()
+  })
+
+  it('round trips create input SemVer through native RPC-compatible values', () => {
+    const input = { workflowId: 'demo', version: Schema.decodeUnknownSync(Schema.SemVerFromString)('1.2.3') }
+    const encodedInput = Schema.encodeSync(RpcCreateRun)(input)
+    expect(encodedInput).toEqual({ workflowId: 'demo', version: '1.2.3' })
+    expect(Schema.decodeUnknownSync(RpcCreateRun)(structuredClone(encodedInput))).toEqual(input)
+  })
+
+  it('round trips catalog SemVer through native RPC-compatible values', () => {
+    const version = Schema.decodeUnknownSync(Schema.SemVerFromString)('1.2.3')
+    const catalog = { workflows: [{ workflowId: 'demo', name: 'Demo', versions: [version], inputs: [] }] }
+    const encodedCatalog = Schema.encodeSync(RpcWorkflowsResponse)(catalog)
+    expect(encodedCatalog).toEqual({
+      workflows: [{ workflowId: 'demo', name: 'Demo', versions: ['1.2.3'], inputs: [] }],
+    })
+    expect(Schema.decodeUnknownSync(RpcWorkflowsResponse)(structuredClone(encodedCatalog))).toEqual(catalog)
+  })
+  it.each([
+    '00000000-0000-4000-8000-000000000001',
+    'not-a-run-id',
+    'event_00000000-0000-4000-8000-000000000001',
+    'run_01890f2e-7b55-7cc1-8c5a-000000000001',
+  ])('rejects malformed run ID %s before calling the workflow service', async (id) => {
+    const getRunDetail = vi.fn(unavailable)
+    const resumeRun = vi.fn(unavailable)
+    const handler = api({ ...unavailableWorkflows, getRunDetail, resumeRun })
+    try {
+      const read = await handler.handler(new Request(`http://localhost/api/runs/${id}`))
+      const resume = await handler.handler(new Request(`http://localhost/api/runs/${id}/resume`, { method: 'POST' }))
+      expect(read.status).toBe(400)
+      expect(resume.status).toBe(400)
+      expect(getRunDetail).not.toHaveBeenCalled()
+      expect(resumeRun).not.toHaveBeenCalled()
+    } finally {
+      await handler.dispose()
+    }
+  })
 
   it.each([
     ['GET', '/api/workflows', undefined],

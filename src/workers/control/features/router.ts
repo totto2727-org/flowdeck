@@ -3,7 +3,7 @@ import { Effect, Schema } from 'effect'
 import { Headers, HttpBody, HttpRouter, HttpServerError, HttpServerRequest, HttpServerResponse } from 'effect/http'
 
 import { ExternalError, type DomainError } from '../../../features/workflow/domain/errors'
-import { StoredRunId } from '../../../features/workflow/domain/identity'
+import { RunId } from '../../../features/workflow/domain/identity'
 import {
   ApiErrorResponse,
   CreateRun,
@@ -15,7 +15,7 @@ import { Workflows } from '../../../features/workflow/services/workflows'
 
 type ApiFailure = DomainError | Schema.SchemaError | HttpServerError.HttpServerError | HttpBody.HttpBodyError
 const errorResponse = (status: number, error: string, message: string) =>
-  HttpServerResponse.schemaJson(ApiErrorResponse)({ error, message }, { status })
+  HttpServerResponse.schemaJson(Schema.toCodecJson(ApiErrorResponse))({ error, message }, { status })
 const boundary = <R>(handler: Effect.Effect<HttpServerResponse.HttpServerResponse, ApiFailure, R>) =>
   handler.pipe(
     // makeRpcStub preserves the declared service shape, so transport failures need this wider boundary.
@@ -52,7 +52,7 @@ const serverMutation = <R>(handler: Effect.Effect<HttpServerResponse.HttpServerR
     }),
   )
 const runId = HttpRouter.params.pipe(
-  Effect.flatMap(Schema.decodeUnknownEffect(Schema.Struct({ runId: StoredRunId }))),
+  Effect.flatMap(Schema.decodeUnknownEffect(Schema.Struct({ runId: RunId }))),
   Effect.map((params) => params.runId),
 )
 
@@ -66,7 +66,7 @@ export const ApiRoutes = HttpRouter.use((router) =>
       boundary(
         Workflows.pipe(
           Effect.flatMap((workflows) => workflows.listWorkflows()),
-          Effect.flatMap(HttpServerResponse.schemaJson(WorkflowsResponse)),
+          Effect.flatMap(HttpServerResponse.schemaJson(Schema.toCodecJson(WorkflowsResponse))),
         ),
       ),
     ),
@@ -76,7 +76,7 @@ export const ApiRoutes = HttpRouter.use((router) =>
       boundary(
         Workflows.pipe(
           Effect.flatMap((workflows) => workflows.listRuns()),
-          Effect.flatMap(HttpServerResponse.schemaJson(RunsResponse)),
+          Effect.flatMap(HttpServerResponse.schemaJson(Schema.toCodecJson(RunsResponse))),
         ),
       ),
     ),
@@ -85,9 +85,14 @@ export const ApiRoutes = HttpRouter.use((router) =>
       '/api/runs',
       serverMutation(
         Effect.gen(function* () {
-          const input = yield* HttpServerRequest.schemaBodyJson(CreateRun, { onExcessProperty: 'error' })
+          const input = yield* HttpServerRequest.schemaBodyJson(Schema.toCodecJson(CreateRun), {
+            onExcessProperty: 'error',
+          })
           const workflows = yield* Workflows
-          return yield* HttpServerResponse.schemaJson(RunDetail)(yield* workflows.createRun(input), { status: 201 })
+          return yield* HttpServerResponse.schemaJson(Schema.toCodecJson(RunDetail))(
+            yield* workflows.createRun(input),
+            { status: 201 },
+          )
         }),
       ),
     ),
@@ -97,7 +102,9 @@ export const ApiRoutes = HttpRouter.use((router) =>
       boundary(
         Effect.gen(function* () {
           const workflows = yield* Workflows
-          return yield* HttpServerResponse.schemaJson(RunDetail)(yield* workflows.getRunDetail(yield* runId))
+          return yield* HttpServerResponse.schemaJson(Schema.toCodecJson(RunDetail))(
+            yield* workflows.getRunDetail(yield* runId),
+          )
         }),
       ),
     ),
@@ -107,7 +114,9 @@ export const ApiRoutes = HttpRouter.use((router) =>
       serverMutation(
         Effect.gen(function* () {
           const workflows = yield* Workflows
-          return yield* HttpServerResponse.schemaJson(RunDetail)(yield* workflows.resumeRun(yield* runId))
+          return yield* HttpServerResponse.schemaJson(Schema.toCodecJson(RunDetail))(
+            yield* workflows.resumeRun(yield* runId),
+          )
         }),
       ),
     ),

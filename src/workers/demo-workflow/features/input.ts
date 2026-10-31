@@ -1,14 +1,15 @@
-import { Array, Schema } from 'effect'
+import { Schema, SemVer } from 'effect'
 
-import { WorkflowVersion } from '../../../features/workflow/domain/model'
+export const demoVersion1 = SemVer.make({ major: 1, minor: 0, patch: 0 })
+export const demoVersion2 = SemVer.make({ major: 2, minor: 0, patch: 0 })
 
-/** Persisted demo versions remain local to this workflow. */
-export const DemoWorkflowVersion = Schema.String.check(
-  Schema.makeFilter((version) => Array.contains(['v1', 'v2', '1.0.0', '2.0.0'], version)),
+/** Only the two bundled SemVer implementations can create or restore runs. */
+export const DemoWorkflowVersion = Schema.SemVer.check(
+  Schema.makeFilter((version) => SemVer.equals(version, demoVersion1) || SemVer.equals(version, demoVersion2)),
 )
 export type DemoWorkflowVersion = typeof DemoWorkflowVersion.Type
 export const DemoCreateRun = Schema.Struct({
   workflowId: Schema.Literal('demo'),
-  version: WorkflowVersion.check(Schema.makeFilter((version) => Array.contains(['1.0.0', '2.0.0'], version))),
+  version: DemoWorkflowVersion,
 })
 export type DemoCreateRun = typeof DemoCreateRun.Type

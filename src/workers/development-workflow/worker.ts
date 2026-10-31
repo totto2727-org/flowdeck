@@ -5,19 +5,24 @@ import { BrowserCrypto } from '@effect/platform-browser'
 import { PiHarness, ROOT_SESSION } from 'agents/harness/pi'
 import { Lifecycle, type LifecycleJobContext, type LifecycleJobOutcome } from 'agents/lifecycle'
 import { DurableObject, WorkerEntrypoint } from 'cloudflare:workers'
-import { Array, Effect, Semaphore } from 'effect'
+import { Array, Effect, Schema, Semaphore } from 'effect'
 
 import { ExternalError } from '../../features/workflow/domain/errors'
+import { RunId } from '../../features/workflow/domain/identity'
 import { makeD1Store } from '../../features/workflow/services/d1-store'
 import { Store } from '../../features/workflow/services/store'
 import type { DevelopmentEnvironment } from './container'
 import { resumeDevelopmentRun, startDevelopmentRun } from './features/development'
-import type { Session, TurnReceipt } from './features/model'
+import { CommandId, SessionId, type Session, type TurnReceipt } from './features/model'
 import { makeDevelopmentModels } from './features/models'
 import { DevelopmentSandbox } from './features/sandbox'
 import { CONTAINER_BACKEND, createWorkspaceTools } from './features/workspace'
 
 export { WorkspaceProxy } from '@cloudflare/computer'
+
+const decodeRunId = Schema.decodeUnknownSync(RunId)
+const decodeSessionId = Schema.decodeUnknownSync(SessionId)
+const decodeCommandId = Schema.decodeUnknownSync(CommandId)
 
 const LEASE_JOB = 'workspace-lease'
 const RENEW_AFTER_MS = 5 * 60 * 60 * 1_000
@@ -92,8 +97,9 @@ export class DevelopmentRun extends withWorkspace(DevelopmentContainerBase, work
   }
 
   async #renewLease(): Promise<{ rescheduleAt: number } | undefined> {
-    const runId = await this.ctx.storage.get<string>('active-run-id')
-    if (runId === undefined) return
+    const activeRunId = await this.ctx.storage.get<unknown>('active-run-id')
+    if (activeRunId === undefined) return
+    const runId = decodeRunId(activeRunId)
     const run = await Effect.runPromise(this.#store.getRun(runId))
     const container = this.getWorkspaceContainer()
     // Failed workspaces remain inspectable. Renewal never starts a stopped container.
@@ -109,7 +115,7 @@ export class DevelopmentRun extends withWorkspace(DevelopmentContainerBase, work
         catch: (cause) => new ExternalError({ operation: 'access development sandbox', cause, kind: 'service' }),
       })
     const session = (status: Session['status']): Session => ({
-      sessionId: ROOT_SESSION,
+      sessionId: decodeSessionId(ROOT_SESSION),
       model: this.#modelId,
       status,
     })
@@ -126,7 +132,7 @@ export class DevelopmentRun extends withWorkspace(DevelopmentContainerBase, work
             session: ROOT_SESSION,
             operationId: input.commandId,
           })
-          return { commandId: receipt.operationId, status: 'running' }
+          return { commandId: decodeCommandId(receipt.operationId), status: 'running' }
         }),
       getTurn: (_runId, commandId) =>
         io(async (): Promise<TurnReceipt | null> => {
@@ -137,8 +143,16 @@ export class DevelopmentRun extends withWorkspace(DevelopmentContainerBase, work
           const result = await this.#harness.wait(commandId, { session: ROOT_SESSION })
           if (result.reason === 'not_found') return null
           return result.status === 'done'
-            ? { commandId: result.operationId, status: 'completed', text: result.text ?? '' }
-            : { commandId: result.operationId, status: 'failed', error: 'sdk_failure' }
+            ? {
+                commandId: decodeCommandId(result.operationId),
+                status: 'completed',
+                text: result.text ?? '',
+              }
+            : {
+                commandId: decodeCommandId(result.operationId),
+                status: 'failed',
+                error: 'sdk_failure',
+              }
         }),
       complete: (_runId) =>
         io(async () => {
@@ -150,7 +164,7 @@ export class DevelopmentRun extends withWorkspace(DevelopmentContainerBase, work
     })
   }
 
-  async #execute(runId: string, operation: ReturnType<typeof startDevelopmentRun>): Promise<void> {
+  async #execute(runId: RunId, operation: ReturnType<typeof startDevelopmentRun>): Promise<void> {
     await this.#lifecycle.start()
     await Effect.runPromise(
       this.#lock.withPermit(
@@ -178,12 +192,14 @@ export class DevelopmentRun extends withWorkspace(DevelopmentContainerBase, work
     )
   }
 
-  start(runId: string): Promise<void> {
-    return this.#execute(runId, startDevelopmentRun(runId))
+  start(runId: RunId): Promise<void> {
+    const id = decodeRunId(runId)
+    return this.#execute(id, startDevelopmentRun(id))
   }
 
-  resume(runId: string): Promise<void> {
-    return this.#execute(runId, resumeDevelopmentRun(runId))
+  resume(runId: RunId): Promise<void> {
+    const id = decodeRunId(runId)
+    return this.#execute(id, resumeDevelopmentRun(id))
   }
 }
 
@@ -191,11 +207,13 @@ export class DevelopmentRun extends withWorkspace(DevelopmentContainerBase, work
 export default class DevelopmentEntrypoint extends WorkerEntrypoint<
   DevelopmentEnvironment & { DevelopmentRun: DurableObjectNamespace<DevelopmentRun> }
 > {
-  start(runId: string): Promise<void> {
-    return this.env.DevelopmentRun.getByName(runId).start(runId)
+  start(runId: RunId): Promise<void> {
+    const id = decodeRunId(runId)
+    return this.env.DevelopmentRun.getByName(id).start(id)
   }
 
-  resume(runId: string): Promise<void> {
-    return this.env.DevelopmentRun.getByName(runId).resume(runId)
+  resume(runId: RunId): Promise<void> {
+    const id = decodeRunId(runId)
+    return this.env.DevelopmentRun.getByName(id).resume(id)
   }
 }

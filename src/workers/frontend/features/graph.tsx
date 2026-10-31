@@ -3,9 +3,10 @@
 import { Array, Option } from 'effect'
 import { useRef, type KeyboardEvent } from 'react'
 
-import type { RunDetail } from '../../../features/workflow/domain/model'
+import type { NodeId } from '../../../features/workflow/domain/identity'
 import { Badge } from './components/generated/badge'
 import { graphSize, latestExecution, nextNode, nodeEvents, renderJson } from './presentation'
+import type { RunDetail } from './view-model'
 
 /**
  * Geometry-only inline-style boundary: the persisted graph projection supplies arbitrary
@@ -21,13 +22,13 @@ export function RunGraph({
   onSelect,
 }: {
   readonly detail: RunDetail
-  readonly selectedNode: string | null
-  readonly onSelect: (nodeId: string) => void
+  readonly selectedNode: NodeId | null
+  readonly onSelect: (nodeId: NodeId) => void
 }) {
   const buttons = useRef<Record<string, HTMLButtonElement | null>>({})
   const size = graphSize(detail.shapes)
   const ids = Array.map(detail.shapes.nodes, (node) => node.nodeId)
-  const navigate = (event: KeyboardEvent<HTMLButtonElement>, nodeId: string) => {
+  const navigate = (event: KeyboardEvent<HTMLButtonElement>, nodeId: NodeId) => {
     const next = nextNode(ids, nodeId, event.key)
     if (next === undefined) return
     event.preventDefault()
@@ -69,10 +70,10 @@ export function RunGraph({
               Array.findFirst(detail.shapes.nodes, (node) => node.nodeId === edge.target),
             )
             if (!source || !target) return null
-            const x1 = source.x + source.width
-            const y1 = source.y + source.height / 2
-            const x2 = target.x
-            const y2 = target.y + target.height / 2
+            const x1 = source.position.x + source.size.width
+            const y1 = source.position.y + source.size.height / 2
+            const x2 = target.position.x
+            const y2 = target.position.y + target.size.height / 2
             return (
               <g
                 key={edge.id}
@@ -107,7 +108,7 @@ export function RunGraph({
             aria-controls='node-inspector'
             onClick={() => onSelect(node.nodeId)}
             onKeyDown={(event) => navigate(event, node.nodeId)}
-            style={{ left: node.x, top: node.y, width: node.width, minHeight: node.height }}
+            style={{ left: node.position.x, top: node.position.y, width: node.size.width, minHeight: node.size.height }}
           >
             <span className='flex items-center gap-1.5 text-[8px] tracking-[0.6px] text-[#91a196] uppercase dark:text-muted-foreground'>
               <span className='size-[15px] rounded-sm bg-[#f0f4f1] text-center text-[8px] leading-[15px] dark:bg-secondary dark:text-[#b0e6c6]'>
@@ -127,7 +128,7 @@ export function RunGraph({
   )
 }
 
-export function NodeInspector({ detail, nodeId }: { readonly detail: RunDetail; readonly nodeId: string | null }) {
+export function NodeInspector({ detail, nodeId }: { readonly detail: RunDetail; readonly nodeId: NodeId | null }) {
   const node = Option.getOrUndefined(Array.findFirst(detail.shapes.nodes, (item) => item.nodeId === nodeId))
   if (!node)
     return (

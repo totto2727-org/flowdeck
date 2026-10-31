@@ -10,23 +10,25 @@ export const TurnRequest = Schema.Struct({
 })
 export type TurnRequest = typeof TurnRequest.Type
 
+export const SessionId = Schema.Literal('1')
+export type SessionId = typeof SessionId.Type
+
 export const Session = Schema.Struct({
-  sessionId: Schema.String,
+  sessionId: SessionId,
   model: Schema.String,
   status: Schema.Literals(['active', 'completed']),
 })
 export type Session = typeof Session.Type
 
 export const TurnReceipt = Schema.Union([
-  // Receipts are also read from pre-UUID persisted operation histories.
-  Schema.Struct({ commandId: Schema.String, status: Schema.Literal('running') }),
+  Schema.Struct({ commandId: CommandId, status: Schema.Literal('running') }),
   Schema.Struct({
-    commandId: Schema.String,
+    commandId: CommandId,
     status: Schema.Literal('completed'),
     text: Schema.String,
   }),
   Schema.Struct({
-    commandId: Schema.String,
+    commandId: CommandId,
     status: Schema.Literals(['failed', 'interrupted']),
     error: Schema.Literals(['sdk_failure', 'runtime_interrupted', 'output_limit']),
   }),

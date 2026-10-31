@@ -2,7 +2,7 @@ import type { RpcCallError, RpcDecodeError } from 'alchemy/Rpc'
 import { Array, Crypto, DateTime, Effect, Option } from 'effect'
 
 import { ExternalError, InvalidOperation, type DomainError } from '../../../features/workflow/domain/errors'
-import { makeRunId } from '../../../features/workflow/domain/identity'
+import { makeRunId, type RunId, type WorkflowId } from '../../../features/workflow/domain/identity'
 import type { CreateRun, Run, RunDetail } from '../../../features/workflow/domain/model'
 import { graphToShapes } from '../../../features/workflow/domain/projection'
 import { Store } from '../../../features/workflow/services/store'
@@ -15,7 +15,7 @@ const bindingFailure = (error: DomainError | RpcCallError | RpcDecodeError) =>
     ? new ExternalError({ operation: 'call workflow worker', kind: 'service', cause: error })
     : error
 
-const registeredWorkflow = (workflowId: string) =>
+const registeredWorkflow = (workflowId: WorkflowId) =>
   Effect.flatMap(WorkflowRegistry, (registry) =>
     Array.findFirst(registry, (entry) => entry.summary.workflowId === workflowId).pipe(
       Option.match({
@@ -32,7 +32,7 @@ export const listRuns = Effect.gen(function* () {
   const store = yield* Store
   return { runs: yield* store.listRuns }
 })
-export const getRunDetail = (runId: string) =>
+export const getRunDetail = (runId: RunId) =>
   Effect.gen(function* () {
     const store = yield* Store
     const run = yield* store.getRun(runId)
@@ -54,7 +54,7 @@ export const createRun = (input: CreateRun) =>
     const prepared = yield* workflow.prepare(input)
     const store = yield* Store
     const runId = yield* makeRunId
-    const now = yield* DateTime.now.pipe(Effect.map(DateTime.formatIso))
+    const now = yield* DateTime.now
     const run: Run = {
       runId,
       workflowId: workflow.summary.workflowId,
@@ -71,7 +71,7 @@ export const createRun = (input: CreateRun) =>
     yield* workflow.binding.start(runId).pipe(Effect.mapError(bindingFailure))
     return yield* getRunDetail(runId)
   })
-export const resumeRun = (runId: string) =>
+export const resumeRun = (runId: RunId) =>
   Effect.gen(function* () {
     const store = yield* Store
     const run = yield* store.getRun(runId)

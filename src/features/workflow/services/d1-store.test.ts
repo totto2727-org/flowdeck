@@ -2,7 +2,7 @@ import { readD1Migrations } from '@cloudflare/vitest-plugin'
 import type { D1Database } from '@cloudflare/workers-types'
 import { BrowserCrypto } from '@effect/platform-browser'
 import { makeRpcStub } from 'alchemy/Cloudflare/Workers'
-import { Array, Crypto, Effect, Exit, Layer, Schema } from 'effect'
+import { Array, Crypto, DateTime, Effect, Exit, Layer, Schema, SemVer } from 'effect'
 import { HttpRouter } from 'effect/http'
 import { TestCrypto } from 'effect/testing'
 import { Miniflare } from 'miniflare'
@@ -10,48 +10,58 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 
 import { ApiRoutes } from '../../../workers/control/features/router'
 import { demoDefinition } from '../../../workers/demo-workflow/features/definition'
-import { demoGraph, initialSnapshot, resumeRun, startRun } from '../../../workers/demo-workflow/features/demo'
+import {
+  DemoSnapshot,
+  demoGraph,
+  initialSnapshot,
+  resumeRun,
+  startRun,
+} from '../../../workers/demo-workflow/features/demo'
 import { makeWorkflowRegistry } from '../../../workers/workflow/features/registration'
 import { createRun, makeWorkflows, resumeRun as resumeWorkflowRun } from '../../../workers/workflow/features/workflow'
 import { DevelopmentWorkflowBinding, WorkflowBinding } from '../../../workers/workflow/features/workflow-binding'
 import { ExternalError } from '../domain/errors'
 import { CommitId, EventId, ExecutionId, RunId } from '../domain/identity'
-import { RunDetail, type Run, type WorkflowVersion } from '../domain/model'
+import { RunDetail, RunsResponse, type Run, type WorkflowVersion } from '../domain/model'
 import { makeD1Store } from './d1-store'
 import { type CommitCommand, Store, type StoreService } from './store'
 import { WorkflowRegistry, type RegisteredWorkflow } from './workflow-definition'
 import { Workflows } from './workflows'
 
-const now = '2026-10-17T12:00:00.000Z'
-const newRun = (runId: string, version: WorkflowVersion = 'v1'): Run => ({
+const version1 = SemVer.parseUnsafe('1.0.0')
+const version2 = SemVer.parseUnsafe('2.0.0')
+const now = DateTime.makeUnsafe('2026-10-17T12:00:00.000Z')
+const newRun = (runId: string, version: WorkflowVersion = version1): Run => ({
   runId,
   workflowId: 'demo',
   workflowVersion: version,
   graphId: demoGraph(version).graphId,
   status: 'pending',
   revision: 0,
-  snapshot: initialSnapshot(version),
+  snapshot: Schema.decodeUnknownSync(Schema.JsonObject)(
+    Schema.encodeSync(Schema.toCodecJson(DemoSnapshot))(initialSnapshot(version)),
+  ),
   createdAt: now,
   updatedAt: now,
 })
 const command = (overrides: Partial<CommitCommand> = {}): CommitCommand => ({
-  commitId: 'commit-1',
+  commitId: 'commit_00000000-0000-4000-8000-000000000001',
   runId: 'run_00000000-0000-4000-8000-000000000001',
   expectedRevision: 0,
   status: 'running',
   snapshot: {
     _tag: 'Preparing',
     schemaVersion: 1,
-    version: 'v1',
-    executionId: 'run_00000000-0000-4000-8000-000000000001:prepare:1',
+    version: '1.0.0',
+    executionId: 'execution_00000000-0000-4000-8000-000000000001',
     attempt: 1,
   },
   events: [
     {
-      eventId: 'event-1',
+      eventId: 'event_00000000-0000-4000-8000-000000000001',
       type: 'node.started',
       nodeId: 'prepare',
-      executionId: 'run_00000000-0000-4000-8000-000000000001:prepare:1',
+      executionId: 'execution_00000000-0000-4000-8000-000000000001',
       attempt: 1,
       payload: {},
       createdAt: now,
@@ -87,7 +97,7 @@ afterEach(async () => {
 })
 const run = <A, E>(effect: Effect.Effect<A, E, Store | Crypto.Crypto>) =>
   Effect.runPromise(effect.pipe(Effect.provideService(Store, store), Effect.provide(BrowserCrypto.layer)))
-const seed = (runId = 'run_00000000-0000-4000-8000-000000000001', version: WorkflowVersion = 'v1') =>
+const seed = (runId = 'run_00000000-0000-4000-8000-000000000001', version: WorkflowVersion = version1) =>
   Effect.runPromise(store.create(newRun(runId, version), demoGraph(version), demoDefinition.summary.name))
 
 // A Layer substitutes only the static binding boundary. Its worker implementation
@@ -139,11 +149,108 @@ const api = (registry?: ReadonlyArray<RegisteredWorkflow>) =>
   )
 
 describe('D1 persisted run store', () => {
+  it.each([
+    { runId: '00000000-0000-4000-8000-000000000001' },
+    { workflowId: '../demo' },
+    { graphId: 'demo:1.0.0:graph:1' },
+  ])('rejects invalid run identity before writing: %j', async (identity) => {
+    await expect(
+      Effect.runPromise(
+        store.create(
+          { ...newRun('run_00000000-0000-4000-8000-000000000001'), ...identity },
+          demoGraph(version1),
+          demoDefinition.summary.name,
+        ),
+      ),
+    ).rejects.toMatchObject({ _tag: 'ExternalError', kind: 'storage' })
+    expect(await Effect.runPromise(store.listRuns)).toEqual([])
+  })
+
+  it('persists a version string but returns a real SemVer domain value', async () => {
+    await seed()
+    const row = await database
+      .prepare('SELECT workflow_version FROM runs WHERE run_id = ?')
+      .bind('run_00000000-0000-4000-8000-000000000001')
+      .first<{ workflow_version: string }>()
+    expect(row?.workflow_version).toBe('1.0.0')
+    const restored = await Effect.runPromise(makeD1Store(database).getRun('run_00000000-0000-4000-8000-000000000001'))
+    expect(SemVer.isSemVer(restored.workflowVersion)).toBe(true)
+    expect(SemVer.equals(restored.workflowVersion, version1)).toBe(true)
+  })
+
+  it('persists timestamp strings and nullable SQL node identity but restores DateTime and event variants', async () => {
+    await seed()
+    const eventId = 'event_00000000-0000-4000-8000-000000000002'
+    const runEvent = { eventId, type: 'run.started', payload: {}, createdAt: now } as const
+    await Effect.runPromise(store.commit(command({ events: [runEvent, ...command().events] })))
+    const row = await database
+      .prepare('SELECT created_at, updated_at FROM runs WHERE run_id = ?')
+      .bind(command().runId)
+      .first()
+    expect(row).toEqual({ created_at: DateTime.formatIso(now), updated_at: DateTime.formatIso(now) })
+    const physical = await database
+      .prepare('SELECT node_id, execution_id, attempt, created_at FROM run_events WHERE event_id = ?')
+      .bind(eventId)
+      .first()
+    expect(physical).toEqual({ node_id: null, execution_id: null, attempt: null, created_at: DateTime.formatIso(now) })
+    const restored = makeD1Store(database)
+    expect(await Effect.runPromise(restored.getRun(command().runId))).toMatchObject({ createdAt: now, updatedAt: now })
+    expect(await Effect.runPromise(restored.getEvents(command().runId, { _tag: 'All' }))).toEqual([
+      { ...runEvent, runId: command().runId, sequence: 1 },
+      { ...Array.getUnsafe(command().events, 0), runId: command().runId, sequence: 2 },
+    ])
+  })
+
+  it('rejects an obsolete persisted version instead of normalizing it', async () => {
+    await seed()
+    // Corrupt only this isolated database to exercise the read boundary beyond immutable-write guards.
+    await database.prepare('DROP TRIGGER run_identity_immutable').run()
+    await database
+      .prepare('INSERT INTO workflow_versions (workflow_id, version, graph_id) VALUES (?, ?, ?)')
+      .bind('demo', 'v1', demoGraph(version1).graphId)
+      .run()
+    await database
+      .prepare('UPDATE runs SET workflow_version = ? WHERE run_id = ?')
+      .bind('v1', 'run_00000000-0000-4000-8000-000000000001')
+      .run()
+    await expect(Effect.runPromise(store.getRun('run_00000000-0000-4000-8000-000000000001'))).rejects.toMatchObject({
+      _tag: 'ExternalError',
+      kind: 'storage',
+    })
+  })
+
+  it.each([
+    { commitId: '00000000-0000-4000-8000-000000000001' },
+    { runId: '00000000-0000-4000-8000-000000000001' },
+    { events: [{ ...Array.getUnsafe(command().events, 0), eventId: 'event-1' }] },
+    { events: [{ ...Array.getUnsafe(command().events, 0), nodeId: '../prepare' }] },
+    {
+      events: [
+        { ...Array.getUnsafe(command().events, 0), executionId: 'command_00000000-0000-4000-8000-000000000001' },
+      ],
+    },
+  ])('rejects invalid commit identities atomically: %j', async (identity) => {
+    await seed()
+    const before = await Effect.runPromise(store.getRun('run_00000000-0000-4000-8000-000000000001'))
+    await expect(Effect.runPromise(store.commit(command(identity)))).rejects.toMatchObject({
+      _tag: 'ExternalError',
+      kind: 'storage',
+    })
+    expect(await Effect.runPromise(store.getRun(before.runId))).toEqual(before)
+    expect(await Effect.runPromise(store.getEvents(before.runId, { _tag: 'All' }))).toEqual([])
+  })
+
   it('orders random run IDs by explicit creation time rather than ID value', async () => {
-    const older = { ...newRun('run_ffffffff-ffff-4fff-8fff-ffffffffffff'), createdAt: '2026-01-01T00:00:00.000Z' }
-    const newer = { ...newRun('run_00000000-0000-4000-8000-000000000000'), createdAt: '2026-01-02T00:00:00.000Z' }
-    await Effect.runPromise(store.create(newer, demoGraph('v1'), demoDefinition.summary.name))
-    await Effect.runPromise(store.create(older, demoGraph('v1'), demoDefinition.summary.name))
+    const older = {
+      ...newRun('run_ffffffff-ffff-4fff-8fff-ffffffffffff'),
+      createdAt: DateTime.makeUnsafe('2026-01-01T00:00:00.000Z'),
+    }
+    const newer = {
+      ...newRun('run_00000000-0000-4000-8000-000000000000'),
+      createdAt: DateTime.makeUnsafe('2026-01-02T00:00:00.000Z'),
+    }
+    await Effect.runPromise(store.create(newer, demoGraph(version1), demoDefinition.summary.name))
+    await Effect.runPromise(store.create(older, demoGraph(version1), demoDefinition.summary.name))
     expect(Array.map(await Effect.runPromise(store.listRuns), (run) => run.runId)).toEqual([newer.runId, older.runId])
   })
 
@@ -166,7 +273,7 @@ describe('D1 persisted run store', () => {
       await Effect.runPromise(store.getEvents('run_00000000-0000-4000-8000-000000000001', { _tag: 'All' })),
     ).toEqual([])
     expect(await Effect.runPromise(store.commit(command()))).toEqual({
-      commitId: 'commit-1',
+      commitId: 'commit_00000000-0000-4000-8000-000000000001',
       runId: 'run_00000000-0000-4000-8000-000000000001',
       revision: 1,
       firstSequence: 1,
@@ -180,14 +287,14 @@ describe('D1 persisted run store', () => {
     expect(await Effect.runPromise(restored.getRun('run_00000000-0000-4000-8000-000000000001'))).toEqual(
       newRun('run_00000000-0000-4000-8000-000000000001'),
     )
-    expect(await Effect.runPromise(restored.getGraph(demoGraph('v1').graphId))).toEqual(demoGraph('v1'))
+    expect(await Effect.runPromise(restored.getGraph(demoGraph(version1).graphId))).toEqual(demoGraph(version1))
     expect(await Effect.runPromise(restored.listRuns)).toEqual([newRun('run_00000000-0000-4000-8000-000000000001')])
   })
 
   it('atomically commits snapshot revision and sequenced execution events before ACK', async () => {
     await seed()
     expect(await Effect.runPromise(store.commit(command()))).toEqual({
-      commitId: 'commit-1',
+      commitId: 'commit_00000000-0000-4000-8000-000000000001',
       runId: 'run_00000000-0000-4000-8000-000000000001',
       revision: 1,
       firstSequence: 1,
@@ -223,7 +330,7 @@ describe('D1 persisted run store', () => {
     await Effect.runPromise(
       store.commit(
         command({
-          commitId: 'commit-2',
+          commitId: 'commit_00000000-0000-4000-8000-000000000002',
           expectedRevision: 1,
           status: 'waiting',
           snapshot: { checkpoint: 'later' },
@@ -256,7 +363,9 @@ describe('D1 persisted run store', () => {
       Effect.all(
         [
           store.commit(command()).pipe(Effect.exit),
-          store.commit(command({ commitId: 'other-commit', events: [] })).pipe(Effect.exit),
+          store
+            .commit(command({ commitId: 'commit_00000000-0000-4000-8000-000000000003', events: [] }))
+            .pipe(Effect.exit),
         ],
         { concurrency: 'unbounded' },
       ),
@@ -276,10 +385,10 @@ describe('D1 persisted run store', () => {
       Effect.runPromise(
         store.commit(
           command({
-            commitId: 'bad-commit',
+            commitId: 'commit_00000000-0000-4000-8000-000000000004',
             expectedRevision: 1,
             snapshot: { wrong: 'must roll back' },
-            events: [{ ...duplicate, eventId: 'new-event' }, duplicate],
+            events: [{ ...duplicate, eventId: 'event_00000000-0000-4000-8000-000000000003' }, duplicate],
           }),
         ),
       ),
@@ -293,7 +402,11 @@ describe('D1 persisted run store', () => {
     ).toHaveLength(1)
     // The rejected receipt must not reserve its ID or revision.
     expect(
-      await Effect.runPromise(store.commit(command({ commitId: 'bad-commit', expectedRevision: 1, events: [] }))),
+      await Effect.runPromise(
+        store.commit(
+          command({ commitId: 'commit_00000000-0000-4000-8000-000000000004', expectedRevision: 1, events: [] }),
+        ),
+      ),
     ).toMatchObject({ revision: 2 })
   })
 
@@ -302,7 +415,11 @@ describe('D1 persisted run store', () => {
     const terminal = command({ status: 'completed', snapshot: { done: true } })
     const ack = await Effect.runPromise(store.commit(terminal))
     await expect(
-      Effect.runPromise(store.commit(command({ commitId: 'later', expectedRevision: 1, events: [] }))),
+      Effect.runPromise(
+        store.commit(
+          command({ commitId: 'commit_00000000-0000-4000-8000-000000000005', expectedRevision: 1, events: [] }),
+        ),
+      ),
     ).rejects.toMatchObject({ _tag: 'Conflict' })
     expect(await Effect.runPromise(store.commit(terminal))).toEqual(ack)
     expect(await Effect.runPromise(store.getRun('run_00000000-0000-4000-8000-000000000001'))).toMatchObject({
@@ -317,9 +434,12 @@ describe('D1 persisted run store', () => {
     await Effect.runPromise(
       store.commit(
         command({
-          commitId: 'commit-2',
+          commitId: 'commit_00000000-0000-4000-8000-000000000002',
           expectedRevision: 1,
-          events: Array.map(command().events, (event) => ({ ...event, eventId: 'event-2' })),
+          events: Array.map(command().events, (event) => ({
+            ...event,
+            eventId: 'event_00000000-0000-4000-8000-000000000002',
+          })),
         }),
       ),
     )
@@ -341,10 +461,16 @@ describe('D1 persisted run store', () => {
   it('rejects graph ID reuse with different immutable graph content', async () => {
     await seed()
     await expect(
-      Effect.runPromise(store.create(newRun('run-2'), { ...demoGraph('v1'), nodes: [] }, demoDefinition.summary.name)),
+      Effect.runPromise(
+        store.create(
+          newRun('run_00000000-0000-4000-8000-000000000002'),
+          { ...demoGraph(version1), nodes: [] },
+          demoDefinition.summary.name,
+        ),
+      ),
     ).rejects.toMatchObject({ _tag: 'Conflict' })
     expect(await Effect.runPromise(store.listRuns)).toHaveLength(1)
-    expect(await Effect.runPromise(store.getGraph(demoGraph('v1').graphId))).toEqual(demoGraph('v1'))
+    expect(await Effect.runPromise(store.getGraph(demoGraph(version1).graphId))).toEqual(demoGraph(version1))
   })
 })
 
@@ -365,9 +491,9 @@ describe('demo cold restoration', () => {
     expect(Array.every(commits, (input) => Schema.is(CommitId)(input.commitId))).toBe(true)
     const events = await Effect.runPromise(store.getEvents('run_00000000-0000-4000-8000-000000000001', { _tag: 'All' }))
     expect(Array.every(events, (event) => Schema.is(EventId)(event.eventId))).toBe(true)
-    expect(
-      Array.every(events, (event) => event.executionId === null || Schema.is(ExecutionId)(event.executionId)),
-    ).toBe(true)
+    expect(Array.every(events, (event) => !('executionId' in event) || Schema.is(ExecutionId)(event.executionId))).toBe(
+      true,
+    )
     const first = Array.getUnsafe(commits, 0)
     const before = await Effect.runPromise(store.getRun('run_00000000-0000-4000-8000-000000000001'))
     expect(await Effect.runPromise(store.commit(first))).toMatchObject({ commitId: first.commitId, revision: 1 })
@@ -377,7 +503,7 @@ describe('demo cold restoration', () => {
     ).toEqual(events)
   })
 
-  it.each(['v1', 'v2'] as const)(
+  it.each([version1, version2] as const)(
     'restores the waiting %s version in a new service and completes only after explicit resume',
     async (version) => {
       await seed('run_00000000-0000-4000-8000-000000000001', version)
@@ -387,7 +513,7 @@ describe('demo cold restoration', () => {
         status: 'waiting',
         revision: 2,
         workflowVersion: version,
-        snapshot: { _tag: 'Waiting', version },
+        snapshot: { _tag: 'Waiting', version: SemVer.format(version) },
       })
       store = makeD1Store(database)
       await run(startRun('run_00000000-0000-4000-8000-000000000001'))
@@ -399,15 +525,15 @@ describe('demo cold restoration', () => {
         revision: 4,
         snapshot: {
           _tag: 'Completed',
-          version,
-          result: version === 'v1' ? 'published:draft:v1' : 'published:draft:v2:reviewed',
+          version: SemVer.format(version),
+          result: SemVer.equals(version, version1) ? 'published:draft:v1' : 'published:draft:v2:reviewed',
         },
       })
       const events = await Effect.runPromise(
         store.getEvents('run_00000000-0000-4000-8000-000000000001', { _tag: 'All' }),
       )
       expect(Array.map(events, (event) => event.sequence)).toEqual(Array.range(1, 10))
-      expect(Array.filter(events, (event) => event.nodeId === 'prepare' && event.type === 'node.started')).toHaveLength(
+      expect(Array.filter(events, (event) => event.type === 'node.started' && event.nodeId === 'prepare')).toHaveLength(
         1,
       )
       await expect(run(resumeRun('run_00000000-0000-4000-8000-000000000001'))).rejects.toMatchObject({
@@ -449,7 +575,7 @@ describe('demo cold restoration', () => {
 describe('interrupted workflow recovery', () => {
   it('rejects an unregistered persisted workflow before dispatch without changing its checkpoint', async () => {
     const unsupported = { ...newRun('run_00000000-0000-4000-8000-000000000004'), workflowId: 'unregistered-workflow' }
-    await Effect.runPromise(store.create(unsupported, demoGraph('v1'), 'Unregistered workflow'))
+    await Effect.runPromise(store.create(unsupported, demoGraph(version1), 'Unregistered workflow'))
     const resume = vi.fn(() => Effect.die('Unregistered workflows must not dispatch'))
     const binding = { start: resume, resume }
     const registry = [{ ...demoDefinition, binding }]
@@ -499,9 +625,9 @@ describe('interrupted workflow recovery', () => {
     store = makeD1Store(database)
     await run(resumeRun('run_00000000-0000-4000-8000-000000000001'))
     const events = await Effect.runPromise(store.getEvents('run_00000000-0000-4000-8000-000000000001', { _tag: 'All' }))
-    expect(Array.filter(events, (event) => event.nodeId === 'publish' && event.type === 'node.started')).toHaveLength(1)
+    expect(Array.filter(events, (event) => event.type === 'node.started' && event.nodeId === 'publish')).toHaveLength(1)
     expect(
-      Array.filter(events, (event) => event.nodeId === 'approval' && event.type === 'node.succeeded'),
+      Array.filter(events, (event) => event.type === 'node.succeeded' && event.nodeId === 'approval'),
     ).toHaveLength(1)
     expect(await Effect.runPromise(store.getRun('run_00000000-0000-4000-8000-000000000001'))).toMatchObject({
       status: 'completed',
@@ -519,7 +645,7 @@ describe('interrupted workflow recovery', () => {
     })
     await expect(
       Effect.runPromise(
-        createRun({ workflowId: 'demo', version: '1.0.0' }).pipe(
+        createRun({ workflowId: 'demo', version: version1 }).pipe(
           Effect.provideService(Store, store),
           Effect.provideService(
             WorkflowRegistry,
@@ -574,34 +700,34 @@ describe('interrupted workflow recovery', () => {
 })
 
 describe('Effect HTTP API', () => {
-  it('reads and resumes a historical bare UUIDv4 run through the public API without changing its ID', async () => {
+  it('rejects bare UUIDv4 run IDs at persistence and HTTP boundaries', async () => {
     const id = '00000000-0000-4000-8000-000000000003'
-    await seed(id)
-    await run(startRun(id))
+    await expect(seed(id)).rejects.toMatchObject({ _tag: 'ExternalError' })
+    expect(await Effect.runPromise(store.listRuns)).toEqual([])
     const handler = api()
     try {
       const read = await handler.handler(new Request(`http://localhost/api/runs/${id}`))
-      expect(read.status).toBe(200)
-      expect(Schema.decodeUnknownSync(RunDetail)(await read.json()).run).toMatchObject({ runId: id, status: 'waiting' })
+      expect(read.status).toBe(400)
       const resumed = await handler.handler(new Request(`http://localhost/api/runs/${id}/resume`, { method: 'POST' }))
-      expect(resumed.status).toBe(200)
-      expect(Schema.decodeUnknownSync(RunDetail)(await resumed.json()).run).toMatchObject({
-        runId: id,
-        status: 'completed',
-      })
-      expect((await Effect.runPromise(store.getRun(id))).runId).toBe(id)
+      expect(resumed.status).toBe(400)
+      expect(await Effect.runPromise(store.listRuns)).toEqual([])
     } finally {
       await handler.dispose()
     }
   })
 
   it('supports an arbitrary workflow through registry-only catalog, creation, detail and resume', async () => {
-    const version = '3.4.5-beta.1+build.7'
+    const version = SemVer.parseUnsafe('3.4.5-beta.1+build.7')
     const summary = { workflowId: 'review-workflow', name: 'Review changes', versions: [version], inputs: [] }
-    const graph = { graphId: `review-workflow:${version}:graph:1`, schemaVersion: 1, nodes: [], edges: [] } as const
+    const graph = {
+      graphId: 'review-workflow-3_4_5-beta_1-build_7-graph-1',
+      schemaVersion: 1,
+      nodes: [],
+      edges: [],
+    } as const
     const input = Schema.Struct({
       workflowId: Schema.Literal('review-workflow'),
-      version: Schema.Literal(version),
+      version: Schema.SemVer.check(Schema.makeFilter((value) => SemVer.equals(value, version))),
       topic: Schema.String,
     })
     const start = vi.fn((_runId: string) => Effect.void)
@@ -620,7 +746,7 @@ describe('Effect HTTP API', () => {
     try {
       const catalog = await handler.handler(new Request('http://localhost/api/workflows'))
       expect(catalog.status).toBe(200)
-      expect(await catalog.json()).toEqual({ workflows: [summary] })
+      expect(await catalog.json()).toEqual({ workflows: [{ ...summary, versions: [SemVer.format(version)] }] })
       const invalid = await handler.handler(
         new Request('http://localhost/api/runs', {
           method: 'POST',
@@ -635,11 +761,15 @@ describe('Effect HTTP API', () => {
         new Request('http://localhost/api/runs', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ workflowId: summary.workflowId, version, topic: 'Correctness' }),
+          body: JSON.stringify({
+            workflowId: summary.workflowId,
+            version: SemVer.format(version),
+            topic: 'Correctness',
+          }),
         }),
       )
       expect(created.status).toBe(201)
-      const detail = Schema.decodeUnknownSync(RunDetail)(await created.json())
+      const detail = Schema.decodeUnknownSync(Schema.toCodecJson(RunDetail))(await created.json())
       // Read the real D1 row at the adapter boundary, not the catalog or a mocked Store call.
       const workflowRow = await database
         .prepare('SELECT name FROM workflows WHERE workflow_id = ?')
@@ -656,12 +786,12 @@ describe('Effect HTTP API', () => {
       expect(start).toHaveBeenCalledExactlyOnceWith(detail.run.runId)
       const read = await handler.handler(new Request(`http://localhost/api/runs/${detail.run.runId}`))
       expect(read.status).toBe(200)
-      expect(await read.json()).toEqual(detail)
+      expect(await read.json()).toEqual(Schema.encodeSync(Schema.toCodecJson(RunDetail))(detail))
       const resumed = await handler.handler(
         new Request(`http://localhost/api/runs/${detail.run.runId}/resume`, { method: 'POST' }),
       )
       expect(resumed.status).toBe(200)
-      expect(await resumed.json()).toEqual(detail)
+      expect(await resumed.json()).toEqual(Schema.encodeSync(Schema.toCodecJson(RunDetail))(detail))
       expect(resume).toHaveBeenCalledExactlyOnceWith(detail.run.runId)
     } finally {
       persist.mockRestore()
@@ -804,7 +934,9 @@ describe('Effect HTTP API', () => {
           }),
         )
         expect(created.status).toBe(201)
-        const body = await Effect.runPromise(Schema.decodeUnknownEffect(RunDetail)(await created.json()))
+        const body = await Effect.runPromise(
+          Schema.decodeUnknownEffect(Schema.toCodecJson(RunDetail))(await created.json()),
+        )
         expect(Schema.is(RunId)(body.run.runId)).toBe(true)
         expect(body.run.status).toBe('waiting')
         const detail = await handler.handler(new Request(`http://localhost/api/runs/${body.run.runId}`))
@@ -816,7 +948,7 @@ describe('Effect HTTP API', () => {
         })
         const listed = await handler.handler(new Request('http://localhost/api/runs'))
         expect(listed.status).toBe(200)
-        expect(await listed.json()).toEqual({ runs: [body.run] })
+        expect(await listed.json()).toEqual(Schema.encodeSync(Schema.toCodecJson(RunsResponse))({ runs: [body.run] }))
         const resumed = await handler.handler(
           new Request(`http://localhost/api/runs/${body.run.runId}/resume`, { method: 'POST' }),
         )

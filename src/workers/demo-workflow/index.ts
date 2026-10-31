@@ -2,6 +2,7 @@ import { QueryDatabase, QueryDatabaseBinding } from 'alchemy/Cloudflare/D1'
 import { DurableObject } from 'alchemy/Cloudflare/Workers'
 import { Effect } from 'effect'
 
+import type { RunId } from '../../features/workflow/domain/identity'
 import { makeD1Store } from '../../features/workflow/services/d1-store'
 import { Store } from '../../features/workflow/services/store'
 import { Database } from '../database'
@@ -16,9 +17,9 @@ export class FlowdeckRun extends DurableObject<FlowdeckRun>()(
     return Effect.gen(function* () {
       const store = makeD1Store(yield* database.raw)
       return {
-        start: (runId: string) =>
+        start: (runId: RunId) =>
           startRun(runId).pipe(Effect.provideService(Store, store), Effect.provide(BrowserCrypto.layer)),
-        resume: (runId: string) =>
+        resume: (runId: RunId) =>
           resumeRun(runId).pipe(Effect.provideService(Store, store), Effect.provide(BrowserCrypto.layer)),
       }
     })
@@ -36,8 +37,8 @@ export default DemoWorkflow.make(
   Effect.gen(function* () {
     const runs = yield* FlowdeckRun
     return {
-      start: (runId: string) => runs.getByName(runId).start(runId),
-      resume: (runId: string) => runs.getByName(runId).resume(runId),
+      start: (runId: RunId) => runs.getByName(runId).start(runId),
+      resume: (runId: RunId) => runs.getByName(runId).resume(runId),
     }
   }),
 )

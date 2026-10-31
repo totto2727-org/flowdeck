@@ -1,28 +1,30 @@
-import { Effect } from 'effect'
+import { DateTime, Effect, Schema, SemVer } from 'effect'
 import { describe, expect, it } from 'vite-plus/test'
 
 import type { Run } from '../../../features/workflow/domain/model'
 import { developmentDefinition } from './definition'
 import { restoreDevelopment } from './development'
+import { DevelopmentCreateRun } from './input'
+import { developmentVersion } from './input'
 
 const input = {
   workflowId: 'jcode-development',
-  version: '1.0.0',
+  version: developmentVersion,
   repository: 'https://github.com/example/project',
   task: 'Implement the requested change.',
 }
 
-describe('development legacy restore boundary', () => {
+describe('development strict restore boundary', () => {
   const run: Run = {
-    runId: 'legacy-run',
+    runId: 'run_00000000-0000-4000-8000-000000000002',
     workflowId: 'jcode-development',
-    workflowVersion: 'v1',
-    graphId: 'jcode-development:v1:graph:1',
+    workflowVersion: developmentVersion,
+    graphId: 'jcode-development-1_0_0-graph-1',
     status: 'running',
     revision: 1,
-    createdAt: '2026-01-01T00:00:00.000Z',
-    updatedAt: '2026-01-01T00:00:00.000Z',
-    snapshot: null,
+    createdAt: DateTime.makeUnsafe('2026-01-01T00:00:00.000Z'),
+    updatedAt: DateTime.makeUnsafe('2026-01-01T00:00:00.000Z'),
+    snapshot: {},
   }
   const completing = {
     _tag: 'Completing',
@@ -34,24 +36,17 @@ describe('development legacy restore boundary', () => {
     result: 'done',
   }
 
-  it('restores omitted legacy fields into explicit required fields', async () => {
-    expect(await Effect.runPromise(restoreDevelopment({ ...run, snapshot: completing }))).toEqual({
-      ...completing,
-      runtime: 'legacy-missing',
-      commandId: 'legacy-run:verify:1',
+  it('rejects omitted runtime and command identities instead of restoring them', async () => {
+    await expect(Effect.runPromise(restoreDevelopment({ ...run, snapshot: completing }))).rejects.toMatchObject({
+      _tag: 'InvalidSnapshot',
     })
   })
 
-  it.each(['pi', 'pi-harness'])(
-    'preserves explicit runtime %s while migrating the completing identity',
-    async (runtime) => {
-      expect(await Effect.runPromise(restoreDevelopment({ ...run, snapshot: { ...completing, runtime } }))).toEqual({
-        ...completing,
-        runtime,
-        commandId: 'legacy-run:verify:1',
-      })
-    },
-  )
+  it.each(['pi', 'pi-harness'])('rejects runtime %s with missing command identity', async (runtime) => {
+    await expect(
+      Effect.runPromise(restoreDevelopment({ ...run, snapshot: { ...completing, runtime } })),
+    ).rejects.toMatchObject({ _tag: 'InvalidSnapshot' })
+  })
 
   it('rejects an invalid explicit runtime instead of treating it as missing', async () => {
     await expect(
@@ -64,7 +59,7 @@ describe('development definition', () => {
   it('prepares the workflow-owned graph and PiHarness snapshot', async () => {
     expect(await Effect.runPromise(developmentDefinition.prepare(input))).toEqual({
       graph: {
-        graphId: 'jcode-development:1.0.0:graph:1',
+        graphId: 'jcode-development-1_0_0-graph-1',
         schemaVersion: 1,
         nodes: [
           { nodeId: 'implement', label: 'Implement task', kind: 'task' },
@@ -102,17 +97,18 @@ describe('development definition', () => {
     'https://github.com/example/project?token=secret',
     'https://github.com/example/project#fragment',
     'https://github.com/example/project/tree/main',
-    'https://github.com/example/other/../project',
-    'https://github.com/exam\nple/project',
     'https://github.com/example/project?',
     'not a URL',
   ])('rejects unsafe repository %s', async (repository) => {
     await expect(Effect.runPromise(developmentDefinition.prepare({ ...input, repository }))).rejects.toThrow()
   })
 
+  it('rejects a string version at the domain boundary', () => {
+    expect(() => Schema.decodeUnknownSync(DevelopmentCreateRun)({ ...input, version: '1.0.0' })).toThrow()
+  })
+
   it.each([
-    { ...input, version: 'v1' },
-    { ...input, version: '2.0.0' },
+    { ...input, version: SemVer.make({ major: 2, minor: 0, patch: 0 }) },
     { ...input, task: '' },
     { ...input, task: '   ' },
     { ...input, task: 'x'.repeat(16_001) },

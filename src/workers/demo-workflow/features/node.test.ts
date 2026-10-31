@@ -1,9 +1,14 @@
 import { Array, Effect, Ref } from 'effect'
 import { describe, expect, it } from 'vite-plus/test'
 
-import { type EventDraft, observeNode } from './node'
+import { type EventDraft, type Execution, observeNode } from './node'
 
-const execution = { runId: 'run', nodeId: 'prepare', executionId: 'run:prepare:1', attempt: 1 }
+const execution: Execution = {
+  runId: 'run_00000000-0000-4000-8000-000000000001',
+  nodeId: 'prepare',
+  executionId: 'execution_00000000-0000-4000-8000-000000000001',
+  attempt: 1,
+}
 
 describe('node lifecycle wrapper', () => {
   it('emits a stable start and success identity with typed output', async () => {
@@ -23,14 +28,14 @@ describe('node lifecycle wrapper', () => {
       {
         type: 'node.started',
         nodeId: 'prepare',
-        executionId: 'run:prepare:1',
+        executionId: 'execution_00000000-0000-4000-8000-000000000001',
         attempt: 1,
         payload: {},
       },
       {
         type: 'node.succeeded',
         nodeId: 'prepare',
-        executionId: 'run:prepare:1',
+        executionId: 'execution_00000000-0000-4000-8000-000000000001',
         attempt: 1,
         payload: { output: 'result' },
       },
@@ -53,6 +58,13 @@ describe('node lifecycle wrapper', () => {
       'node.started',
       'node.failed',
     ])
+  })
+
+  it('omits absent output instead of persisting undefined JSON', async () => {
+    const events = await Effect.runPromise(Ref.make<ReadonlyArray<EventDraft>>([]))
+    const append = (event: EventDraft) => Ref.update(events, Array.append(event))
+    await Effect.runPromise(observeNode(execution, Effect.void, { started: append, succeeded: append, failed: append }))
+    expect(Array.map(await Effect.runPromise(Ref.get(events)), (event) => event.payload)).toEqual([{}, {}])
   })
 
   it('does not execute the task before the start checkpoint commits', async () => {

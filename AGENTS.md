@@ -48,13 +48,20 @@ Do not deploy, change DNS, or change Access policies without operator authorizat
 Write Effect programs, not imperative TypeScript with Effect wrappers.
 Use Effect Array, String, Record, Match, Schema, Clock, and collection APIs instead of equivalent standard-library APIs.
 Use `Schema.isUUID(4)`, `Schema.URLFromString`, and `Schema.SemVerFromString` instead of custom identity, URL, or version parsers.
-When a public contract must retain strings, compose the official codec with its flipped codec rather than implementing another parser.
+Keep ideal domain values independent from their serialized representation.
+Use official codecs at persistence and transport boundaries, including `Schema.SemVer` internally and its JSON/string codecs at those boundaries.
+Use `Schema.DateTimeUtc` for internal timestamps and the official codecs for serialized ISO timestamps.
+Use the shared `JsonObject` schema for JSON snapshots and event payloads, not repeated unrestricted record schemas.
+Model each event kind with a discriminated union: node execution fields are required where applicable and absent otherwise.
+This application is unreleased: do not add backward-compatibility unions, legacy normalization, or fallback identity formats.
 Do not validate URLs with regular expressions.
 Use ordinary string operations for business constraints after parsing.
 Use a regular expression only when no suitable existing API or simple string operation fits, and document the specific reason beside it.
 Represent state differences with tagged unions, not optional properties.
 An optional property may represent genuinely optional metadata, but its presence must not select a system state or execution path.
 Use a simple `if` when it is clearer, but do not introduce `for` loops or `switch` statements.
+Name non-obvious numeric constants at module scope in the owning file instead of embedding magic numbers in calculations.
+Create a separate constants file only when multiple files share the values.
 Use Effect HttpClient for HTTP clients and Effect HTTP for API routing and responses.
 Use native Request, Response, Promise, and Cloudflare binding interfaces only in the smallest adapters required by the runtime or a typed library.
 Document each unavoidable interoperability boundary.
@@ -77,7 +84,7 @@ Keep workflow IDs, supported versions, input schemas, initial snapshots, and gra
 The shared `WorkflowDefinition` and `WorkflowExecutor` interfaces contain no individual workflow knowledge.
 Compose workflow-provided definitions and static bindings only in `src/workers/workflow/features/registration.ts`.
 The integration service and frontend consume that registry and its catalog mechanically, without workflow-specific branches.
-New run versions are SemVer strings; only workflow-owned restore boundaries handle legacy version identities.
+Workflow versions are official `SemVer` values internally and strings only at explicit persistence and transport codecs.
 Use static service bindings only.
 Keep the workflow entry point a thin router to a Durable Object stub.
 Store the selected implementation version and immutable graph reference when a run is created.
@@ -87,7 +94,7 @@ Infer each ID type from its Schema, without brands or duplicate handwritten type
 `makePrefixedUUIDv4(prefix)` returns `{ schema, make }`; define each named Schema and Crypto-backed factory in the feature that owns the identifier.
 Do not add a central ID-kind registry or a `randomId(kind)` dispatcher.
 Use timestamps and indexed sequence columns for ordering, not UUIDv7 or time embedded in an ID.
-Preserve previously persisted IDs and framework-owned session, operation, and resource identity contracts during recovery.
+Keep framework-owned session, operation, and resource identity contracts distinct from application-generated IDs.
 Persist state and events atomically with revision checks, and acknowledge only after commit.
 Treat committed shared-DB workflow state as canonical, not DO memory or pending promises.
 The official PiHarness owns durable conversation and operation state in its Durable Object storage.
@@ -122,9 +129,9 @@ Use `@cloudflare/computer` Workspace with `ContainerBackend` and install `create
 Do not embed the Pi SDK, a custom HTTP runner, or an inference proxy in the Container.
 The Container runs official `computerd` and repository tools, not the agent loop.
 Preserve one session and checkout per run, with explicit workflow resume.
-Keep persisted workflow ID `jcode-development` and infrastructure resource name `JcodeSandbox` for compatibility.
+Use workflow ID `jcode-development` and infrastructure resource name `JcodeSandbox`; neither is a random identity.
 Use **Pi development** for the frontend label.
-New runs use runtime `pi-harness`; legacy direct-SDK histories remain inspectable but fail closed on execution.
+Runs use runtime `pi-harness`; do not accept legacy direct-SDK histories.
 Use official `ROOT_SESSION = '1'`, scoped by the run Durable Object, not a global session ID.
 
 Keep the fixed model `custom-opencode-go/deepseek-v4.1-flash` in the Durable Object's official pi-ai provider configuration.

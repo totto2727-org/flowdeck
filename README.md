@@ -89,8 +89,8 @@ See the [sandbox setup and acceptance limits](docs/development-sandbox.md) befor
 
 The release-demo tasks are pure effects.
 The separate Pi development workflow uses official PiHarness, pi-durable, and Computer Workspace rather than a Container-side agent gateway.
-The persisted workflow ID `jcode-development` and infrastructure resource name `JcodeSandbox` remain unchanged for compatibility.
-New runs use runtime `pi-harness`; legacy direct-SDK histories remain inspectable but fail closed on execution.
+The workflow ID is `jcode-development` and the infrastructure resource name is `JcodeSandbox`.
+Runs use runtime `pi-harness`; old direct-SDK snapshots and obsolete ID/version formats are not accepted.
 Official `ROOT_SESSION = '1'` is scoped by the run Durable Object, not shared across runs.
 Official Lifecycle jobs renew the six-hour native inactivity timeout every five hours for unfinished running workspaces without advancing workflow nodes or restarting stopped Containers.
 See [workspace retention](docs/development-workflow-retention.md) for cost and recovery limits.
