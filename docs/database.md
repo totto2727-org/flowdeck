@@ -28,13 +28,14 @@ git clone https://github.com/totto2727-org/reylo.git ../../fork/package/reylo
 git -C ../../fork/package/reylo checkout --detach <pinned-revision>
 vp env install
 eval "$(vp env print)"
-pnpm --dir ../../fork/package/reylo install --frozen-lockfile
+pnpm --dir ../../fork/package/reylo install --ignore-workspace --frozen-lockfile
 node ../../fork/package/reylo/scripts/build.ts --sqlite
 vp install --frozen-lockfile
 vp run ci
 ```
 
 Reuse an existing fork checkout instead of cloning over it.
+The fork install uses `--ignore-workspace` so a containing pnpm workspace cannot substitute its own dependency installation.
 CI checks out the exact pinned fork commit at the same relative path, installs its dependencies, builds its SQLite distributions, and installs Flowdeck's locked dependencies before validation.
 The fork's existing build task accepts `--sqlite` to build the runtime, declarations, and SQLite engine without unrelated documentation or playground builds.
 The default full build remains unchanged.

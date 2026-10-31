@@ -26,7 +26,7 @@ jobs:
         run: |
           vp env install
           eval "$(vp env print)"
-          pnpm --dir ../../fork/package/reylo install --frozen-lockfile
+          pnpm --dir ../../fork/package/reylo install --ignore-workspace --frozen-lockfile
           node ../../fork/package/reylo/scripts/build.ts --sqlite
           vp install --frozen-lockfile
       - uses: ariga/setup-atlas@v0
