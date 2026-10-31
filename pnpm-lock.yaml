@@ -5,11 +5,10 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
+  '@reylosql/sqlite': link:../../fork/package/reylo/dist/sqlite
+  reylo: link:../../fork/package/reylo/dist/reylo
   vite@*: npm:@voidzero-dev/vite-plus-core@1.3.0
   vitest@*: 5.0.5
-
-patchedDependencies:
-  reylo@0.6.0: 70a9a75a904c568e6a38bf5f4c22f3c4f3da4a9f8e3cd5831e147846b6fb0e3f
 
 importers:
 
@@ -64,8 +63,8 @@ importers:
         specifier: ^19.3.0
         version: 19.3.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(webpack@5.112.0(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.30)(sharp@0.35.5(@types/node@24.19.2)))
       reylo:
-        specifier: ^0.6.0
-        version: 0.6.0(patch_hash=70a9a75a904c568e6a38bf5f4c22f3c4f3da4a9f8e3cd5831e147846b6fb0e3f)(@reylosql/sqlite@0.6.0)
+        specifier: link:../../fork/package/reylo/dist/reylo
+        version: link:../../fork/package/reylo/dist/reylo
       tailwind-merge:
         specifier: ^3.7.0
         version: 3.7.0
@@ -92,8 +91,8 @@ importers:
         specifier: ^1.64.0
         version: 1.64.1
       '@reylosql/sqlite':
-        specifier: ^0.6.0
-        version: 0.6.0
+        specifier: link:../../fork/package/reylo/dist/sqlite
+        version: link:../../fork/package/reylo/dist/sqlite
       '@totto2727/gitignore-patterns':
         specifier: ^0.1.0
         version: 0.1.0
@@ -1969,9 +1968,6 @@ packages:
     engines: {node: '>= 20.0.0'}
     peerDependencies:
       '@redis/client': ^6.3.0
-
-  '@reylosql/sqlite@0.6.0':
-    resolution: {integrity: sha512-AKn4IdL9/PJmchJXRQmIZpXCuuLvNdSyLfSjBRXiMAO2h4BlZVJJR+Qvn7WtVqyOyHaxopsLUaiocj8VW1lnWg==}
 
   '@rolldown/binding-android-arm-eabi@1.2.5':
     resolution: {integrity: sha512-DLe/i+l8ynIBY7XEQ191TeZvCoowIGa18R+dIV30GW7DiOtp74i/xX8hs8GUjW5ARV7VZuie3d6AumSmCwbeRA==}
@@ -4029,25 +4025,6 @@ packages:
   retry@0.13.1:
     resolution: {integrity: sha512-XQBQ3I8W1Cge0Seh+6gjj03LbmRFWuoszgK9ooCpwYIrhhoO80pfq4cUkU5DkknwfOfFteRwlZ56PYOGYyFWdg==}
     engines: {node: '>= 4'}
-
-  reylo@0.6.0:
-    resolution: {integrity: sha512-Njt2l+11XWivq+wcfq0NMz5Y5tQoePmv3U5fD/wC95KjGPS1EY6UEx0/js5zhn+ayNiF4Q1Xelixx2iIbh5Ywg==}
-    engines: {node: '>=24'}
-    hasBin: true
-    peerDependencies:
-      '@reylosql/mysql': 0.6.0
-      '@reylosql/postgres': 0.6.0
-      '@reylosql/sqlite': 0.6.0
-      slonik: '>=49.12.0'
-    peerDependenciesMeta:
-      '@reylosql/mysql':
-        optional: true
-      '@reylosql/postgres':
-        optional: true
-      '@reylosql/sqlite':
-        optional: true
-      slonik:
-        optional: true
 
   rolldown@1.2.5:
     resolution: {integrity: sha512-VD2IE5PUG4Oj8zz2VGykiYd5wbnjdIiSsNQb8Qu5B+noEp+A78mu2iVvpp27g8es14Tk9rofNs5Tku9iQCS4fA==}
@@ -6175,8 +6152,6 @@ snapshots:
     dependencies:
       '@redis/client': 6.3.0
 
-  '@reylosql/sqlite@0.6.0': {}
-
   '@rolldown/binding-android-arm-eabi@1.2.5':
     optional: true
 
@@ -7978,10 +7953,6 @@ snapshots:
   retry@0.12.0: {}
 
   retry@0.13.1: {}
-
-  reylo@0.6.0(patch_hash=70a9a75a904c568e6a38bf5f4c22f3c4f3da4a9f8e3cd5831e147846b6fb0e3f)(@reylosql/sqlite@0.6.0):
-    optionalDependencies:
-      '@reylosql/sqlite': 0.6.0
 
   rolldown@1.2.5:
     dependencies:

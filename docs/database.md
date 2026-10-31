@@ -18,24 +18,42 @@ D1 integration tests exercise the trigger contracts against the actual migration
 ## Local analysis and checks
 
 Install the [official Atlas CLI](https://atlasgo.io/getting-started/) and the official Vite+ CLI.
-Resolve JavaScript tools through Vite+, then install the locked dependencies:
+The maintained Reylo fork checkout is at `../../fork/package/reylo` relative to this checkout.
+Both `reylo` and `@reylosql/sqlite` link to its built distributions, `dist/reylo` and `dist/sqlite`, as declared in `pnpm-workspace.yaml`.
+Prepare and build that checkout before installing Flowdeck dependencies:
 
 ```sh
+git clone https://github.com/totto2727-org/reylo.git ../../fork/package/reylo
+# Check out the exact Reylo revision pinned by .github/workflows/ci.yml.
+git -C ../../fork/package/reylo checkout --detach <pinned-revision>
 vp env install
+eval "$(vp env print)"
+pnpm --dir ../../fork/package/reylo install --frozen-lockfile
+node ../../fork/package/reylo/scripts/build.ts --sqlite
 vp install --frozen-lockfile
 vp run ci
 ```
 
-The canonical tasks prepare `.atlas/schema.db` from HCL before checking or testing SQL imports.
-`vp run schema:check` validates the migration checksum and compares the replayed migration schema with HCL.
-Atlas normalizes SQLite's implicit UNIQUE constraints into named indexes when rendering HCL.
-The check therefore materializes the inspected migration HCL in a separate disposable SQLite file before comparing it with the declared schema.
-This uses Atlas's own normalization, excludes no indexes, and never changes the runtime migration files or D1.
-A nonempty difference fails the check and prints the proposed SQL.
-This is a disposable, local SQLite file containing schema only, not a remote database or production data.
-The default `.reylo.yaml` points only to that file.
+Reuse an existing fork checkout instead of cloning over it.
+CI checks out the exact pinned fork commit at the same relative path, installs its dependencies, builds its SQLite distributions, and installs Flowdeck's locked dependencies before validation.
+The fork's existing build task accepts `--sqlite` to build the runtime, declarations, and SQLite engine without unrelated documentation or playground builds.
+The default full build remains unchanged.
+Rebuild these distributions after editing the fork.
+Linking its raw TypeScript source would make Flowdeck's strict compiler settings check upstream implementation files rather than the package declarations.
+The distribution boundary retains the application's strict checks without rewriting unrelated upstream code.
+Do not replace these links with published 0.6.0 packages, which do not provide the retained HCL source customization.
+
+Reylo reads `schema/schema.hcl` directly through the maintained fork's HCL schema source.
+The `.reylo.yaml` source is `direct_url: hcl:./schema/schema.hcl`.
+The fork evaluates HCL through Atlas and analyzes the resulting schema in memory.
+SQL import analysis needs no separate preparation task and creates no database file.
+`vp run schema:check` validates migration checksums, renders the migration schema as SQL, replays that SQL in an in-memory Atlas development database, and compares the inspected HCL with the declared HCL.
+The SQL rendering and memory replay normalize SQLite's implicit UNIQUE indexes through Atlas itself.
+The check excludes no indexes, never changes migration files or D1, and fails with the proposed SQL when differences remain.
+Only disposable `.atlas/migrations.sql`, `.atlas/migrations.hcl`, and `.atlas/drift.sql` artifacts are written.
+Every Atlas development database uses `--dev-url "sqlite://dev?mode=memory"`.
+Do not use `atlas schema apply` or create `.db` files for analysis, validation, or migration generation.
 No D1 credentials, Wrangler-managed database, or network database service is required for SQL analysis.
-Reylo prepares queries against SQLite schema, so this is local schema-backed analysis rather than an HCL-only parser.
 Do not commit `.atlas/` or `.reylo/`.
 
 `vp run typecheck` runs the official TypeScript 7.1 compiler with `--runExternalCode` and the registered Reylo Content Mapper.
@@ -48,7 +66,7 @@ Use `vp run check`, not standalone `vp check`, for the complete check.
 The official `reylo/vite` plugin handles SQL modules in Vite/Vitest and Alchemy's Rolldown Worker bundles.
 `vp run dev` also preloads the official `reylo/register` Node hook because Alchemy evaluates resource modules before bundling Workers.
 Playwright uses that same startup task.
-For another Node-based Alchemy entry point, prepare the local schema and preload `reylo/register` before evaluating resource modules.
+For another Node-based Alchemy entry point, preload `reylo/register` before evaluating resource modules.
 SQL compilation is a build-time operation; the deployed Worker uses the resulting query objects with its native D1 binding.
 
 ## Schema changes
@@ -57,19 +75,28 @@ Edit `schema/schema.hcl`, generate and review a new versioned SQL migration with
 Review generated SQL before committing it, especially when triggers depend on changed columns.
 Refresh `migrations/atlas.sum` with `atlas migrate hash` after adding an intentionally reviewed migration.
 Alchemy continues to apply the ordinary SQL migration files through the existing `Database` resource declaration.
-Never point local schema preparation at a deployment database.
+Generate against the migration directory with an in-memory development database:
 
-## Atomic writes and the Reylo patch
+```sh
+atlas migrate diff describe_change --dir file://migrations --to file://schema/schema.hcl --dev-url 'sqlite://dev?mode=memory'
+```
+
+Atlas can propose redundant replacements for implicit UNIQUE indexes in existing migrations.
+Do not apply generated changes without review.
+Never point local analysis or migration generation at a deployment database.
+
+## Atomic writes and the public query contract
 
 The store uses ordinary Reylo query execution for reads.
 Creation and commits prepare all statements and submit them together through native `D1Database.batch`.
 The receipt guard, revision update, snapshot, and events must not be split into separate query calls.
 The commit acknowledgment is read only after that batch succeeds.
 
-Published Reylo 0.6.0 has no public checked binder for an external atomic batch.
-A small pnpm patch exposes its existing binder as `query.compile(input)` without replacing SQL parsing, type inference, parameter validation, or encoding.
-See the exact upstream revision, retained difference, and removal criteria in [upstream differences](upstream-differences.md).
-The patch is installed through the lockfile, not by editing `node_modules` after installation.
+The maintained Reylo fork exposes its existing Standard Query contract at `query['~standard'].query`.
+The store passes its public `text` to native D1 `prepare` and its `encode(input)` values to `bind`.
+Reylo owns placeholder ordering, parameter validation, and encoding, with inferred query parameters retained at the store boundary.
+Flowdeck does not add a SQL compiler, access private query internals, or patch a batch-binding method.
+See [upstream differences](upstream-differences.md) for fork provenance and retained changes.
 
 ## Official references
 

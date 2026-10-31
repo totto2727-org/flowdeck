@@ -14,7 +14,21 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: totto2727-org/monorepo/.github/actions/setup-typescript@main
+      - name: Check out Reylo source dependency
+        run: |
+          git init ../../fork/package/reylo
+          git -C ../../fork/package/reylo fetch --depth=1 https://github.com/totto2727-org/reylo.git a557dd5e1fecaaa29eca131be6810d31995d117a
+          git -C ../../fork/package/reylo checkout --detach FETCH_HEAD
+      - uses: voidzero-dev/setup-vp@main
+        with:
+          run-install: false
+      - name: Build linked Reylo and install Flowdeck
+        run: |
+          vp env install
+          eval "$(vp env print)"
+          pnpm --dir ../../fork/package/reylo install --frozen-lockfile
+          node ../../fork/package/reylo/scripts/build.ts --sqlite
+          vp install --frozen-lockfile
       - uses: ariga/setup-atlas@v0
       - name: Verify Vite+ project
         run: vp run ci

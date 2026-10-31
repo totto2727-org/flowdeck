@@ -3,6 +3,8 @@ packages:
 
 # Official Vite+ bundled toolchain: https://viteplus.dev/guide/migrate
 overrides:
+  '@reylosql/sqlite': link:../../fork/package/reylo/dist/sqlite
+  reylo: link:../../fork/package/reylo/dist/reylo
   vite@*: npm:@voidzero-dev/vite-plus-core@1.3.0
   vitest@*: 5.0.5
 
@@ -18,6 +20,3 @@ allowBuilds:
   core-js-pure: false
   '@mongodb-js/zstd': false
   node-liblzma: false
-
-patchedDependencies:
-  reylo@0.6.0: patches/reylo@0.6.0.patch

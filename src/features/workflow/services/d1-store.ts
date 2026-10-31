@@ -55,7 +55,7 @@ const databaseFailure = (operation: string, cause: unknown) => {
 }
 
 /** Native D1 batch is required to commit receipt guards, checkpoints, and events atomically.
- * Reylo owns SQL compilation and parameter encoding through its compile API.
+ * Reylo owns SQL text and parameter encoding through its public Standard Query contract.
  * https://developers.cloudflare.com/d1/worker-api/d1-database/#batch
  */
 export const makeD1Store = (database: D1Database): StoreService => {
@@ -64,8 +64,8 @@ export const makeD1Store = (database: D1Database): StoreService => {
   const prepare =
     <Input, Row, C extends Cardinality>(query: Query<Input, Row, C, 'sqlite'>, input: NoInfer<Input>) =>
     () => {
-      const compiled = query.compile(input)
-      return database.prepare(compiled.sql).bind(...compiled.parameters)
+      const statement = query['~standard'].query
+      return database.prepare(statement.text).bind(...statement.encode(input))
     }
   const batch = (queries: ReadonlyArray<() => D1PreparedStatement>) =>
     io('batch', () => database.batch(Array.map(queries, (query) => query())))

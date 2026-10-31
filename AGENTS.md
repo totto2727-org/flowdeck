@@ -75,11 +75,13 @@ Keep Worker-specific features with their Worker, and put shared features under `
 Use Atlas HCL for SQLite tables, constraints, and indexes, with versioned SQL migrations consumed by Alchemy.
 Keep SQLite correctness triggers in reviewed migrations because Atlas Community does not model triggers.
 Use Reylo Content Mapper SQL imports for typed queries, not handwritten table interfaces or a query builder.
-Keep schema analysis local: `vp run schema:prepare` creates a disposable SQLite database from HCL, never a remote D1 connection.
+Keep schema analysis local: Reylo reads `schema/schema.hcl` directly through the fork's HCL schema source, without Atlas preparation or database files.
+Reylo evaluates HCL through Atlas and analyzes the schema in memory.
+Use Atlas CLI tasks only for migration creation and validation with `--dev-url "sqlite://dev?mode=memory"`, never `schema apply` or a file-backed development database.
 Use `vp run check` for complete TypeScript 7.1 Content Mapper checking plus Vite+ format and type-aware lint.
 Vite+'s independent TypeScript 7.0 checker cannot load Content Mappers, so it is not the application's full type checker.
-Keep receipt, state, and event writes in one native D1 batch using Reylo's checked binding path.
-The narrowly maintained Reylo batch-binding patch must not become a separate SQL compiler; see [database workflow](docs/database.md).
+Keep receipt, state, and event writes in one native D1 batch using Reylo's public Standard Query `text` and `encode` contract.
+Do not add a custom SQL compiler or batch-binding patch; see [database workflow](docs/database.md).
 
 ## Workflow invariants
 

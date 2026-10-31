@@ -3,7 +3,7 @@
 // Do not strengthen nullability without a new, reviewed SQL migration.
 // Atlas Community does not inspect or manage triggers.
 // All eight transactional and identity guards remain in the versioned SQL migrations.
-// This HCL alone creates a disposable analysis database, not a runtime database.
+// Reylo reads this HCL directly for local query analysis without a database file.
 // Runtime databases must apply migrations, including their triggers.
 // Atlas v1.1.3 canary normalizes implicit UNIQUE indexes into named indexes.
 // Its migration diff currently proposes redundant index replacements against
