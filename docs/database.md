@@ -47,7 +47,10 @@ Do not replace these links with published 0.6.0 packages, which do not provide t
 
 Reylo reads `schema/schema.hcl` directly through the maintained fork's HCL schema source.
 The `.reylo.yaml` source is `direct_url: hcl:./schema/schema.hcl`.
-The fork evaluates HCL through Atlas and analyzes the resulting schema in memory.
+The fork parses HCL in process with its port of HashiCorp's native parser and compiles supported static Atlas SQLite declarations into an in-memory analysis catalog.
+SQL import analysis requires neither the Atlas executable nor a Go runtime, subprocess, remote service, or application database.
+Unknown declarations, dynamic HCL expressions, invalid references, and syntax errors are rejected rather than ignored.
+Atlas remains the tool for migration generation and the separate migration/HCL drift check, not for Content Mapper or SQL loader analysis.
 SQL import analysis needs no separate preparation task and creates no database file.
 `vp run schema:check` validates migration checksums, renders the migration schema as SQL, replays that SQL in an in-memory Atlas development database, and compares the inspected HCL with the declared HCL.
 The SQL rendering and memory replay normalize SQLite's implicit UNIQUE indexes through Atlas itself.

@@ -76,7 +76,9 @@ Use Atlas HCL for SQLite tables, constraints, and indexes, with versioned SQL mi
 Keep SQLite correctness triggers in reviewed migrations because Atlas Community does not model triggers.
 Use Reylo Content Mapper SQL imports for typed queries, not handwritten table interfaces or a query builder.
 Keep schema analysis local: Reylo reads `schema/schema.hcl` directly through the fork's HCL schema source, without Atlas preparation or database files.
-Reylo evaluates HCL through Atlas and analyzes the schema in memory.
+Reylo parses native HCL directly through the maintained HashiCorp source port and analyzes a static SQLite schema in memory.
+Do not add Atlas subprocesses, Go runtime calls, or file-backed databases to SQL import analysis.
+Atlas is reserved for migration generation and migration/HCL drift validation.
 Use Atlas CLI tasks only for migration creation and validation with `--dev-url "sqlite://dev?mode=memory"`, never `schema apply` or a file-backed development database.
 Use `vp run check` for complete TypeScript 7.1 Content Mapper checking plus Vite+ format and type-aware lint.
 Vite+'s independent TypeScript 7.0 checker cannot load Content Mappers, so it is not the application's full type checker.
