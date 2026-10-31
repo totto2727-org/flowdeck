@@ -1,0 +1,718 @@
+import { readD1Migrations } from '@cloudflare/vitest-plugin'
+import type { D1Database } from '@cloudflare/workers-types'
+import { BrowserCrypto } from '@effect/platform-browser'
+import { Array, Crypto, DateTime, Effect, Layer, Option, Schema, SemVer } from 'effect'
+import { HttpRouter } from 'effect/http'
+import { TestCrypto } from 'effect/testing'
+import { Miniflare } from 'miniflare'
+import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test'
+
+import { ExternalError } from '../../../features/workflow/domain/errors'
+import { CommitId, EventId, ExecutionId } from '../../../features/workflow/domain/identity'
+import { JsonObject, RunDetail, type Run } from '../../../features/workflow/domain/model'
+import { makeD1Store } from '../../../features/workflow/services/d1-store'
+import { Store, type StoreService } from '../../../features/workflow/services/store'
+import { WorkflowRegistry } from '../../../features/workflow/services/workflow-definition'
+import { Workflows } from '../../../features/workflow/services/workflows'
+import { ApiRoutes } from '../../control/features/router'
+import { makeWorkflowRegistry } from '../../workflow/features/registration'
+import { makeWorkflows } from '../../workflow/features/workflow'
+import { DevelopmentWorkflowBinding, WorkflowBinding } from '../../workflow/features/workflow-binding'
+import {
+  DevelopmentSnapshotJson,
+  developmentGraph,
+  initialDevelopmentSnapshot,
+  restoreDevelopment,
+  resumeDevelopmentRun,
+  startDevelopmentRun,
+} from './development'
+import { DevelopmentCreateRun, developmentVersion } from './input'
+import { CommandId } from './model'
+import type { Session, TurnReceipt, TurnRequest } from './model'
+import { DevelopmentSandbox } from './sandbox'
+
+const input = {
+  workflowId: 'jcode-development',
+  version: developmentVersion,
+  repository: new URL('https://github.com/example/project'),
+  task: 'Add a greeting and test it.',
+} as const
+const timestamp = DateTime.makeUnsafe('2026-10-17T12:00:00.000Z')
+const initialRun: Run = {
+  runId: 'run_00000000-0000-4000-8000-000000000002',
+  workflowId: input.workflowId,
+  workflowVersion: developmentVersion,
+  graphId: developmentGraph.graphId,
+  status: 'pending',
+  revision: 0,
+  snapshot: Schema.decodeUnknownSync(JsonObject)(
+    Schema.encodeSync(DevelopmentSnapshotJson)(initialDevelopmentSnapshot(input)),
+  ),
+  createdAt: timestamp,
+  updatedAt: timestamp,
+}
+let miniflare: Miniflare
+let database: D1Database
+let store: StoreService
+let receipts: Record<string, TurnReceipt>
+let submissions: ReadonlyArray<{ readonly runId: string; readonly input: TurnRequest }>
+let session: Session
+let completeCalls: ReadonlyArray<string>
+let sandbox: DevelopmentSandbox['Service']
+beforeEach(async () => {
+  miniflare = new Miniflare({
+    modules: true,
+    script: 'export default {}',
+    compatibilityDate: '2026-07-30',
+    d1Databases: { DB: 'development-test' },
+  })
+  database = await miniflare.getD1Database('DB')
+  const migrations = await readD1Migrations('migrations')
+  await database.batch(
+    Array.map(
+      Array.flatMap(migrations, (migration) => migration.queries),
+      (query) => database.prepare(query),
+    ),
+  )
+  store = makeD1Store(database)
+  await Effect.runPromise(store.create(initialRun, developmentGraph, 'Pi development'))
+  receipts = {}
+  submissions = []
+  completeCalls = []
+  session = { sessionId: '1', model: 'test-model', status: 'active' }
+  sandbox = {
+    ensureSession: () => Effect.sync(() => session),
+    getTurn: (_runId, commandId) => Effect.sync(() => receipts[commandId] ?? null),
+    submitTurn: (runId, request) =>
+      Effect.gen(function* () {
+        const current = yield* store.getRun(runId)
+        expect(current.snapshot).toMatchObject({
+          _tag: 'PendingTurn',
+          commandId: request.commandId,
+          sessionId: session.sessionId,
+        })
+        submissions = Array.append(submissions, { runId, input: request })
+        const receipt = { commandId: request.commandId, status: 'running' } as const
+        receipts = { ...receipts, [request.commandId]: receipt }
+        return receipt
+      }).pipe(Effect.mapError((cause) => new ExternalError({ kind: 'service', operation: 'test binding', cause }))),
+    complete: (runId) =>
+      Effect.sync(() => {
+        completeCalls = Array.append(completeCalls, runId)
+        session = { ...session, status: 'completed' }
+        return session
+      }),
+  }
+})
+afterEach(async () => {
+  await miniflare.dispose()
+})
+const execute = <A, E>(
+  effect: Effect.Effect<A, E, Store | DevelopmentSandbox | Crypto.Crypto>,
+  suppliedStore = makeD1Store(database),
+) =>
+  Effect.runPromise(
+    effect.pipe(
+      Effect.provideService(Store, suppliedStore),
+      Effect.provideService(DevelopmentSandbox, sandbox),
+      Effect.provide(BrowserCrypto.layer),
+    ),
+  )
+const current = () => Effect.runPromise(makeD1Store(database).getRun(initialRun.runId))
+const start = () => execute(startDevelopmentRun(initialRun.runId))
+const resume = () => execute(resumeDevelopmentRun(initialRun.runId))
+const finishTurn = (node: 'implement' | 'verify') => {
+  const commandId = submissions[node === 'implement' ? 0 : 1]!.input.commandId
+  receipts = { ...receipts, [commandId]: { commandId, status: 'completed', text: `${node} result` } }
+}
+
+describe('development workflow with canonical D1 checkpoints', () => {
+  it.each(['run_00000000-0000-4000-8000-000000000002:implement:1', '3d360c7a-4b1a-4df3-9633-861a220bf5b7'])(
+    'rejects a historical PiHarness pending command identity %s',
+    async (commandId) => {
+      await Effect.runPromise(
+        store.commit({
+          commitId: 'commit_00000000-0000-4000-8000-000000000010',
+          runId: initialRun.runId,
+          expectedRevision: 0,
+          status: 'running',
+          snapshot: {
+            schemaVersion: 1,
+            version: '1.0.0',
+            runtime: 'pi-harness',
+            repository: input.repository.href,
+            task: input.task,
+            _tag: 'PendingTurn',
+            sessionId: '1',
+            nodeId: 'implement',
+            executionId: 'execution_00000000-0000-4000-8000-000000000001',
+            commandId,
+          },
+          updatedAt: timestamp,
+          events: [],
+        }),
+      )
+      await expect(resume()).rejects.toMatchObject({ _tag: 'InvalidSnapshot' })
+      expect(submissions).toEqual([])
+    },
+  )
+
+  it.each(['01890f2e-7b55-7cc1-8c5a-000000000001', 'run_00000000-0000-4000-8000-000000000002:verify:1', 'not-a-uuid'])(
+    'rejects a non-v4, nonmatching legacy starting identity %s',
+    async (commandId) => {
+      await expect(
+        Effect.runPromise(
+          restoreDevelopment({
+            ...initialRun,
+            status: 'running',
+            snapshot: {
+              schemaVersion: 1,
+              version: '1.0.0',
+              runtime: 'pi-harness',
+              repository: input.repository.href,
+              task: input.task,
+              _tag: 'Starting',
+              executionId: 'execution_00000000-0000-4000-8000-000000000001',
+              commandId,
+            },
+          }),
+        ),
+      ).rejects.toMatchObject({ _tag: 'InvalidSnapshot' })
+    },
+  )
+
+  it('routes create and resume through the distinct static development binding', async () => {
+    const provide = <A, E>(effect: Effect.Effect<A, E, Store | DevelopmentSandbox | Crypto.Crypto>) =>
+      effect.pipe(
+        Effect.provideService(Store, makeD1Store(database)),
+        Effect.provideService(DevelopmentSandbox, sandbox),
+        Effect.provide(BrowserCrypto.layer),
+      )
+    const handler = HttpRouter.toWebHandler(
+      ApiRoutes.pipe(
+        HttpRouter.provideRequest(
+          Layer.effect(Workflows, makeWorkflows).pipe(
+            Layer.provide(Layer.effect(WorkflowRegistry, makeWorkflowRegistry)),
+            Layer.provide(
+              Layer.mergeAll(
+                Layer.succeed(Store, store),
+                Layer.succeed(DevelopmentWorkflowBinding, {
+                  start: (runId) => provide(startDevelopmentRun(runId)),
+                  resume: (runId) => provide(resumeDevelopmentRun(runId)),
+                }),
+                Layer.succeed(WorkflowBinding, {
+                  start: () =>
+                    Effect.fail(
+                      new ExternalError({
+                        kind: 'service',
+                        operation: 'test binding',
+                        cause: 'Wrong workflow binding',
+                      }),
+                    ),
+                  resume: () =>
+                    Effect.fail(
+                      new ExternalError({
+                        kind: 'service',
+                        operation: 'test binding',
+                        cause: 'Wrong workflow binding',
+                      }),
+                    ),
+                }),
+                TestCrypto.layer('development-api').pipe(Layer.provide(BrowserCrypto.layer)),
+              ),
+            ),
+          ),
+        ),
+      ),
+    )
+    try {
+      // Native requests are the test adapter for the same Effect HTTP router used by Control.
+      const response = await handler.handler(
+        new Request('http://localhost/api/runs', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ ...input, repository: input.repository.href, version: '1.0.0' }),
+        }),
+      )
+      expect(response.status).toBe(201)
+      const detail = Schema.decodeUnknownSync(Schema.toCodecJson(RunDetail))(await response.json())
+      expect(detail.run).toMatchObject({
+        workflowId: 'jcode-development',
+        workflowVersion: developmentVersion,
+        status: 'waiting',
+        snapshot: { runtime: 'pi-harness', sessionId: '1', repository: input.repository.href, task: input.task },
+      })
+      const resumed = await handler.handler(
+        new Request(`http://localhost/api/runs/${detail.run.runId}/resume`, { method: 'POST' }),
+      )
+      expect(resumed.status).toBe(200)
+      expect(Schema.decodeUnknownSync(Schema.toCodecJson(RunDetail))(await resumed.json()).run).toEqual(detail.run)
+      expect(submissions).toHaveLength(1)
+    } finally {
+      await handler.dispose()
+    }
+  })
+  it('persists repository, task, pinned version and immutable graph before starting', async () => {
+    expect(await current()).toEqual(initialRun)
+    expect(initialRun.snapshot).toMatchObject({ runtime: 'pi-harness' })
+    expect(await Effect.runPromise(store.getGraph(initialRun.graphId))).toEqual(developmentGraph)
+  })
+  describe.each([undefined, 'pi'] as const)('legacy runtime %s', (runtime) => {
+    it.each([
+      ['Ready', 'pending'],
+      ['Starting', 'running'],
+      ['PendingTurn', 'running'],
+      ['AwaitingTurn', 'waiting'],
+      ['Completing', 'running'],
+      ['Completed', 'completed'],
+      ['Failed', 'failed'],
+    ] as const)('rejects a legacy %s checkpoint before accessing Pi', async (_tag, status) => {
+      const snapshot = {
+        _tag,
+        ...(runtime === undefined ? {} : { runtime }),
+        schemaVersion: 1,
+        version: '1.0.0',
+        repository: input.repository.href,
+        task: input.task,
+        commandId: 'run_00000000-0000-4000-8000-000000000002:implement:1',
+        sessionId: 'legacy-jcode-session',
+        nodeId: 'implement',
+        result: 'legacy result',
+        message: 'legacy failure',
+      }
+      await Effect.runPromise(
+        store.commit({
+          commitId: 'commit_00000000-0000-4000-8000-000000000011',
+          runId: initialRun.runId,
+          expectedRevision: 0,
+          status,
+          snapshot,
+          updatedAt: timestamp,
+          events: [],
+        }),
+      )
+      const before = await current()
+      await expect(Effect.runPromise(restoreDevelopment(before))).rejects.toMatchObject({ _tag: 'InvalidSnapshot' })
+      sandbox = {
+        ensureSession: () => Effect.die('Legacy run must not access Pi'),
+        submitTurn: () => Effect.die('Legacy run must not submit a Pi turn'),
+        getTurn: () => Effect.die('Legacy run must not read Pi receipts'),
+        complete: () => Effect.die('Legacy run must not complete Pi'),
+      }
+      await expect(start()).rejects.toMatchObject({
+        _tag: 'InvalidSnapshot',
+      })
+      await expect(resume()).rejects.toMatchObject({
+        _tag: 'InvalidSnapshot',
+      })
+      expect(await current()).toEqual(before)
+      expect(await Effect.runPromise(store.getEvents(initialRun.runId, { _tag: 'All' }))).toEqual([])
+    })
+  })
+  it('commits command identity before accepting a long-running implementation turn', async () => {
+    let commitIds: ReadonlyArray<string> = []
+    await execute(startDevelopmentRun(initialRun.runId), {
+      ...store,
+      commit: (command) => {
+        commitIds = Array.append(commitIds, command.commitId)
+        return store.commit(command)
+      },
+    })
+    expect(commitIds).toHaveLength(3)
+    expect(Array.every(commitIds, Schema.is(CommitId))).toBe(true)
+    expect(Schema.is(CommandId)(submissions[0]?.input.commandId)).toBe(true)
+    expect(await current()).toMatchObject({
+      status: 'waiting',
+      snapshot: {
+        _tag: 'AwaitingTurn',
+        runtime: 'pi-harness',
+        commandId: expect.any(String),
+        sessionId: '1',
+        repository: input.repository.href,
+        task: input.task,
+      },
+    })
+    expect(submissions).toEqual([
+      {
+        runId: 'run_00000000-0000-4000-8000-000000000002',
+        input: {
+          commandId: expect.any(String),
+          prompt: expect.stringContaining('/workspace/project'),
+        },
+      },
+    ])
+    expect(submissions[0]?.input.prompt).toContain(
+      'Follow the target repository instructions. Use the official Vite+ CLI for JavaScript runtimes, package managers, dependencies, and tasks. Install it with the official installer if it is missing. Let vp env resolve the target project versions. Use nix develop or a minimal temporary nix shell only for non-JavaScript tools.',
+    )
+    expect(submissions[0]?.input.prompt).not.toContain('into /sandbox/')
+    expect(submissions[0]?.input.prompt).toContain(input.repository.href)
+    expect(submissions[0]?.input.prompt).toContain(input.task)
+    expect(submissions[0]?.input.prompt).toContain('Pi')
+    expect(submissions[0]?.input.prompt).not.toContain('devShell')
+    expect(submissions[0]?.input.prompt).not.toContain('/home/sandbox/')
+    const persisted = await current()
+    const checkpoint = Schema.decodeUnknownSync(DevelopmentSnapshotJson)(persisted.snapshot)
+    expect(DateTime.isUtc(persisted.createdAt)).toBe(true)
+    expect(DateTime.isUtc(persisted.updatedAt)).toBe(true)
+    const events = await Effect.runPromise(store.getEvents(initialRun.runId, { _tag: 'All' }))
+    expect(events[0]).not.toHaveProperty('nodeId')
+    expect(events[0]).not.toHaveProperty('executionId')
+    expect(events[0]).not.toHaveProperty('attempt')
+    expect(Array.every(events, (event) => DateTime.isUtc(event.createdAt))).toBe(true)
+    if (checkpoint._tag !== 'AwaitingTurn') throw new Error('Expected awaiting checkpoint')
+    expect(events[2]).toMatchObject({
+      type: 'run.waiting',
+      nodeId: checkpoint.nodeId,
+      executionId: checkpoint.executionId,
+      attempt: 1,
+    })
+    expect(
+      Array.map(await Effect.runPromise(store.getEvents(initialRun.runId, { _tag: 'All' })), (event) => event.type),
+    ).toEqual(['run.started', 'node.started', 'run.waiting'])
+  })
+  it('polls a running turn without changing checkpoints, events or submitting again', async () => {
+    await start()
+    const before = await current()
+    const events = await Effect.runPromise(store.getEvents(initialRun.runId, { _tag: 'All' }))
+    await resume()
+    expect(await current()).toEqual(before)
+    expect(await Effect.runPromise(store.getEvents(initialRun.runId, { _tag: 'All' }))).toEqual(events)
+    expect(submissions).toHaveLength(1)
+  })
+  it('ignores repeated start delivery while a turn awaits explicit resume', async () => {
+    await start()
+    finishTurn('implement')
+    await start()
+    expect(submissions).toHaveLength(1)
+    expect(await current()).toMatchObject({ snapshot: { nodeId: 'implement' } })
+  })
+  it('reconstructs runtime from D1 and submits verification in the same run and Pi session', async () => {
+    await start()
+    finishTurn('implement')
+    await resume()
+    expect(await current()).toMatchObject({
+      status: 'waiting',
+      snapshot: {
+        _tag: 'AwaitingTurn',
+        nodeId: 'verify',
+        commandId: expect.any(String),
+        sessionId: '1',
+      },
+    })
+    expect(submissions).toHaveLength(2)
+    expect(Schema.is(CommandId)(submissions[1]?.input.commandId)).toBe(true)
+    expect(submissions[1]?.input.commandId).not.toBe(submissions[0]?.input.commandId)
+    expect(submissions[1]).toEqual({
+      runId: initialRun.runId,
+      input: {
+        commandId: expect.any(String),
+        prompt: expect.stringContaining('same /workspace/project'),
+      },
+    })
+    expect(submissions[1]?.input.prompt).toContain(
+      'Follow the target repository instructions. Use the official Vite+ CLI for JavaScript runtimes, package managers, dependencies, and tasks. Install it with the official installer if it is missing. Let vp env resolve the target project versions. Use nix develop or a minimal temporary nix shell only for non-JavaScript tools.',
+    )
+    expect(submissions[1]?.input.prompt).not.toContain('same /sandbox/')
+    expect(submissions[1]?.input.prompt).not.toContain('/home/sandbox/')
+    expect(submissions[1]?.input.prompt).toContain('Pi')
+    expect(submissions[1]?.input.prompt).not.toContain('devShell')
+    expect(completeCalls).toEqual([])
+  })
+  it('marks session and run complete only after verification finishes, without container destruction', async () => {
+    await start()
+    finishTurn('implement')
+    await resume()
+    finishTurn('verify')
+    await resume()
+    expect(await current()).toMatchObject({
+      status: 'completed',
+      snapshot: { _tag: 'Completed', runtime: 'pi-harness', sessionId: '1', result: 'verify result' },
+    })
+    expect(completeCalls).toEqual([initialRun.runId])
+    const events = await Effect.runPromise(store.getEvents(initialRun.runId, { _tag: 'All' }))
+    expect(Array.every(events, (event) => Schema.is(EventId)(event.eventId))).toBe(true)
+    const verifyEvents = Array.filter(
+      events,
+      (event): event is Extract<typeof event, { executionId: string }> =>
+        'nodeId' in event && event.nodeId === 'verify',
+    )
+    expect(verifyEvents).toHaveLength(3)
+    expect(
+      Array.every(verifyEvents, (event) => 'executionId' in event && Schema.is(ExecutionId)(event.executionId)),
+    ).toBe(true)
+    expect(verifyEvents[0]?.executionId).toBe(verifyEvents[1]?.executionId)
+    expect(verifyEvents[0]?.executionId).not.toBe(submissions[1]?.input.commandId)
+    expect(
+      Array.map(await Effect.runPromise(store.getEvents(initialRun.runId, { _tag: 'All' })), (event) => event.type),
+    ).toEqual([
+      'run.started',
+      'node.started',
+      'run.waiting',
+      'node.succeeded',
+      'run.resumed',
+      'node.started',
+      'run.waiting',
+      'run.resumed',
+      'node.succeeded',
+      'run.completed',
+    ])
+    await expect(resume()).rejects.toMatchObject({ _tag: 'InvalidOperation' })
+  })
+  it.each(['failed', 'interrupted'] as const)(
+    'atomically reports a %s receipt and retains its container for inspection',
+    async (status) => {
+      await start()
+      receipts = {
+        [submissions[0]!.input.commandId]: {
+          commandId: submissions[0]!.input.commandId,
+          status,
+          error: status === 'failed' ? 'sdk_failure' : 'runtime_interrupted',
+        },
+      }
+      await resume()
+      expect(await current()).toMatchObject({ status: 'failed', snapshot: { _tag: 'Failed', nodeId: 'implement' } })
+      const events = await Effect.runPromise(store.getEvents(initialRun.runId, { _tag: 'All' }))
+      expect(Array.map(Array.takeRight(events, 2), (event) => event.type)).toEqual(['node.failed', 'run.failed'])
+      expect(submissions).toHaveLength(1)
+      expect(completeCalls).toEqual([])
+    },
+  )
+  it('never resubmits an acknowledged turn whose receipt later disappears', async () => {
+    await start()
+    receipts = {}
+    await resume()
+    expect(await current()).toMatchObject({
+      status: 'failed',
+      snapshot: { message: expect.stringContaining('will not be resubmitted') },
+    })
+    expect(submissions).toHaveLength(1)
+  })
+  it('recovers an accepted turn after its awaiting-checkpoint write fails without another Pi submission', async () => {
+    const failing: StoreService = {
+      ...store,
+      commit: (command) =>
+        Option.exists(
+          Schema.decodeUnknownOption(DevelopmentSnapshotJson)(command.snapshot),
+          (snapshot) => snapshot._tag === 'AwaitingTurn',
+        )
+          ? Effect.fail(
+              new ExternalError({ kind: 'storage', operation: 'test checkpoint failure', cause: 'unavailable' }),
+            )
+          : store.commit(command),
+    }
+    await expect(execute(startDevelopmentRun(initialRun.runId), failing)).rejects.toMatchObject({
+      _tag: 'ExternalError',
+      kind: 'storage',
+    })
+    expect(await current()).toMatchObject({
+      status: 'running',
+      snapshot: { _tag: 'PendingTurn', commandId: expect.any(String) },
+    })
+    await resume()
+    expect(await current()).toMatchObject({ status: 'waiting', snapshot: { _tag: 'AwaitingTurn' } })
+    expect(submissions).toHaveLength(1)
+    expect(
+      Array.filter(
+        await Effect.runPromise(store.getEvents(initialRun.runId, { _tag: 'All' })),
+        (event) => event.type === 'node.started',
+      ),
+    ).toHaveLength(1)
+  })
+  it('recovers startup after session creation transport failure with one stable command', async () => {
+    const original = sandbox.ensureSession
+    sandbox = {
+      ...sandbox,
+      ensureSession: () =>
+        Effect.fail(new ExternalError({ kind: 'service', operation: 'test binding', cause: 'offline' })),
+    }
+    await expect(start()).rejects.toMatchObject({ _tag: 'ExternalError', kind: 'service' })
+    expect(await current()).toMatchObject({ status: 'running', snapshot: { _tag: 'Starting' } })
+    const starting = Schema.decodeUnknownSync(DevelopmentSnapshotJson)((await current()).snapshot)
+    if (starting._tag !== 'Starting') throw new Error('Expected starting checkpoint')
+    expect(submissions).toEqual([])
+    sandbox = { ...sandbox, ensureSession: original }
+    await resume()
+    expect(submissions).toHaveLength(1)
+    expect(submissions[0]?.input.commandId).toBe(starting.commandId)
+    const resumed = Schema.decodeUnknownSync(DevelopmentSnapshotJson)((await current()).snapshot)
+    expect(resumed).toMatchObject({ executionId: starting.executionId })
+    expect(Schema.is(ExecutionId)(starting.executionId)).toBe(true)
+    expect(starting.executionId).not.toBe(starting.commandId)
+    expect(
+      Array.filter(
+        await Effect.runPromise(store.getEvents(initialRun.runId, { _tag: 'All' })),
+        (event) => event.type === 'node.started',
+      ),
+    ).toHaveLength(1)
+  })
+  it('fails closed when verification finds an already completed Pi session', async () => {
+    await start()
+    finishTurn('implement')
+    session = { ...session, status: 'completed' }
+    await resume()
+    expect(await current()).toMatchObject({
+      status: 'failed',
+      snapshot: { nodeId: 'verify', message: expect.stringContaining('original active Pi session') },
+    })
+    expect(submissions).toHaveLength(1)
+    expect(completeCalls).toEqual([])
+  })
+  it('recovers a completed Pi session when the final database checkpoint fails', async () => {
+    await start()
+    finishTurn('implement')
+    await resume()
+    finishTurn('verify')
+    const failing: StoreService = {
+      ...store,
+      commit: (command) =>
+        Option.exists(
+          Schema.decodeUnknownOption(DevelopmentSnapshotJson)(command.snapshot),
+          (snapshot) => snapshot._tag === 'Completed',
+        )
+          ? Effect.fail(
+              new ExternalError({ kind: 'storage', operation: 'test final checkpoint failure', cause: 'unavailable' }),
+            )
+          : store.commit(command),
+    }
+    await expect(execute(resumeDevelopmentRun(initialRun.runId), failing)).rejects.toMatchObject({
+      _tag: 'ExternalError',
+      kind: 'storage',
+    })
+    expect(await current()).toMatchObject({
+      status: 'running',
+      snapshot: { _tag: 'Completing', sessionId: '1' },
+    })
+    expect(session.status).toBe('completed')
+    await resume()
+    expect(await current()).toMatchObject({ status: 'completed' })
+    expect(submissions).toHaveLength(2)
+    expect(
+      Array.filter(
+        await Effect.runPromise(store.getEvents(initialRun.runId, { _tag: 'All' })),
+        (event) => event.type === 'run.completed',
+      ),
+    ).toHaveLength(1)
+  })
+  it('rejects a completing checkpoint without command and execution identities', async () => {
+    const snapshot = {
+      _tag: 'Completing',
+      runtime: 'pi-harness',
+      schemaVersion: 1,
+      version: '1.0.0',
+      repository: input.repository.href,
+      task: input.task,
+      sessionId: '1',
+      result: 'Historical verification result',
+    }
+    await Effect.runPromise(
+      store.commit({
+        commitId: 'commit_00000000-0000-4000-8000-000000000012',
+        runId: initialRun.runId,
+        expectedRevision: 0,
+        status: 'running',
+        snapshot,
+        updatedAt: timestamp,
+        events: [],
+      }),
+    )
+    const before = await current()
+    await expect(Effect.runPromise(restoreDevelopment(before))).rejects.toMatchObject({ _tag: 'InvalidSnapshot' })
+    await expect(resume()).rejects.toMatchObject({ _tag: 'InvalidSnapshot' })
+    expect(await current()).toEqual(before)
+    expect(submissions).toEqual([])
+    expect(completeCalls).toEqual([])
+  })
+  it('fails when Pi does not acknowledge session completion after verification', async () => {
+    await start()
+    finishTurn('implement')
+    await resume()
+    finishTurn('verify')
+    sandbox = { ...sandbox, complete: () => Effect.succeed(session) }
+    await resume()
+    expect(await current()).toMatchObject({ status: 'failed', snapshot: { nodeId: 'verify' } })
+    expect(completeCalls).toEqual([])
+  })
+  it('recovers a pending submission rejected before gateway acceptance using its original command ID', async () => {
+    const original = sandbox.submitTurn
+    sandbox = {
+      ...sandbox,
+      submitTurn: () =>
+        Effect.fail(
+          new ExternalError({ kind: 'service', operation: 'test binding', cause: 'unavailable before acceptance' }),
+        ),
+    }
+    await expect(start()).rejects.toMatchObject({ _tag: 'ExternalError', kind: 'service' })
+    expect(await current()).toMatchObject({ snapshot: { _tag: 'PendingTurn', commandId: expect.any(String) } })
+    const pending = Schema.decodeUnknownSync(DevelopmentSnapshotJson)((await current()).snapshot)
+    if (pending._tag !== 'PendingTurn') throw new Error('Expected pending turn')
+    const commandId = pending.commandId
+    expect(Schema.is(CommandId)(commandId)).toBe(true)
+    sandbox = { ...sandbox, submitTurn: original }
+    await resume()
+    expect(submissions).toHaveLength(1)
+    expect(submissions[0]?.input.commandId).toBe(commandId)
+  })
+  it('does not execute a turn before the node start checkpoint commits', async () => {
+    const failing: StoreService = {
+      ...store,
+      commit: () =>
+        Effect.fail(new ExternalError({ kind: 'storage', operation: 'test start failure', cause: 'unavailable' })),
+    }
+    await expect(execute(startDevelopmentRun(initialRun.runId), failing)).rejects.toMatchObject({
+      _tag: 'ExternalError',
+      kind: 'storage',
+    })
+    expect(submissions).toEqual([])
+    expect(await current()).toEqual(initialRun)
+  })
+  it('rejects a restored run with a different pinned version', async () => {
+    await expect(
+      Effect.runPromise(
+        restoreDevelopment({ ...initialRun, workflowVersion: SemVer.make({ major: 2, minor: 0, patch: 0 }) }),
+      ),
+    ).rejects.toMatchObject({ _tag: 'InvalidSnapshot' })
+  })
+})
+
+describe('development CreateRun trust boundary', () => {
+  it('decodes the development wire version into a native SemVer', () => {
+    expect(
+      Schema.decodeUnknownSync(Schema.toCodecJson(DevelopmentCreateRun))({
+        ...input,
+        repository: input.repository.href,
+        version: '1.0.0',
+      }),
+    ).toEqual(input)
+  })
+  it.each([
+    'http://github.com/example/project',
+    'https://gitlab.com/example/project',
+    'https://github.com.evil.test/example/project',
+    'https://user:secret@github.com/example/project',
+    'https://github.com/example/project?token=secret',
+    'https://github.com/example/project/tree/main',
+  ])('rejects unsafe repository URL %s', (repository) => {
+    expect(() =>
+      Schema.decodeUnknownSync(Schema.toCodecJson(DevelopmentCreateRun))({ ...input, version: '1.0.0', repository }),
+    ).toThrow()
+  })
+  it.each(['', '   ', 'x'.repeat(16_001)])('rejects empty or oversized tasks', (task) => {
+    expect(() =>
+      Schema.decodeUnknownSync(Schema.toCodecJson(DevelopmentCreateRun))({
+        ...input,
+        repository: input.repository.href,
+        version: '1.0.0',
+        task,
+      }),
+    ).toThrow()
+  })
+  it.each(['v1', 'v2', '1.0.1', '2.0.0'])('rejects unsupported development version %s', (version) => {
+    expect(() =>
+      Schema.decodeUnknownSync(Schema.toCodecJson(DevelopmentCreateRun))({
+        ...input,
+        repository: input.repository.href,
+        version,
+      }),
+    ).toThrow()
+  })
+})

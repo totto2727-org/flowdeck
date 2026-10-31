@@ -1,0 +1,5 @@
+**
+!Dockerfile
+!Dockerfile.dockerignore
+!nix
+!nix/**

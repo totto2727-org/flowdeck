@@ -1,9 +1,9 @@
 name: CI
 
 on:
-  pull_request:
   push:
     branches: [main]
+  pull_request:
 
 permissions:
   contents: read
@@ -13,9 +13,33 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
-      - uses: totto2727-org/monorepo/.github/actions/setup-nix@main
-      - name: Verify Flowdeck
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check out Reylo source dependency
         run: |
-          eval "$(nix print-dev-env "$GITHUB_WORKSPACE#default")"
-          just ci
+          git init ../../fork/package/reylo
+          git -C ../../fork/package/reylo fetch --depth=1 https://github.com/totto2727-org/reylo.git a9a0aa0c80f0af955dd8e72d3db486005e07a092
+          git -C ../../fork/package/reylo checkout --detach FETCH_HEAD
+      - uses: voidzero-dev/setup-vp@main
+        with:
+          run-install: false
+      - uses: nubjs/setup-nub@c7b970ec04655a2f0a111cd436cc182a3b660e7a # v0.6.0
+        with:
+          nub-version: '0.9.6'
+          node-version: '24'
+      - name: Install Reylo dependencies
+        run: nub install --frozen-lockfile
+        working-directory: ../../fork/package/reylo
+      - name: Install Reylo playground dependencies
+        run: nub install --frozen-lockfile
+        working-directory: ../../fork/package/reylo/site
+      - name: Build linked Reylo
+        run: nub run build
+        working-directory: ../../fork/package/reylo
+      - name: Install Flowdeck
+        run: |
+          vp env install
+          eval "$(vp env print)"
+          vp install --frozen-lockfile
+      - uses: ariga/setup-atlas@v0
+      - name: Verify Vite+ project
+        run: vp run ci
