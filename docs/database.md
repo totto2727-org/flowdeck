@@ -17,33 +17,19 @@ D1 integration tests exercise the trigger contracts against the actual migration
 
 ## Local analysis and checks
 
-Install the [official Atlas CLI](https://atlasgo.io/getting-started/), the official Vite+ CLI, and upstream Reylo's nub 0.9.6 on Node 24.
-The maintained Reylo fork checkout is at `../../fork/package/reylo` relative to this checkout.
-Both `reylo` and `@reylosql/sqlite` link to its built distributions, `dist/reylo` and `dist/sqlite`, as declared in `pnpm-workspace.yaml`.
-Prepare and build that checkout before installing Flowdeck dependencies:
+Install the [official Atlas CLI](https://atlasgo.io/getting-started/) and the official Vite+ CLI.
+The committed package manifest and lockfile use registry dependencies.
+CI uses the shared TypeScript setup action and does not fetch or build unpublished Reylo source.
 
-```sh
-git clone https://github.com/totto2727-org/reylo.git ../../fork/package/reylo
-# Check out the exact Reylo revision pinned by .github/workflows/ci.yml.
-git -C ../../fork/package/reylo checkout --detach <pinned-revision>
-(cd ../../fork/package/reylo && nub install --frozen-lockfile)
-(cd ../../fork/package/reylo/site && nub install --frozen-lockfile)
-(cd ../../fork/package/reylo && nub run build)
-vp env install
-eval "$(vp env print)"
-vp install --frozen-lockfile
-vp run ci
-```
+The HCL source support is currently available only in [Reylo PR #1](https://github.com/totto2727-org/reylo/pull/1), not in the declared published 0.6.0 packages.
+Full checks and startup using this source remain blocked on a suitable published package in a clean registry-only installation.
+Do not bypass that prerequisite in CI, disable checks, or restore committed links, patches, or source-build steps.
 
-Reuse an existing fork checkout instead of cloning over it.
-The fork retains upstream's nub workflow and dependency policy, including separate frozen installs at its root and in `site/`.
-Its standard build produces the runtime, declarations, all four engine distributions, and the bundled playground.
-CI checks out the exact pinned fork commit at the same relative path, sets up nub 0.9.6 on Node 24 with upstream's pinned setup action, and performs those installs and the full build.
-Flowdeck continues to resolve its own environment, install its locked dependencies, and run validation through Vite+.
-Rebuild these distributions after editing the fork.
-Linking its raw TypeScript source would make Flowdeck's strict compiler settings check upstream implementation files rather than the package declarations.
-The distribution boundary retains the application's strict checks without rewriting unrelated upstream code.
-Do not replace these links with published 0.6.0 packages, which do not provide the retained HCL source customization.
+To test the unpublished changes locally, build an existing fork checkout with its standard nub workflow, then link its built `dist/reylo` and `dist/sqlite` packages into this checkout with `pnpm link`.
+Use the fork's built declarations rather than its raw TypeScript source.
+Treat any dependency, workspace, or lockfile edits made by that local link as temporary and do not commit them.
+Run `vp run ci` against those local links and report the result as local fork validation, not clean registry-only CI acceptance.
+Remove the local links before checking the committed dependency installation.
 
 Reylo reads `schema/schema.hcl` directly through the maintained fork's HCL schema source.
 The `.reylo.yaml` source is `direct_url: hcl:./schema/schema.hcl`.
@@ -68,7 +54,9 @@ Do not commit `.atlas/` or `.reylo/`.
 `vp run typecheck` runs the official TypeScript 7.1 compiler with `--runExternalCode` and the registered Reylo Content Mapper.
 That flag permits the installed mapper to execute during compilation.
 `vp run check` adds Vite+ formatting and type-aware lint.
-Vite+'s separate TypeScript 7.0 backend cannot resolve Content Mapper imports, so its duplicate full type check is disabled, not substituted with ambient `any` declarations.
+This is temporary: Vite+ 1.4.0 still reports `TS2307` for the project's SQL imports with its full type check enabled.
+When `vp check` supports SQL Content Mappers, enable its full type check, remove the standalone `typecheck` task and its task dependency, and retain `schema:check` as a separate CI dependency.
+Do not substitute ambient `any` declarations for SQL inference.
 The canonical check still type-checks the complete project through TypeScript 7.1.
 Use `vp run check`, not standalone `vp check`, for the complete check.
 

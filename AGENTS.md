@@ -81,7 +81,10 @@ Do not add Atlas subprocesses, Go runtime calls, or file-backed databases to SQL
 Atlas is reserved for migration generation and migration/HCL drift validation.
 Use Atlas CLI tasks only for migration creation and validation with `--dev-url "sqlite://dev?mode=memory"`, never `schema apply` or a file-backed development database.
 Use `vp run check` for complete TypeScript 7.1 Content Mapper checking plus Vite+ format and type-aware lint.
-Vite+'s independent TypeScript 7.0 checker cannot load Content Mappers, so it is not the application's full type checker.
+The standalone `typecheck` task is temporary: Vite+ 1.4.0 cannot load this project's SQL Content Mappers.
+Remove that task and the `typeCheck: false` opt-out when `vp check` supports them, retaining migration validation in CI.
+Do not bypass unpublished Reylo support with committed package links, patches, or fork checkout/build steps in CI.
+Use temporary local links for fork validation and report registry-only checks as blocked until a suitable release is available.
 Keep receipt, state, and event writes in one native D1 batch using Reylo's public Standard Query `text` and `encode` contract.
 Do not add a custom SQL compiler or batch-binding patch; see [database workflow](docs/database.md).
 

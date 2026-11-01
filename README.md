@@ -11,6 +11,8 @@ Vite+ resolves Node.js and the package manager from this project's configuration
 For Pi inference, configure the existing Cloudflare account and Gateway ID and a Gateway-only key as described in the [sandbox guide](docs/development-sandbox.md#model-and-inference-transport).
 The official pi-ai Gateway provider runs in the run Durable Object without a native AI binding or Container inference proxy.
 Stop if required authentication or permissions are missing and ask the operator to provide access.
+The direct HCL analysis customization is not yet published in the declared Reylo dependencies.
+Until an eligible release exists, use [local fork validation](docs/database.md#local-analysis-and-checks) for this experimental branch; clean registry-only checks and startup are not yet supported.
 
 Run these commands from this repository:
 
