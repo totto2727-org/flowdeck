@@ -50,8 +50,9 @@ Do not commit `.atlas/` or `.reylo/`.
 That flag permits the installed mapper to execute during compilation.
 This is temporary: Vite+ 1.4.0 still reports `TS2307` for the project's SQL imports with its full type check enabled.
 When `vp check` supports SQL Content Mappers, enable its full type check and remove the temporary `check:tsc` task and dependency.
-`vp run fix` also formats HCL with `atlas schema fmt schema`.
-`vp run check` validates the HCL definition with `atlas schema validate` and an in-memory SQLite development database.
+`vp run fix` also formats `atlas.hcl` and schema HCL with `atlas schema fmt atlas.hcl schema`.
+`vp run check` validates the HCL definition with `atlas schema validate --env schema`.
+The `schema` environment in [`atlas.hcl`](../atlas.hcl) defines the HCL input and in-memory SQLite development database.
 This loads the definition without comparing schemas, checking migration checksums, applying migrations, or creating a database file.
 The separate `atlas schema lint` command requires Atlas Pro and is not part of these tasks.
 `vp run test` runs the application tests without additional migration checksum or schema drift checks.
@@ -74,7 +75,7 @@ Alchemy continues to apply the ordinary SQL migration files through the existing
 Generate against the migration directory with an in-memory development database:
 
 ```sh
-atlas migrate diff describe_change --dir file://migrations --to file://schema/schema.hcl --dev-url 'sqlite://dev?mode=memory'
+atlas migrate diff describe_change --env schema
 ```
 
 Atlas can propose redundant replacements for implicit UNIQUE indexes in existing migrations.

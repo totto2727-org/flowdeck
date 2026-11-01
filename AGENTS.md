@@ -38,6 +38,9 @@ Use `vp env install` to resolve Node.js from `engines.node` and the package mana
 Use `vp env current` to inspect resolution and `vp env use --unset` to clear stale session overrides.
 Use `vp install --frozen-lockfile` to install the locked dependencies.
 Use `vp run dev` for the local Alchemy application, `vp run check` for format and typed lint, `vp run test` for tests, and `vp run ci` for the complete configured checks.
+Declare every task as an object with `command`; use an empty command and `dependsOn` for `check` and `fix` aggregators.
+Keep task caching enabled by default and document any necessary exception.
+Keep Atlas schema input and development-database settings in `atlas.hcl`, not in task command arguments.
 Use the standard Alchemy Cloudflare credentials when required.
 Set `CLOUDFLARE_AI_GATEWAY_ID` to an explicit existing Gateway ID, not a default or automatically created Gateway.
 Pi inference runs in the run Durable Object through the official pi-ai Gateway provider, not a Container proxy or native AI binding.
