@@ -28,6 +28,7 @@ For agent-assisted coding tasks, see [Pi development setup and limits](docs/deve
 | [Official Vite+ CLI](https://viteplus.dev/guide/) | Resolve Node.js and the package manager from project settings.     |
 | Alchemy Cloudflare credentials                    | Access the intended Cloudflare account.                            |
 | Alchemy Cloudflare state store                    | Store remote deployment state; local development uses local state. |
+| `FLOWDECK_ACCESS_POLICY_ID` for remote deployment | Reference the existing Pulumi-managed SAML Access policy.          |
 | Unpublished Reylo HCL support                     | Analyze this branch's SQL imports; see the warning below.          |
 
 > [!WARNING]
@@ -59,6 +60,11 @@ vp run dev
 > Remote deployment can create or update Alchemy's Cloudflare state store.
 > Confirm the target account and authorize any required state-store setup before deploying.
 > Changing the backend does not transfer existing local infrastructure state.
+
+Remote deployment attaches the existing `allowSaml` policy from [Pulumi's Cloudflare definitions](https://github.com/totto2727-org/monorepo/blob/main/infra/cloudflare/src/access-policy.ts).
+Set `FLOWDECK_ACCESS_POLICY_ID` to that policy's deployed ID, not the SAML group or identity-provider ID.
+Alchemy owns the Flowdeck Access application, not the shared policy or group.
+Local development supplies a fixed audience and identity through Alchemy's `dev.access` without an authorization bypass.
 
 ## Reference
 

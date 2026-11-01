@@ -17,7 +17,7 @@ import {
 } from '../features/workflow/services/workflow-rpc'
 import { Database } from './database'
 import { DemoWorkflow, Workflow } from './definitions'
-import { DevelopmentWorkflow } from './development-workflow'
+import { DevelopmentWorkflow } from './development-workflow/development-workflow'
 import { makeWorkflowRegistry } from './workflow/features/registration'
 import { makeWorkflows } from './workflow/features/workflow'
 import { DevelopmentWorkflowBinding, WorkflowBinding } from './workflow/features/workflow-binding'

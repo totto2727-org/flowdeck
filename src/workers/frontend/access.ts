@@ -1,14 +1,9 @@
 import { Application } from 'alchemy/Cloudflare/Access'
 import type { WorkerProps } from 'alchemy/Cloudflare/Workers'
-import { Array, Config, Context, Effect, Layer, Schema, String } from 'effect'
+import { Config, Context, Effect, Layer, Schema } from 'effect'
 
-/** Exact identities only. Empty values, wildcards and domain-wide grants are rejected. */
-export const accessEmails = Config.schema(
-  Schema.String.check(
-    Schema.isPattern(/^\s*[^@\s,*]+@[^@\s,*]+\.[^@\s,*]+(?:\s*,\s*[^@\s,*]+@[^@\s,*]+\.[^@\s,*]+)*\s*$/),
-  ),
-  'FLOWDECK_ACCESS_EMAILS',
-).pipe(Config.map((value) => Array.dedupe(Array.map(String.split(value, ','), String.trim))))
+/** Reference the reusable SAML policy owned by monorepo/infra/cloudflare, never recreate its rules. */
+export const accessPolicyId = Config.schema(Schema.String.check(Schema.isUUID()), 'FLOWDECK_ACCESS_POLICY_ID')
 
 export const frontendHostname = 'flowdeck.totto2727.dev'
 
@@ -18,34 +13,35 @@ export class FrontendSecurity extends Context.Service<
 >()('flowdeck/FrontendSecurity') {}
 
 /** No cloud resources or principal configuration are needed by these implementations. */
-export const LocalSecurity = Layer.succeed(FrontendSecurity, { env: { FLOWDECK_LOCAL_DEV: true } })
+export const developmentAccess = {
+  aud: 'flowdeck-development',
+  identity: { email: 'developer@flowdeck.invalid' },
+}
+
+export const LocalSecurity = Layer.succeed(FrontendSecurity, {
+  env: {
+    FLOWDECK_ACCESS_AUD: developmentAccess.aud,
+  },
+})
 export const RuntimeSecurity = Layer.succeed(FrontendSecurity, {})
 
 export const ProductionSecurity = Layer.effect(
   FrontendSecurity,
   Effect.gen(function* () {
-    const emails = yield* accessEmails
+    const policyId = yield* accessPolicyId
     const access = yield* Application('FrontendAccess', {
       type: 'self_hosted',
       name: 'Flowdeck',
       domain: frontendHostname,
       sessionDuration: '24h',
       appLauncherVisible: false,
-      policies: [
-        {
-          name: 'Explicit Flowdeck identities',
-          decision: 'allow',
-          include: Array.map(emails, (email) => ({ email: { email } })),
-        },
-      ],
+      policies: [{ id: policyId, precedence: 1 }],
     })
     return {
       domain: { name: frontendHostname, previews: false },
       access,
       env: {
-        FLOWDECK_LOCAL_DEV: false,
         FLOWDECK_ACCESS_AUD: access.aud,
-        FLOWDECK_ACCESS_EMAILS: emails,
       },
     }
   }),

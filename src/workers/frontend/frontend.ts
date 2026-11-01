@@ -1,11 +1,10 @@
 import { WorkerEnvironment } from 'alchemy/Cloudflare/Workers'
 import { Effect, Predicate, Schema } from 'effect'
-import { HttpServerResponse } from 'effect/http'
 
-import { FrontendAuthorizationLayer } from '../composition'
 import { Control, Frontend } from '../definitions'
-import { FrontendSecurity } from './access'
-import { FrontendAuthorization } from './access-auth'
+import { developmentAccess, FrontendSecurity } from './access'
+import { authorizeFrontend } from './access-auth'
+import { frontendAuthorization } from './features/authorization'
 import { type ControlBinding, makeWebWorker } from './features/worker'
 
 const ControlEnvironment = Schema.Struct({
@@ -23,7 +22,7 @@ export default Frontend.make(
       main: import.meta.url,
       compatibility: { date: '2026-09-01', flags: ['nodejs_compat'] },
       workersDev: { enabled: false, previewsEnabled: false },
-      dev: { host: '127.0.0.1', port: 4380, strictPort: true },
+      dev: { host: '127.0.0.1', port: 4380, strictPort: true, access: developmentAccess },
       ...security,
       env: { ...security.env, CONTROL: yield* Control },
       vite: { rootDir: '.', viteEnvironments: { entry: 'rsc', children: ['ssr'] } },
@@ -31,17 +30,9 @@ export default Frontend.make(
   }),
   Effect.succeed({
     fetch: Effect.gen(function* () {
-      const authorization = yield* FrontendAuthorization
-      yield* authorization.authorize
       const environment = yield* Schema.decodeUnknownEffect(ControlEnvironment)(yield* WorkerEnvironment)
       const worker = yield* makeWebWorker(environment.CONTROL)
       return yield* worker.fetch
-    }).pipe(
-      Effect.provide(FrontendAuthorizationLayer),
-      Effect.catchTag('AccessDenied', (error) =>
-        Effect.succeed(HttpServerResponse.text(error.message, { status: error.status })),
-      ),
-      Effect.orDie,
-    ),
+    }).pipe(frontendAuthorization(authorizeFrontend), Effect.orDie),
   }),
 )

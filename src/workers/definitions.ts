@@ -14,4 +14,4 @@ export class Control extends Worker<Control, { readonly fetch: HttpEffect<Worker
 ) {}
 export class Workflow extends Worker<Workflow, WireWorkflowService<RuntimeContext>>()('Workflow') {}
 export class DemoWorkflow extends Worker<DemoWorkflow, WorkflowExecutor>()('DemoWorkflow') {}
-export type { DevelopmentWorkflow } from './development-workflow'
+export type { DevelopmentWorkflow } from './development-workflow/development-workflow'

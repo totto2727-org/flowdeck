@@ -1,11 +1,11 @@
 import { Effect } from 'effect'
 
 import { DeploymentLayer } from './src/workers/composition'
-import ControlLive from './src/workers/control'
+import ControlLive from './src/workers/control/control'
 import { Control, DemoWorkflow, Frontend, Workflow } from './src/workers/definitions'
-import DemoWorkflowLive from './src/workers/demo-workflow'
-import { DevelopmentWorkflow } from './src/workers/development-workflow'
-import FrontendLive from './src/workers/frontend'
+import DemoWorkflowLive from './src/workers/demo-workflow/demo-workflow'
+import { DevelopmentWorkflow } from './src/workers/development-workflow/development-workflow'
+import FrontendLive from './src/workers/frontend/frontend'
 import WorkflowLive from './src/workers/workflow'
 
 export { Database } from './src/workers/database'

@@ -16,7 +16,7 @@ The application uses Effect 4, Effront, shadcn/ui, Cloudflare Workers, Durable O
 - `sandbox/`: workspace image with the official `computerd` runtime.
 - `src/workers/development-workflow/features/model.ts`: development-owned session and turn receipt schemas.
 - `src/workers/definitions.ts`: lightweight Worker identities and contracts for `.make()` implementations and static bindings, with only a type re-export of `DevelopmentWorkflow` to keep infrastructure out of the frontend runtime graph.
-- `src/workers/development-workflow/index.ts`: the sole external `DevelopmentWorkflow` definition, with native Durable Object exports from `worker.ts` through official Alchemy support, not custom `props.exports`.
+- `src/workers/development-workflow/development-workflow.ts`: the sole external `DevelopmentWorkflow` definition, with native Durable Object exports from `worker.ts` through official Alchemy support, not custom `props.exports`.
 - `src/workers/composition.ts`: final deployment and request dependency selection.
 - `src/workers/database.ts`: the shared D1 resource declaration.
 - `src/features/workflow/`: shared wire schemas, graph projection, typed SQL persistence, and the `Workflows` service contract.
@@ -142,7 +142,10 @@ Preserve independent active, traversed, and selected graph states with pointer a
 Use `flowdeck.totto2727.dev` as the public frontend domain.
 Keep Control API and workflow Workers private, with public `workers.dev` endpoints and previews disabled.
 Declare Cloudflare Access with the public frontend in the same Alchemy project.
-Production access must fail closed without an explicit allow policy.
+Reference the existing Pulumi-managed `allowSaml` policy through `FLOWDECK_ACCESS_POLICY_ID`; do not create duplicate policies, groups, or email allowlists.
+Production access must fail closed without that reusable policy reference.
+Use fixed development environment values and the official `dev.access` simulation, never an internal development-mode authorization branch.
+Keep authentication error responses in Effect HTTP middleware, not Worker resource definitions.
 Local development does not modify Cloudflare resources.
 
 ## Pi development integration
