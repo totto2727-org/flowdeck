@@ -57,9 +57,11 @@ export default defineConfig({
       // Temporary: remove this task when vp check supports SQL Content Mappers.
       'check:tsc': 'tsc --noEmit --runExternalCode',
       'check:atlas': 'atlas schema validate --url file://schema/schema.hcl --dev-url "sqlite://dev?mode=memory"',
-      check: { command: 'vp check', dependsOn: ['check:tsc', 'check:atlas'] },
+      'check:vp': 'vp check',
+      check: { command: '', dependsOn: ['check:vp', 'check:tsc', 'check:atlas'] },
       'fix:atlas': { command: 'atlas schema fmt schema', cache: false },
-      fix: { command: 'vp check --fix', dependsOn: ['fix:atlas'] },
+      'fix:vp': 'vp check --fix',
+      fix: { command: '', dependsOn: ['fix:vp', 'fix:atlas'] },
       test: 'vp test run',
       e2e: {
         command: 'playwright test --config tests/e2e/playwright.config.ts',

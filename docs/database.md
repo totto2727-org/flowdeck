@@ -39,7 +39,7 @@ HCL content hashes replace database fingerprint queries and invalidate cached an
 Static inference uses the embedded engine's built-in functions, not a live D1 function allowlist.
 SQL import analysis requires neither the Atlas executable nor a Go runtime, subprocess, remote service, host database, or application database.
 Unknown declarations, dynamic HCL expressions, invalid references, and syntax errors are rejected rather than ignored.
-Atlas remains the tool for migration generation, not for Content Mapper or SQL loader analysis.
+Atlas manages migrations and checks HCL definitions separately from Content Mapper or SQL loader analysis.
 SQL import analysis needs no separate preparation task and creates no database file.
 Every Atlas development database uses `--dev-url "sqlite://dev?mode=memory"`.
 Do not use `atlas schema apply` or create `.db` files for analysis, validation, or migration generation.
