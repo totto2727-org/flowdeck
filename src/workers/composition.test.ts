@@ -1,55 +1,46 @@
 import { ConfigProvider, Effect } from 'effect'
 import { describe, expect, it } from 'vite-plus/test'
 
-import { deploymentDependencies } from './composition'
-import {
-  developmentAccess,
-  FrontendSecurity,
-  LocalSecurity,
-  ProductionSecurity,
-  RuntimeSecurity,
-} from './frontend/access'
+import { applicationMode } from './composition'
+import { developmentAccess, FrontendSecurity, LocalSecurity, RuntimeSecurity } from './frontend/access'
 import { authorizeAccess } from './frontend/access-auth'
+import { accessAudienceFromEnvironment } from './frontend/assembly'
 
-const selectedDeployment = (values: Record<string, string>) =>
+const selectedApplication = (values: Record<string, string>) =>
   Effect.runPromise(
-    deploymentDependencies.pipe(
-      Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown(values)),
-    ),
+    applicationMode.pipe(Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown(values))),
   )
 
-describe('final dependency composition', () => {
-  it('injects fixed local Access settings without bypassing authorization', async () => {
-    expect(await selectedDeployment({ ALCHEMY_PHASE: 'plan', ALCHEMY_DEV: 'true' })).toBe(LocalSecurity)
+describe('final application composition', () => {
+  it('selects development application mode at the composition boundary', async () => {
+    expect(await selectedApplication({ ALCHEMY_DEV: 'true' })).toBe('development')
+  })
+
+  it('selects production application mode by default', async () => {
+    expect(await selectedApplication({})).toBe('production')
+    expect(await selectedApplication({ ALCHEMY_DEV: 'false' })).toBe('production')
+  })
+
+  it('injects fixed local settings without bypassing the common authorization', async () => {
     const security = await Effect.runPromise(FrontendSecurity.pipe(Effect.provide(LocalSecurity)))
-    expect(security).toEqual({
-      env: {
-        FLOWDECK_ACCESS_AUD: developmentAccess.aud,
-      },
+    expect(security.dev).toEqual({
+      host: '127.0.0.1',
+      port: 4380,
+      strictPort: true,
+      access: developmentAccess,
     })
+    const expected = await Effect.runPromise(accessAudienceFromEnvironment(security.env))
+    expect(expected).toEqual({ aud: developmentAccess.aud })
     await expect(
-      Effect.runPromise(
-        authorizeAccess(
-          security.env,
-          Effect.succeed({
-            aud: developmentAccess.aud,
-            getIdentity: () => Effect.succeed(developmentAccess.identity),
-          }),
-        ),
-      ),
+      Effect.runPromise(authorizeAccess(expected, Effect.succeed({ aud: developmentAccess.aud }))),
     ).resolves.toBeUndefined()
-    await expect(Effect.runPromise(authorizeAccess(security.env, Effect.succeed(undefined)))).rejects.toMatchObject({
+    await expect(Effect.runPromise(authorizeAccess(expected, Effect.succeed(undefined)))).rejects.toMatchObject({
       _tag: 'AccessDenied',
       status: 401,
     })
   })
 
-  it('selects runtime capture without requiring deployment inputs', async () => {
-    expect(await selectedDeployment({ ALCHEMY_PHASE: 'runtime' })).toBe(RuntimeSecurity)
+  it('provides no deployment resource props at the fixed runtime capture boundary', async () => {
     await expect(Effect.runPromise(FrontendSecurity.pipe(Effect.provide(RuntimeSecurity)))).resolves.toEqual({})
-  })
-
-  it('selects production dependencies without falling back when principals are missing', async () => {
-    expect(await selectedDeployment({ ALCHEMY_PHASE: 'plan', ALCHEMY_DEV: 'false' })).toBe(ProductionSecurity)
   })
 })

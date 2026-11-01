@@ -2,8 +2,8 @@ import { WorkerEnvironment } from 'alchemy/Cloudflare/Workers'
 import { Effect, Predicate, Schema } from 'effect'
 
 import { Control, Frontend } from '../definitions'
-import { developmentAccess, FrontendSecurity } from './access'
-import { authorizeFrontend } from './access-auth'
+import { FrontendSecurity } from './access'
+import { authorizeFrontend } from './assembly'
 import { frontendAuthorization } from './features/authorization'
 import { type ControlBinding, makeWebWorker } from './features/worker'
 
@@ -22,7 +22,7 @@ export default Frontend.make(
       main: import.meta.url,
       compatibility: { date: '2026-09-01', flags: ['nodejs_compat'] },
       workersDev: { enabled: false, previewsEnabled: false },
-      dev: { host: '127.0.0.1', port: 4380, strictPort: true, access: developmentAccess },
+      dev: { host: '127.0.0.1', port: 4380, strictPort: true },
       ...security,
       env: { ...security.env, CONTROL: yield* Control },
       vite: { rootDir: '.', viteEnvironments: { entry: 'rsc', children: ['ssr'] } },

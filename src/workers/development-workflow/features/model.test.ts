@@ -8,6 +8,10 @@ import { CommandId, SessionId, TurnReceipt, TurnRequest } from './model'
 const commandId = 'command_3d360c7a-4b1a-4df3-9633-861a220bf5b7'
 
 describe('development operation wire schemas', () => {
+  it('rejects an empty prompt with the official nonempty string schema', () => {
+    expect(Schema.is(TurnRequest)({ commandId, prompt: '' })).toBe(false)
+  })
+
   it('accepts prefixed UUIDv4 operation identities through the standard Schema check', () => {
     expect(Schema.decodeUnknownSync(CommandId)(commandId)).toBe(commandId)
     expect(Schema.decodeUnknownSync(TurnRequest)({ commandId, prompt: 'Verify the change.' })).toEqual({

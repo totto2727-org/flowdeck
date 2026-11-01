@@ -19,7 +19,6 @@ export const PublicRepository = Schema.URL.check(
   }),
 )
 export const DevelopmentTask = Schema.String.check(
-  Schema.isMinLength(1),
   Schema.isMaxLength(16_000),
   Schema.makeFilter((task) => String.isNonEmpty(String.trim(task))),
 )

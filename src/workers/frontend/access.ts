@@ -9,7 +9,7 @@ export const frontendHostname = 'flowdeck.totto2727.dev'
 
 export class FrontendSecurity extends Context.Service<
   FrontendSecurity,
-  Pick<WorkerProps, 'domain' | 'access' | 'env'>
+  Pick<WorkerProps, 'domain' | 'access' | 'env' | 'dev'>
 >()('flowdeck/FrontendSecurity') {}
 
 /** No cloud resources or principal configuration are needed by these implementations. */
@@ -19,6 +19,7 @@ export const developmentAccess = {
 }
 
 export const LocalSecurity = Layer.succeed(FrontendSecurity, {
+  dev: { host: '127.0.0.1', port: 4380, strictPort: true, access: developmentAccess },
   env: {
     FLOWDECK_ACCESS_AUD: developmentAccess.aud,
   },

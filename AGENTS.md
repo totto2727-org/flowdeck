@@ -17,7 +17,10 @@ The application uses Effect 4, Effront, shadcn/ui, Cloudflare Workers, Durable O
 - `src/workers/development-workflow/features/model.ts`: development-owned session and turn receipt schemas.
 - `src/workers/definitions.ts`: lightweight Worker identities and contracts for `.make()` implementations and static bindings, with only a type re-export of `DevelopmentWorkflow` to keep infrastructure out of the frontend runtime graph.
 - `src/workers/development-workflow/development-workflow.ts`: the sole external `DevelopmentWorkflow` definition, with native Durable Object exports from `worker.ts` through official Alchemy support, not custom `props.exports`.
-- `src/workers/composition.ts`: final deployment and request dependency selection.
+- `src/workers/composition.ts`: final selection of the complete development or production application Layer.
+- `src/workers/application.ts`: the complete Worker implementation graph and its fixed development and production dependencies.
+- `src/workers/runtime-composition.ts`: fixed frontend runtime capture assembly, separate from deployment resource provisioning.
+- `src/workers/frontend/assembly.ts`: native request binding decoding and typed Access audience injection.
 - `src/workers/database.ts`: the shared D1 resource declaration.
 - `src/features/workflow/`: shared wire schemas, graph projection, typed SQL persistence, and the `Workflows` service contract.
 - `schema/schema.hcl`: Atlas-managed SQLite tables, constraints, and indexes.
@@ -77,6 +80,9 @@ Document each unavoidable interoperability boundary.
 Compose dependencies with Context services and Layers at entry points.
 Keep workflow effects independent from deployment configuration.
 Select infrastructure-specific implementations only when injecting dependencies at the final composition boundary.
+Select the complete `DevelopmentLayer` or `ProductionLayer`, not individual feature Layers, at the deployment entry.
+Keep native runtime capture in a separate fixed composition so it does not initialize sibling Workers or redeclare Access resources.
+Decode environment bindings in assembly adapters and inject typed values into authorization logic.
 Do not branch on development flags, deployment stages, or infrastructure phases inside feature logic or request authorization.
 Keep Worker-specific features with their Worker, and put shared features under `src/features/`.
 Use explicitly named modules instead of `index.ts` by default.

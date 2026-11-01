@@ -6,7 +6,7 @@ export const { schema: CommandId, make: makeCommandId } = makePrefixedUUIDv4('co
 export type CommandId = typeof CommandId.Type
 export const TurnRequest = Schema.Struct({
   commandId: CommandId,
-  prompt: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(32_768)),
+  prompt: Schema.NonEmptyString.check(Schema.isMaxLength(32_768)),
 })
 export type TurnRequest = typeof TurnRequest.Type
 

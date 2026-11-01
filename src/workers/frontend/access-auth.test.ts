@@ -1,21 +1,27 @@
+import { WorkerEnvironment } from 'alchemy/Cloudflare/Workers'
 import { ConfigProvider, Effect } from 'effect'
 import { describe, expect, it } from 'vite-plus/test'
 
 import { accessPolicyId, frontendHostname } from './access'
-import { authorizeAccess } from './access-auth'
+import { authorizeAccess, ExpectedAccessAudience } from './access-auth'
+import { AccessAudienceBinding, accessAudienceFromEnvironment } from './assembly'
 
-const production = {
-  FLOWDECK_ACCESS_AUD: 'flowdeck-audience',
-}
-
-const admitted = (email = 'operator@example.com', aud = 'flowdeck-audience') =>
-  Effect.succeed({
-    aud,
-    getIdentity: () => Effect.succeed({ email }),
-  })
+const production = { aud: 'flowdeck-audience' }
+const admitted = (aud = 'flowdeck-audience') => Effect.succeed({ aud })
 
 describe('frontend Access admission', () => {
-  it('permits an exact configured identity admitted by the expected Access application', async () => {
+  it('injects the decoded native audience through the request assembly Layer', async () => {
+    await expect(
+      Effect.runPromise(
+        ExpectedAccessAudience.pipe(
+          Effect.provide(AccessAudienceBinding),
+          Effect.provideService(WorkerEnvironment, { FLOWDECK_ACCESS_AUD: 'flowdeck-audience' }),
+        ),
+      ),
+    ).resolves.toEqual(production)
+  })
+
+  it('trusts native admission from the expected Access application', async () => {
     await expect(Effect.runPromise(authorizeAccess(production, admitted()))).resolves.toBeUndefined()
   })
 
@@ -26,55 +32,30 @@ describe('frontend Access admission', () => {
     })
   })
 
-  it('rejects an identity from another Access application', async () => {
-    await expect(
-      Effect.runPromise(authorizeAccess(production, admitted('operator@example.com', 'other-audience'))),
-    ).rejects.toMatchObject({ _tag: 'AccessDenied', status: 403 })
-  })
-
-  it('trusts identities admitted by the configured Access policy without a second email allowlist', async () => {
-    await expect(
-      Effect.runPromise(authorizeAccess(production, admitted('stranger@example.com'))),
-    ).resolves.toBeUndefined()
-  })
-
-  it.each([undefined, {}, { email: undefined }, { email: null }, { email: 42 }])(
-    'rejects admission without a valid identity email: %j',
-    async (identity) => {
-      await expect(
-        Effect.runPromise(
-          authorizeAccess(
-            production,
-            Effect.succeed({
-              aud: 'flowdeck-audience',
-              getIdentity: () => Effect.succeed(identity),
-            }),
-          ),
-        ),
-      ).rejects.toMatchObject({ _tag: 'AccessDenied', status: 403 })
-    },
-  )
-
-  it('reports an unavailable identity service without admitting the caller', async () => {
-    await expect(
-      Effect.runPromise(
-        authorizeAccess(
-          production,
-          Effect.succeed({
-            aud: 'flowdeck-audience',
-            getIdentity: () => Effect.fail(new Error('Identity service unavailable')),
-          }),
-        ),
-      ),
-    ).rejects.toMatchObject({ _tag: 'AccessDenied', status: 503 })
-  })
-
-  it('fails closed when runtime Access configuration is missing', async () => {
-    await expect(Effect.runPromise(authorizeAccess({}, admitted()))).rejects.toMatchObject({
+  it('rejects admission from another Access application', async () => {
+    await expect(Effect.runPromise(authorizeAccess(production, admitted('other-audience')))).rejects.toMatchObject({
       _tag: 'AccessDenied',
-      status: 503,
+      status: 403,
     })
   })
+
+  it('does not fetch or revalidate a trusted identity', async () => {
+    const admission = Effect.succeed({
+      aud: 'flowdeck-audience',
+      getIdentity: () => Effect.die('Identity lookup is unnecessary for native admission.'),
+    })
+    await expect(Effect.runPromise(authorizeAccess(production, admission))).resolves.toBeUndefined()
+  })
+
+  it.each([{}, { FLOWDECK_ACCESS_AUD: '' }, { FLOWDECK_ACCESS_AUD: 42 }])(
+    'fails closed when application configuration is missing or invalid: %j',
+    async (environment) => {
+      await expect(Effect.runPromise(accessAudienceFromEnvironment(environment))).rejects.toMatchObject({
+        _tag: 'AccessDenied',
+        status: 503,
+      })
+    },
+  )
 })
 
 describe('production Access resource inputs', () => {
@@ -91,8 +72,8 @@ describe('production Access resource inputs', () => {
     )
   })
 
-  it.each(['', '*', '*@example.com', 'example.com', 'operator@example.com,', 'operator@example.com, *'])(
-    'rejects a missing or broad identity grant: %j',
+  it.each(['', '*', 'iac-prod-must-authenticate-with-saml', 'not-a-uuid'])(
+    'rejects an invalid existing policy identity: %j',
     async (value) => {
       const provider = ConfigProvider.fromUnknown({ FLOWDECK_ACCESS_POLICY_ID: value })
       await expect(Effect.runPromise(accessPolicyId.parse(provider))).rejects.toMatchObject({ _tag: 'ConfigError' })

@@ -2,7 +2,6 @@ import { Crypto, Effect, Schema } from 'effect'
 
 /** ASCII deliberately excludes whitespace, path separators, controls and Unicode confusables. */
 export const UserDefinedId = Schema.String.check(
-  Schema.isMinLength(1),
   Schema.isMaxLength(128),
   Schema.isTrimmed(),
   // A fixed ASCII alphabet is clearer as a character class; isTrimmed rejects trailing line terminators.

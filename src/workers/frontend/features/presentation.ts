@@ -4,11 +4,16 @@ import type { NodeId } from '../../../features/workflow/domain/identity'
 import type { RunStatus, Shapes } from '../../../features/workflow/domain/model'
 import type { RunEvent } from './view-model'
 
+const jsonIndentationSpaces = 2
+const shortIdLength = 8
+const minimumGraphSize = { width: 560, height: 220 }
+const graphEdgePadding = 40
+
 /** Read-only display serialization uses the same Effect codec as persisted JSON. */
-export const renderJson = Schema.encodeSync(Schema.fromJsonString(Schema.Json, { space: 2 }))
+export const renderJson = Schema.encodeSync(Schema.fromJsonString(Schema.Json, { space: jsonIndentationSpaces }))
 
 export const eventLabel = (type: string) => String.replaceAll('.', ' ')(type)
-export const shortId = (id: string) => String.takeRight(id, 8)
+export const shortId = (id: string) => String.takeRight(id, shortIdLength)
 export const orderedEvents = (events: ReadonlyArray<RunEvent>) =>
   Array.sort(
     events,
@@ -35,9 +40,9 @@ export const runRecoveryAction = (status: RunStatus) =>
   )
 
 export const graphSize = (shapes: Shapes) =>
-  Array.reduce(shapes.nodes, { width: 560, height: 220 }, (size, node) => ({
-    width: Number.max(size.width, node.position.x + node.size.width + 40),
-    height: Number.max(size.height, node.position.y + node.size.height + 40),
+  Array.reduce(shapes.nodes, minimumGraphSize, (size, node) => ({
+    width: Number.max(size.width, node.position.x + node.size.width + graphEdgePadding),
+    height: Number.max(size.height, node.position.y + node.size.height + graphEdgePadding),
   }))
 
 /** Arrow navigation follows graph definition order, not execution status. */

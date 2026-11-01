@@ -1,12 +1,16 @@
-import { ALCHEMY_DEV, ALCHEMY_PHASE } from 'alchemy'
+import { ALCHEMY_DEV } from 'alchemy'
 import { Effect, Layer } from 'effect'
 
-import { LocalSecurity, ProductionSecurity, RuntimeSecurity } from './frontend/access'
+/** Select a complete application, never individual feature implementations. */
+export const applicationMode = ALCHEMY_DEV.pipe(
+  Effect.map((development) => (development ? 'development' : 'production')),
+)
 
-/** Environment differences select dependencies only at the final composition boundary. */
-export const deploymentDependencies = Effect.gen(function* () {
-  if ((yield* ALCHEMY_PHASE) === 'runtime') return RuntimeSecurity
-  return (yield* ALCHEMY_DEV) ? LocalSecurity : ProductionSecurity
+export const applicationDependencies = Effect.gen(function* () {
+  const mode = yield* applicationMode
+  // Deployment-only providers must not enter the fixed frontend runtime graph.
+  const application = yield* Effect.promise(() => import('./application'))
+  return mode === 'development' ? application.DevelopmentLayer : application.ProductionLayer
 })
 
-export const DeploymentLayer = Layer.unwrap(deploymentDependencies)
+export const ApplicationLayer = Layer.unwrap(applicationDependencies)
