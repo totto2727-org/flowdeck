@@ -78,11 +78,12 @@ Use Reylo Content Mapper SQL imports for typed queries, not handwritten table in
 Keep schema analysis local: Reylo reads `schema/schema.hcl` directly through the fork's HCL schema source, without Atlas preparation or database files.
 Reylo parses native HCL directly through the maintained HashiCorp source port and analyzes a static SQLite schema in memory.
 Do not add Atlas subprocesses, Go runtime calls, or file-backed databases to SQL import analysis.
-Atlas is reserved for migration generation.
+Atlas is reserved for migration generation, HCL formatting, and definition validation.
 Use Atlas CLI tasks only for migration creation and validation with `--dev-url "sqlite://dev?mode=memory"`, never `schema apply` or a file-backed development database.
 Use `vp run check` for complete TypeScript 7.1 Content Mapper checking plus Vite+ format and type-aware lint.
-The TypeScript compiler command inside `check` is temporary: Vite+ 1.4.0 cannot load this project's SQL Content Mappers.
-Remove that command and the `typeCheck: false` opt-out when `vp check` supports them.
+The `check:tsc` task is temporary: Vite+ 1.4.0 cannot load this project's SQL Content Mappers.
+Remove that task, its dependency, and the `typeCheck: false` opt-out when `vp check` supports them.
+Use `fix` for Atlas HCL formatting and `check` for definition validation with an in-memory development database.
 Keep existing `check` and `test` task names; do not add automatic migration checksum or schema drift validation.
 Do not bypass unpublished Reylo support with committed package links, patches, or fork checkout/build steps in CI.
 Use temporary local links for fork validation and report registry-only checks as blocked until a suitable release is available.

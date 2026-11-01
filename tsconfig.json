@@ -8,7 +8,7 @@
     "jsx": "react-jsx",
     "noEmit": true,
     "types": ["node", "@cloudflare/workers-types", "vite/client"],
-    "paths": { "@/*": ["./src/workers/frontend/features/*"] }
+    "paths": { "@/*": ["./src/*"] }
   },
   "exclude": ["tmp", "node_modules", "migrations"]
 }

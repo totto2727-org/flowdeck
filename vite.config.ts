@@ -32,7 +32,7 @@ export default defineConfig({
   lint: {
     ignorePatterns,
     // Temporary: Vite+ 1.4.0's checker cannot load SQL Content Mappers (TS2307).
-    // Remove this opt-out and the tsc command in check when vp check supports them.
+    // Remove this opt-out and check:tsc when vp check supports them.
     options: { typeAware: true, typeCheck: false },
   },
   test: {
@@ -54,9 +54,12 @@ export default defineConfig({
         command: 'node --import reylo/register node_modules/alchemy/bin/cli.js dev --config alchemy.run.ts --no-input',
         cache: false,
       },
-      // Temporary: remove tsc when vp check supports SQL Content Mappers.
-      check: 'tsc --noEmit --runExternalCode && vp check',
-      fix: 'vp check --fix',
+      // Temporary: remove this task when vp check supports SQL Content Mappers.
+      'check:tsc': 'tsc --noEmit --runExternalCode',
+      'check:atlas': 'atlas schema validate --url file://schema/schema.hcl --dev-url "sqlite://dev?mode=memory"',
+      check: { command: 'vp check', dependsOn: ['check:tsc', 'check:atlas'] },
+      'fix:atlas': { command: 'atlas schema fmt schema', cache: false },
+      fix: { command: 'vp check --fix', dependsOn: ['fix:atlas'] },
       test: 'vp test run',
       e2e: {
         command: 'playwright test --config tests/e2e/playwright.config.ts',

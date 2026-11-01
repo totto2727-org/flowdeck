@@ -46,10 +46,14 @@ Do not use `atlas schema apply` or create `.db` files for analysis, validation, 
 No D1 credentials, Wrangler-managed database, or network database service is required for SQL analysis.
 Do not commit `.atlas/` or `.reylo/`.
 
-`vp run check` runs the official TypeScript 7.1 compiler with `--runExternalCode` and the registered Reylo Content Mapper, followed by Vite+ formatting and type-aware lint.
+`vp run check` depends on `check:tsc`, which runs the official TypeScript 7.1 compiler with `--runExternalCode` and the registered Reylo Content Mapper, then runs Vite+ formatting checks and type-aware lint.
 That flag permits the installed mapper to execute during compilation.
 This is temporary: Vite+ 1.4.0 still reports `TS2307` for the project's SQL imports with its full type check enabled.
-When `vp check` supports SQL Content Mappers, enable its full type check and remove the temporary compiler command from `check`.
+When `vp check` supports SQL Content Mappers, enable its full type check and remove the temporary `check:tsc` task and dependency.
+`vp run fix` also formats HCL with `atlas schema fmt schema`.
+`vp run check` validates the HCL definition with `atlas schema validate` and an in-memory SQLite development database.
+This loads the definition without comparing schemas, checking migration checksums, applying migrations, or creating a database file.
+The separate `atlas schema lint` command requires Atlas Pro and is not part of these tasks.
 `vp run test` runs the application tests without additional migration checksum or schema drift checks.
 Do not substitute ambient `any` declarations for SQL inference.
 The canonical check still type-checks the complete project through TypeScript 7.1.
