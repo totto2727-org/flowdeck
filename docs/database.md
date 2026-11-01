@@ -12,7 +12,6 @@ There is no handwritten TypeScript table model or query builder.
 Atlas Community does not model SQLite triggers.
 The existing revision, idempotency, graph-identity, and run-identity triggers therefore remain reviewed SQL in the migration history.
 Do not remove them when generating table changes from HCL.
-The HCL drift check covers tables and indexes, not trigger definitions.
 D1 integration tests exercise the trigger contracts against the actual migration files.
 
 ## Local analysis and checks
@@ -40,22 +39,18 @@ HCL content hashes replace database fingerprint queries and invalidate cached an
 Static inference uses the embedded engine's built-in functions, not a live D1 function allowlist.
 SQL import analysis requires neither the Atlas executable nor a Go runtime, subprocess, remote service, host database, or application database.
 Unknown declarations, dynamic HCL expressions, invalid references, and syntax errors are rejected rather than ignored.
-Atlas remains the tool for migration generation and the separate migration/HCL drift check, not for Content Mapper or SQL loader analysis.
+Atlas remains the tool for migration generation, not for Content Mapper or SQL loader analysis.
 SQL import analysis needs no separate preparation task and creates no database file.
-`vp run schema:check` validates migration checksums, renders the migration schema as SQL, replays that SQL in an in-memory Atlas development database, and compares the inspected HCL with the declared HCL.
-The SQL rendering and memory replay normalize SQLite's implicit UNIQUE indexes through Atlas itself.
-The check excludes no indexes, never changes migration files or D1, and fails with the proposed SQL when differences remain.
-Only disposable `.atlas/migrations.sql`, `.atlas/migrations.hcl`, and `.atlas/drift.sql` artifacts are written.
 Every Atlas development database uses `--dev-url "sqlite://dev?mode=memory"`.
 Do not use `atlas schema apply` or create `.db` files for analysis, validation, or migration generation.
 No D1 credentials, Wrangler-managed database, or network database service is required for SQL analysis.
 Do not commit `.atlas/` or `.reylo/`.
 
-`vp run typecheck` runs the official TypeScript 7.1 compiler with `--runExternalCode` and the registered Reylo Content Mapper.
+`vp run check` runs the official TypeScript 7.1 compiler with `--runExternalCode` and the registered Reylo Content Mapper, followed by Vite+ formatting and type-aware lint.
 That flag permits the installed mapper to execute during compilation.
-`vp run check` adds Vite+ formatting and type-aware lint.
 This is temporary: Vite+ 1.4.0 still reports `TS2307` for the project's SQL imports with its full type check enabled.
-When `vp check` supports SQL Content Mappers, enable its full type check, remove the standalone `typecheck` task and its task dependency, and retain `schema:check` as a separate CI dependency.
+When `vp check` supports SQL Content Mappers, enable its full type check and remove the temporary compiler command from `check`.
+`vp run test` runs the application tests without additional migration checksum or schema drift checks.
 Do not substitute ambient `any` declarations for SQL inference.
 The canonical check still type-checks the complete project through TypeScript 7.1.
 Use `vp run check`, not standalone `vp check`, for the complete check.

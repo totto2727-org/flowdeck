@@ -32,7 +32,7 @@ export default defineConfig({
   lint: {
     ignorePatterns,
     // Temporary: Vite+ 1.4.0's checker cannot load SQL Content Mappers (TS2307).
-    // Remove this opt-out and the standalone typecheck task when vp check supports them.
+    // Remove this opt-out and the tsc command in check when vp check supports them.
     options: { typeAware: true, typeCheck: false },
   },
   test: {
@@ -50,22 +50,14 @@ export default defineConfig({
           'docker build --target sandbox -t ghcr.io/totto2727-org/flowdeck/sandbox-base:latest -f sandbox/Dockerfile sandbox',
         cache: false,
       },
-      'schema:check': {
-        // Render migration SQL and replay it in memory to normalize SQLite's implicit UNIQUE indexes.
-        // Compare HCL inputs without applying a schema or creating a database file.
-        command:
-          'atlas migrate validate --dir file://migrations && mkdir -p .atlas && atlas schema inspect --url file://migrations --dev-url "sqlite://dev?mode=memory" --format "{{ sql . }}" > .atlas/migrations.sql && atlas schema inspect --url file://.atlas/migrations.sql --dev-url "sqlite://dev?mode=memory" --format "{{ hcl . }}" > .atlas/migrations.hcl && atlas schema diff --from file://.atlas/migrations.hcl --to file://schema/schema.hcl --dev-url "sqlite://dev?mode=memory" --format "{{ sql . }}" > .atlas/drift.sql && (test ! -s .atlas/drift.sql || (cat .atlas/drift.sql && false))',
-        cache: false,
-      },
-      // Temporary SQL Content Mapper check until Vite+ supports it in vp check; then delete this task.
-      typecheck: { command: 'tsc --noEmit --runExternalCode', dependsOn: ['schema:check'] },
       dev: {
         command: 'node --import reylo/register node_modules/alchemy/bin/cli.js dev --config alchemy.run.ts --no-input',
         cache: false,
       },
-      check: { command: 'vp check', dependsOn: ['typecheck'] },
+      // Temporary: remove tsc when vp check supports SQL Content Mappers.
+      check: 'tsc --noEmit --runExternalCode && vp check',
       fix: 'vp check --fix',
-      test: { command: 'vp test run' },
+      test: 'vp test run',
       e2e: {
         command: 'playwright test --config tests/e2e/playwright.config.ts',
       },
