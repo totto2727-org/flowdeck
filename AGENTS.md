@@ -9,7 +9,8 @@ The application uses Effect 4, Effront, shadcn/ui, Cloudflare Workers, Durable O
 - `src/workers/frontend/`: Frontend entry, Access implementations, and frontend-only features.
 - `src/workers/frontend/features/`: Effront pages, ServerFns, dashboard, graph, and shadcn components.
 - `src/workers/control/`: Control entry and HTTP routes, with one static binding to the integration Worker.
-- `src/workers/workflow/`: Workflow integration entry, catalog, run commands, and fixed per-workflow bindings.
+- `src/workers/workflow.ts`: Workflow integration entry point.
+- `src/workers/workflow/`: Catalog, run commands, and fixed per-workflow bindings.
 - `src/workers/demo-workflow/`: Workflow entry, run Durable Object, and demo-only execution features.
 - `src/workers/development-workflow/`: development checkpoints, run Durable Object, official PiHarness, and Computer Workspace integration.
 - `sandbox/`: workspace image with the official `computerd` runtime.
@@ -42,7 +43,7 @@ Declare every task as an object with `command`; use an empty command and `depend
 Keep task caching enabled by default and document any necessary exception.
 Keep Atlas schema input and development-database settings in `atlas.hcl`, not in task command arguments.
 Use the standard Alchemy Cloudflare credentials when required.
-`alchemy.run.ts` uses the official Cloudflare backend for Alchemy infrastructure state, separate from workflow data in D1.
+`alchemy.run.ts` selects `localState()` for local development and the official Cloudflare state backend for remote deployment through `ALCHEMY_DEV` at the entry point, separate from workflow data in D1.
 A backend configuration change does not migrate existing local infrastructure state.
 Before a first remote operation, confirm the account, state-store availability, and any required state migration; do not bootstrap or deploy without authorization.
 Set `CLOUDFLARE_AI_GATEWAY_ID` to an explicit existing Gateway ID, not a default or automatically created Gateway.
@@ -78,6 +79,7 @@ Keep workflow effects independent from deployment configuration.
 Select infrastructure-specific implementations only when injecting dependencies at the final composition boundary.
 Do not branch on development flags, deployment stages, or infrastructure phases inside feature logic or request authorization.
 Keep Worker-specific features with their Worker, and put shared features under `src/features/`.
+Use explicitly named modules instead of `index.ts` by default.
 Use Atlas HCL for SQLite tables, constraints, and indexes, with versioned SQL migrations consumed by Alchemy.
 Keep SQLite correctness triggers in reviewed migrations because Atlas Community does not model triggers.
 Use Reylo Content Mapper SQL imports for typed queries, not handwritten table interfaces or a query builder.

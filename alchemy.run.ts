@@ -1,12 +1,19 @@
-import { Stack } from 'alchemy'
+import { ALCHEMY_DEV, localState, Stack } from 'alchemy'
 import { providers, state as cloudflareState } from 'alchemy/Cloudflare'
-import { Effect } from 'effect'
+import { Effect, Layer } from 'effect'
 
 import { WorkerResources } from './alchemy'
 
-/** Infrastructure state is shared through the official Cloudflare backend. */
+/** Select infrastructure state only at the deployment entry point. */
+export const DeploymentState = Layer.unwrap(
+  ALCHEMY_DEV.pipe(
+    Effect.orDie,
+    Effect.map((dev) => (dev ? localState() : cloudflareState())),
+  ),
+)
+
 export default Stack(
   'flowdeck',
-  { state: cloudflareState(), providers: providers() },
+  { state: DeploymentState, providers: providers() },
   WorkerResources.pipe(Effect.map(({ frontend }) => ({ frontend: frontend.url }))),
 )

@@ -5,22 +5,22 @@ import type { RuntimeContext } from 'alchemy/RuntimeContext'
 import { Effect, Schema } from 'effect'
 import reylo from 'reylo/vite'
 
-import { makeD1Store } from '../../features/workflow/services/d1-store'
-import { Store } from '../../features/workflow/services/store'
-import { WorkflowRegistry } from '../../features/workflow/services/workflow-definition'
+import { makeD1Store } from '../features/workflow/services/d1-store'
+import { Store } from '../features/workflow/services/store'
+import { WorkflowRegistry } from '../features/workflow/services/workflow-definition'
 import {
   RpcCreateRun,
   RpcRunDetail,
   RpcRunsResponse,
   RpcWorkflowsResponse,
   type WireWorkflowService,
-} from '../../features/workflow/services/workflow-rpc'
-import { Database } from '../database'
-import { DemoWorkflow, Workflow } from '../definitions'
-import { DevelopmentWorkflow } from '../development-workflow'
-import { makeWorkflowRegistry } from './features/registration'
-import { makeWorkflows } from './features/workflow'
-import { DevelopmentWorkflowBinding, WorkflowBinding } from './features/workflow-binding'
+} from '../features/workflow/services/workflow-rpc'
+import { Database } from './database'
+import { DemoWorkflow, Workflow } from './definitions'
+import { DevelopmentWorkflow } from './development-workflow'
+import { makeWorkflowRegistry } from './workflow/features/registration'
+import { makeWorkflows } from './workflow/features/workflow'
+import { DevelopmentWorkflowBinding, WorkflowBinding } from './workflow/features/workflow-binding'
 
 const encodeWorkflowsResponse = Schema.encodeEffect(RpcWorkflowsResponse)
 const encodeRunsResponse = Schema.encodeEffect(RpcRunsResponse)

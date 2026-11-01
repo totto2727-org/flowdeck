@@ -23,12 +23,12 @@ For agent-assisted coding tasks, see [Pi development setup and limits](docs/deve
 
 ## Prerequisites
 
-| Requirement                                       | Purpose                                                        |
-| ------------------------------------------------- | -------------------------------------------------------------- |
-| [Official Vite+ CLI](https://viteplus.dev/guide/) | Resolve Node.js and the package manager from project settings. |
-| Alchemy Cloudflare credentials                    | Access the intended Cloudflare account.                        |
-| Alchemy Cloudflare state store                    | Store infrastructure state; confirm setup before startup.      |
-| Unpublished Reylo HCL support                     | Analyze this branch's SQL imports; see the warning below.      |
+| Requirement                                       | Purpose                                                            |
+| ------------------------------------------------- | ------------------------------------------------------------------ |
+| [Official Vite+ CLI](https://viteplus.dev/guide/) | Resolve Node.js and the package manager from project settings.     |
+| Alchemy Cloudflare credentials                    | Access the intended Cloudflare account.                            |
+| Alchemy Cloudflare state store                    | Store remote deployment state; local development uses local state. |
+| Unpublished Reylo HCL support                     | Analyze this branch's SQL imports; see the warning below.          |
 
 > [!WARNING]
 > The declared registry packages do not yet include the required Reylo HCL support.
@@ -56,8 +56,8 @@ vp run dev
 ```
 
 > [!IMPORTANT]
-> Alchemy can create or update its Cloudflare state store during startup.
-> Confirm the target account and authorize any required state-store setup before running `vp run dev`.
+> Remote deployment can create or update Alchemy's Cloudflare state store.
+> Confirm the target account and authorize any required state-store setup before deploying.
 > Changing the backend does not transfer existing local infrastructure state.
 
 ## Reference
