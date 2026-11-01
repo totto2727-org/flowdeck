@@ -26,7 +26,8 @@ For agent-assisted coding tasks, see [Pi development setup and limits](docs/deve
 | Requirement                                       | Purpose                                                        |
 | ------------------------------------------------- | -------------------------------------------------------------- |
 | [Official Vite+ CLI](https://viteplus.dev/guide/) | Resolve Node.js and the package manager from project settings. |
-| Alchemy Cloudflare credentials                    | Start the application resources.                               |
+| Alchemy Cloudflare credentials                    | Access the intended Cloudflare account.                        |
+| Alchemy Cloudflare state store                    | Store infrastructure state; confirm setup before startup.      |
 | Unpublished Reylo HCL support                     | Analyze this branch's SQL imports; see the warning below.      |
 
 > [!WARNING]
@@ -54,7 +55,10 @@ Complete the [local fork setup](docs/database.md#local-analysis-and-checks) whil
 vp run dev
 ```
 
-Local startup does not deploy the application or change DNS or Access policies.
+> [!IMPORTANT]
+> Alchemy can create or update its Cloudflare state store during startup.
+> Confirm the target account and authorize any required state-store setup before running `vp run dev`.
+> Changing the backend does not transfer existing local infrastructure state.
 
 ## Reference
 

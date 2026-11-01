@@ -1,12 +1,12 @@
-import { localState, Stack } from 'alchemy'
-import { providers } from 'alchemy/Cloudflare'
+import { Stack } from 'alchemy'
+import { providers, state as cloudflareState } from 'alchemy/Cloudflare'
 import { Effect } from 'effect'
 
 import { WorkerResources } from './alchemy'
 
-/** Local state and no deployment task. The injected composition determines cloud resource declarations. */
+/** Infrastructure state is shared through the official Cloudflare backend. */
 export default Stack(
   'flowdeck',
-  { state: localState(), providers: providers() },
+  { state: cloudflareState(), providers: providers() },
   WorkerResources.pipe(Effect.map(({ frontend }) => ({ frontend: frontend.url }))),
 )

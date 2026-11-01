@@ -42,6 +42,9 @@ Declare every task as an object with `command`; use an empty command and `depend
 Keep task caching enabled by default and document any necessary exception.
 Keep Atlas schema input and development-database settings in `atlas.hcl`, not in task command arguments.
 Use the standard Alchemy Cloudflare credentials when required.
+`alchemy.run.ts` uses the official Cloudflare backend for Alchemy infrastructure state, separate from workflow data in D1.
+A backend configuration change does not migrate existing local infrastructure state.
+Before a first remote operation, confirm the account, state-store availability, and any required state migration; do not bootstrap or deploy without authorization.
 Set `CLOUDFLARE_AI_GATEWAY_ID` to an explicit existing Gateway ID, not a default or automatically created Gateway.
 Pi inference runs in the run Durable Object through the official pi-ai Gateway provider, not a Container proxy or native AI binding.
 Stop on missing authentication or permissions instead of trying to bypass them.
