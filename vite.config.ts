@@ -31,8 +31,8 @@ export default defineConfig({
   },
   lint: {
     ignorePatterns,
-    // TypeScript 7.1 owns complete type checking, including SQL Content Mappers.
-    // Vite+'s separate TS 7.0 backend still supplies type-aware lint rules.
+    // Temporary: Vite+ 1.4.0's checker cannot load SQL Content Mappers (TS2307).
+    // Remove this opt-out and the standalone typecheck task when vp check supports them.
     options: { typeAware: true, typeCheck: false },
   },
   test: {
@@ -57,6 +57,7 @@ export default defineConfig({
           'atlas migrate validate --dir file://migrations && mkdir -p .atlas && atlas schema inspect --url file://migrations --dev-url "sqlite://dev?mode=memory" --format "{{ sql . }}" > .atlas/migrations.sql && atlas schema inspect --url file://.atlas/migrations.sql --dev-url "sqlite://dev?mode=memory" --format "{{ hcl . }}" > .atlas/migrations.hcl && atlas schema diff --from file://.atlas/migrations.hcl --to file://schema/schema.hcl --dev-url "sqlite://dev?mode=memory" --format "{{ sql . }}" > .atlas/drift.sql && (test ! -s .atlas/drift.sql || (cat .atlas/drift.sql && false))',
         cache: false,
       },
+      // Temporary SQL Content Mapper check until Vite+ supports it in vp check; then delete this task.
       typecheck: { command: 'tsc --noEmit --runExternalCode', dependsOn: ['schema:check'] },
       dev: {
         command: 'node --import reylo/register node_modules/alchemy/bin/cli.js dev --config alchemy.run.ts --no-input',
