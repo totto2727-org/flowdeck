@@ -241,14 +241,17 @@ table "run_events" {
     type = integer
   }
   column "node_id" {
+    // Run start, resume, completion, and failure events are not tied to a node.
     null = true
     type = text
   }
   column "execution_id" {
+    // Events without a node do not identify a node execution.
     null = true
     type = text
   }
   column "attempt" {
+    // Events without a node execution have no execution attempt number.
     null = true
     type = integer
   }
