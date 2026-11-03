@@ -175,8 +175,10 @@ An identical command can receive its previous receipt even after later revisions
 State and events therefore have one commit boundary.
 Run detail reads use a revision-bounded event prefix so a newer transition cannot attach newer events to an older snapshot.
 The shared DB is canonical for integration Worker and DO reads.
-Applied SQL migrations are immutable.
-Add a new forward migration to strengthen database guards without rewriting local or deployed history.
+Atlas Pro generates SQL migrations from the HCL definitions in `schema/`.
+Keep the generated SQL unchanged by default.
+The undeployed application uses one initial migration.
+After deployment, keep applied migrations immutable and generate new migrations for schema changes.
 
 ## Start and recovery
 

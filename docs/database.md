@@ -3,20 +3,19 @@
 ## Ownership
 
 Flowdeck targets SQLite and Cloudflare D1 only.
-Atlas HCL in [`schema/schema.hcl`](../schema/schema.hcl) defines tables, columns, checks, foreign keys, and indexes.
+Atlas Pro HCL in [`schema/`](../schema/) defines tables, columns, checks, foreign keys, indexes, and triggers.
 Versioned SQL in [`migrations/`](../migrations/) remains the deployment input for Alchemy's D1 resource.
 Atlas does not deploy to D1.
 Reylo infers query input and result types from the SQL files in `src/features/workflow/services/queries/`.
 There is no handwritten TypeScript table model or query builder.
 
-Atlas Community does not model SQLite triggers.
-The existing revision, idempotency, graph-identity, and run-identity triggers therefore remain reviewed SQL in the migration history.
-Do not remove them when generating table changes from HCL.
-D1 integration tests exercise the trigger contracts against the actual migration files.
+D1 integration tests exercise the generated migration files.
 
 ## Local analysis and checks
 
 Install the [official Atlas CLI](https://atlasgo.io/getting-started/) and the official Vite+ CLI.
+Authenticate with `atlas login` using an Atlas Pro organization.
+CI supplies the `ATLAS_CLOUD_TOKEN` secret to `ariga/setup-atlas`.
 The committed package manifest and lockfile use registry dependencies.
 CI uses the shared TypeScript setup action and does not fetch or build unpublished Reylo source.
 
@@ -52,9 +51,8 @@ This is temporary: Vite+ 1.4.0 still reports `TS2307` for the project's SQL impo
 When `vp check` supports SQL Content Mappers, enable its full type check and remove the temporary `check:tsc` task and dependency.
 `vp run fix` also formats `atlas.hcl` and schema HCL with `atlas schema fmt atlas.hcl schema`.
 `vp run check` validates the HCL definition with `atlas schema validate --env schema`.
-The `schema` environment in [`atlas.hcl`](../atlas.hcl) defines the HCL input and in-memory SQLite development database.
+The `schema` environment in [`atlas.hcl`](../atlas.hcl) defines the HCL directory and in-memory SQLite development database.
 This loads the definition without comparing schemas, checking migration checksums, applying migrations, or creating a database file.
-The separate `atlas schema lint` command requires Atlas Pro and is not part of these tasks.
 `vp run test` runs the application tests without additional migration checksum or schema drift checks.
 Do not substitute ambient `any` declarations for SQL inference.
 The canonical check still type-checks the complete project through TypeScript 7.1.
@@ -68,18 +66,19 @@ SQL compilation is a build-time operation; the deployed Worker uses the resultin
 
 ## Schema changes
 
-Edit `schema/schema.hcl`, generate and review a new versioned SQL migration with Atlas, and keep applied migrations immutable.
-Review generated SQL before committing it, especially when triggers depend on changed columns.
-Refresh `migrations/atlas.sum` with `atlas migrate hash` after adding an intentionally reviewed migration.
-Alchemy continues to apply the ordinary SQL migration files through the existing `Database` resource declaration.
+Edit the HCL definitions under `schema/` and generate a versioned SQL migration with Atlas.
+Keep the generated output unchanged by default.
+Correct the HCL source and regenerate instead of patching the SQL.
+The undeployed application uses one generated initial migration.
+After deployment, keep applied migrations immutable and generate new migrations for schema changes.
+Review generated SQL before committing it.
+Alchemy applies the generated SQL through the `Database` resource declaration.
 Generate against the migration directory with an in-memory development database:
 
 ```sh
 atlas migrate diff describe_change --env schema
 ```
 
-Atlas can propose redundant replacements for implicit UNIQUE indexes in existing migrations.
-Do not apply generated changes without review.
 Never point local analysis or migration generation at a deployment database.
 
 ## Atomic writes and the public query contract
@@ -100,6 +99,5 @@ See [upstream differences](upstream-differences.md) for fork provenance and reta
 - [Reylo setup](https://reylo.dev/#setup)
 - [Reylo source](https://github.com/colinhacks/reylo)
 - [Atlas versioned migrations](https://atlasgo.io/versioned/intro)
-- [Atlas SQLite triggers](https://atlasgo.io/guides/sqlite/triggers)
 - [D1 atomic batches](https://developers.cloudflare.com/d1/worker-api/d1-database/#batch)
 - [Official Atlas CI setup](https://atlasgo.io/integrations/github-actions)

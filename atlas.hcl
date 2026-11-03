@@ -1,4 +1,4 @@
 env "schema" {
-  src = "file://schema/schema.hcl"
+  src = "file://schema"
   dev = "sqlite://dev?mode=memory"
 }

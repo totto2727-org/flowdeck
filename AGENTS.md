@@ -23,7 +23,7 @@ The application uses Effect 4, Effront, shadcn/ui, Cloudflare Workers, Durable O
 - `src/workers/frontend/assembly.ts`: native request binding decoding and typed Access audience injection.
 - `src/workers/database.ts`: the shared D1 resource declaration.
 - `src/features/workflow/`: shared wire schemas, graph projection, typed SQL persistence, and the `Workflows` service contract.
-- `schema/schema.hcl`: Atlas-managed SQLite tables, constraints, and indexes.
+- `schema/`: Atlas Pro schema definitions, including tables, constraints, indexes, and triggers.
 - `src/features/workflow/services/queries/`: one Reylo-typed SQL statement per file.
 - `migrations/`: maintained D1 schema migrations.
 - `alchemy.ts` and `alchemy.run.ts`: all application resources in one project.
@@ -44,7 +44,8 @@ Use `vp install --frozen-lockfile` to install the locked dependencies.
 Use `vp run dev` for the local Alchemy application, `vp run check` for format and typed lint, `vp run test` for tests, and `vp run ci` for the complete configured checks.
 Declare every task as an object with `command`; use an empty command and `dependsOn` for `check` and `fix` aggregators.
 Keep task caching enabled by default and document any necessary exception.
-Keep Atlas schema input and development-database settings in `atlas.hcl`, not in task command arguments.
+Keep schema input and development-database settings in `atlas.hcl`, not in task command arguments.
+Authenticate Atlas Pro locally with `atlas login` and supply `ATLAS_CLOUD_TOKEN` to the CI setup action.
 Use the standard Alchemy Cloudflare credentials when required.
 `alchemy.run.ts` selects `localState()` for local development and the official Cloudflare state backend for remote deployment through `ALCHEMY_DEV` at the entry point, separate from workflow data in D1.
 A backend configuration change does not migrate existing local infrastructure state.
@@ -86,8 +87,11 @@ Decode environment bindings in assembly adapters and inject typed values into au
 Do not branch on development flags, deployment stages, or infrastructure phases inside feature logic or request authorization.
 Keep Worker-specific features with their Worker, and put shared features under `src/features/`.
 Use explicitly named modules instead of `index.ts` by default.
-Use Atlas HCL for SQLite tables, constraints, and indexes, with versioned SQL migrations consumed by Alchemy.
-Keep SQLite correctness triggers in reviewed migrations because Atlas Community does not model triggers.
+Use Atlas Pro HCL for SQLite tables, constraints, indexes, and triggers, with generated SQL migrations consumed by Alchemy.
+Keep Atlas-generated migrations unchanged by default.
+Correct the HCL source and regenerate instead of patching SQL.
+This application is undeployed: keep one generated initial migration rather than compatibility migrations.
+After deployment, keep applied migrations immutable and generate new migrations for schema changes.
 Use Reylo Content Mapper SQL imports for typed queries, not handwritten table interfaces or a query builder.
 Keep schema analysis local: Reylo reads `schema/schema.hcl` directly through the fork's HCL schema source, without Atlas preparation or database files.
 Reylo parses native HCL directly through the maintained HashiCorp source port and analyzes a static SQLite schema in memory.

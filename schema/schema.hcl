@@ -1,18 +1,7 @@
-// Tables, checks, foreign keys, and indexes mirror migrations/0001 and 0002.
-// SQLite TEXT PRIMARY KEY columns remain nullable here to preserve zero drift.
-// Do not strengthen nullability without a new, reviewed SQL migration.
-// Atlas Community does not inspect or manage triggers.
-// All eight transactional and identity guards remain in the versioned SQL migrations.
-// Reylo reads this HCL directly for local query analysis without a database file.
-// Runtime databases must apply migrations, including their triggers.
-// Atlas v1.1.3 canary normalizes implicit UNIQUE indexes into named indexes.
-// Its migration diff currently proposes redundant index replacements against
-// the original SQL constraints. Do not apply that generated plan unchanged.
-
 table "workflows" {
   schema = schema.main
   column "workflow_id" {
-    null = true
+    null = false
     type = text
   }
   column "name" {
@@ -26,7 +15,7 @@ table "workflows" {
 table "graphs" {
   schema = schema.main
   column "graph_id" {
-    null = true
+    null = false
     type = text
   }
   column "schema_version" {
@@ -80,7 +69,7 @@ table "workflow_versions" {
 table "runs" {
   schema = schema.main
   column "run_id" {
-    null = true
+    null = false
     type = text
   }
   column "workflow_id" {
@@ -153,7 +142,7 @@ table "runs" {
 table "run_states" {
   schema = schema.main
   column "run_id" {
-    null = true
+    null = false
     type = text
   }
   column "revision" {
@@ -183,7 +172,7 @@ table "run_states" {
 table "commit_receipts" {
   schema = schema.main
   column "commit_id" {
-    null = true
+    null = false
     type = text
   }
   column "run_id" {
@@ -219,7 +208,7 @@ table "commit_receipts" {
     on_update   = NO_ACTION
     on_delete   = NO_ACTION
   }
-  index "sqlite_autoindex_commit_receipts_2" {
+  index "commit_receipts_run_revision" {
     unique  = true
     columns = [column.run_id, column.revision]
   }
@@ -236,7 +225,7 @@ table "commit_receipts" {
 table "run_events" {
   schema = schema.main
   column "event_id" {
-    null = true
+    null = false
     type = text
   }
   column "run_id" {
@@ -290,11 +279,8 @@ table "run_events" {
     on_update   = NO_ACTION
     on_delete   = NO_ACTION
   }
-  index "sqlite_autoindex_run_events_2" {
-    unique  = true
-    columns = [column.run_id, column.sequence]
-  }
   index "run_events_run_sequence" {
+    unique  = true
     columns = [column.run_id, column.sequence]
   }
   check {
