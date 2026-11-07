@@ -10,7 +10,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test'
 import { ExternalError } from '../../../features/workflow/domain/errors'
 import { CommitId, EventId, ExecutionId } from '../../../features/workflow/domain/identity'
 import { JsonObject, RunDetail, type Run } from '../../../features/workflow/domain/model'
-import { makeD1Store } from '../../../features/workflow/services/d1-store'
+import { D1StoreLive } from '../../../features/workflow/services/d1-store'
+import { D1Binding, NativeWorkflowDatabase } from '../../../features/workflow/services/native-database'
 import { Store, type StoreService } from '../../../features/workflow/services/store'
 import { WorkflowRegistry } from '../../../features/workflow/services/workflow-definition'
 import { Workflows } from '../../../features/workflow/services/workflows'
@@ -54,6 +55,8 @@ const initialRun: Run = {
 let miniflare: Miniflare
 let database: D1Database
 let store: StoreService
+let storeLayer: Layer.Layer<Store>
+const freshStore = () => Effect.runSync(Store.pipe(Effect.provide(storeLayer)))
 let receipts: Record<string, TurnReceipt>
 let submissions: ReadonlyArray<{ readonly runId: string; readonly input: TurnRequest }>
 let session: Session
@@ -74,7 +77,11 @@ beforeEach(async () => {
       (query) => database.prepare(query),
     ),
   )
-  store = makeD1Store(database)
+  storeLayer = D1StoreLive.pipe(
+    Layer.provide(NativeWorkflowDatabase),
+    Layer.provide(Layer.succeed(D1Binding, database)),
+  )
+  store = freshStore()
   await Effect.runPromise(store.create(initialRun, developmentGraph, 'Pi development'))
   receipts = {}
   submissions = []
@@ -109,7 +116,7 @@ afterEach(async () => {
 })
 const execute = <A, E>(
   effect: Effect.Effect<A, E, Store | DevelopmentSandbox | Crypto.Crypto>,
-  suppliedStore = makeD1Store(database),
+  suppliedStore = freshStore(),
 ) =>
   Effect.runPromise(
     effect.pipe(
@@ -118,7 +125,7 @@ const execute = <A, E>(
       Effect.provide(BrowserCrypto.layer),
     ),
   )
-const current = () => Effect.runPromise(makeD1Store(database).getRun(initialRun.runId))
+const current = () => Effect.runPromise(freshStore().getRun(initialRun.runId))
 const start = () => execute(startDevelopmentRun(initialRun.runId))
 const resume = () => execute(resumeDevelopmentRun(initialRun.runId))
 const finishTurn = (node: 'implement' | 'verify') => {
@@ -184,7 +191,7 @@ describe('development workflow with canonical D1 checkpoints', () => {
   it('routes create and resume through the distinct static development binding', async () => {
     const provide = <A, E>(effect: Effect.Effect<A, E, Store | DevelopmentSandbox | Crypto.Crypto>) =>
       effect.pipe(
-        Effect.provideService(Store, makeD1Store(database)),
+        Effect.provideService(Store, freshStore()),
         Effect.provideService(DevelopmentSandbox, sandbox),
         Effect.provide(BrowserCrypto.layer),
       )

@@ -5,6 +5,7 @@ export class NotFound extends Data.TaggedError('NotFound')<{
 }> {}
 export class Conflict extends Data.TaggedError('Conflict')<{
   readonly message: string
+  readonly cause?: unknown
 }> {}
 export class InvalidOperation extends Data.TaggedError('InvalidOperation')<{
   readonly message: string

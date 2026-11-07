@@ -7,6 +7,7 @@ import {
   RpcRunDetail,
   RpcRunsResponse,
   RpcWorkflowsResponse,
+  workflowRpcErrors,
   type WireWorkflowService,
 } from '../../features/workflow/services/workflow-rpc'
 import { Workflows } from '../../features/workflow/services/workflows'
@@ -32,6 +33,7 @@ export default Control.make(
   Effect.sync(() => {
     const rpc = makeRpcStub<WireWorkflowService>(
       WorkerEnvironment.pipe(Effect.map((environment) => environment['WORKFLOW'])),
+      { errors: workflowRpcErrors },
     )
     const workflows: Workflows['Service'] = {
       listWorkflows: () => rpc.listWorkflows().pipe(Effect.flatMap(decodeWorkflowsResponse)),

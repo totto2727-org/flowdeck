@@ -5,12 +5,13 @@ import { BrowserCrypto } from '@effect/platform-browser'
 import { PiHarness, ROOT_SESSION } from 'agents/harness/pi'
 import { Lifecycle, type LifecycleJobContext, type LifecycleJobOutcome } from 'agents/lifecycle'
 import { DurableObject, WorkerEntrypoint } from 'cloudflare:workers'
-import { Array, Effect, Schema, Semaphore } from 'effect'
+import { Array, Effect, Layer, Schema, Semaphore } from 'effect'
 
 import { ExternalError } from '../../features/workflow/domain/errors'
 import { RunId } from '../../features/workflow/domain/identity'
-import { makeD1Store } from '../../features/workflow/services/d1-store'
-import { Store } from '../../features/workflow/services/store'
+import { D1StoreLive } from '../../features/workflow/services/d1-store'
+import { D1Binding, NativeWorkflowDatabase } from '../../features/workflow/services/native-database'
+import { Store, type StoreService } from '../../features/workflow/services/store'
 import type { DevelopmentEnvironment } from './container'
 import { resumeDevelopmentRun, startDevelopmentRun } from './features/development'
 import { CommandId, SessionId, type Session, type TurnReceipt } from './features/model'
@@ -50,13 +51,22 @@ function workspaceOptions(self: DevelopmentContainerBase): WorkspaceOptions {
 export class DevelopmentRun extends withWorkspace(DevelopmentContainerBase, workspaceOptions) {
   readonly #lifecycle: Lifecycle<DevelopmentEnvironment>
   readonly #harness: PiHarness
-  readonly #store: ReturnType<typeof makeD1Store>
+  readonly #store: StoreService
   readonly #modelId: string
   readonly #lock = Effect.runSync(Semaphore.make(1))
 
   constructor(ctx: DurableObjectState, env: DevelopmentEnvironment) {
     super(ctx, env)
-    this.#store = makeD1Store(env.DATABASE)
+    this.#store = Effect.runSync(
+      Store.pipe(
+        Effect.provide(
+          D1StoreLive.pipe(
+            Layer.provide(NativeWorkflowDatabase),
+            Layer.provide(Layer.succeed(D1Binding, env.DATABASE)),
+          ),
+        ),
+      ),
+    )
     const { models, model } = makeDevelopmentModels({
       accountId: env.CLOUDFLARE_ACCOUNT_ID,
       gatewayId: env.CLOUDFLARE_AI_GATEWAY_ID,
@@ -184,9 +194,13 @@ export class DevelopmentRun extends withWorkspace(DevelopmentContainerBase, work
             yield* Effect.promise(() => this.#lifecycle.jobs.cancel(LEASE_JOB))
           }
         }).pipe(
-          Effect.provideService(Store, this.#store),
-          Effect.provideService(DevelopmentSandbox, this.#sandbox()),
-          Effect.provide(BrowserCrypto.layer),
+          Effect.provide(
+            Layer.mergeAll(
+              Layer.succeed(Store, this.#store),
+              Layer.succeed(DevelopmentSandbox, this.#sandbox()),
+              BrowserCrypto.layer,
+            ),
+          ),
         ),
       ),
     )

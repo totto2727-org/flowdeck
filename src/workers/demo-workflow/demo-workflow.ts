@@ -1,11 +1,11 @@
 import { QueryDatabase, QueryDatabaseBinding } from 'alchemy/Cloudflare/D1'
 import { DurableObject } from 'alchemy/Cloudflare/Workers'
-import { Effect } from 'effect'
+import { Effect, Layer } from 'effect'
 import reylo from 'reylo/vite'
 
 import type { RunId } from '../../features/workflow/domain/identity'
-import { makeD1Store } from '../../features/workflow/services/d1-store'
-import { Store } from '../../features/workflow/services/store'
+import { D1StoreLive } from '../../features/workflow/services/d1-store'
+import { WorkflowDatabase } from '../../features/workflow/services/database'
 import { Database } from '../database'
 import { DemoWorkflow } from '../definitions'
 import { resumeRun, startRun } from './features/demo'
@@ -15,14 +15,13 @@ export class FlowdeckRun extends DurableObject<FlowdeckRun>()(
   'FlowdeckRun',
   Effect.gen(function* () {
     const database = yield* QueryDatabase(yield* Database)
-    return Effect.gen(function* () {
-      const store = makeD1Store(yield* database.raw)
-      return {
-        start: (runId: RunId) =>
-          startRun(runId).pipe(Effect.provideService(Store, store), Effect.provide(BrowserCrypto.layer)),
-        resume: (runId: RunId) =>
-          resumeRun(runId).pipe(Effect.provideService(Store, store), Effect.provide(BrowserCrypto.layer)),
-      }
+    const services = Layer.merge(
+      D1StoreLive.pipe(Layer.provide(Layer.succeed(WorkflowDatabase, database))),
+      BrowserCrypto.layer,
+    )
+    return Effect.succeed({
+      start: (runId: RunId) => startRun(runId).pipe(Effect.provide(services)),
+      resume: (runId: RunId) => resumeRun(runId).pipe(Effect.provide(services)),
     })
   }).pipe(Effect.provide(QueryDatabaseBinding)),
 ) {}

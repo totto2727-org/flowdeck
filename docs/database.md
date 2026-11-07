@@ -83,16 +83,27 @@ Never point local analysis or migration generation at a deployment database.
 
 ## Atomic writes and the public query contract
 
-The store uses ordinary Reylo query execution for reads.
-Creation and commits prepare all statements and submit them together through native `D1Database.batch`.
+`D1StoreLive` obtains the selected Alchemy `QueryDatabaseClient` through the `WorkflowDatabase` Context service and Layer composition.
+Reylo supplies SQL, inferred input and row types, and parameter encoding; Alchemy executes reads through `first` and `all`.
+Creation and commits submit prepared statements together through Alchemy's `batch`, which delegates to one native atomic D1 batch.
+The store never evaluates the client's `raw` binding or recreates its Promise-to-Effect executor.
 The receipt guard, revision update, snapshot, and events must not be split into separate query calls.
 The commit acknowledgment is read only after that batch succeeds.
 
 The maintained Reylo fork exposes its existing Standard Query contract at `query['~standard'].query`.
-The store passes its public `text` to native D1 `prepare` and its `encode(input)` values to `bind`.
+The store passes its public `text` to Alchemy's `prepare` and its `encode(input)` values to `bind`.
+Domain Schema codecs validate persisted row values after execution.
 Reylo owns placeholder ordering, parameter validation, and encoding, with inferred query parameters retained at the store boundary.
 Flowdeck does not add a SQL compiler, access private query internals, or patch a batch-binding method.
-See [upstream differences](upstream-differences.md) for fork provenance and retained changes.
+Worker and Effect-native Durable Object entry points obtain the client through `QueryDatabaseBinding`.
+The native Pi Durable Object and Miniflare tests provide `D1Binding` to `NativeWorkflowDatabase`, which delegates to Alchemy's existing client builder.
+A version-scoped dependency patch exports that builder from the D1 entry point without modifying its implementation.
+See [upstream differences](upstream-differences.md) for provenance, patch scope, and removal criteria.
+
+Alchemy reports rejected D1 operations as defects.
+The store translates those defects into typed storage failures, retains the original cause and stack, and leaves interruption unchanged.
+Control registers failure logging and HTTP error translation through `HttpRouter.middleware`.
+The logging Middleware records the original Effect cause once before HTTP translation, without logging request bodies or changing client error responses.
 
 ## Official references
 

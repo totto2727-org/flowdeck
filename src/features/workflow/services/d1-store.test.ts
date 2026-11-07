@@ -23,7 +23,9 @@ import { DevelopmentWorkflowBinding, WorkflowBinding } from '../../../workers/wo
 import { ExternalError } from '../domain/errors'
 import { CommitId, EventId, ExecutionId, RunId } from '../domain/identity'
 import { RunDetail, RunsResponse, type Run, type WorkflowVersion } from '../domain/model'
-import { makeD1Store } from './d1-store'
+import { D1StoreLive } from './d1-store'
+import { WorkflowDatabase } from './database'
+import { D1Binding, NativeWorkflowDatabase } from './native-database'
 import { type CommitCommand, Store, type StoreService } from './store'
 import { WorkflowRegistry, type RegisteredWorkflow } from './workflow-definition'
 import { Workflows } from './workflows'
@@ -75,6 +77,8 @@ const command = (overrides: Partial<CommitCommand> = {}): CommitCommand => ({
 let miniflare: Miniflare
 let database: D1Database
 let store: StoreService
+let storeLayer: Layer.Layer<Store>
+const freshStore = () => Effect.runSync(Store.pipe(Effect.provide(storeLayer)))
 beforeEach(async () => {
   miniflare = new Miniflare({
     modules: true,
@@ -90,7 +94,11 @@ beforeEach(async () => {
       (query) => database.prepare(query),
     ),
   )
-  store = makeD1Store(database)
+  storeLayer = D1StoreLive.pipe(
+    Layer.provide(NativeWorkflowDatabase),
+    Layer.provide(Layer.succeed(D1Binding, database)),
+  )
+  store = freshStore()
 })
 afterEach(async () => {
   await miniflare.dispose()
@@ -105,9 +113,9 @@ const seed = (runId = 'run_00000000-0000-4000-8000-000000000001', version: Workf
 const testBinding = () =>
   Layer.succeed(WorkflowBinding, {
     start: (runId) =>
-      startRun(runId).pipe(Effect.provideService(Store, makeD1Store(database)), Effect.provide(BrowserCrypto.layer)),
+      startRun(runId).pipe(Effect.provideService(Store, freshStore()), Effect.provide(BrowserCrypto.layer)),
     resume: (runId) =>
-      resumeRun(runId).pipe(Effect.provideService(Store, makeD1Store(database)), Effect.provide(BrowserCrypto.layer)),
+      resumeRun(runId).pipe(Effect.provideService(Store, freshStore()), Effect.provide(BrowserCrypto.layer)),
   })
 const unavailableDevelopmentBinding = Layer.succeed(DevelopmentWorkflowBinding, {
   start: () =>
@@ -149,6 +157,74 @@ const api = (registry?: ReadonlyArray<RegisteredWorkflow>) =>
   )
 
 describe('D1 persisted run store', () => {
+  it('preserves executor interruption without converting it into a storage failure', async () => {
+    const client = Effect.runSync(
+      WorkflowDatabase.pipe(
+        Effect.provide(NativeWorkflowDatabase.pipe(Layer.provide(Layer.succeed(D1Binding, database)))),
+      ),
+    )
+    const interrupted = Effect.runSync(
+      Store.pipe(
+        Effect.provide(
+          D1StoreLive.pipe(
+            Layer.provide(
+              Layer.succeed(WorkflowDatabase, {
+                ...client,
+                batch: () => Effect.interrupt,
+              }),
+            ),
+          ),
+        ),
+      ),
+    )
+    const exit = await Effect.runPromiseExit(
+      interrupted.create(newRun(command().runId), demoGraph(version1), demoDefinition.summary.name),
+    )
+    expect(Exit.hasInterrupts(exit)).toBe(true)
+    expect(await Effect.runPromise(store.listRuns)).toEqual([])
+  })
+
+  it('uses Alchemy executors without evaluating the raw client binding', async () => {
+    const client = Effect.runSync(
+      WorkflowDatabase.pipe(
+        Effect.provide(NativeWorkflowDatabase.pipe(Layer.provide(Layer.succeed(D1Binding, database)))),
+      ),
+    )
+    const raw = vi.fn(() => {
+      throw new Error('Raw access is forbidden')
+    })
+    store = Effect.runSync(
+      Store.pipe(
+        Effect.provide(
+          D1StoreLive.pipe(
+            Layer.provide(
+              Layer.succeed(WorkflowDatabase, {
+                ...client,
+                raw: Effect.sync(raw),
+              }),
+            ),
+          ),
+        ),
+      ),
+    )
+    await seed()
+    expect(await Effect.runPromise(store.listRuns)).toHaveLength(1)
+    expect(await Effect.runPromise(store.getGraph(demoGraph(version1).graphId))).toEqual(demoGraph(version1))
+    expect(await Effect.runPromise(store.commit(command()))).toMatchObject({ revision: 1 })
+    expect(await Effect.runPromise(store.getRun(command().runId))).toMatchObject({ revision: 1 })
+    expect(await Effect.runPromise(store.getEvents(command().runId, { _tag: 'All' }))).toHaveLength(1)
+    expect(raw).not.toHaveBeenCalled()
+  })
+
+  it('retains the original D1 constraint failure and stack for upstream logging', async () => {
+    await seed()
+    await Effect.runPromise(store.commit(command()))
+    const error = await Effect.runPromise(store.commit(command({ snapshot: { changed: true } })).pipe(Effect.flip))
+    expect(error).toMatchObject({ _tag: 'Conflict', cause: { message: expect.stringContaining('flowdeck_') } })
+    expect(error).toHaveProperty('cause', expect.any(Error))
+    expect(error).toHaveProperty('cause.stack', expect.any(String))
+  })
+
   it.each([
     { runId: '00000000-0000-4000-8000-000000000001' },
     { workflowId: '../demo' },
@@ -173,7 +249,7 @@ describe('D1 persisted run store', () => {
       .bind('run_00000000-0000-4000-8000-000000000001')
       .first<{ workflow_version: string }>()
     expect(row?.workflow_version).toBe('1.0.0')
-    const restored = await Effect.runPromise(makeD1Store(database).getRun('run_00000000-0000-4000-8000-000000000001'))
+    const restored = await Effect.runPromise(freshStore().getRun('run_00000000-0000-4000-8000-000000000001'))
     expect(SemVer.isSemVer(restored.workflowVersion)).toBe(true)
     expect(SemVer.equals(restored.workflowVersion, version1)).toBe(true)
   })
@@ -193,7 +269,7 @@ describe('D1 persisted run store', () => {
       .bind(eventId)
       .first()
     expect(physical).toEqual({ node_id: null, execution_id: null, attempt: null, created_at: DateTime.formatIso(now) })
-    const restored = makeD1Store(database)
+    const restored = freshStore()
     expect(await Effect.runPromise(restored.getRun(command().runId))).toMatchObject({ createdAt: now, updatedAt: now })
     expect(await Effect.runPromise(restored.getEvents(command().runId, { _tag: 'All' }))).toEqual([
       { ...runEvent, runId: command().runId, sequence: 1 },
@@ -283,7 +359,7 @@ describe('D1 persisted run store', () => {
 
   it('persists run identity, graph and initial snapshot across store reconstruction', async () => {
     await seed()
-    const restored = makeD1Store(database)
+    const restored = freshStore()
     expect(await Effect.runPromise(restored.getRun('run_00000000-0000-4000-8000-000000000001'))).toEqual(
       newRun('run_00000000-0000-4000-8000-000000000001'),
     )
@@ -515,7 +591,7 @@ describe('demo cold restoration', () => {
         workflowVersion: version,
         snapshot: { _tag: 'Waiting', version: SemVer.format(version) },
       })
-      store = makeD1Store(database)
+      store = freshStore()
       await run(startRun('run_00000000-0000-4000-8000-000000000001'))
       expect(await Effect.runPromise(store.getRun('run_00000000-0000-4000-8000-000000000001'))).toEqual(waiting)
       await run(resumeRun('run_00000000-0000-4000-8000-000000000001'))
@@ -546,7 +622,7 @@ describe('demo cold restoration', () => {
   it('recovers a committed running prepare checkpoint without duplicating its start event', async () => {
     await seed()
     await Effect.runPromise(store.commit(command()))
-    store = makeD1Store(database)
+    store = freshStore()
     await run(resumeRun('run_00000000-0000-4000-8000-000000000001'))
     expect(await Effect.runPromise(store.getRun('run_00000000-0000-4000-8000-000000000001'))).toMatchObject({
       status: 'waiting',
@@ -622,7 +698,7 @@ describe('interrupted workflow recovery', () => {
       status: 'running',
       snapshot: { _tag: 'Publishing', prepared: 'draft:v1' },
     })
-    store = makeD1Store(database)
+    store = freshStore()
     await run(resumeRun('run_00000000-0000-4000-8000-000000000001'))
     const events = await Effect.runPromise(store.getEvents('run_00000000-0000-4000-8000-000000000001', { _tag: 'All' }))
     expect(Array.filter(events, (event) => event.type === 'node.started' && event.nodeId === 'publish')).toHaveLength(1)

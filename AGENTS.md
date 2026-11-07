@@ -79,6 +79,9 @@ Use Effect HttpClient for HTTP clients and Effect HTTP for API routing and respo
 Use native Request, Response, Promise, and Cloudflare binding interfaces only in the smallest adapters required by the runtime or a typed library.
 Document each unavoidable interoperability boundary.
 Compose dependencies with Context services and Layers at entry points.
+Prefer the established Effect, Effront, and Effect HTTP extension points over custom function wrappers or argument-based dependency injection.
+Define HTTP interception, error translation, and failure logging as registered Middleware.
+Log failures once at the outer operation boundary, preserving the original cause and stack rather than logging again in storage adapters.
 Keep workflow effects independent from deployment configuration.
 Select infrastructure-specific implementations only when injecting dependencies at the final composition boundary.
 Select the complete `DevelopmentLayer` or `ProductionLayer`, not individual feature Layers, at the deployment entry.
@@ -106,6 +109,7 @@ Keep existing `check` and `test` task names; do not add automatic migration chec
 Do not bypass unpublished Reylo support with committed package links, patches, or fork checkout/build steps in CI.
 Use temporary local links for fork validation and report registry-only checks as blocked until a suitable release is available.
 Keep receipt, state, and event writes in one native D1 batch using Reylo's public Standard Query `text` and `encode` contract.
+Use Alchemy's Effect-native D1 executor for reads and atomic batches; do not extract its raw binding and recreate Promise-to-Effect execution wrappers.
 Do not add a custom SQL compiler or batch-binding patch; see [database workflow](docs/database.md).
 
 ## Workflow invariants
@@ -115,6 +119,8 @@ Use the additional `Workflow` integration Worker as Control's only workflow serv
 Keep catalog, initial run persistence, and per-workflow routing in that Worker, not in Control.
 Treat each workflow as an independent application module.
 Keep workflow IDs, supported versions, input schemas, initial snapshots, and graphs in that workflow's own feature files.
+Define different workflow versions separately and select them at the version boundary rather than branching inside a shared graph or behavior definition.
+Share processing only where the version behavior is identical.
 The shared `WorkflowDefinition` and `WorkflowExecutor` interfaces contain no individual workflow knowledge.
 Compose workflow-provided definitions and static bindings only in `src/workers/workflow/features/registration.ts`.
 The integration service and frontend consume that registry and its catalog mechanically, without workflow-specific branches.

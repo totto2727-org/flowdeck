@@ -78,8 +78,9 @@ Domain rejections such as `Conflict` and `InvalidSnapshot` have no optional caus
 The HTTP boundary returns safe messages rather than external causes, retaining 500 for storage failures and 502 for service failures.
 State-dependent fields belong to explicit tagged variants; optional properties are reserved for genuinely optional metadata.
 Atlas HCL defines SQLite tables, checks, foreign keys, and indexes.
-Reylo Content Mapper infers query input and result types from SQL against an HCL-generated local SQLite database.
-The D1 adapter uses Reylo's checked binding path to produce native prepared statements.
+Reylo Content Mapper infers query input and result types directly from the local HCL schema.
+`D1StoreLive` obtains Alchemy's Effect-native database client through Context and Layer composition.
+Reylo supplies checked SQL and parameter encoding; Alchemy owns prepared statement execution and atomic batches.
 D1 `batch` provides atomic receipt, checkpoint, and event writes; independent query calls do not provide that transaction.
 See [database workflow](database.md) for schema generation, migration ownership, and the narrow upstream binding patch.
 The frontend adapts the native static binding to the Fetch implementation consumed by Effect HttpClient.

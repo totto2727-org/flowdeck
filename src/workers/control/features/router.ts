@@ -1,7 +1,8 @@
 import type { RpcCallError, RpcDecodeError } from 'alchemy/Rpc'
-import { Effect, Schema } from 'effect'
+import { Effect, Layer, Schema } from 'effect'
 import { Headers, HttpBody, HttpRouter, HttpServerError, HttpServerRequest, HttpServerResponse } from 'effect/http'
 
+import { operationFailureLogging } from '../../../features/operation-logging'
 import { ExternalError, type DomainError } from '../../../features/workflow/domain/errors'
 import { RunId } from '../../../features/workflow/domain/identity'
 import {
@@ -13,17 +14,20 @@ import {
 } from '../../../features/workflow/domain/model'
 import { Workflows } from '../../../features/workflow/services/workflows'
 
-type ApiFailure = DomainError | Schema.SchemaError | HttpServerError.HttpServerError | HttpBody.HttpBodyError
+type ApiFailure = DomainError | HttpServerError.HttpServerError | HttpBody.HttpBodyError | RpcCallError | RpcDecodeError
 const errorResponse = (status: number, error: string, message: string) =>
   HttpServerResponse.schemaJson(Schema.toCodecJson(ApiErrorResponse))({ error, message }, { status })
-const boundary = <R>(handler: Effect.Effect<HttpServerResponse.HttpServerResponse, ApiFailure, R>) =>
+
+const ApiErrors = HttpRouter.middleware<{ handles: ApiFailure }>()((handler) =>
   handler.pipe(
-    // makeRpcStub preserves the declared service shape, so transport failures need this wider boundary.
-    Effect.mapError((error: ApiFailure | RpcCallError | RpcDecodeError) =>
-      error._tag === 'RpcCallError' || error._tag === 'RpcDecodeError'
-        ? new ExternalError({ operation: 'call workflow worker', cause: error, kind: 'service' })
-        : error,
-    ),
+    operationFailureLogging,
+    // The RPC client's declared service shape does not include its transport failures.
+    Effect.catchTags({
+      RpcCallError: (cause) =>
+        Effect.fail(new ExternalError({ operation: 'call workflow worker', cause, kind: 'service' })),
+      RpcDecodeError: (cause) =>
+        Effect.fail(new ExternalError({ operation: 'call workflow worker', cause, kind: 'service' })),
+    }),
     Effect.catchTags({
       NotFound: () => errorResponse(404, 'NotFound', 'Run or graph not found'),
       Conflict: () => errorResponse(409, 'Conflict', 'Run changed concurrently or a delivery ID was reused'),
@@ -38,88 +42,76 @@ const boundary = <R>(handler: Effect.Effect<HttpServerResponse.HttpServerRespons
       HttpServerError: () => errorResponse(400, 'InvalidRequest', 'Request body could not be read'),
       HttpBodyError: () => errorResponse(500, 'EncodingError', 'Response could not be encoded'),
     }),
-  )
-// Control mutations are server-binding/CLI operations, never browser requests.
-// Reject Origin before parsing a body, including text/plain no-cors submissions.
-const serverMutation = <R>(handler: Effect.Effect<HttpServerResponse.HttpServerResponse, ApiFailure, R>) =>
-  boundary(
-    Effect.gen(function* () {
-      const request = yield* HttpServerRequest.HttpServerRequest
-      if (Headers.has(request.headers, 'origin')) {
-        return yield* errorResponse(403, 'Forbidden', 'Browser-originated control mutations are not allowed')
-      }
-      return yield* handler
-    }),
-  )
+  ),
+)
+
+// Reject browser mutations before body decoding, including text/plain no-cors submissions.
+const ServerMutations = HttpRouter.middleware((handler) =>
+  Effect.gen(function* () {
+    const request = yield* HttpServerRequest.HttpServerRequest
+    if (request.method === 'POST' && Headers.has(request.headers, 'origin')) {
+      return yield* errorResponse(403, 'Forbidden', 'Browser-originated control mutations are not allowed')
+    }
+    return yield* handler
+  }),
+)
+
 const runId = HttpRouter.params.pipe(
   Effect.flatMap(Schema.decodeUnknownEffect(Schema.Struct({ runId: RunId }))),
   Effect.map((params) => params.runId),
 )
 
-/** No native Request, Response, fetch, or URL parsing is used in API handlers.
- * The outer Cloudflare worker owns the sole native HTTP bridge. */
 export const ApiRoutes = HttpRouter.use((router) =>
   router.addAll([
     HttpRouter.route(
       'GET',
       '/api/workflows',
-      boundary(
-        Workflows.pipe(
-          Effect.flatMap((workflows) => workflows.listWorkflows()),
-          Effect.flatMap(HttpServerResponse.schemaJson(Schema.toCodecJson(WorkflowsResponse))),
-        ),
+      Workflows.pipe(
+        Effect.flatMap((workflows) => workflows.listWorkflows()),
+        Effect.flatMap(HttpServerResponse.schemaJson(Schema.toCodecJson(WorkflowsResponse))),
       ),
     ),
     HttpRouter.route(
       'GET',
       '/api/runs',
-      boundary(
-        Workflows.pipe(
-          Effect.flatMap((workflows) => workflows.listRuns()),
-          Effect.flatMap(HttpServerResponse.schemaJson(Schema.toCodecJson(RunsResponse))),
-        ),
+      Workflows.pipe(
+        Effect.flatMap((workflows) => workflows.listRuns()),
+        Effect.flatMap(HttpServerResponse.schemaJson(Schema.toCodecJson(RunsResponse))),
       ),
     ),
     HttpRouter.route(
       'POST',
       '/api/runs',
-      serverMutation(
-        Effect.gen(function* () {
-          const input = yield* HttpServerRequest.schemaBodyJson(Schema.toCodecJson(CreateRun), {
-            onExcessProperty: 'error',
-          })
-          const workflows = yield* Workflows
-          return yield* HttpServerResponse.schemaJson(Schema.toCodecJson(RunDetail))(
-            yield* workflows.createRun(input),
-            { status: 201 },
-          )
-        }),
-      ),
+      Effect.gen(function* () {
+        const input = yield* HttpServerRequest.schemaBodyJson(Schema.toCodecJson(CreateRun), {
+          onExcessProperty: 'error',
+        })
+        const workflows = yield* Workflows
+        return yield* HttpServerResponse.schemaJson(Schema.toCodecJson(RunDetail))(yield* workflows.createRun(input), {
+          status: 201,
+        })
+      }),
     ),
     HttpRouter.route(
       'GET',
       '/api/runs/:runId',
-      boundary(
-        Effect.gen(function* () {
-          const workflows = yield* Workflows
-          return yield* HttpServerResponse.schemaJson(Schema.toCodecJson(RunDetail))(
-            yield* workflows.getRunDetail(yield* runId),
-          )
-        }),
-      ),
+      Effect.gen(function* () {
+        const workflows = yield* Workflows
+        return yield* HttpServerResponse.schemaJson(Schema.toCodecJson(RunDetail))(
+          yield* workflows.getRunDetail(yield* runId),
+        )
+      }),
     ),
     HttpRouter.route(
       'POST',
       '/api/runs/:runId/resume',
-      serverMutation(
-        Effect.gen(function* () {
-          const workflows = yield* Workflows
-          return yield* HttpServerResponse.schemaJson(Schema.toCodecJson(RunDetail))(
-            yield* workflows.resumeRun(yield* runId),
-          )
-        }),
-      ),
+      Effect.gen(function* () {
+        const workflows = yield* Workflows
+        return yield* HttpServerResponse.schemaJson(Schema.toCodecJson(RunDetail))(
+          yield* workflows.resumeRun(yield* runId),
+        )
+      }),
     ),
   ]),
-)
+).pipe(Layer.provide(ApiErrors.combine(ServerMutations).layer))
 export const routesLayer = ApiRoutes

@@ -2,17 +2,18 @@ import * as BrowserCrypto from '@effect/platform-browser/BrowserCrypto'
 import { QueryDatabase, QueryDatabaseBinding } from 'alchemy/Cloudflare/D1'
 import { makeRpcStub, WorkerEnvironment } from 'alchemy/Cloudflare/Workers'
 import type { RuntimeContext } from 'alchemy/RuntimeContext'
-import { Effect, Schema } from 'effect'
+import { Effect, Layer, Schema } from 'effect'
 import reylo from 'reylo/vite'
 
-import { makeD1Store } from '../features/workflow/services/d1-store'
-import { Store } from '../features/workflow/services/store'
+import { D1StoreLive } from '../features/workflow/services/d1-store'
+import { WorkflowDatabase } from '../features/workflow/services/database'
 import { WorkflowRegistry } from '../features/workflow/services/workflow-definition'
 import {
   RpcCreateRun,
   RpcRunDetail,
   RpcRunsResponse,
   RpcWorkflowsResponse,
+  workflowRpcErrors,
   type WireWorkflowService,
 } from '../features/workflow/services/workflow-rpc'
 import { Database } from './database'
@@ -43,24 +44,19 @@ export default Workflow.make(
     const database = yield* QueryDatabase(yield* Database)
     const demo = makeRpcStub<WorkflowBinding['Service']>(
       WorkerEnvironment.pipe(Effect.map((environment) => environment['DEMO'])),
+      { errors: workflowRpcErrors },
     )
     const development = makeRpcStub<DevelopmentWorkflowBinding['Service']>(
       WorkerEnvironment.pipe(Effect.map((environment) => environment['DEVELOPMENT'])),
+      { errors: workflowRpcErrors },
     )
     const registry = yield* makeWorkflowRegistry.pipe(
       Effect.provideService(WorkflowBinding, demo),
       Effect.provideService(DevelopmentWorkflowBinding, development),
     )
-    // Resolve runtime-only D1 access inside each RPC call, never during Worker construction.
-    const service = database.raw.pipe(
-      Effect.map(makeD1Store),
-      Effect.flatMap((store) =>
-        makeWorkflows.pipe(
-          Effect.provideService(Store, store),
-          Effect.provideService(WorkflowRegistry, registry),
-          Effect.provide(BrowserCrypto.layer),
-        ),
-      ),
+    const storeLayer = D1StoreLive.pipe(Layer.provide(Layer.succeed(WorkflowDatabase, database)))
+    const service = makeWorkflows.pipe(
+      Effect.provide(Layer.mergeAll(storeLayer, Layer.succeed(WorkflowRegistry, registry), BrowserCrypto.layer)),
     )
     return {
       listWorkflows: () =>
