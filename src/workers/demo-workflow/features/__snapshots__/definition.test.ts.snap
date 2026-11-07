@@ -1,0 +1,91 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`demo definition > keeps the published definition SemVer(1.0.0) stable > demo 1.0.0 1`] = `
+{
+  "graph": {
+    "edges": [
+      {
+        "edgeId": "prepare-approval",
+        "label": "prepared",
+        "source": "prepare",
+        "target": "approval",
+      },
+      {
+        "edgeId": "approval-publish",
+        "label": "resume",
+        "source": "approval",
+        "target": "publish",
+      },
+    ],
+    "graphId": "demo-1_0_0-graph-1",
+    "nodes": [
+      {
+        "kind": "task",
+        "label": "Prepare release",
+        "nodeId": "prepare",
+      },
+      {
+        "kind": "checkpoint",
+        "label": "Manual approval",
+        "nodeId": "approval",
+      },
+      {
+        "kind": "task",
+        "label": "Publish release",
+        "nodeId": "publish",
+      },
+    ],
+    "schemaVersion": 1,
+  },
+  "snapshot": {
+    "_tag": "Ready",
+    "schemaVersion": 1,
+    "version": "1.0.0",
+  },
+}
+`;
+
+exports[`demo definition > keeps the published definition SemVer(2.0.0) stable > demo 2.0.0 1`] = `
+{
+  "graph": {
+    "edges": [
+      {
+        "edgeId": "prepare-approval",
+        "label": "prepared",
+        "source": "prepare",
+        "target": "approval",
+      },
+      {
+        "edgeId": "approval-publish",
+        "label": "resume",
+        "source": "approval",
+        "target": "publish",
+      },
+    ],
+    "graphId": "demo-2_0_0-graph-1",
+    "nodes": [
+      {
+        "kind": "task",
+        "label": "Enrich release",
+        "nodeId": "prepare",
+      },
+      {
+        "kind": "checkpoint",
+        "label": "Manual approval",
+        "nodeId": "approval",
+      },
+      {
+        "kind": "task",
+        "label": "Publish enriched release",
+        "nodeId": "publish",
+      },
+    ],
+    "schemaVersion": 1,
+  },
+  "snapshot": {
+    "_tag": "Ready",
+    "schemaVersion": 1,
+    "version": "2.0.0",
+  },
+}
+`;

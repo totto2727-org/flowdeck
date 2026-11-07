@@ -1,0 +1,179 @@
+# Pi development sandbox
+
+This guide serves trusted operators and maintainers who run implementation and verification tasks in one workspace.
+The official PiHarness integration has passed local project CI and browser validation.
+Real coding validation has confirmed source changes, focused tests, and the built public export, but the complete implementation-to-verification workflow remains unverified.
+This is a local experiment, not a production or multitenant execution service.
+
+## Components
+
+- The run Durable Object uses official `PiHarness` from `agents/harness/pi` and `Harness` from `@earendil-works/pi-durable` for durable conversation and operation execution.
+- `@cloudflare/computer` Workspace owns the filesystem interface, with `ContainerBackend` for shell execution and official `createPiTools` declarations and dispatch installed in the pi-durable registry.
+- `sandbox/Dockerfile` supplies official `computerd` 0.5.1 and repository tool prerequisites, not an embedded Pi SDK, custom HTTP runner, or inference proxy.
+- `src/workers/development-workflow/` owns the run Durable Object, workspace integration, model configuration, checkpoints, and Container binding.
+- The shared D1 database owns workflow identity, graph, checkpoints, and ordered events.
+- Control reaches the private `Workflow` integration Worker through one static service binding.
+- The integration Worker owns the catalog, initial run persistence, and fixed bindings to the individual workflow Workers.
+
+The workflow ID is `jcode-development`, and the infrastructure resource name is `JcodeSandbox`.
+The frontend label is **Pi development**.
+Runs use runtime `pi-harness`, version `1.0.0`, and graph `jcode-development-1_0_0-graph-1`.
+Snapshots and turn receipts require prefixed UUIDv4 command identities, and node events use independent prefixed UUIDv4 execution identities persisted before submission.
+The official root session identity is the literal `1`, scoped to the run Durable Object.
+Repository URLs and versions are native `URL` and `SemVer` values inside the development workflow.
+The official JSON codecs encode these values as strings only at the input and snapshot persistence boundaries.
+Run and event timestamps use native `DateTime.Utc` values, and `run.waiting` carries its actual node and execution identities.
+Legacy runtimes, versions, and command identities are rejected without migration.
+
+## Local setup
+
+Install official Vite+ locally with `curl -fsSL https://vite.plus | bash`, then open a new shell.
+Use `vp env install` to resolve the project's Node.js and package-manager versions, and start Docker before starting Flowdeck.
+Do not provision Vite+, Node.js, pnpm, Bun, or Deno through Nix.
+The Flowdeck image does not install Deno directly; do not assume that Vite+ manages it.
+Use the standard Alchemy Cloudflare credentials when required.
+Stop if authentication or permissions are missing and ask the operator to provide access.
+Do not attempt to bypass these prerequisites.
+
+`sandbox/Dockerfile` contains all image stages, with `ubuntu:26.04` as the operating-system base.
+Stage `nix` installs Nix, stage `sandbox` applies Home Manager, and final stage `workspace` installs FUSE prerequisites and copies the official computerd binary.
+The binary source is `ghcr.io/cloudflare/computer-computerd-linux-x64:0.5.1`; the final image does not inherit the official scratch image.
+The Ubuntu environment supplies `/bin/sh`, which the official exec implementation starts with `-c` for shell commands.
+The standalone flake and custom package definitions are under `sandbox/nix/`, without a monorepo input or local sibling import.
+See [sandbox image maintenance](../sandbox/README.md) for source provenance, build targets, and validation limits.
+The current official computerd image is x64, so build and run the final workspace for Linux amd64.
+The generic `nix` and `sandbox` targets also support Linux arm64; they do not establish an arm64 computerd workspace.
+The final stage inherits `sandbox`, `/home/sandbox`, and the Nix profile `PATH` from the provisioning stages.
+It adds `fuse3`, `libfuse2t64`, and `ca-certificates`, and creates the writable workspace directory.
+`FLOWDECK_WORKSPACE_IMAGE` optionally selects a prepared official-computerd-compatible image directly at resource composition.
+When it is unset, Flowdeck builds the final workspace target, with `FLOWDECK_PI_DOCKERFILE` available as an alternate Dockerfile selector.
+There is no `WORKSPACE_IMAGE` Dockerfile base argument.
+A prepared image must already contain the backend runtime, shell, and FUSE prerequisites; an arbitrary untouched image is not supported.
+
+The Flowdeck sandbox base supplies Git and Nix.
+The final workspace stage installs official Vite+ as `sandbox`, with `VP_HOME=/home/sandbox/.vite-plus` and `VP_NODE_MANAGER=yes`.
+Its `bin` directory is on `PATH`, so the workspace supplies global `vp`.
+The image does not bake in fixed project Node.js or package-manager versions.
+In the target checkout, use `vp env install` to resolve those versions from the project's configuration.
+Follow that repository's declared package manager and lockfile rather than assuming pnpm.
+Use `nix develop` or a minimal temporary `nix shell` only for required non-JavaScript tools.
+Nix's internal Bun dependency for the existing oo and Monid builds does not provide user-facing Bun management.
+Flowdeck manages its copied image definitions independently without modifying the original monorepo images.
+The original generic image's lightweight tool inventory remains tracked in [monorepo #384](https://github.com/totto2727-org/monorepo/issues/384).
+
+Run as `sandbox`, keep `HOME=/home/sandbox`, and use `/workspace/project` as the checkout path through Computer Workspace.
+The Container serves the official `computerd` backend on port 8080, not a custom session/turn HTTP gateway.
+Keep its build context limited to `sandbox/`.
+
+```bash
+vp env install
+vp install --frozen-lockfile
+DOCKER_DEFAULT_PLATFORM=linux/amd64 vp run dev
+```
+
+Alchemy builds all required stages from the same Dockerfile and `sandbox/` context.
+Separate `build:nix` and `build:sandbox` tasks are optional intermediate-image builds, not startup prerequisites.
+No Flowdeck base image publication is required for a remote build of this Dockerfile.
+The configured tasks do not publish images or authorize a deployment.
+Do not replace Alchemy's `sandbox/` context with the repository root.
+Flowdeck CI uses the shared `setup-typescript` action, which delegates Vite+ setup and project version resolution to `setup-vp`.
+It does not need separate `setup-node`, Nix setup or evaluation, or forced JavaScript version inputs.
+
+The frontend uses loopback port 4380 and the private development Worker uses loopback port 4383.
+Select **Pi development**, enter a public GitHub repository and a task, then start a new run.
+Explicit resume reads the harness operation result and advances to verification or completion.
+Implementation and verification reuse the same run-scoped session and checkout.
+The local implementation trial confirmed one run-scoped Container and checkout during editing and repeated explicit polling.
+Implementation settlement and the subsequent verification turn remain unverified.
+
+## Model and inference transport
+
+The fixed model is `custom-opencode-go/deepseek-v4.1-flash` through Cloudflare AI Gateway.
+The run Durable Object configures the official pi-ai provider with `cloudflareAIGatewayAuth` and `withOpenCodeSessionHeader` over its OpenAI completions API.
+It calls the Gateway compatibility endpoint directly:
+
+```text
+https://gateway.ai.cloudflare.com/v1/<account-id>/<gateway-id>/compat
+```
+
+Set `CLOUDFLARE_ACCOUNT_ID` and an explicit existing `CLOUDFLARE_AI_GATEWAY_ID` with stored BYOK configuration.
+Flowdeck does not select or create a default Gateway.
+`Config.Redacted('CLOUDFLARE_AI_GATEWAY_API_KEY')` is registered as a native Worker `secret_text` binding and used only by the run Durable Object.
+The official provider resolves Gateway authentication inside that credential boundary.
+Provider keys remain in Gateway stored BYOK.
+There is no separate inference Worker, Container inference proxy, custom authorization transport, or runtime provider fallback.
+The current path does not use a native AI binding.
+A missing or inaccessible model must fail.
+
+For an approved live task, provide the Gateway-only credential to Alchemy:
+
+```bash
+pass-cli exec cloudflare/account-id -- pass-cli exec cloudflare/ai-gateway-id -- pass-cli exec cloudflare/ai-gateway-api-key -- vp run dev
+```
+
+Do not pass inference credentials to Workspace tools, the Container environment, images, build arguments, logs, or task prompts.
+Do not add dummy provider authorization headers or mount a host login directory.
+This design has an application credential in the Durable Object, not a credential-free application.
+
+## Session, operations, and workspace lifetime
+
+Each run owns one Durable Object, one Computer Workspace with its Container backend, and one Pi root session.
+Official `ROOT_SESSION = '1'` is scoped by that run Durable Object, not shared globally across runs.
+PiHarness and pi-durable own durable conversation and operation state.
+The workflow commits command identity before submitting it as a harness operation ID.
+The workflow adapter maps harness submission, pending operations, and results to its session/turn receipt contract.
+It does not implement a second Container-side receipt store or agent loop.
+Durable operation state does not guarantee exactly-once external side effects or automatic restoration of lost shell work.
+
+Official Lifecycle jobs renew the native six-hour Container inactivity timeout every five hours for unfinished runs while the Container is running.
+Node transitions reuse the workspace rather than resetting the session.
+Failed work remains available for inspection and can continue to incur charges.
+Renewal does not advance workflow nodes or restart a stopped Container.
+See [workspace retention](development-workflow-retention.md) for policy and operator cleanup.
+Durable conversation and Workspace state do not establish recovery of all Container-local files or interrupted external effects.
+
+## Trust and acceptance boundary
+
+The Access-authorized frontend invokes the private Control path in a deployed application.
+The agent loop and Gateway-only credential stay in the run Durable Object.
+Repository code and shell tools execute in the Computer Container backend.
+This separation is not evidence of tenant isolation, safe execution of hostile repositories, or protection against unauthorized inference charges.
+Model output remains untrusted and can contain secrets.
+
+Local Flowdeck validation passed normal cached CI with 125 tests and 14 desktop/mobile browser checks.
+A real Control API run completed both PiHarness turns with explicit workflow resume in the same Container, root session, and checkout.
+Pi changed only the target function and focused tests.
+This trial preceded the official Vite+ provisioning change.
+After completion, an operator independently used a temporary `nix shell` to run five focused tests, format/type/lint checks, a direct `vp pack` build, and five cases through the built public export.
+The source, manifest, lockfile, and Nix configuration stayed unchanged except for the two requested source and test files.
+
+The following provisioning results describe that earlier trial, not the current official Vite+ setup.
+The trial needed an operator's Container-only DNS adjustment before Nix cache downloads worked.
+Pi tried Nix before that adjustment, then used the repository's pinned Bun and frozen dependencies; the operator separately verified temporary Nix tool provisioning.
+This does not establish unattended Nix setup.
+The normal cached target CI still failed with `spawn EINVAL`.
+Direct build success does not establish normal target CI success.
+Pi also used `--no-cache` despite the task's explicit prohibition; those results do not establish policy-compliant acceptance.
+Keep normal cache behavior enabled and track these failures in [dependency provisioning and cached tasks #14](https://github.com/totto2727-org/flowdeck/issues/14).
+Successful harness operation settlement does not establish task acceptance or instruction compliance ([task acceptance #15](https://github.com/totto2727-org/flowdeck/issues/15)).
+Earlier direct-SDK results do not validate the current runtime.
+Five/six-hour retention, unattended dependency setup, production deployment, Access, and DNS have not been accepted.
+
+Keep these concern links, with their scope reassessed under the current architecture:
+
+- [Credential isolation #10](https://github.com/totto2727-org/flowdeck/issues/10): validate the Durable Object credential boundary and remaining abuse risks, not the removed inference proxy.
+- [Workspace-loss recovery #11](https://github.com/totto2727-org/flowdeck/issues/11): establish Workspace and Container-loss recovery limits without assuming durable Pi history restores shell effects.
+- [Local Alchemy startup #12](https://github.com/totto2727-org/flowdeck/issues/12): validate the current local stack and official runtime integration.
+- [Native AI binding validation #13](https://github.com/totto2727-org/flowdeck/issues/13): a separate concern, not validation of the current pi-ai HTTPS Gateway provider.
+- [Dependency provisioning and cached tasks #14](https://github.com/totto2727-org/flowdeck/issues/14): the earlier temporary-Nix trial required a Container-only DNS adjustment and its normal cached target CI failed with `spawn EINVAL`; the current official Vite+ setup requires separate acceptance.
+
+The frontend build concern remains separate.
+Local startup does not authorize deployment, DNS or Access changes, or image publication.
+
+## Sources
+
+- Official installed APIs: `agents/harness/pi`, `agents/lifecycle`, `@earendil-works/pi-durable`, `@cloudflare/computer`, and `@cloudflare/computer/tools/pi-ai`.
+- Integration: the runtime entry, resource composition, `features/models.ts`, and `features/workspace.ts` under `src/workers/development-workflow/`.
+- [Cloudflare Computer](https://github.com/cloudflare/computer)
+- [Cloudflare AI Gateway stored BYOK](https://developers.cloudflare.com/ai-gateway/configuration/bring-your-own-keys/)
+- [Cloudflare Container inactivity timeout](https://developers.cloudflare.com/containers/api/durable-object-container/#setinactivitytimeout)

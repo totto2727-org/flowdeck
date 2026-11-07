@@ -1,0 +1,57 @@
+diff --git a/lib/Cloudflare/D1/index.d.ts b/lib/Cloudflare/D1/index.d.ts
+index 6e573ae6ba45e9c36685d320dfa7f387c7eb3cd3..9d174dcf1c34b2b6e6a095076f71ffbdcf222380 100644
+--- a/lib/Cloudflare/D1/index.d.ts
++++ b/lib/Cloudflare/D1/index.d.ts
+@@ -1,5 +1,6 @@
+ export * from "./Database.ts";
+ export * from "./QueryDatabase.ts";
+ export * from "./QueryDatabaseBinding.ts";
++export { makeQueryDatabaseClientFrom } from "./QueryDatabaseHttpClient.ts";
+ export * from "./QueryDatabaseLocal.ts";
+ //# sourceMappingURL=index.d.ts.map
+\ No newline at end of file
+diff --git a/lib/Cloudflare/D1/index.js b/lib/Cloudflare/D1/index.js
+index 73e6838953ed6f594e1c59c6ae326ccdf84475c4..6be04da56492c5f066ecb0e82043ffd61ddc92ea 100644
+--- a/lib/Cloudflare/D1/index.js
++++ b/lib/Cloudflare/D1/index.js
+@@ -1,5 +1,6 @@
+ export * from "./Database.js";
+ export * from "./QueryDatabase.js";
+ export * from "./QueryDatabaseBinding.js";
++export { makeQueryDatabaseClientFrom } from "./QueryDatabaseHttpClient.js";
+ export * from "./QueryDatabaseLocal.js";
+ //# sourceMappingURL=index.js.map
+\ No newline at end of file
+diff --git a/src/Cloudflare/D1/index.ts b/src/Cloudflare/D1/index.ts
+index 0b08cf0116755e477df07fedbc23fa7a980fdc0d..6ea92326ef27753997fe7cb038600d65c34fd580 100644
+--- a/src/Cloudflare/D1/index.ts
++++ b/src/Cloudflare/D1/index.ts
+@@ -1,4 +1,5 @@
+ export * from "./Database.ts";
+ export * from "./QueryDatabase.ts";
+ export * from "./QueryDatabaseBinding.ts";
++export { makeQueryDatabaseClientFrom } from "./QueryDatabaseHttpClient.ts";
+ export * from "./QueryDatabaseLocal.ts";
+diff --git a/src/Rpc.ts b/src/Rpc.ts
+--- a/src/Rpc.ts
++++ b/src/Rpc.ts
+@@ -129,5 +129,7 @@
+     if (error instanceof Error && !("message" in out)) {
+       out.message = (error as Error).message;
+     }
++    if (error instanceof Error && !("stack" in out)) out.stack = error.stack;
++    if (error instanceof Error && "cause" in error && !("cause" in out)) out.cause = error.cause;
+     return out;
+   }
+diff --git a/lib/Rpc.js b/lib/Rpc.js
+--- a/lib/Rpc.js
++++ b/lib/Rpc.js
+@@ -66,6 +66,8 @@
+         if (error instanceof Error && !("message" in out)) {
+             out.message = error.message;
+         }
++        if (error instanceof Error && !("stack" in out)) out.stack = error.stack;
++        if (error instanceof Error && "cause" in error && !("cause" in out)) out.cause = error.cause;
+         return out;
+     }
+     if (error instanceof Error) {

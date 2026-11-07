@@ -1,9 +1,9 @@
 name: CI
 
 on:
-  pull_request:
   push:
     branches: [main]
+  pull_request:
 
 permissions:
   contents: read
@@ -14,8 +14,9 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
-      - uses: totto2727-org/monorepo/.github/actions/setup-nix@main
-      - name: Verify Flowdeck
-        run: |
-          eval "$(nix print-dev-env "$GITHUB_WORKSPACE#default")"
-          just ci
+      - uses: totto2727-org/monorepo/.github/actions/setup-typescript@main
+      - uses: ariga/setup-atlas@v0
+        with:
+          cloud-token: ${{ secrets.ATLAS_CLOUD_TOKEN }}
+      - name: Verify Vite+ project
+        run: vp run ci

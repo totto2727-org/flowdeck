@@ -1,0 +1,4 @@
+# Reylo evaluates HCL locally and analyzes its schema in memory. Never use a remote D1 URL.
+direct_url: hcl:./schema/schema.hcl
+cli:
+  include: ['src/**/*.sql']

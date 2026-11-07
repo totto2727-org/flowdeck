@@ -1,0 +1,117 @@
+import type { RpcCallError, RpcDecodeError } from 'alchemy/Rpc'
+import { Effect, Layer, Schema } from 'effect'
+import { Headers, HttpBody, HttpRouter, HttpServerError, HttpServerRequest, HttpServerResponse } from 'effect/http'
+
+import { operationFailureLogging } from '../../../features/operation-logging'
+import { ExternalError, type DomainError } from '../../../features/workflow/domain/errors'
+import { RunId } from '../../../features/workflow/domain/identity'
+import {
+  ApiErrorResponse,
+  CreateRun,
+  RunDetail,
+  RunsResponse,
+  WorkflowsResponse,
+} from '../../../features/workflow/domain/model'
+import { Workflows } from '../../../features/workflow/services/workflows'
+
+type ApiFailure = DomainError | HttpServerError.HttpServerError | HttpBody.HttpBodyError | RpcCallError | RpcDecodeError
+const errorResponse = (status: number, error: string, message: string) =>
+  HttpServerResponse.schemaJson(Schema.toCodecJson(ApiErrorResponse))({ error, message }, { status })
+
+const ApiErrors = HttpRouter.middleware<{ handles: ApiFailure }>()((handler) =>
+  handler.pipe(
+    operationFailureLogging,
+    // The RPC client's declared service shape does not include its transport failures.
+    Effect.catchTags({
+      RpcCallError: (cause) =>
+        Effect.fail(new ExternalError({ operation: 'call workflow worker', cause, kind: 'service' })),
+      RpcDecodeError: (cause) =>
+        Effect.fail(new ExternalError({ operation: 'call workflow worker', cause, kind: 'service' })),
+    }),
+    Effect.catchTags({
+      NotFound: () => errorResponse(404, 'NotFound', 'Run or graph not found'),
+      Conflict: () => errorResponse(409, 'Conflict', 'Run changed concurrently or a delivery ID was reused'),
+      InvalidOperation: (error) => errorResponse(409, 'InvalidOperation', error.message),
+      InvalidSnapshot: () => errorResponse(409, 'InvalidSnapshot', 'Persisted workflow state is invalid'),
+      PlatformError: () => errorResponse(500, 'PlatformError', 'Run identity could not be generated'),
+      ExternalError: (error) =>
+        error.kind === 'storage'
+          ? errorResponse(500, 'ExternalError', 'Persistence operation failed')
+          : errorResponse(502, 'ExternalError', 'Workflow worker is unavailable. The run remains persisted'),
+      SchemaError: () => errorResponse(400, 'InvalidRequest', 'Request does not match the API schema'),
+      HttpServerError: () => errorResponse(400, 'InvalidRequest', 'Request body could not be read'),
+      HttpBodyError: () => errorResponse(500, 'EncodingError', 'Response could not be encoded'),
+    }),
+  ),
+)
+
+// Reject browser mutations before body decoding, including text/plain no-cors submissions.
+const ServerMutations = HttpRouter.middleware((handler) =>
+  Effect.gen(function* () {
+    const request = yield* HttpServerRequest.HttpServerRequest
+    if (request.method === 'POST' && Headers.has(request.headers, 'origin')) {
+      return yield* errorResponse(403, 'Forbidden', 'Browser-originated control mutations are not allowed')
+    }
+    return yield* handler
+  }),
+)
+
+const runId = HttpRouter.params.pipe(
+  Effect.flatMap(Schema.decodeUnknownEffect(Schema.Struct({ runId: RunId }))),
+  Effect.map((params) => params.runId),
+)
+
+export const ApiRoutes = HttpRouter.use((router) =>
+  router.addAll([
+    HttpRouter.route(
+      'GET',
+      '/api/workflows',
+      Workflows.pipe(
+        Effect.flatMap((workflows) => workflows.listWorkflows()),
+        Effect.flatMap(HttpServerResponse.schemaJson(Schema.toCodecJson(WorkflowsResponse))),
+      ),
+    ),
+    HttpRouter.route(
+      'GET',
+      '/api/runs',
+      Workflows.pipe(
+        Effect.flatMap((workflows) => workflows.listRuns()),
+        Effect.flatMap(HttpServerResponse.schemaJson(Schema.toCodecJson(RunsResponse))),
+      ),
+    ),
+    HttpRouter.route(
+      'POST',
+      '/api/runs',
+      Effect.gen(function* () {
+        const input = yield* HttpServerRequest.schemaBodyJson(Schema.toCodecJson(CreateRun), {
+          onExcessProperty: 'error',
+        })
+        const workflows = yield* Workflows
+        return yield* HttpServerResponse.schemaJson(Schema.toCodecJson(RunDetail))(yield* workflows.createRun(input), {
+          status: 201,
+        })
+      }),
+    ),
+    HttpRouter.route(
+      'GET',
+      '/api/runs/:runId',
+      Effect.gen(function* () {
+        const workflows = yield* Workflows
+        return yield* HttpServerResponse.schemaJson(Schema.toCodecJson(RunDetail))(
+          yield* workflows.getRunDetail(yield* runId),
+        )
+      }),
+    ),
+    HttpRouter.route(
+      'POST',
+      '/api/runs/:runId/resume',
+      Effect.gen(function* () {
+        const workflows = yield* Workflows
+        return yield* HttpServerResponse.schemaJson(Schema.toCodecJson(RunDetail))(
+          yield* workflows.resumeRun(yield* runId),
+        )
+      }),
+    ),
+  ]),
+).pipe(Layer.provide(ApiErrors.combine(ServerMutations).layer))
+export const routesLayer = ApiRoutes
