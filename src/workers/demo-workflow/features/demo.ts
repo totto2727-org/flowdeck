@@ -13,6 +13,8 @@ import { type GraphDefinition, type Run, type WorkflowSummary } from '../../../f
 import { Store } from '../../../features/workflow/services/store'
 import { DemoWorkflowVersion, demoVersion1, demoVersion2 } from './input'
 import { type EventDraft, type Execution, nodeEvent, observeNode, timestamp } from './node'
+import { demoVersion1Definition } from './version-1'
+import { demoVersion2Definition } from './version-2'
 
 const fields = { schemaVersion: Schema.Literal(1), version: DemoWorkflowVersion }
 export const DemoSnapshot = Schema.Union([
@@ -49,29 +51,19 @@ export const demoWorkflow: WorkflowSummary = {
   inputs: [],
 }
 
-/** Both implementations are deliberately bundled. Run records select their
- * original version, never a mutable latest alias. */
-export const demoGraph = (version: DemoWorkflowVersion): GraphDefinition => ({
-  graphId: SemVer.equals(version, demoVersion1) ? 'demo-1_0_0-graph-1' : 'demo-2_0_0-graph-1',
-  schemaVersion: 1,
-  nodes: [
-    {
-      nodeId: 'prepare',
-      label: SemVer.equals(version, demoVersion1) ? 'Prepare release' : 'Enrich release',
-      kind: 'task',
-    },
-    { nodeId: 'approval', label: 'Manual approval', kind: 'checkpoint' },
-    {
-      nodeId: 'publish',
-      label: SemVer.equals(version, demoVersion1) ? 'Publish release' : 'Publish enriched release',
-      kind: 'task',
-    },
-  ],
-  edges: [
-    { edgeId: 'prepare-approval', source: 'prepare', target: 'approval', label: 'prepared' },
-    { edgeId: 'approval-publish', source: 'approval', target: 'publish', label: 'resume' },
-  ],
-})
+const demoImplementation = (version: DemoWorkflowVersion) =>
+  Match.value(version).pipe(
+    Match.when(
+      (selected) => SemVer.equals(selected, demoVersion1),
+      () => demoVersion1Definition,
+    ),
+    Match.when(
+      (selected) => SemVer.equals(selected, demoVersion2),
+      () => demoVersion2Definition,
+    ),
+    Match.orElseAbsurd,
+  )
+export const demoGraph = (version: DemoWorkflowVersion): GraphDefinition => demoImplementation(version).graph
 export const initialSnapshot = (version: DemoWorkflowVersion): DemoSnapshot => ({
   _tag: 'Ready',
   schemaVersion: 1,
@@ -141,7 +133,7 @@ const prepare = (
     }
     // These sample tasks are pure and therefore safely retryable after a crash.
     // Real workflow nodes must own their side-effect idempotency/reconnection.
-    const task = Effect.succeed(SemVer.equals(snapshot.version, demoVersion1) ? 'draft:v1' : 'draft:v2:reviewed')
+    const task = demoImplementation(snapshot.version).prepare
     yield* observeNode(execution, task, {
       started: (event) =>
         snapshot._tag === 'Preparing'

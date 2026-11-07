@@ -9,6 +9,10 @@ import { DemoCreateRun, demoVersion1, demoVersion2 } from './input'
 const snapshotCodec = Schema.toCodecJson(DemoSnapshot)
 
 describe('demo definition', () => {
+  it.each([demoVersion1, demoVersion2])('keeps the published definition %s stable', async (version) => {
+    const prepared = await Effect.runPromise(demoDefinition.prepare({ workflowId: 'demo', version }))
+    expect(prepared).toMatchSnapshot(`demo ${SemVer.format(version)}`)
+  })
   it.each([demoVersion1, demoVersion2])('prepares and restores the selected implementation %s', async (version) => {
     const prepared = await Effect.runPromise(demoDefinition.prepare({ workflowId: 'demo', version }))
     expect(prepared).toEqual({
