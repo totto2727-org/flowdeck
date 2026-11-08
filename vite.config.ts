@@ -2,7 +2,7 @@ import { effrontAlchemy } from '@effront/alchemy/cloudflare/vite'
 import { effrontTailwind } from '@effront/tailwind'
 import { effront } from '@effront/vite'
 import { generateIgnorePatterns } from '@totto2727/gitignore-patterns'
-import reylo from 'reylo/vite'
+import reylo from '@totto2727/reylo/vite'
 import { defineConfig } from 'vite-plus'
 
 const ignorePatterns = await generateIgnorePatterns(new URL('.', import.meta.url))
@@ -50,7 +50,8 @@ export default defineConfig({
         cache: false,
       },
       dev: {
-        command: 'node --import reylo/register node_modules/alchemy/bin/cli.js dev --config alchemy.run.ts --no-input',
+        command:
+          'node --import @totto2727/reylo/register node_modules/alchemy/bin/cli.js dev --config alchemy.run.ts --no-input',
         cache: false,
       },
       // Temporary: remove this task when vp check supports SQL Content Mappers.

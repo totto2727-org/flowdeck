@@ -36,6 +36,9 @@ importers:
       '@effront/core':
         specifier: ^0.3.1
         version: 0.3.1(@effect/platform-browser@4.0.6(effect@4.0.6))(@voidzero-dev/vite-plus-core@1.4.0(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(typescript@7.1.0-dev.20261030.1)(yaml@2.9.1))(effect@4.0.6)(react-dom@19.3.1(react@19.3.1))(react-server-dom-webpack@19.3.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(webpack@5.112.0(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.30)(sharp@0.35.5(@types/node@24.19.2))))(react@19.3.1)
+      '@totto2727/reylo':
+        specifier: ^0.7.0
+        version: 0.7.0(@totto2727/reylo-sqlite@0.7.0)
       agents:
         specifier: ^0.28.1
         version: 0.28.1(@babel/core@8.0.7)(@babel/runtime@8.0.7)(@earendil-works/pi-ai@1.3.0(@aws-sdk/credential-provider-node@3.972.86)(@modelcontextprotocol/sdk@1.32.1(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.6.5))(@smithy/signature-v4@5.7.4)(supports-color@10.2.2)(undici@8.12.2)(ws@8.22.0)(zod@4.6.5))(@earendil-works/pi-durable@1.3.0(@aws-sdk/credential-provider-node@3.972.86)(@modelcontextprotocol/sdk@1.32.1(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.6.5))(@smithy/signature-v4@5.7.4)(supports-color@10.2.2)(undici@8.12.2)(ws@8.22.0)(zod@4.6.5))(@modelcontextprotocol/client@2.3.1)(@modelcontextprotocol/sdk@1.32.1(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.6.5))(@modelcontextprotocol/server@2.3.1)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(typescript@7.1.0-dev.20261030.1)(yaml@2.9.1))(just-bash@3.6.0(supports-color@10.2.2))(react@19.3.1)(rolldown@1.2.5)(zod@4.6.5)
@@ -63,9 +66,6 @@ importers:
       react-server-dom-webpack:
         specifier: ^19.3.0
         version: 19.3.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(webpack@5.112.0(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.30)(sharp@0.35.5(@types/node@24.19.2)))
-      reylo:
-        specifier: ^0.6.0
-        version: 0.6.0(@reylosql/sqlite@0.6.0)
       tailwind-merge:
         specifier: ^3.7.0
         version: 3.7.0
@@ -91,12 +91,12 @@ importers:
       '@playwright/test':
         specifier: ^1.64.0
         version: 1.64.1
-      '@reylosql/sqlite':
-        specifier: ^0.6.0
-        version: 0.6.0
       '@totto2727/gitignore-patterns':
         specifier: ^0.1.0
         version: 0.1.0
+      '@totto2727/reylo-sqlite':
+        specifier: ^0.7.0
+        version: 0.7.0
       '@tsconfig/node-ts':
         specifier: ^23.6.4
         version: 23.6.4
@@ -1970,8 +1970,49 @@ packages:
     peerDependencies:
       '@redis/client': ^6.3.0
 
-  '@reylosql/sqlite@0.6.0':
-    resolution: {integrity: sha512-AKn4IdL9/PJmchJXRQmIZpXCuuLvNdSyLfSjBRXiMAO2h4BlZVJJR+Qvn7WtVqyOyHaxopsLUaiocj8VW1lnWg==}
+  '@reylosql/engine-darwin-arm64@0.7.0':
+    resolution: {integrity: sha512-Mjnzrd88NwpUCgPhinx2Dl3NcpDQ/O7n/5Vzpc+Z3SXQ+6UDuyu2pX5/Iy3EyIs7GcvbGH71EGRn05drY9iqGg==}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@reylosql/engine-darwin-x64@0.7.0':
+    resolution: {integrity: sha512-KViE7mnDL/a9n/0OuwKoktk0Nfs9sr/8kXQBHrq9cNdoBSeeuJ/dMTcokqo4+epXvMd4Q/5ywfn0IAs9YB4rAA==}
+    cpu: [x64]
+    os: [darwin]
+
+  '@reylosql/engine-linux-arm64-musl@0.7.0':
+    resolution: {integrity: sha512-hgfGCZiK0sQJCj/ghjCqh1jYfNEv2PE7h5ajZkqnjZof0WrXE0uYhyz0HK9thL3jXC5Bc/B+wAUqqE93900rmA==}
+    cpu: [arm64]
+    os: [linux]
+    libc: [musl]
+
+  '@reylosql/engine-linux-arm64@0.7.0':
+    resolution: {integrity: sha512-fy37HBeaGeKffODQRo9ZGE6ZHW4xfSm3XIskYbbuuFVHYrr7loGiLQts1NrVoZR39mnr7nMCl7NSP85pE0toEw==}
+    cpu: [arm64]
+    os: [linux]
+    libc: [glibc]
+
+  '@reylosql/engine-linux-x64-musl@0.7.0':
+    resolution: {integrity: sha512-rTi5jo69dvvKX7KYz6mScVrB0T3nDdeQOEBsvsFUxjWGk7pon21Ii5ZxcYZZwnp7BrNpHHANMrElrS+PFGhnVA==}
+    cpu: [x64]
+    os: [linux]
+    libc: [musl]
+
+  '@reylosql/engine-linux-x64@0.7.0':
+    resolution: {integrity: sha512-blWEtAY/JAmHKNoDLlzjaLqfmBFQIv5jU7fe/YfzrFfmqZ0zq/Fp4Zzew6vrloxRcISrLTlHFbqBe/VrHr3+6A==}
+    cpu: [x64]
+    os: [linux]
+    libc: [glibc]
+
+  '@reylosql/engine-win32-arm64@0.7.0':
+    resolution: {integrity: sha512-MQTBJ0XDip1yYrbMztdaw15wvak8LxMCewBulB9xNnAV6jt9m8Io9ftwwkRlCmMG+J+8EfAJEZpmAWVz5h4NDA==}
+    cpu: [arm64]
+    os: [win32]
+
+  '@reylosql/engine-win32-x64@0.7.0':
+    resolution: {integrity: sha512-xwUlkMgHO/v0PrBLGb0RUrHXi0HroL4oge42nZxL1l6SMRJmlFNkqz6y6zHqjaWRug5A9mymhf9QtBlEZOjz1w==}
+    cpu: [x64]
+    os: [win32]
 
   '@rolldown/binding-android-arm-eabi@1.2.5':
     resolution: {integrity: sha512-DLe/i+l8ynIBY7XEQ191TeZvCoowIGa18R+dIV30GW7DiOtp74i/xX8hs8GUjW5ARV7VZuie3d6AumSmCwbeRA==}
@@ -2099,7 +2140,9 @@ packages:
   '@smithy/core@3.36.0':
     resolution: {integrity: sha512-3hJiwG1F5t1SoXqp/yOCmYXziyx7ZVqF63S5W6YU201e/qwVaHPex+E/3vvyY9a3ORq/b+BydeNZpP2saQ9X2g==}
     engines: {node: '>=18.0.0'}
-    deprecated: Deprecated due to a bug in custom logger data redaction. See https://github.com/aws/aws-sdk-js-v3/issues/8393.
+    deprecated: |-
+      Deprecated due to a bug in custom logger data redaction. Upgrade to the latest version. If you used a custom logger with this
+        version, review your logs and rotate any credentials or other secrets. See https://github.com/aws/aws-sdk-js-v3/issues/8393.
 
   '@smithy/credential-provider-imds@4.5.2':
     resolution: {integrity: sha512-A9uSdn72ozbRUSit0eib0TW7nXuNPlaeM0zcGkJ+nE6tFcSDbnmtwoxbTCFBukVQcszDAyvsd7+rTduPTXpygg==}
@@ -2240,6 +2283,19 @@ packages:
 
   '@totto2727/gitignore-patterns@0.1.0':
     resolution: {integrity: sha512-hg8SkhlD4pDixWp3EDcsTTXkXM2KKR7H5Xl+ypqC0tced1Z7n3OG+rgBXkemOsgvYBP+TykpKztPyOrAi7ogRA==}
+
+  '@totto2727/reylo-sqlite@0.7.0':
+    resolution: {integrity: sha512-YdY2gdbCnMupAeU8+/W5DQVR4MCtuEtnxOM/MSSZZc0wiNzAxuaYrFRHzyBB+WwHzXkITc06f8hTIj4RHTefHA==}
+
+  '@totto2727/reylo@0.7.0':
+    resolution: {integrity: sha512-abf8rCEhEaqwsK81D/OCKC7fxDrWTlto6ipP8rXUW0L+8aX5jNbEQp7uocGXn4Bl89QyyEIjj1bBisDjG34HTg==}
+    engines: {node: '>=24'}
+    hasBin: true
+    peerDependencies:
+      '@totto2727/reylo-sqlite': 0.7.0
+    peerDependenciesMeta:
+      '@totto2727/reylo-sqlite':
+        optional: true
 
   '@tsconfig/node-ts@23.6.4':
     resolution: {integrity: sha512-37BMJvNQZ+vTgd1xG2TGBkJ6ENeT4eO4Wh2CHrnn0IwH7ybLFCzh4Uc//kc7UIvqiRac4uGdIc1meKOjMSlKzw==}
@@ -4029,25 +4085,6 @@ packages:
   retry@0.13.1:
     resolution: {integrity: sha512-XQBQ3I8W1Cge0Seh+6gjj03LbmRFWuoszgK9ooCpwYIrhhoO80pfq4cUkU5DkknwfOfFteRwlZ56PYOGYyFWdg==}
     engines: {node: '>= 4'}
-
-  reylo@0.6.0:
-    resolution: {integrity: sha512-Njt2l+11XWivq+wcfq0NMz5Y5tQoePmv3U5fD/wC95KjGPS1EY6UEx0/js5zhn+ayNiF4Q1Xelixx2iIbh5Ywg==}
-    engines: {node: '>=24'}
-    hasBin: true
-    peerDependencies:
-      '@reylosql/mysql': 0.6.0
-      '@reylosql/postgres': 0.6.0
-      '@reylosql/sqlite': 0.6.0
-      slonik: '>=49.12.0'
-    peerDependenciesMeta:
-      '@reylosql/mysql':
-        optional: true
-      '@reylosql/postgres':
-        optional: true
-      '@reylosql/sqlite':
-        optional: true
-      slonik:
-        optional: true
 
   rolldown@1.2.5:
     resolution: {integrity: sha512-VD2IE5PUG4Oj8zz2VGykiYd5wbnjdIiSsNQb8Qu5B+noEp+A78mu2iVvpp27g8es14Tk9rofNs5Tku9iQCS4fA==}
@@ -6175,7 +6212,29 @@ snapshots:
     dependencies:
       '@redis/client': 6.3.0
 
-  '@reylosql/sqlite@0.6.0': {}
+  '@reylosql/engine-darwin-arm64@0.7.0':
+    optional: true
+
+  '@reylosql/engine-darwin-x64@0.7.0':
+    optional: true
+
+  '@reylosql/engine-linux-arm64-musl@0.7.0':
+    optional: true
+
+  '@reylosql/engine-linux-arm64@0.7.0':
+    optional: true
+
+  '@reylosql/engine-linux-x64-musl@0.7.0':
+    optional: true
+
+  '@reylosql/engine-linux-x64@0.7.0':
+    optional: true
+
+  '@reylosql/engine-win32-arm64@0.7.0':
+    optional: true
+
+  '@reylosql/engine-win32-x64@0.7.0':
+    optional: true
 
   '@rolldown/binding-android-arm-eabi@1.2.5':
     optional: true
@@ -6369,6 +6428,29 @@ snapshots:
   '@totto2727/gitignore-patterns@0.1.0':
     dependencies:
       ignore: 7.0.12
+
+  '@totto2727/reylo-sqlite@0.7.0':
+    optionalDependencies:
+      '@reylosql/engine-darwin-arm64': 0.7.0
+      '@reylosql/engine-darwin-x64': 0.7.0
+      '@reylosql/engine-linux-arm64': 0.7.0
+      '@reylosql/engine-linux-arm64-musl': 0.7.0
+      '@reylosql/engine-linux-x64': 0.7.0
+      '@reylosql/engine-linux-x64-musl': 0.7.0
+      '@reylosql/engine-win32-arm64': 0.7.0
+      '@reylosql/engine-win32-x64': 0.7.0
+
+  '@totto2727/reylo@0.7.0(@totto2727/reylo-sqlite@0.7.0)':
+    optionalDependencies:
+      '@reylosql/engine-darwin-arm64': 0.7.0
+      '@reylosql/engine-darwin-x64': 0.7.0
+      '@reylosql/engine-linux-arm64': 0.7.0
+      '@reylosql/engine-linux-arm64-musl': 0.7.0
+      '@reylosql/engine-linux-x64': 0.7.0
+      '@reylosql/engine-linux-x64-musl': 0.7.0
+      '@reylosql/engine-win32-arm64': 0.7.0
+      '@reylosql/engine-win32-x64': 0.7.0
+      '@totto2727/reylo-sqlite': 0.7.0
 
   '@tsconfig/node-ts@23.6.4': {}
 
@@ -7978,10 +8060,6 @@ snapshots:
   retry@0.12.0: {}
 
   retry@0.13.1: {}
-
-  reylo@0.6.0(@reylosql/sqlite@0.6.0):
-    optionalDependencies:
-      '@reylosql/sqlite': 0.6.0
 
   rolldown@1.2.5:
     dependencies:

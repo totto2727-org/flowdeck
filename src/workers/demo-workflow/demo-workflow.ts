@@ -1,7 +1,7 @@
+import reylo from '@totto2727/reylo/vite'
 import { QueryDatabase, QueryDatabaseBinding } from 'alchemy/Cloudflare/D1'
 import { DurableObject } from 'alchemy/Cloudflare/Workers'
 import { Effect, Layer } from 'effect'
-import reylo from 'reylo/vite'
 
 import type { RunId } from '../../features/workflow/domain/identity'
 import { D1StoreLive } from '../../features/workflow/services/d1-store'

@@ -13,6 +13,7 @@
     "@effect/platform-browser": "^4.0.6",
     "@effront/alchemy": "^0.3.1",
     "@effront/core": "^0.3.1",
+    "@totto2727/reylo": "^0.7.0",
     "agents": "^0.28.1",
     "alchemy": "^2.0.0-beta.81",
     "class-variance-authority": "^0.7.1",
@@ -22,7 +23,6 @@
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-server-dom-webpack": "^19.3.0",
-    "reylo": "^0.6.0",
     "tailwind-merge": "^3.7.0"
   },
   "devDependencies": {
@@ -33,8 +33,8 @@
     "@effront/tailwind": "^0.3.1",
     "@effront/vite": "^0.3.1",
     "@playwright/test": "^1.64.0",
-    "@reylosql/sqlite": "^0.6.0",
     "@totto2727/gitignore-patterns": "^0.1.0",
+    "@totto2727/reylo-sqlite": "^0.7.0",
     "@tsconfig/node-ts": "^23.6.4",
     "@tsconfig/strictest": "^2.0.8",
     "@types/node": "^24.19.1",

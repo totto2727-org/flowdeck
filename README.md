@@ -50,7 +50,7 @@ vp env install
 vp install --frozen-lockfile
 ```
 
-Complete the [local fork setup](docs/database.md#local-analysis-and-checks) while HCL support remains unpublished, then start the application:
+Complete the [local setup](docs/database.md#local-analysis-and-checks), then start the application:
 
 ```sh
 vp run dev

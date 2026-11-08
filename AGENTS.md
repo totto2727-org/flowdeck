@@ -97,7 +97,7 @@ This application is undeployed: keep one generated initial migration rather than
 After deployment, keep applied migrations immutable and generate new migrations for schema changes.
 Use Reylo Content Mapper SQL imports for typed queries, not handwritten table interfaces or a query builder.
 Keep schema analysis local: Reylo reads `schema/schema.hcl` directly through the fork's HCL schema source, without Atlas preparation or database files.
-Reylo parses native HCL directly through the maintained HashiCorp source port and analyzes a static SQLite schema in memory.
+Reylo parses native HCL directly through the maintained HashiCorp source port and analyzes a static SQLite schema in the published upstream native engine child process.
 Do not add Atlas subprocesses, Go runtime calls, or file-backed databases to SQL import analysis.
 Atlas is reserved for migration generation, HCL formatting, and definition validation.
 Use Atlas CLI tasks only for migration creation and validation with `--dev-url "sqlite://dev?mode=memory"`, never `schema apply` or a file-backed development database.
@@ -106,8 +106,8 @@ The `check:tsc` task is temporary: Vite+ 1.4.0 cannot load this project's SQL Co
 Remove that task, its dependency, and the `typeCheck: false` opt-out when `vp check` supports them.
 Use `fix` for Atlas HCL formatting and `check` for definition validation with an in-memory development database.
 Keep existing `check` and `test` task names; do not add automatic migration checksum or schema drift validation.
-Do not bypass unpublished Reylo support with committed package links, patches, or fork checkout/build steps in CI.
-Use temporary local links for fork validation and report registry-only checks as blocked until a suitable release is available.
+Use the published `@totto2727/reylo` and `@totto2727/reylo-sqlite` packages at matching versions.
+Do not replace registry dependencies with package links, Reylo patches, or fork checkout/build steps in CI.
 Keep receipt, state, and event writes in one native D1 batch using Reylo's public Standard Query `text` and `encode` contract.
 Use Alchemy's Effect-native D1 executor for reads and atomic batches; do not extract its raw binding and recreate Promise-to-Effect execution wrappers.
 Do not add a custom SQL compiler or batch-binding patch; see [database workflow](docs/database.md).

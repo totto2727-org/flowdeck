@@ -1,6 +1,6 @@
+import reylo from '@totto2727/reylo/vite'
 import { DurableObject, Worker } from 'alchemy/Cloudflare/Workers'
 import { Config, Effect } from 'effect'
-import reylo from 'reylo/vite'
 
 import { Database } from '../database'
 import { DevelopmentContainer } from './container'

@@ -1,15 +1,14 @@
 # Retained upstream differences
 
-## Unpublished Reylo customization
+## Published Reylo customization
 
 - Upstream: [colinhacks/reylo](https://github.com/colinhacks/reylo).
-- Exact upstream base: [`73562e513ef50d54df51daefa5243fa8427df7af`](https://github.com/colinhacks/reylo/tree/73562e513ef50d54df51daefa5243fa8427df7af).
-- Fork: [totto2727-org/reylo at `a9a0aa0c80f0af955dd8e72d3db486005e07a092`](https://github.com/totto2727-org/reylo/tree/a9a0aa0c80f0af955dd8e72d3db486005e07a092).
-- Delivery status: the HCL customization is unpublished. Committed dependencies resolve registry packages, not this fork.
-- Local validation: an operator may temporarily link the fork's built `dist/reylo` and `dist/sqlite` packages without committing the link configuration.
-- Build workflow for that local checkout: retain upstream's nub workflow, frozen installs at the fork root and in `site/`, and the standard full build. Engine distributions retain the required MPL license packaging for the HCL parser port.
-- Type boundary: local validation consumes built declarations, not upstream implementation files under Flowdeck's stricter compiler settings.
-- CI: no source checkout, fork build, nub setup, committed link override, or package patch is used to bypass publication. Registry-only HCL checks remain blocked until a suitable release exists.
+- Exact upstream base: [`7a3928a8ff4dfb387b34ed584ab1319aa72f3f3b` (`v0.7.0`)](https://github.com/colinhacks/reylo/tree/7a3928a8ff4dfb387b34ed584ab1319aa72f3f3b).
+- Published fork revision: [`52e4740e2063b8310568b3b5bbca33c92a6f4e1d`](https://github.com/totto2727-org/reylo/tree/52e4740e2063b8310568b3b5bbca33c92a6f4e1d).
+- Packages: [`@totto2727/reylo@0.7.0`](https://www.npmjs.com/package/@totto2727/reylo/v/0.7.0) and [`@totto2727/reylo-sqlite@0.7.0`](https://www.npmjs.com/package/@totto2727/reylo-sqlite/v/0.7.0).
+- Delivery: registry artifacts and their published declarations, with exact integrity values in `pnpm-lock.yaml`; no source checkout, fork build, local link, or Reylo patch.
+- Native analysis: published upstream `@reylosql/engine-*` packages at `0.7.0`, selected for the host platform through optional dependencies.
+- Temporary release-age exception: only the two scoped `0.7.0` packages are excluded from the 24-hour wait, with a removal TODO in `pnpm-workspace.yaml`. Other dependencies retain the waiting period.
 - Setup and acceptance limits: see [database workflow](database.md).
 
 ## Local HCL schema source
@@ -20,9 +19,8 @@
 - Implementation boundary: the native HCL parser port reads the local source, and the static Atlas SQLite adapter supplies DDL catalog rows directly to the existing Reylo engine. It opens no Node SQLite database and performs no host SQL execution. The engine's existing embedded SQLite parser and internal schema replay remain unchanged.
 - Parser provenance: HashiCorp HCL v2.25.0 at `00057cf06d7b38a3f89e6e54d622eee98322b314`, with MPL-2.0 notices and scoped upstream parser/scanner regressions retained inside the fork.
 - Semantic scope: static SQLite schema declarations only, with unsupported HCL evaluation, declarations, and invalid references rejected explicitly.
-- Operational impact: SQL import analysis needs no Atlas executable, Go runtime, subprocess, D1 credentials, remote database, host database, schema apply task, or `.db` file. HCL content hashes replace database fingerprint queries. Static inference uses the embedded engine's built-in functions and does not establish a live D1 function allowlist. Atlas remains limited to migration management, HCL formatting, and definition validation.
+- Operational impact: SQL import analysis needs no Atlas executable, Go runtime, D1 credentials, remote database, host database, schema apply task, or `.db` file. HCL parsing runs in JavaScript; schema analysis runs in the upstream native engine child process. HCL content hashes replace database fingerprint queries. Static inference uses the embedded engine's built-in functions and does not establish a live D1 function allowlist. Atlas remains limited to migration management, HCL formatting, and definition validation.
 - Classification: this is a build-time schema-source customization, not a deployment customization or a runtime SQL execution change.
-- Adoption criterion: use an age-eligible published package supporting the direct HCL analysis source. No permanent source-delivery workaround is retained while awaiting publication.
 
 ## Native D1 atomic writes
 
@@ -37,8 +35,8 @@ The application's real local D1 migration tests exercise the stored-schema and a
 Alchemy's Effect-native client owns query execution and delegates atomic writes to native D1.
 
 The TypeScript Content Mapper, SQLite inference rules, Vite/Rolldown integration, ordinary query execution, and runtime parameter encoding remain upstream implementations.
-The fork's own [retained differences](https://github.com/totto2727-org/reylo/blob/a9a0aa0c80f0af955dd8e72d3db486005e07a092/docs/upstream-differences.md) describe its source changes and native SQLite regression coverage.
-Keep the exact upstream base and locally verified fork revision current when syncing or updating the fork.
+The fork's own [retained differences](https://github.com/totto2727-org/reylo/blob/52e4740e2063b8310568b3b5bbca33c92a6f4e1d/docs/upstream-differences.md) describe its source changes and native SQLite regression coverage.
+Keep the exact upstream base and published fork revision current when updating the dependency.
 
 ## Alchemy native D1 client and RPC errors
 

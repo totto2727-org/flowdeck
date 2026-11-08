@@ -1,6 +1,6 @@
 {
   "extends": ["@tsconfig/strictest/tsconfig.json", "@tsconfig/node-ts/tsconfig.json"],
-  "contentMappers": [{ "package": "reylo", "extensions": [".sql", ".reylo.yaml", ".reylo.yml"] }],
+  "contentMappers": [{ "package": "@totto2727/reylo", "extensions": [".sql", ".reylo.yaml", ".reylo.yml"] }],
   "compilerOptions": {
     "target": "ESNext",
     "module": "Preserve",
