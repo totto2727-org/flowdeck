@@ -1,9 +1,11 @@
-import { makeApplicationHttpEffect } from '@effront/alchemy/cloudflare'
+import { makeApplicationHttpEffect } from '@effront/alchemy/cloudflare/application'
 import { Context, Effect } from 'effect'
+
+import type application from './entry.effront'
 
 /** Capture constructed application capabilities, not request bindings or host services. */
 export const makeWebWorker = Effect.gen(function* () {
-  const fetch = yield* makeApplicationHttpEffect(() => import('./entry.effront').then((module) => module.default))
+  const fetch = yield* makeApplicationHttpEffect<typeof application>()
   return { fetch }
 })
 
