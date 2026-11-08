@@ -1,25 +1,32 @@
 import { ok } from 'node:assert/strict'
 
-import { encodeRpcError, makeRpcErrorReviver } from 'alchemy/Rpc'
-import { Cause, Context, Effect, Exit, Layer, Logger } from 'effect'
+import { Cause, Context, Crypto, Effect, Exit, Layer, Logger, Option, References } from 'effect'
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from 'effect/http'
 import { describe, expect, it } from 'vite-plus/test'
 
 import { ApiRoutes } from '../workers/control/features/router'
 import { operationFailureLogging } from './operation-logging'
+import { rpcResponse, rpcResult } from './rpc-boundary'
+import { RemoteWorkerError } from './rpc-problem'
 import { Conflict, ExternalError, StorageConflict } from './workflow/domain/errors'
-import { workflowRpcErrors } from './workflow/services/workflow-rpc'
 import { Workflows } from './workflow/services/workflows'
 
-const capture = <A, E>(effect: Effect.Effect<A, E, HttpServerRequest.HttpServerRequest>) => {
-  const entries: Array<Logger.Options<unknown>> = []
-  const logger = Logger.make((entry) => entries.push(entry))
+const crypto = Crypto.make({
+  randomBytes: (size) => globalThis.crypto.getRandomValues(new Uint8Array(size)),
+  digest: (_algorithm, bytes) => Effect.succeed(bytes),
+})
+const capture = <A, E>(effect: Effect.Effect<A, E, HttpServerRequest.HttpServerRequest | Crypto.Crypto>) => {
+  const entries: Array<Logger.Options<unknown> & { readonly annotations: Readonly<Record<string, unknown>> }> = []
+  const logger = Logger.make((entry) =>
+    entries.push({ ...entry, annotations: entry.fiber.getRef(References.CurrentLogAnnotations) }),
+  )
   const exit = Effect.runSyncExit(
     effect.pipe(
       Effect.provideService(
         HttpServerRequest.HttpServerRequest,
         HttpServerRequest.fromWeb(new Request('http://localhost/')),
       ),
+      Effect.provideService(Crypto.Crypto, crypto),
       Effect.provide(Logger.layer([logger])),
     ),
   )
@@ -27,22 +34,29 @@ const capture = <A, E>(effect: Effect.Effect<A, E, HttpServerRequest.HttpServerR
 }
 
 describe('operation failure logging', () => {
-  it.each(['storage', 'conflict'] as const)(
-    'preserves the original stack through official RPC %s error revival',
-    (kind) => {
-      const original = new Error('D1 execution failed')
-      original.stack = 'Error: D1 execution failed\n    at executeQuery (database.ts:42:7)'
-      const error =
-        kind === 'storage'
-          ? new ExternalError({ operation: 'persist run', kind: 'storage', cause: original })
-          : new StorageConflict({ message: 'flowdeck_conflict', operation: 'persist run', cause: original })
-      const revived = makeRpcErrorReviver(workflowRpcErrors)(structuredClone(encodeRpcError(error)))
-      expect(revived).toBeInstanceOf(error.constructor)
-      const { entries } = capture(Effect.fail(revived).pipe(operationFailureLogging))
-      expect(entries).toHaveLength(1)
-      expect(Cause.pretty(entries[0]!.cause)).toContain('at executeQuery (database.ts:42:7)')
-    },
-  )
+  it.each(['storage', 'conflict'] as const)('logs the original %s stack only at the child RPC boundary', (kind) => {
+    const original = new Error('D1 execution failed')
+    original.stack = 'Error: D1 execution failed\n    at executeQuery (database.ts:42:7)'
+    const error =
+      kind === 'storage'
+        ? new ExternalError({ operation: 'persist run', kind: 'storage', cause: original })
+        : new StorageConflict({ message: 'flowdeck_conflict', operation: 'persist run', cause: original })
+    const { entries, exit } = capture(Effect.fail(error).pipe(rpcResponse('persist child run')))
+    ok(Exit.isSuccess(exit))
+    expect(entries).toHaveLength(1)
+    expect(Cause.pretty(entries[0]!.cause)).toContain('at executeQuery (database.ts:42:7)')
+    const parent = Effect.runSyncExit(rpcResult('read child result')(exit.value))
+    ok(Exit.isFailure(parent))
+    const local = Option.getOrThrow(Cause.findErrorOption(parent.cause))
+    ok(local instanceof RemoteWorkerError)
+    expect(local).not.toBe(error)
+    expect(local).not.toBeInstanceOf(error.constructor)
+    expect(local.cause).not.toHaveProperty('stack')
+    expect(local.cause).not.toHaveProperty('cause')
+    expect(local.stack).not.toContain('at executeQuery (database.ts:42:7)')
+    expect(exit.value).not.toContain('D1 execution failed')
+    expect(entries[0]!.annotations).toMatchObject({ errorId: local.cause.instance })
+  })
   it.each(['domain', 'storage'] as const)(
     'returns the same sanitized HTTP conflict after RPC for a %s conflict',
     async (kind) => {
@@ -51,9 +65,13 @@ describe('operation failure logging', () => {
         kind === 'domain'
           ? new Conflict({ message: 'private domain conflict' })
           : new StorageConflict({ message: original.message, operation: 'batch', cause: original })
-      const revived = makeRpcErrorReviver(workflowRpcErrors)(structuredClone(encodeRpcError(error)))
-      ok(revived instanceof Conflict || revived instanceof StorageConflict)
-      const unavailable = () => Effect.fail(revived)
+      const child = capture(Effect.fail(error).pipe(rpcResponse('commit child run')))
+      ok(Exit.isSuccess(child.exit))
+      const parent = Effect.runSyncExit(rpcResult('read child result')(child.exit.value))
+      ok(Exit.isFailure(parent))
+      const local = Option.getOrThrow(Cause.findErrorOption(parent.cause))
+      ok(local instanceof RemoteWorkerError)
+      const unavailable = () => Effect.fail(local)
       const workflows: Workflows['Service'] = {
         listWorkflows: unavailable,
         listRuns: unavailable,
@@ -74,12 +92,13 @@ describe('operation failure logging', () => {
         expect(response.status).toBe(409)
         expect(await response.json()).toEqual({
           error: 'Conflict',
-          message: 'Run changed concurrently or a delivery ID was reused',
+          message: local.cause.detail,
         })
         expect(entries).toHaveLength(1)
-        if (kind === 'storage') {
-          expect(Cause.prettyErrors(entries[0]!.cause)[0]?.cause).toMatchObject({ stack: original.stack })
-        }
+        expect(child.entries).toHaveLength(1)
+        expect(entries[0]?.cause).toEqual(Cause.fail(local))
+        expect(Cause.pretty(entries[0]!.cause)).not.toContain('private database constraint')
+        expect(child.entries[0]!.annotations).toMatchObject({ errorId: local.cause.instance })
       } finally {
         await handler.dispose()
       }

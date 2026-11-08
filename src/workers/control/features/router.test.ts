@@ -1,13 +1,29 @@
+import { ok } from 'node:assert/strict'
+
 import { makeRpcStub } from 'alchemy/Cloudflare/Workers'
-import { encodeRpcError, ErrorTag, RpcCallError } from 'alchemy/Rpc'
-import { Effect, Layer, Schema, DateTime } from 'effect'
+import { RpcCallError } from 'alchemy/Rpc'
+import { Crypto, Effect, Layer, Schema, DateTime } from 'effect'
 import { HttpRouter } from 'effect/http'
 import { describe, expect, it, vi } from 'vite-plus/test'
 
-import { ExternalError, InvalidOperation } from '../../../features/workflow/domain/errors'
+import { rpcResponse, rpcResult } from '../../../features/rpc-boundary'
+import { RemoteWorkerError } from '../../../features/rpc-problem'
+import {
+  Conflict,
+  ExternalError,
+  InvalidOperation,
+  InvalidSnapshot,
+  NotFound,
+  StorageConflict,
+} from '../../../features/workflow/domain/errors'
 import { RpcCreateRun, RpcRunDetail, RpcWorkflowsResponse } from '../../../features/workflow/services/workflow-rpc'
 import { Workflows } from '../../../features/workflow/services/workflows'
 import { ApiRoutes } from './router'
+
+const crypto = Crypto.make({
+  randomBytes: (size) => globalThis.crypto.getRandomValues(new Uint8Array(size)),
+  digest: (_algorithm, bytes) => Effect.succeed(bytes),
+})
 
 const api = (workflows: Workflows['Service']) =>
   HttpRouter.toWebHandler(ApiRoutes.pipe(HttpRouter.provideRequest(Layer.succeed(Workflows, workflows))))
@@ -178,48 +194,58 @@ describe('Control aggregate Workflow service boundary', () => {
   })
 
   it.each([
+    [new NotFound({ resource: 'private graph' }), 404, 'NotFound'],
+    [new Conflict({ message: 'private conflict' }), 409, 'Conflict'],
     [
-      new ExternalError({ operation: 'read run', cause: 'Database unavailable', kind: 'storage' }),
-      500,
-      { error: 'ExternalError', message: 'Persistence operation failed' },
-    ],
-    [
-      new ExternalError({ operation: 'call workflow worker', cause: 'Disconnected', kind: 'service' }),
-      502,
-      { error: 'ExternalError', message: 'Workflow worker is unavailable. The run remains persisted' },
-    ],
-    [
-      new InvalidOperation({ message: 'Explicit workflow recovery is required' }),
+      new StorageConflict({ operation: 'batch', message: 'private constraint', cause: new Error('private SQL') }),
       409,
-      {
-        error: 'InvalidOperation',
-        message: 'Explicit workflow recovery is required',
-      },
+      'Conflict',
+    ],
+    [new InvalidOperation({ message: 'private recovery information' }), 409, 'InvalidOperation'],
+    [new InvalidSnapshot({ message: 'private checkpoint' }), 409, 'InvalidSnapshot'],
+    [
+      new ExternalError({ operation: 'read run', cause: 'private database failure', kind: 'storage' }),
+      500,
+      'ExternalError',
     ],
     [
-      new RpcCallError({ method: 'resume', cause: 'Individual worker disconnected' }),
+      new ExternalError({ operation: 'call workflow worker', cause: 'private disconnection', kind: 'service' }),
       502,
-      {
-        error: 'ExternalError',
-        message: 'Workflow worker is unavailable. The run remains persisted',
-      },
+      'ExternalError',
     ],
-  ] as const)('preserves the remote %s error envelope at the aggregate boundary', async (error, status, expected) => {
-    const handler = api(
-      makeRpcStub<Workflows['Service']>({
-        resumeRun: () => Promise.resolve({ _tag: ErrorTag, error: encodeRpcError(error) }),
-      }),
-    )
-    try {
-      const response = await handler.handler(
-        new Request('http://localhost/api/runs/run_00000000-0000-4000-8000-000000000001/resume', { method: 'POST' }),
+    [new RpcCallError({ method: 'resume', cause: 'private disconnection' }), 500, 'ExternalError'],
+    [Effect.runSync(Effect.flip(Schema.decodeUnknownEffect(Schema.String)(null))), 400, 'InvalidRequest'],
+    [new Error('private unexpected failure'), 500, 'ExternalError'],
+  ] as const)(
+    'maps a fresh local error from remote %s to HTTP %s without reviving its cause',
+    async (error, status, code) => {
+      const responseText = await Effect.runPromise(
+        Effect.fail(error).pipe(rpcResponse('Workflow.resumeRun'), Effect.provideService(Crypto.Crypto, crypto)),
       )
-      expect(response.status).toBe(status)
-      expect(await response.json()).toEqual(expected)
-    } finally {
-      await handler.dispose()
-    }
-  })
+      expect(responseText).not.toContain('private')
+      expect(responseText).not.toContain('stack')
+      const local = await Effect.runPromise(Effect.flip(rpcResult('Control.resumeRun')(responseText)))
+      ok(local instanceof RemoteWorkerError)
+      expect(local).not.toBe(error)
+      const handler = api({
+        ...unavailableWorkflows,
+        resumeRun: () => Effect.fail(local),
+      })
+      try {
+        const response = await handler.handler(
+          new Request('http://localhost/api/runs/run_00000000-0000-4000-8000-000000000001/resume', { method: 'POST' }),
+        )
+        expect(response.status).toBe(status)
+        const body = await response.json()
+        expect(body).toEqual({ error: code, message: local.cause.detail })
+        expect(JSON.stringify(body)).not.toContain('private')
+        expect(body).not.toHaveProperty('stack')
+        expect(body).not.toHaveProperty('cause')
+      } finally {
+        await handler.dispose()
+      }
+    },
+  )
 
   it.each([
     ['GET', '/api/workflows', undefined],
