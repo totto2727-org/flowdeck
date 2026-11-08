@@ -77,8 +77,11 @@ Never point local analysis or migration generation at a deployment database.
 
 ## Atomic writes and the public query contract
 
-`D1StoreLive` obtains the selected Alchemy `QueryDatabaseClient` through the `WorkflowDatabase` Context service and Layer composition.
+`D1StoreLive` captures the selected `WorkflowDatabase` Context service and assembles the `Store` service from independently defined Effect operations.
+`d1-store.ts` defines each run, graph, event, creation, and commit operation as a separate Effect; `d1-store-codecs.ts` owns persisted value conversion.
+`database-queries.ts` is the shared Reylo-to-Alchemy execution boundary, including preparation, reads, atomic batches, and defect translation.
 Reylo supplies SQL, inferred input and row types, and parameter encoding; Alchemy executes reads through `first` and `all`.
+This integration uses Reylo's existing Standard Query contract rather than adding an Alchemy dependency or Flowdeck-specific error mapping to Reylo.
 Creation and commits submit prepared statements together through Alchemy's `batch`, which delegates to one native atomic D1 batch.
 The store never evaluates the client's `raw` binding or recreates its Promise-to-Effect executor.
 The receipt guard, revision update, snapshot, and events must not be split into separate query calls.

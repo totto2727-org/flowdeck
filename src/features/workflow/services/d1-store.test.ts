@@ -84,7 +84,7 @@ beforeEach(async () => {
     modules: true,
     script: 'export default {}',
     compatibilityDate: '2026-07-30',
-    d1Databases: { DB: 'flowdeck-test' },
+    d1Databases: { DB: 'flowdeck-test', OTHER: 'flowdeck-other-test' },
   })
   database = await miniflare.getD1Database('DB')
   const migrations = await readD1Migrations('migrations')
@@ -157,6 +157,33 @@ const api = (registry?: ReadonlyArray<RegisteredWorkflow>) =>
   )
 
 describe('D1 persisted run store', () => {
+  it('keeps each store bound to its own Layer-provided database', async () => {
+    const otherDatabase = await miniflare.getD1Database('OTHER')
+    const migrations = await readD1Migrations('migrations')
+    await otherDatabase.batch(
+      Array.map(
+        Array.flatMap(migrations, (migration) => migration.queries),
+        (query) => otherDatabase.prepare(query),
+      ),
+    )
+    const otherStore = Effect.runSync(
+      Store.pipe(
+        Effect.provide(
+          D1StoreLive.pipe(
+            Layer.provide(NativeWorkflowDatabase),
+            Layer.provide(Layer.succeed(D1Binding, otherDatabase)),
+          ),
+        ),
+      ),
+    )
+    const otherRunId = 'run_00000000-0000-4000-8000-000000000002'
+    await Effect.runPromise(otherStore.create(newRun(otherRunId), demoGraph(version1), demoDefinition.summary.name))
+    expect(await Effect.runPromise(store.listRuns)).toEqual([])
+    await seed()
+    expect(await Effect.runPromise(store.listRuns)).toMatchObject([{ runId: command().runId }])
+    expect(await Effect.runPromise(otherStore.listRuns)).toMatchObject([{ runId: otherRunId }])
+  })
+
   it('preserves executor interruption without converting it into a storage failure', async () => {
     const client = Effect.runSync(
       WorkflowDatabase.pipe(
