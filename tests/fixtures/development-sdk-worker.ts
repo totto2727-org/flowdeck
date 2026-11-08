@@ -1,4 +1,6 @@
 import { Workspace } from '@cloudflare/computer'
+import type { WorkspaceProxyProps } from '@cloudflare/computer'
+import type { Fetcher } from '@cloudflare/workers-types'
 import { makeDurableObjectBridge } from 'alchemy/Cloudflare/Bridge'
 import { DurableObjectState } from 'alchemy/Cloudflare/Workers/DurableObjectState'
 import { WorkerEnvironment } from 'alchemy/Cloudflare/Workers/WorkerRuntime'
@@ -43,7 +45,7 @@ export const entrypoint = Effect.gen(function* () {
               await sdk.lifecycle.start()
               return {
                 jobs: sdk.lifecycle.jobs.list().length,
-                sqlite: state.raw.storage.sql.exec('SELECT 1 AS value').one().value,
+                sqlite: state.raw.storage.sql.exec<{ value: number }>('SELECT 1 AS value').one().value,
               }
             }),
           // The SDK stub is a Capnweb target. This deliberately probes its
@@ -56,7 +58,12 @@ export const entrypoint = Effect.gen(function* () {
             }),
           proxyHealth: () =>
             Effect.promise(async () => {
-              const proxy = state.raw.exports.WorkspaceProxy({
+              // The build plugin adds this export to the generated entry, not
+              // this source module. Its real loopback is exercised by workerd.
+              const exports = state.raw.exports as {
+                WorkspaceProxy: (options: { props: WorkspaceProxyProps }) => Fetcher
+              }
+              const proxy = exports.WorkspaceProxy({
                 props: { binding: 'PROBE', id: state.raw.id.toString() },
               })
               const response = await proxy.fetch('https://workspace-proxy/health')

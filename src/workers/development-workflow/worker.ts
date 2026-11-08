@@ -73,11 +73,10 @@ const DevelopmentRunLive = DevelopmentRun.make(
         ),
         alarm: () => Effect.promise(() => sdk.lifecycle.alarm()),
         webSocketMessage: (socket: WebSocket, message: string | ArrayBuffer) =>
-          Effect.promise(() => sdk.lifecycle.webSocketMessage(socket.ws, message)),
+          sdk.webSocketMessage(socket.ws, message),
         webSocketClose: (socket: WebSocket, code: number, reason: string, wasClean: boolean) =>
-          Effect.promise(() => sdk.lifecycle.webSocketClose(socket.ws, code, reason, wasClean)),
-        webSocketError: (socket: WebSocket, error: unknown) =>
-          Effect.promise(() => sdk.lifecycle.webSocketError(socket.ws, error)),
+          sdk.webSocketClose(socket.ws, code, reason, wasClean),
+        webSocketError: (socket: WebSocket, error: unknown) => sdk.webSocketError(socket.ws, error),
       }
     })
   }).pipe(Effect.provide(QueryDatabaseBinding)),

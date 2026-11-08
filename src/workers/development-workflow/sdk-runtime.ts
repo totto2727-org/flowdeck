@@ -1,5 +1,6 @@
 import { getWorkspace, withWorkspace, type WorkspaceOptions } from '@cloudflare/computer'
 import { ContainerBackend, withWorkspaceContainer } from '@cloudflare/computer/backends/container'
+import type { WebSocket as WorkerWebSocket } from '@cloudflare/workers-types'
 import { createRegistry, Harness } from '@earendil-works/pi-durable'
 import { PiHarness, ROOT_SESSION } from 'agents/harness/pi'
 import { Lifecycle, type LifecycleJobContext, type LifecycleJobOutcome } from 'agents/lifecycle'
@@ -81,8 +82,12 @@ export const makeDevelopmentSdk = Effect.gen(function* () {
   // application storage uses its Effect adapter, and no fake host or runtime is made.
   // SDK callbacks re-enter this captured activation context because the native SDK
   // invokes Promise callbacks outside Effect. No Layer is rebuilt per callback.
+  // Alchemy names its native types through @cloudflare/workers-types, while these
+  // SDKs use ambient Worker types mixed with the frontend DOM declarations. They
+  // describe the same workerd objects but disagree structurally on Request and
+  // WebSocket. Keep those declaration-only conversions at this SDK boundary.
   const host: SdkHost = new SdkHost(
-    state.raw,
+    state.raw as unknown as ConstructorParameters<typeof DurableObject>[0],
     env,
     () =>
       Effect.runPromise(
@@ -193,6 +198,12 @@ export const makeDevelopmentSdk = Effect.gen(function* () {
         if (response.status === 101) await host.getWorkspaceContainer().setInactivityTimeout(INACTIVITY_MS)
         return response
       }),
+    webSocketMessage: (socket: WorkerWebSocket, message: string | ArrayBuffer) =>
+      Effect.promise(() => lifecycle.webSocketMessage(socket as unknown as WebSocket, message)),
+    webSocketClose: (socket: WorkerWebSocket, code: number, reason: string, wasClean: boolean) =>
+      Effect.promise(() => lifecycle.webSocketClose(socket as unknown as WebSocket, code, reason, wasClean)),
+    webSocketError: (socket: WorkerWebSocket, error: unknown) =>
+      Effect.promise(() => lifecycle.webSocketError(socket as unknown as WebSocket, error)),
     lifecycle,
   }
 })
