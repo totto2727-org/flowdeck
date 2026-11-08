@@ -131,7 +131,9 @@ Use `fix` for Atlas HCL formatting and `check` for definition validation with an
 Keep existing `check` and `test` task names; do not add automatic migration checksum or schema drift validation.
 Use the published `@totto2727/reylo` and `@totto2727/reylo-sqlite` packages at matching versions.
 Do not replace registry dependencies with package links, Reylo patches, or fork checkout/build steps in CI.
-Keep receipt, state, and event writes in one native D1 batch using Reylo's public Standard Query `text` and `encode` contract.
+Use `@totto2727/reylo/effect` with an Alchemy-backed `QueryExecutor` Layer composed at each runtime root.
+Capture `makeQueryRunner` when constructing the query service, not when executing each operation.
+Keep receipt, state, and event writes in one native D1 batch using Reylo's public Effect `prepare` contract.
 Prepare and bind statements before calling the batch Effect.
 Its `PreparedStatement[]` input and the real-D1 test `executes already prepared statements without preparing inside batch` enforce this boundary.
 Use Alchemy's Effect-native D1 executor for reads and atomic batches; do not extract its raw binding and recreate Promise-to-Effect execution wrappers.

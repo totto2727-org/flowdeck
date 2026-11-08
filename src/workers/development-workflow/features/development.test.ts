@@ -11,7 +11,7 @@ import { ExternalError } from '@/features/workflow/domain/errors'
 import { CommitId, EventId, ExecutionId } from '@/features/workflow/domain/identity'
 import { JsonObject, RunDetail, type Run } from '@/features/workflow/domain/model'
 import { D1StoreLive } from '@/features/workflow/services/d1-store'
-import { DatabaseQueriesLive } from '@/features/workflow/services/database-queries'
+import { AlchemyQueryExecutorLive, DatabaseQueriesLive } from '@/features/workflow/services/database-queries'
 import { D1Binding, NativeWorkflowDatabase } from '@/features/workflow/services/native-database'
 import { Store, type StoreService } from '@/features/workflow/services/store'
 import { WorkflowRegistry } from '@/features/workflow/services/workflow-definition'
@@ -83,6 +83,7 @@ beforeEach(async () => {
   )
   storeLayer = D1StoreLive.pipe(
     Layer.provide(DatabaseQueriesLive),
+    Layer.provide(AlchemyQueryExecutorLive),
     Layer.provide(NativeWorkflowDatabase),
     Layer.provide(Layer.succeed(D1Binding, database)),
   )

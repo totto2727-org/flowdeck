@@ -37,8 +37,8 @@ importers:
         specifier: ^0.3.1
         version: 0.3.1(@effect/platform-browser@4.0.6(effect@4.0.6))(@voidzero-dev/vite-plus-core@1.4.0(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(typescript@7.1.0-dev.20261030.1)(yaml@2.9.1))(effect@4.0.6)(react-dom@19.3.1(react@19.3.1))(react-server-dom-webpack@19.3.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(webpack@5.112.0(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.30)(sharp@0.35.5(@types/node@24.19.2))))(react@19.3.1)
       '@totto2727/reylo':
-        specifier: ^0.7.0
-        version: 0.7.0(@totto2727/reylo-sqlite@0.7.0)
+        specifier: ^0.7.1
+        version: 0.7.1(@totto2727/reylo-sqlite@0.7.1)(effect@4.0.6)
       '@typeonce/effect-machine':
         specifier: ^0.46.0
         version: 0.46.0(effect@4.0.6)
@@ -98,8 +98,8 @@ importers:
         specifier: ^0.1.0
         version: 0.1.0
       '@totto2727/reylo-sqlite':
-        specifier: ^0.7.0
-        version: 0.7.0
+        specifier: ^0.7.1
+        version: 0.7.1
       '@tsconfig/node-ts':
         specifier: ^23.6.4
         version: 23.6.4
@@ -2287,17 +2287,20 @@ packages:
   '@totto2727/gitignore-patterns@0.1.0':
     resolution: {integrity: sha512-hg8SkhlD4pDixWp3EDcsTTXkXM2KKR7H5Xl+ypqC0tced1Z7n3OG+rgBXkemOsgvYBP+TykpKztPyOrAi7ogRA==}
 
-  '@totto2727/reylo-sqlite@0.7.0':
-    resolution: {integrity: sha512-YdY2gdbCnMupAeU8+/W5DQVR4MCtuEtnxOM/MSSZZc0wiNzAxuaYrFRHzyBB+WwHzXkITc06f8hTIj4RHTefHA==}
+  '@totto2727/reylo-sqlite@0.7.1':
+    resolution: {integrity: sha512-h/uOlXPnOcX9HnkS9GplSaFEIlyjmHYdWYcPJo2Vpz/ODWbvGKGNtm1pHKQjMaL0JT/wpj2r276VlI60+A8Rww==}
 
-  '@totto2727/reylo@0.7.0':
-    resolution: {integrity: sha512-abf8rCEhEaqwsK81D/OCKC7fxDrWTlto6ipP8rXUW0L+8aX5jNbEQp7uocGXn4Bl89QyyEIjj1bBisDjG34HTg==}
+  '@totto2727/reylo@0.7.1':
+    resolution: {integrity: sha512-9Al8HMNDFst1+VN0aAUos7X+jk6DyJ2H1Up6orbT2bxb42msS0XRr5aRylovGl1eoY/Uge6D7827MZEooxdtjQ==}
     engines: {node: '>=24'}
     hasBin: true
     peerDependencies:
-      '@totto2727/reylo-sqlite': 0.7.0
+      '@totto2727/reylo-sqlite': 0.7.1
+      effect: ^4.0.6
     peerDependenciesMeta:
       '@totto2727/reylo-sqlite':
+        optional: true
+      effect:
         optional: true
 
   '@tsconfig/node-ts@23.6.4':
@@ -6438,7 +6441,7 @@ snapshots:
     dependencies:
       ignore: 7.0.12
 
-  '@totto2727/reylo-sqlite@0.7.0':
+  '@totto2727/reylo-sqlite@0.7.1':
     optionalDependencies:
       '@reylosql/engine-darwin-arm64': 0.7.0
       '@reylosql/engine-darwin-x64': 0.7.0
@@ -6449,7 +6452,7 @@ snapshots:
       '@reylosql/engine-win32-arm64': 0.7.0
       '@reylosql/engine-win32-x64': 0.7.0
 
-  '@totto2727/reylo@0.7.0(@totto2727/reylo-sqlite@0.7.0)':
+  '@totto2727/reylo@0.7.1(@totto2727/reylo-sqlite@0.7.1)(effect@4.0.6)':
     optionalDependencies:
       '@reylosql/engine-darwin-arm64': 0.7.0
       '@reylosql/engine-darwin-x64': 0.7.0
@@ -6459,7 +6462,8 @@ snapshots:
       '@reylosql/engine-linux-x64-musl': 0.7.0
       '@reylosql/engine-win32-arm64': 0.7.0
       '@reylosql/engine-win32-x64': 0.7.0
-      '@totto2727/reylo-sqlite': 0.7.0
+      '@totto2727/reylo-sqlite': 0.7.1
+      effect: 4.0.6
 
   '@tsconfig/node-ts@23.6.4': {}
 

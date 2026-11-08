@@ -8,10 +8,10 @@ overrides:
 
 minimumReleaseAge: 1440
 minimumReleaseAgeStrict: true
-# TODO: Remove these release-age exceptions after 2026-11-09T04:34:00Z.
+# TODO: Remove these user-approved release-age exceptions after 2026-11-09T16:46:00Z.
 minimumReleaseAgeExclude:
-  - '@totto2727/reylo@0.7.0'
-  - '@totto2727/reylo-sqlite@0.7.0'
+  - '@totto2727/reylo@0.7.1'
+  - '@totto2727/reylo-sqlite@0.7.1'
 
 # Only the native build tools required by Cloudflare's local runtime are trusted.
 allowBuilds:
