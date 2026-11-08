@@ -45,7 +45,7 @@ Use `vp run dev` for the local Alchemy application, `vp run check` for format an
 Declare every task as an object with `command`; use an empty command and `dependsOn` for `check` and `fix` aggregators.
 Keep task caching enabled by default and document any necessary exception.
 Keep schema input and development-database settings in `atlas.hcl`, not in task command arguments.
-Authenticate Atlas Pro locally with `atlas login` and supply `ATLAS_CLOUD_TOKEN` to the CI setup action.
+Authenticate Atlas Pro locally with `atlas login` for migration generation.
 Use the standard Alchemy Cloudflare credentials when required.
 `alchemy.run.ts` selects `localState()` for local development and the official Cloudflare state backend for remote deployment through `ALCHEMY_DEV` at the entry point, separate from workflow data in D1.
 A backend configuration change does not migrate existing local infrastructure state.

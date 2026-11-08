@@ -14,8 +14,8 @@ D1 integration tests exercise the generated migration files.
 ## Local analysis and checks
 
 Install the [official Atlas CLI](https://atlasgo.io/getting-started/) and the official Vite+ CLI.
-Authenticate with `atlas login` using an Atlas Pro organization.
-CI supplies the `ATLAS_CLOUD_TOKEN` secret to `ariga/setup-atlas`.
+For local migration generation, authenticate with `atlas login` using an Atlas Pro organization.
+CI installs Atlas with `ariga/setup-atlas` and runs schema validation without a token.
 The committed package manifest and lockfile use registry dependencies.
 CI uses the shared TypeScript setup action and does not fetch or build unpublished Reylo source.
 
