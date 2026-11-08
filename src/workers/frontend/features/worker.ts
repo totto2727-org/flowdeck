@@ -1,23 +1,12 @@
 import { makeApplicationHttpEffect } from '@effront/alchemy/cloudflare'
-import { Effect } from 'effect'
-import { FetchHttpClient } from 'effect/http'
+import { Context, Effect } from 'effect'
 
-import { ControlApi, makeControlApi } from './control-api'
+/** Capture constructed application capabilities, not request bindings or host services. */
+export const makeWebWorker = Effect.gen(function* () {
+  const fetch = yield* makeApplicationHttpEffect(() => import('./entry.effront').then((module) => module.default))
+  return { fetch }
+})
 
-export interface ControlBinding {
-  readonly fetch: (request: Request) => Promise<Response>
-}
-
-/** Native Request conversion is restricted to this external service-binding boundary. */
-export const makeWebWorker = (control: ControlBinding) =>
-  Effect.gen(function* () {
-    const bindingFetch: typeof globalThis.fetch = (input, init) => control.fetch(new Request(input, init))
-    const api = yield* makeControlApi.pipe(
-      Effect.provide(FetchHttpClient.layer),
-      Effect.provideService(FetchHttpClient.Fetch, bindingFetch),
-    )
-    const application = yield* makeApplicationHttpEffect(() =>
-      import('./entry.effront').then((module) => module.default),
-    ).pipe(Effect.provideService(ControlApi, api))
-    return { fetch: application }
-  })
+export class WebWorker extends Context.Service<WebWorker, Effect.Success<typeof makeWebWorker>>()(
+  'flowdeck/WebWorker',
+) {}

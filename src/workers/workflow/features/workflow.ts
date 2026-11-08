@@ -1,8 +1,8 @@
 import type { RpcCallError, RpcDecodeError } from 'alchemy/Rpc'
-import { Array, Crypto, DateTime, Effect, Option } from 'effect'
+import { Array, DateTime, Effect, Option } from 'effect'
 
 import { ExternalError, InvalidOperation, type DomainError } from '../../../features/workflow/domain/errors'
-import { makeRunId, type RunId, type WorkflowId } from '../../../features/workflow/domain/identity'
+import { makeRunIdGenerator, type RunId, type WorkflowId } from '../../../features/workflow/domain/identity'
 import type { CreateRun, Run, RunDetail } from '../../../features/workflow/domain/model'
 import { graphToShapes } from '../../../features/workflow/domain/projection'
 import { Store } from '../../../features/workflow/services/store'
@@ -15,26 +15,35 @@ const bindingFailure = (error: DomainError | RpcCallError | RpcDecodeError) =>
     ? new ExternalError({ operation: 'call workflow worker', kind: 'service', cause: error })
     : error
 
-const registeredWorkflow = (workflowId: WorkflowId) =>
-  Effect.flatMap(WorkflowRegistry, (registry) =>
-    Array.findFirst(registry, (entry) => entry.summary.workflowId === workflowId).pipe(
+const makeRegisteredWorkflow = Effect.gen(function* () {
+  const registry = yield* WorkflowRegistry
+  return Effect.fn('Workflows.registeredWorkflow')(function* (workflowId: WorkflowId) {
+    return yield* Array.findFirst(registry, (entry) => entry.summary.workflowId === workflowId).pipe(
       Option.match({
         onNone: () => Effect.fail(new InvalidOperation({ message: 'The workflow is not registered' })),
         onSome: Effect.succeed,
       }),
-    ),
-  )
-
-export const listWorkflows = Effect.map(WorkflowRegistry, (registry) => ({
-  workflows: Array.map(registry, (entry) => entry.summary),
-}))
-export const listRuns = Effect.gen(function* () {
-  const store = yield* Store
-  return { runs: yield* store.listRuns }
+    )
+  })
 })
-export const getRunDetail = (runId: RunId) =>
-  Effect.gen(function* () {
-    const store = yield* Store
+
+const makeListWorkflows = Effect.gen(function* () {
+  const registry = yield* WorkflowRegistry
+  return Effect.fn('Workflows.listWorkflows')(() =>
+    Effect.succeed({ workflows: Array.map(registry, (entry) => entry.summary) }),
+  )
+})
+
+const makeListRuns = Effect.gen(function* () {
+  const store = yield* Store
+  return Effect.fn('Workflows.listRuns')(function* () {
+    return { runs: yield* store.listRuns }
+  })
+})
+
+const makeGetRunDetail = Effect.gen(function* () {
+  const store = yield* Store
+  return Effect.fn('Workflows.getRunDetail')(function* (runId: RunId) {
     const run = yield* store.getRun(runId)
     const graph = yield* store.getGraph(run.graphId)
     // A revision-bounded prefix cannot include a newer checkpoint's events.
@@ -47,13 +56,18 @@ export const getRunDetail = (runId: RunId) =>
       shapes: graphToShapes(graph, events),
     } satisfies RunDetail
   })
-export const createRun = (input: CreateRun) =>
-  Effect.gen(function* () {
+})
+
+const makeCreateRun = Effect.gen(function* () {
+  const registeredWorkflow = yield* makeRegisteredWorkflow
+  const store = yield* Store
+  const newRunId = yield* makeRunIdGenerator
+  const getRunDetail = yield* makeGetRunDetail
+  return Effect.fn('Workflows.createRun')(function* (input: CreateRun) {
     const workflow = yield* registeredWorkflow(input.workflowId)
     // Workflow-owned validation must finish before any identity or persistence side effect.
     const prepared = yield* workflow.prepare(input)
-    const store = yield* Store
-    const runId = yield* makeRunId
+    const runId = yield* newRunId()
     const now = yield* DateTime.now
     const run: Run = {
       runId,
@@ -71,23 +85,33 @@ export const createRun = (input: CreateRun) =>
     yield* workflow.binding.start(runId).pipe(Effect.mapError(bindingFailure))
     return yield* getRunDetail(runId)
   })
-export const resumeRun = (runId: RunId) =>
-  Effect.gen(function* () {
-    const store = yield* Store
+})
+
+const makeResumeRun = Effect.gen(function* () {
+  const store = yield* Store
+  const registeredWorkflow = yield* makeRegisteredWorkflow
+  const getRunDetail = yield* makeGetRunDetail
+  return Effect.fn('Workflows.resumeRun')(function* (runId: RunId) {
     const run = yield* store.getRun(runId)
     const workflow = yield* registeredWorkflow(run.workflowId)
     yield* workflow.binding.resume(runId).pipe(Effect.mapError(bindingFailure))
     return yield* getRunDetail(runId)
   })
+})
+
+export const listWorkflows = Effect.flatMap(makeListWorkflows, (list) => list())
+export const listRuns = Effect.flatMap(makeListRuns, (list) => list())
+export const getRunDetail = (runId: RunId) => Effect.flatMap(makeGetRunDetail, (get) => get(runId))
+export const createRun = (input: CreateRun) => Effect.flatMap(makeCreateRun, (create) => create(input))
+export const resumeRun = (runId: RunId) => Effect.flatMap(makeResumeRun, (resume) => resume(runId))
 
 /** Capture dependencies once so RPC methods do not depend on the caller's context. */
 export const makeWorkflows = Effect.gen(function* () {
-  const context = yield* Effect.context<Store | Crypto.Crypto | WorkflowRegistry>()
   return {
-    listWorkflows: () => listWorkflows.pipe(Effect.provideContext(context)),
-    listRuns: () => listRuns.pipe(Effect.provideContext(context)),
-    getRunDetail: (runId) => getRunDetail(runId).pipe(Effect.provideContext(context)),
-    createRun: (input) => createRun(input).pipe(Effect.provideContext(context)),
-    resumeRun: (runId) => resumeRun(runId).pipe(Effect.provideContext(context)),
+    listWorkflows: yield* makeListWorkflows,
+    listRuns: yield* makeListRuns,
+    getRunDetail: yield* makeGetRunDetail,
+    createRun: yield* makeCreateRun,
+    resumeRun: yield* makeResumeRun,
   } satisfies Workflows['Service']
 })

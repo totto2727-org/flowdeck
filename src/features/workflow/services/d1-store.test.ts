@@ -15,6 +15,7 @@ import {
   DemoSnapshot,
   demoGraph,
   initialSnapshot,
+  makeDemoExecutor,
   resumeRun,
   startRun,
 } from '../../../workers/demo-workflow/features/demo'
@@ -26,7 +27,7 @@ import { CommitId, EventId, ExecutionId, RunId } from '../domain/identity'
 import { RunDetail, RunsResponse, type Run, type WorkflowVersion } from '../domain/model'
 import { D1StoreLive } from './d1-store'
 import { WorkflowDatabase } from './database'
-import { batch } from './database-queries'
+import { makeDatabaseQueries } from './database-queries'
 import { D1Binding, NativeWorkflowDatabase } from './native-database'
 import { type CommitCommand, Store, type StoreService } from './store'
 import { WorkflowRegistry, type RegisteredWorkflow } from './workflow-definition'
@@ -159,8 +160,45 @@ const api = (registry?: ReadonlyArray<RegisteredWorkflow>) =>
   )
 
 describe('D1 persisted run store', () => {
+  it('captures workflow service dependencies once and runs every operation without a caller context', async () => {
+    const workflows = Effect.runSync(
+      Workflows.pipe(
+        Effect.provide(
+          Layer.effect(Workflows, makeWorkflows).pipe(
+            Layer.provide(
+              Layer.mergeAll(
+                Layer.succeed(Store, store),
+                Layer.effect(WorkflowRegistry, makeWorkflowRegistry).pipe(
+                  Layer.provide(Layer.mergeAll(testBinding(), unavailableDevelopmentBinding)),
+                ),
+                TestCrypto.layer('captured-workflow-service').pipe(Layer.provide(BrowserCrypto.layer)),
+              ),
+            ),
+          ),
+        ),
+      ),
+    )
+
+    // Construction has ended. These calls deliberately supply no Store, registry,
+    // Crypto, database, or Workflows context to the returned service operations.
+    expect(await Effect.runPromise(workflows.listRuns())).toEqual({ runs: [] })
+    expect(await Effect.runPromise(workflows.listWorkflows())).toMatchObject({
+      workflows: expect.arrayContaining([expect.objectContaining({ workflowId: 'demo' })]),
+    })
+    const created = await Effect.runPromise(workflows.createRun({ workflowId: 'demo', version: version1 }))
+    expect(created.run).toMatchObject({ status: 'waiting', revision: 2 })
+    expect(await Effect.runPromise(workflows.getRunDetail(created.run.runId))).toEqual(created)
+    expect(await Effect.runPromise(workflows.listRuns())).toEqual({ runs: [created.run] })
+    const resumed = await Effect.runPromise(workflows.resumeRun(created.run.runId))
+    expect(resumed.run).toMatchObject({ runId: created.run.runId, status: 'completed', revision: 4 })
+    expect(await Effect.runPromise(workflows.getRunDetail(created.run.runId))).toEqual(resumed)
+    expect(await Effect.runPromise(workflows.listRuns())).toEqual({ runs: [resumed.run] })
+  })
+
   it('executes already prepared statements without preparing inside batch', async () => {
-    expectTypeOf<Parameters<typeof batch>[0]>().toEqualTypeOf<PreparedStatement[]>()
+    expectTypeOf<Parameters<Effect.Success<typeof makeDatabaseQueries>['batch']>[0]>().toEqualTypeOf<
+      PreparedStatement[]
+    >()
     const client = Effect.runSync(
       WorkflowDatabase.pipe(
         Effect.provide(NativeWorkflowDatabase.pipe(Layer.provide(Layer.succeed(D1Binding, database)))),
@@ -172,7 +210,10 @@ describe('D1 persisted run store', () => {
     const prepare = vi.fn(() => {
       throw new Error('Preparation must happen before batch')
     })
-    await Effect.runPromise(batch([prepared]).pipe(Effect.provideService(WorkflowDatabase, { ...client, prepare })))
+    const queries = Effect.runSync(
+      makeDatabaseQueries.pipe(Effect.provideService(WorkflowDatabase, { ...client, prepare })),
+    )
+    await Effect.runPromise(queries.batch([prepared]))
     expect(prepare).not.toHaveBeenCalled()
     expect(await database.prepare('SELECT name FROM workflows WHERE workflow_id = ?').bind('prepared').first()).toEqual(
       { name: 'Prepared' },
@@ -600,6 +641,29 @@ describe('D1 persisted run store', () => {
 })
 
 describe('demo cold restoration', () => {
+  it.each([version1, version2] as const)(
+    'captures demo dependencies once and executes %s without a caller context',
+    async (version) => {
+      const runId = command().runId
+      await seed(runId, version)
+      const executor = Effect.runSync(
+        makeDemoExecutor.pipe(
+          Effect.provide(
+            Layer.mergeAll(
+              Layer.succeed(Store, store),
+              TestCrypto.layer('captured-demo-executor').pipe(Layer.provide(BrowserCrypto.layer)),
+            ),
+          ),
+        ),
+      )
+      await Effect.runPromise(executor.start(runId))
+      expect(await Effect.runPromise(freshStore().getRun(runId))).toMatchObject({ status: 'waiting', revision: 2 })
+      await Effect.runPromise(executor.resume(runId))
+      expect(await Effect.runPromise(freshStore().getRun(runId))).toMatchObject({ status: 'completed', revision: 4 })
+      expect(await Effect.runPromise(store.getEvents(runId, { _tag: 'All' }))).toHaveLength(10)
+    },
+  )
+
   it('generates prefixed UUIDv4 execution, event and commit identities and ACKs an exact duplicate commit', async () => {
     await seed()
     const persisted = store

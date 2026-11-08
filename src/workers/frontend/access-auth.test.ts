@@ -1,23 +1,17 @@
-import { WorkerEnvironment } from 'alchemy/Cloudflare/Workers'
 import { ConfigProvider, Effect } from 'effect'
 import { describe, expect, it } from 'vite-plus/test'
 
 import { accessPolicyId, frontendHostname } from './access'
-import { authorizeAccess, ExpectedAccessAudience } from './access-auth'
-import { AccessAudienceBinding, accessAudienceFromEnvironment } from './assembly'
+import { authorizeAccess } from './access-auth'
+import { accessAudienceFromEnvironment } from './assembly'
 
 const production = { aud: 'flowdeck-audience' }
 const admitted = (aud = 'flowdeck-audience') => Effect.succeed({ aud })
 
 describe('frontend Access admission', () => {
-  it('injects the decoded native audience through the request assembly Layer', async () => {
+  it('decodes the native audience at the request assembly boundary', async () => {
     await expect(
-      Effect.runPromise(
-        ExpectedAccessAudience.pipe(
-          Effect.provide(AccessAudienceBinding),
-          Effect.provideService(WorkerEnvironment, { FLOWDECK_ACCESS_AUD: 'flowdeck-audience' }),
-        ),
-      ),
+      Effect.runPromise(accessAudienceFromEnvironment({ FLOWDECK_ACCESS_AUD: 'flowdeck-audience' })),
     ).resolves.toEqual(production)
   })
 

@@ -77,13 +77,15 @@ Never point local analysis or migration generation at a deployment database.
 
 ## Atomic writes and the public query contract
 
-`D1StoreLive` captures the selected `WorkflowDatabase` Context service and assembles the `Store` service from independently defined Effect operations.
-`d1-store.ts` defines each run, graph, event, creation, and commit operation as a separate Effect; `d1-store-codecs.ts` owns persisted value conversion.
+`DatabaseQueriesLive` captures the selected Alchemy client from `WorkflowDatabase` when the Layer is built.
+`D1StoreLive` constructs the `Store` service from separate operation factories that capture those query capabilities once.
+Service methods do not provide or rebuild their dependencies when called.
+`d1-store.ts` defines each run, graph, event, creation, and commit operation separately; `d1-store-codecs.ts` owns persisted value conversion.
 `database-queries.ts` is the shared Reylo-to-Alchemy execution boundary, including preparation, reads, atomic batches, and defect translation.
 Reylo supplies SQL, inferred input and row types, and parameter encoding; Alchemy executes reads through `first` and `all`.
 This integration uses Reylo's existing Standard Query contract rather than adding an Alchemy dependency or Flowdeck-specific error mapping to Reylo.
 Creation and commits submit prepared statements together through Alchemy's `batch`, which delegates to one native atomic D1 batch.
-Flowdeck's `batch` is an independent Effect function that obtains the Alchemy client through `WorkflowDatabase` and accepts only `PreparedStatement[]`.
+Flowdeck's `batch` is an independent Effect function that captures the Alchemy client during service construction and accepts only `PreparedStatement[]`.
 Each calling operation prepares and binds the statements before invoking it; the batch Effect does not prepare statements.
 The store never evaluates the client's `raw` binding or recreates its Promise-to-Effect executor.
 The receipt guard, revision update, snapshot, and events must not be split into separate query calls.
@@ -95,16 +97,18 @@ Domain Schema codecs validate persisted row values after execution.
 Reylo owns placeholder ordering, parameter validation, and encoding, with inferred query parameters retained at the store boundary.
 Flowdeck does not add a SQL compiler, access private query internals, or patch a batch-binding method.
 Worker and Effect-native Durable Object entry points obtain the client through `QueryDatabaseBinding`.
-The native Pi Durable Object and Miniflare tests provide `D1Binding` to `NativeWorkflowDatabase`, which delegates to Alchemy's existing client builder.
+Miniflare database tests provide `D1Binding` to `NativeWorkflowDatabase`, which delegates to Alchemy's existing client builder.
+Production Workers and Durable Objects do not use this native-binding test adapter.
 A version-scoped dependency patch exports that builder from the D1 entry point without modifying its implementation.
 See [upstream differences](upstream-differences.md) for provenance, patch scope, and removal criteria.
 
 Alchemy reports rejected D1 operations as defects.
 The store translates those defects into typed storage failures, retains the original cause and stack, and leaves interruption unchanged.
 Database constraint conflicts use `StorageConflict`, with a required operation and cause; domain validation conflicts use `Conflict`, with only a message.
-Control maps both to the same sanitized HTTP 409 response.
-Control registers failure logging and HTTP error translation through `HttpRouter.middleware`.
-The logging Middleware records the original Effect cause once before HTTP translation, without logging request bodies or changing client error responses.
+The owning service logs the original cause and stack with an error ID before returning a sanitized [RPC problem](rpc-boundaries.md).
+Control receives a new local error whose cause is that problem object, not the database exception.
+It maps the problem to the corresponding safe HTTP response, including 409 for conflicts.
+Control registers its local failure logging and HTTP error translation through `HttpRouter.middleware`.
 
 ## Official references
 

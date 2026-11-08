@@ -17,10 +17,14 @@ export const makePrefixedUUIDv4 = (prefix: UserDefinedId) => {
   const fixedPrefix = decodeUserDefinedId(prefix) + '_'
   const schema = Schema.TemplateLiteral([fixedPrefix, UUIDv4])
   const decode = Schema.decodeUnknownEffect(schema)
-  const make = Effect.flatMap(Crypto.Crypto, (crypto) => crypto.randomUUIDv4()).pipe(
-    // A failure here is a generator/schema programming defect, not invalid external input.
-    Effect.flatMap((uuid) => decode(fixedPrefix + uuid).pipe(Effect.orDie)),
+  const makeGenerator = Effect.map(Crypto.Crypto, (crypto) =>
+    Effect.fn('Identity.makePrefixedUUIDv4')(function* () {
+      const uuid = yield* crypto.randomUUIDv4()
+      // A failure here is a generator/schema programming defect, not invalid external input.
+      return yield* decode(fixedPrefix + uuid).pipe(Effect.orDie)
+    }),
   )
-  return { schema, make }
+  const make = Effect.flatMap(makeGenerator, (generate) => generate())
+  return { schema, make, makeGenerator }
 }
 export type PrefixedUUIDv4 = ReturnType<typeof makePrefixedUUIDv4>['schema']['Type']

@@ -93,6 +93,18 @@ describe('prefixed cryptographic random identities', () => {
     expect(Schema.is(schema)(ids[1])).toBe(true)
   })
 
+  it.each(prefixes)('keeps the constructed %s generator usable without a caller Crypto service', async (kind) => {
+    const { schema, makeGenerator } = makePrefixedUUIDv4(kind)
+    const generate = await Effect.runPromise(makeGenerator.pipe(Effect.provide(BrowserCrypto.layer)))
+    const first = await Effect.runPromise(generate())
+    const second = await Effect.runPromise(generate())
+    expect(first).not.toBe(second)
+    expect(Schema.decodeUnknownSync(schema)(first)).toBe(first)
+    expect(Schema.decodeUnknownSync(schema)(second)).toBe(second)
+    expect(Schema.encodeSync(schema)(first)).toBe(first)
+    expect(Schema.encodeSync(schema)(second)).toBe(second)
+  })
+
   it('uses the Crypto service supplied at execution time and supports deterministic TestCrypto', async () => {
     const { schema, make } = makePrefixedUUIDv4('test')
     const generate = Effect.all([make, make])

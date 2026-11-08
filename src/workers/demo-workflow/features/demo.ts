@@ -1,12 +1,12 @@
-import { Crypto, Effect, Match, Ref, Schema, SemVer } from 'effect'
+import { Context, Effect, Match, Ref, Schema, SemVer } from 'effect'
 
 import { UserDefinedId } from '../../../features/identity/id'
-import { InvalidOperation, InvalidSnapshot, type DomainError } from '../../../features/workflow/domain/errors'
+import { InvalidOperation, InvalidSnapshot } from '../../../features/workflow/domain/errors'
 import {
   ExecutionId,
-  makeCommitId,
-  makeEventId,
-  makeExecutionId,
+  makeCommitIdGenerator,
+  makeEventIdGenerator,
+  makeExecutionIdGenerator,
   type RunId,
 } from '../../../features/workflow/domain/identity'
 import { type GraphDefinition, type Run, type WorkflowSummary } from '../../../features/workflow/domain/model'
@@ -99,36 +99,41 @@ const runEvent = (type: 'run.started' | 'run.resumed' | 'run.completed' | 'run.f
   type,
   payload: {},
 })
-const save = (run: Run, snapshot: DemoSnapshot, events: ReadonlyArray<EventDraft>) =>
-  Effect.gen(function* () {
-    const store = yield* Store
+const makeSave = Effect.gen(function* () {
+  const store = yield* Store
+  const commitId = yield* makeCommitIdGenerator
+  const eventId = yield* makeEventIdGenerator
+  return Effect.fn('Demo.save')(function* (run: Run, snapshot: DemoSnapshot, events: ReadonlyArray<EventDraft>) {
     const updatedAt = yield* timestamp
     const status = statusFor(snapshot)
     const encodedSnapshot = yield* encodeDemoSnapshot(snapshot).pipe(Effect.orDie)
     yield* store.commit({
-      commitId: yield* makeCommitId,
+      commitId: yield* commitId(),
       runId: run.runId,
       expectedRevision: run.revision,
       status,
       snapshot: encodedSnapshot,
       updatedAt,
       events: yield* Effect.forEach(events, (event) =>
-        makeEventId.pipe(Effect.map((eventId) => ({ ...event, eventId, createdAt: updatedAt }))),
+        eventId().pipe(Effect.map((eventId) => ({ ...event, eventId, createdAt: updatedAt }))),
       ),
     })
     return { ...run, status, snapshot: encodedSnapshot, revision: run.revision + 1, updatedAt } satisfies Run
   })
+})
 
-const prepare = (
-  run: Run,
-  snapshot: Extract<DemoSnapshot, { _tag: 'Ready' | 'Preparing' }>,
-): Effect.Effect<void, DomainError, Store | Crypto.Crypto> =>
-  Effect.gen(function* () {
+const makePrepare = Effect.gen(function* () {
+  const save = yield* makeSave
+  const executionId = yield* makeExecutionIdGenerator
+  return Effect.fn('Demo.prepare')(function* (
+    run: Run,
+    snapshot: Extract<DemoSnapshot, { _tag: 'Ready' | 'Preparing' }>,
+  ) {
     const current = yield* Ref.make(run)
     const execution: Execution = {
       runId: run.runId,
       nodeId: 'prepare',
-      executionId: snapshot._tag === 'Preparing' ? snapshot.executionId : yield* makeExecutionId,
+      executionId: snapshot._tag === 'Preparing' ? snapshot.executionId : yield* executionId(),
       attempt: snapshot._tag === 'Preparing' ? snapshot.attempt : 1,
     }
     // These sample tasks are pure and therefore safely retryable after a crash.
@@ -152,7 +157,7 @@ const prepare = (
       succeeded: (event, prepared) =>
         Effect.gen(function* () {
           const latest = yield* Ref.get(current)
-          const checkpointExecutionId = yield* makeExecutionId
+          const checkpointExecutionId = yield* executionId()
           yield* save(
             latest,
             { _tag: 'Waiting', schemaVersion: 1, version: snapshot.version, prepared, checkpointExecutionId },
@@ -189,17 +194,20 @@ const prepare = (
         }),
     })
   })
+})
 
-const publish = (
-  run: Run,
-  snapshot: Extract<DemoSnapshot, { _tag: 'Waiting' | 'Publishing' }>,
-): Effect.Effect<void, DomainError, Store | Crypto.Crypto> =>
-  Effect.gen(function* () {
+const makePublish = Effect.gen(function* () {
+  const save = yield* makeSave
+  const executionId = yield* makeExecutionIdGenerator
+  return Effect.fn('Demo.publish')(function* (
+    run: Run,
+    snapshot: Extract<DemoSnapshot, { _tag: 'Waiting' | 'Publishing' }>,
+  ) {
     const current = yield* Ref.make(run)
     const execution: Execution = {
       runId: run.runId,
       nodeId: 'publish',
-      executionId: snapshot._tag === 'Publishing' ? snapshot.executionId : yield* makeExecutionId,
+      executionId: snapshot._tag === 'Publishing' ? snapshot.executionId : yield* executionId(),
       attempt: snapshot._tag === 'Publishing' ? snapshot.attempt : 1,
     }
     yield* observeNode(execution, Effect.succeed(`published:${snapshot.prepared}`), {
@@ -251,12 +259,15 @@ const publish = (
         }),
     })
   })
+})
 
 /** Each call reloads the canonical D1 state. No instance field, pending Promise,
  * or in-memory continuation is needed to recover a replaced Durable Object. */
-const drive = (runId: RunId, operation: 'start' | 'resume'): Effect.Effect<void, DomainError, Store | Crypto.Crypto> =>
-  Effect.gen(function* () {
-    const store = yield* Store
+const makeDrive = Effect.gen(function* () {
+  const store = yield* Store
+  const prepare = yield* makePrepare
+  const publish = yield* makePublish
+  return Effect.fn('Demo.drive')(function* (runId: RunId, operation: 'start' | 'resume') {
     const run = yield* store.getRun(runId)
     const snapshot = yield* restoreDemo(run)
     yield* Match.value(snapshot).pipe(
@@ -271,5 +282,19 @@ const drive = (runId: RunId, operation: 'start' | 'resume'): Effect.Effect<void,
       Match.exhaustive,
     )
   })
-export const startRun = (runId: RunId) => drive(runId, 'start')
-export const resumeRun = (runId: RunId) => drive(runId, 'resume')
+})
+
+export const makeDemoExecutor = Effect.gen(function* () {
+  const drive = yield* makeDrive
+  return {
+    start: (runId: RunId) => drive(runId, 'start'),
+    resume: (runId: RunId) => drive(runId, 'resume'),
+  }
+})
+
+export class DemoExecutor extends Context.Service<DemoExecutor, Effect.Success<typeof makeDemoExecutor>>()(
+  'flowdeck/DemoExecutor',
+) {}
+
+export const startRun = (runId: RunId) => Effect.flatMap(makeDemoExecutor, (executor) => executor.start(runId))
+export const resumeRun = (runId: RunId) => Effect.flatMap(makeDemoExecutor, (executor) => executor.resume(runId))

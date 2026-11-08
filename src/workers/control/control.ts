@@ -7,16 +7,19 @@ import {
   RpcRunDetail,
   RpcRunsResponse,
   RpcWorkflowsResponse,
-  workflowRpcErrors,
+  rpcCall,
+  rpcValue,
   type WireWorkflowService,
 } from '../../features/workflow/services/workflow-rpc'
 import { Workflows } from '../../features/workflow/services/workflows'
 import { Control, Workflow } from '../definitions'
 import { ApiRoutes } from './features/router'
 
-const decodeWorkflowsResponse = Schema.decodeUnknownEffect(RpcWorkflowsResponse, { onExcessProperty: 'error' })
-const decodeRunsResponse = Schema.decodeUnknownEffect(RpcRunsResponse, { onExcessProperty: 'error' })
-const decodeRunDetail = Schema.decodeUnknownEffect(RpcRunDetail, { onExcessProperty: 'error' })
+const decodeWorkflowsResponse = rpcValue('Workflow.listWorkflows', RpcWorkflowsResponse)
+const decodeRunsResponse = rpcValue('Workflow.listRuns', RpcRunsResponse)
+const decodeGetRunDetail = rpcValue('Workflow.getRunDetail', RpcRunDetail)
+const decodeCreatedRun = rpcValue('Workflow.createRun', RpcRunDetail)
+const decodeResumedRun = rpcValue('Workflow.resumeRun', RpcRunDetail)
 const encodeCreateRun = Schema.encodeEffect(RpcCreateRun)
 
 /** Control has one static workflow service binding and no per-workflow configuration. */
@@ -33,18 +36,19 @@ export default Control.make(
   Effect.sync(() => {
     const rpc = makeRpcStub<WireWorkflowService>(
       WorkerEnvironment.pipe(Effect.map((environment) => environment['WORKFLOW'])),
-      { errors: workflowRpcErrors },
     )
     const workflows: Workflows['Service'] = {
-      listWorkflows: () => rpc.listWorkflows().pipe(Effect.flatMap(decodeWorkflowsResponse)),
-      listRuns: () => rpc.listRuns().pipe(Effect.flatMap(decodeRunsResponse)),
-      getRunDetail: (runId) => rpc.getRunDetail(runId).pipe(Effect.flatMap(decodeRunDetail)),
+      listWorkflows: () =>
+        rpc.listWorkflows().pipe(rpcCall('Workflow.listWorkflows'), Effect.flatMap(decodeWorkflowsResponse)),
+      listRuns: () => rpc.listRuns().pipe(rpcCall('Workflow.listRuns'), Effect.flatMap(decodeRunsResponse)),
+      getRunDetail: (runId) =>
+        rpc.getRunDetail(runId).pipe(rpcCall('Workflow.getRunDetail'), Effect.flatMap(decodeGetRunDetail)),
       createRun: (input) =>
         encodeCreateRun(input).pipe(
-          Effect.flatMap((encoded) => rpc.createRun(encoded)),
-          Effect.flatMap(decodeRunDetail),
+          Effect.flatMap((encoded) => rpc.createRun(encoded).pipe(rpcCall('Workflow.createRun'))),
+          Effect.flatMap(decodeCreatedRun),
         ),
-      resumeRun: (runId) => rpc.resumeRun(runId).pipe(Effect.flatMap(decodeRunDetail)),
+      resumeRun: (runId) => rpc.resumeRun(runId).pipe(rpcCall('Workflow.resumeRun'), Effect.flatMap(decodeResumedRun)),
     }
     return {
       fetch: Effect.gen(function* () {

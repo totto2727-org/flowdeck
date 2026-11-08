@@ -2,20 +2,24 @@ import * as BrowserCrypto from '@effect/platform-browser/BrowserCrypto'
 import reylo from '@totto2727/reylo/vite'
 import { QueryDatabase, QueryDatabaseBinding } from 'alchemy/Cloudflare/D1'
 import { makeRpcStub, WorkerEnvironment } from 'alchemy/Cloudflare/Workers'
-import type { RuntimeContext } from 'alchemy/RuntimeContext'
-import { Effect, Layer, Schema } from 'effect'
+import { Context, Effect, Layer, Schema } from 'effect'
 
+import { makeRpcResponse } from '../features/rpc-boundary'
+import { RunId } from '../features/workflow/domain/identity'
 import { D1StoreLive } from '../features/workflow/services/d1-store'
 import { WorkflowDatabase } from '../features/workflow/services/database'
 import { WorkflowRegistry } from '../features/workflow/services/workflow-definition'
 import {
   RpcCreateRun,
-  RpcRunDetail,
-  RpcRunsResponse,
-  RpcWorkflowsResponse,
-  workflowRpcErrors,
+  encodeRunDetail,
+  encodeRunsResponse,
+  encodeWorkflowsResponse,
+  rpcCall,
+  rpcCommandResult,
+  type WireWorkflowExecutor,
   type WireWorkflowService,
 } from '../features/workflow/services/workflow-rpc'
+import { Workflows } from '../features/workflow/services/workflows'
 import { Database } from './database'
 import { DemoWorkflow, Workflow } from './definitions'
 import { DevelopmentWorkflow } from './development-workflow/development-workflow'
@@ -23,10 +27,54 @@ import { makeWorkflowRegistry } from './workflow/features/registration'
 import { makeWorkflows } from './workflow/features/workflow'
 import { DevelopmentWorkflowBinding, WorkflowBinding } from './workflow/features/workflow-binding'
 
-const encodeWorkflowsResponse = Schema.encodeEffect(RpcWorkflowsResponse)
-const encodeRunsResponse = Schema.encodeEffect(RpcRunsResponse)
-const encodeRunDetail = Schema.encodeEffect(RpcRunDetail)
 const decodeCreateRun = Schema.decodeUnknownEffect(RpcCreateRun)
+const decodeRunId = Schema.decodeUnknownEffect(RunId)
+
+const WorkflowBindingsLive = Layer.effectContext(
+  Effect.gen(function* () {
+    const environment = yield* WorkerEnvironment
+    const demoRpc = makeRpcStub<WireWorkflowExecutor>(environment['DEMO'])
+    const developmentRpc = makeRpcStub<WireWorkflowExecutor>(environment['DEVELOPMENT'])
+    const demo: WorkflowBinding['Service'] = {
+      start: (runId) =>
+        demoRpc
+          .start(runId)
+          .pipe(rpcCall('DemoWorkflow.start'), Effect.flatMap(rpcCommandResult('DemoWorkflow.start'))),
+      resume: (runId) =>
+        demoRpc
+          .resume(runId)
+          .pipe(rpcCall('DemoWorkflow.resume'), Effect.flatMap(rpcCommandResult('DemoWorkflow.resume'))),
+    }
+    const development: DevelopmentWorkflowBinding['Service'] = {
+      start: (runId) =>
+        developmentRpc
+          .start(runId)
+          .pipe(rpcCall('DevelopmentWorkflow.start'), Effect.flatMap(rpcCommandResult('DevelopmentWorkflow.start'))),
+      resume: (runId) =>
+        developmentRpc
+          .resume(runId)
+          .pipe(rpcCall('DevelopmentWorkflow.resume'), Effect.flatMap(rpcCommandResult('DevelopmentWorkflow.resume'))),
+    }
+    return Context.make(WorkflowBinding, demo).pipe(Context.add(DevelopmentWorkflowBinding, development))
+  }),
+)
+const WorkflowRegistryLive = Layer.effect(WorkflowRegistry, makeWorkflowRegistry).pipe(
+  Layer.provide(WorkflowBindingsLive),
+)
+const WorkflowDatabaseLive = Layer.effect(
+  WorkflowDatabase,
+  Effect.gen(function* () {
+    return yield* QueryDatabase(yield* Database)
+  }),
+).pipe(Layer.provide(QueryDatabaseBinding))
+const WorkflowRuntimeLive = Layer.mergeAll(
+  Layer.effect(Workflows, makeWorkflows).pipe(
+    Layer.provide(
+      Layer.mergeAll(D1StoreLive.pipe(Layer.provide(WorkflowDatabaseLive)), WorkflowRegistryLive, BrowserCrypto.layer),
+    ),
+  ),
+  BrowserCrypto.layer,
+)
 
 /** Catalog, run persistence, and fixed workflow bindings live behind one service. */
 export default Workflow.make(
@@ -41,49 +89,30 @@ export default Workflow.make(
     }
   }),
   Effect.gen(function* () {
-    const database = yield* QueryDatabase(yield* Database)
-    const demo = makeRpcStub<WorkflowBinding['Service']>(
-      WorkerEnvironment.pipe(Effect.map((environment) => environment['DEMO'])),
-      { errors: workflowRpcErrors },
-    )
-    const development = makeRpcStub<DevelopmentWorkflowBinding['Service']>(
-      WorkerEnvironment.pipe(Effect.map((environment) => environment['DEVELOPMENT'])),
-      { errors: workflowRpcErrors },
-    )
-    const registry = yield* makeWorkflowRegistry.pipe(
-      Effect.provideService(WorkflowBinding, demo),
-      Effect.provideService(DevelopmentWorkflowBinding, development),
-    )
-    const storeLayer = D1StoreLive.pipe(Layer.provide(Layer.succeed(WorkflowDatabase, database)))
-    const service = makeWorkflows.pipe(
-      Effect.provide(Layer.mergeAll(storeLayer, Layer.succeed(WorkflowRegistry, registry), BrowserCrypto.layer)),
-    )
+    const workflows = yield* Workflows
+    const respond = yield* makeRpcResponse
     return {
       listWorkflows: () =>
-        service.pipe(
-          Effect.flatMap((workflows) => workflows.listWorkflows()),
-          Effect.flatMap(encodeWorkflowsResponse),
-        ),
-      listRuns: () =>
-        service.pipe(
-          Effect.flatMap((workflows) => workflows.listRuns()),
-          Effect.flatMap(encodeRunsResponse),
-        ),
+        workflows.listWorkflows().pipe(Effect.flatMap(encodeWorkflowsResponse), respond('Workflow.listWorkflows')),
+      listRuns: () => workflows.listRuns().pipe(Effect.flatMap(encodeRunsResponse), respond('Workflow.listRuns')),
       getRunDetail: (runId) =>
-        service.pipe(
-          Effect.flatMap((workflows) => workflows.getRunDetail(runId)),
+        decodeRunId(runId).pipe(
+          Effect.flatMap(workflows.getRunDetail),
           Effect.flatMap(encodeRunDetail),
+          respond('Workflow.getRunDetail'),
         ),
       createRun: (input) =>
         decodeCreateRun(input).pipe(
-          Effect.flatMap((decoded) => service.pipe(Effect.flatMap((workflows) => workflows.createRun(decoded)))),
+          Effect.flatMap(workflows.createRun),
           Effect.flatMap(encodeRunDetail),
+          respond('Workflow.createRun'),
         ),
       resumeRun: (runId) =>
-        service.pipe(
-          Effect.flatMap((workflows) => workflows.resumeRun(runId)),
+        decodeRunId(runId).pipe(
+          Effect.flatMap(workflows.resumeRun),
           Effect.flatMap(encodeRunDetail),
+          respond('Workflow.resumeRun'),
         ),
-    } satisfies WireWorkflowService<RuntimeContext>
-  }).pipe(Effect.provide(QueryDatabaseBinding)),
+    } satisfies WireWorkflowService
+  }).pipe(Effect.provide(WorkflowRuntimeLive)),
 )

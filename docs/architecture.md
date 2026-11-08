@@ -86,6 +86,9 @@ See [database workflow](database.md) for schema generation, migration ownership,
 The frontend adapts the native static binding to the Fetch implementation consumed by Effect HttpClient.
 Native Request construction exists only in that adapter.
 Alchemy owns native Worker HTTP and typed RPC bridges.
+Application RPC methods exchange Schema-validated JSON text, including successful values.
+Each service logs its original failure locally with an error ID and sends only an [RFC 9457 problem](rpc-boundaries.md).
+The parent creates a new local error with that problem as its cause; it does not reconstruct the child's exception or receive its stack.
 React and Playwright remain framework boundaries.
 
 ### State Machine API constraint

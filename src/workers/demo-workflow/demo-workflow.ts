@@ -1,29 +1,51 @@
+import { BrowserCrypto } from '@effect/platform-browser'
 import reylo from '@totto2727/reylo/vite'
 import { QueryDatabase, QueryDatabaseBinding } from 'alchemy/Cloudflare/D1'
 import { DurableObject } from 'alchemy/Cloudflare/Workers'
-import { Effect, Layer } from 'effect'
+import { Effect, Layer, Schema } from 'effect'
 
-import type { RunId } from '../../features/workflow/domain/identity'
+import { makeRpcResponse } from '../../features/rpc-boundary'
+import { RunId } from '../../features/workflow/domain/identity'
 import { D1StoreLive } from '../../features/workflow/services/d1-store'
 import { WorkflowDatabase } from '../../features/workflow/services/database'
+import { rpcCall, rpcCommandResult, type WireWorkflowExecutor } from '../../features/workflow/services/workflow-rpc'
 import { Database } from '../database'
 import { DemoWorkflow } from '../definitions'
-import { resumeRun, startRun } from './features/demo'
+import { DemoExecutor, makeDemoExecutor } from './features/demo'
+
+const decodeRunId = Schema.decodeUnknownEffect(RunId)
+
+const makeDemoRunRuntime = Effect.gen(function* () {
+  const database = yield* QueryDatabase(yield* Database)
+  return Layer.mergeAll(
+    Layer.effect(DemoExecutor, makeDemoExecutor).pipe(
+      Layer.provide(
+        Layer.mergeAll(D1StoreLive.pipe(Layer.provide(Layer.succeed(WorkflowDatabase, database))), BrowserCrypto.layer),
+      ),
+    ),
+    BrowserCrypto.layer,
+  )
+}).pipe(Effect.provide(QueryDatabaseBinding))
 
 /** Each logical run name resolves to one object, but no checkpoint lives in memory. */
 export class FlowdeckRun extends DurableObject<FlowdeckRun>()(
   'FlowdeckRun',
   Effect.gen(function* () {
-    const database = yield* QueryDatabase(yield* Database)
-    const services = Layer.merge(
-      D1StoreLive.pipe(Layer.provide(Layer.succeed(WorkflowDatabase, database))),
-      BrowserCrypto.layer,
-    )
-    return Effect.succeed({
-      start: (runId: RunId) => startRun(runId).pipe(Effect.provide(services)),
-      resume: (runId: RunId) => resumeRun(runId).pipe(Effect.provide(services)),
-    })
-  }).pipe(Effect.provide(QueryDatabaseBinding)),
+    // QueryDatabase registers the static binding in Alchemy's construction phase.
+    // The returned complete Layer initializes the object services only once in
+    // the separate DO runtime phase, not when each RPC operation is called.
+    const runtime = yield* makeDemoRunRuntime
+    return Effect.gen(function* () {
+      const executor = yield* DemoExecutor
+      const respond = yield* makeRpcResponse
+      return {
+        start: (runId: RunId) =>
+          decodeRunId(runId).pipe(Effect.flatMap(executor.start), Effect.as(null), respond('FlowdeckRun.start')),
+        resume: (runId: RunId) =>
+          decodeRunId(runId).pipe(Effect.flatMap(executor.resume), Effect.as(null), respond('FlowdeckRun.resume')),
+      } satisfies WireWorkflowExecutor
+    }).pipe(Effect.provide(runtime))
+  }),
 ) {}
 
 /** The entry resolves a run namespace and forwards only the fixed demo operations. */
@@ -37,10 +59,22 @@ export default DemoWorkflow.make(
   },
   Effect.gen(function* () {
     const runs = yield* FlowdeckRun
+    const respond = yield* makeRpcResponse
     return {
-      start: (runId: RunId) => runs.getByName(runId).start(runId),
-      resume: (runId: RunId) => runs.getByName(runId).resume(runId),
-    }
-  }),
+      start: (runId: RunId) =>
+        decodeRunId(runId).pipe(
+          Effect.flatMap((id) => runs.getByName(id).start(id).pipe(rpcCall('FlowdeckRun.start'))),
+          Effect.flatMap(rpcCommandResult('FlowdeckRun.start')),
+          Effect.as(null),
+          respond('DemoWorkflow.start'),
+        ),
+      resume: (runId: RunId) =>
+        decodeRunId(runId).pipe(
+          Effect.flatMap((id) => runs.getByName(id).resume(id).pipe(rpcCall('FlowdeckRun.resume'))),
+          Effect.flatMap(rpcCommandResult('FlowdeckRun.resume')),
+          Effect.as(null),
+          respond('DemoWorkflow.resume'),
+        ),
+    } satisfies WireWorkflowExecutor
+  }).pipe(Effect.provide(BrowserCrypto.layer)),
 )
-import { BrowserCrypto } from '@effect/platform-browser'

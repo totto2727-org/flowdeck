@@ -32,26 +32,3 @@ index 0b08cf0116755e477df07fedbc23fa7a980fdc0d..6ea92326ef27753997fe7cb038600d65
  export * from "./QueryDatabaseBinding.ts";
 +export { makeQueryDatabaseClientFrom } from "./QueryDatabaseHttpClient.ts";
  export * from "./QueryDatabaseLocal.ts";
-diff --git a/src/Rpc.ts b/src/Rpc.ts
---- a/src/Rpc.ts
-+++ b/src/Rpc.ts
-@@ -129,5 +129,7 @@
-     if (error instanceof Error && !("message" in out)) {
-       out.message = (error as Error).message;
-     }
-+    if (error instanceof Error && !("stack" in out)) out.stack = error.stack;
-+    if (error instanceof Error && "cause" in error && !("cause" in out)) out.cause = error.cause;
-     return out;
-   }
-diff --git a/lib/Rpc.js b/lib/Rpc.js
---- a/lib/Rpc.js
-+++ b/lib/Rpc.js
-@@ -66,6 +66,8 @@
-         if (error instanceof Error && !("message" in out)) {
-             out.message = error.message;
-         }
-+        if (error instanceof Error && !("stack" in out)) out.stack = error.stack;
-+        if (error instanceof Error && "cause" in error && !("cause" in out)) out.cause = error.cause;
-         return out;
-     }
-     if (error instanceof Error) {

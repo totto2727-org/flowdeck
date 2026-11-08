@@ -9,11 +9,19 @@ export type NodeId = typeof NodeId.Type
 export const EdgeId = UserDefinedId
 export type EdgeId = typeof EdgeId.Type
 
-export const { schema: RunId, make: makeRunId } = makePrefixedUUIDv4('run')
+export const { schema: RunId, make: makeRunId, makeGenerator: makeRunIdGenerator } = makePrefixedUUIDv4('run')
 export type RunId = typeof RunId.Type
-export const { schema: ExecutionId, make: makeExecutionId } = makePrefixedUUIDv4('execution')
+export const {
+  schema: ExecutionId,
+  make: makeExecutionId,
+  makeGenerator: makeExecutionIdGenerator,
+} = makePrefixedUUIDv4('execution')
 export type ExecutionId = typeof ExecutionId.Type
-export const { schema: EventId, make: makeEventId } = makePrefixedUUIDv4('event')
+export const { schema: EventId, make: makeEventId, makeGenerator: makeEventIdGenerator } = makePrefixedUUIDv4('event')
 export type EventId = typeof EventId.Type
-export const { schema: CommitId, make: makeCommitId } = makePrefixedUUIDv4('commit')
+export const {
+  schema: CommitId,
+  make: makeCommitId,
+  makeGenerator: makeCommitIdGenerator,
+} = makePrefixedUUIDv4('commit')
 export type CommitId = typeof CommitId.Type

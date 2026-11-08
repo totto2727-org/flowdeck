@@ -16,7 +16,10 @@ The application uses Effect 4, Effront, shadcn/ui, Cloudflare Workers, Durable O
 - `sandbox/`: workspace image with the official `computerd` runtime.
 - `src/workers/development-workflow/features/model.ts`: development-owned session and turn receipt schemas.
 - `src/workers/definitions.ts`: lightweight Worker identities and contracts for `.make()` implementations and static bindings, with only a type re-export of `DevelopmentWorkflow` to keep infrastructure out of the frontend runtime graph.
-- `src/workers/development-workflow/development-workflow.ts`: the sole external `DevelopmentWorkflow` definition, with native Durable Object exports from `worker.ts` through official Alchemy support, not custom `props.exports`.
+- `src/workers/development-workflow/development-workflow.ts`: the lightweight `DevelopmentWorkflow` resource identity.
+- `src/workers/development-workflow/worker.ts`: Effect Worker and Durable Object construction, including their complete runtime Layers.
+- `src/workers/development-workflow/sdk-runtime.ts`: the necessary native Pi and workspace SDK host adapter inside the Effect Durable Object.
+- `src/workers/development-workflow/features/workspace-proxy-build.ts`: the build hook retaining the SDK's required `WorkspaceProxy` export in Alchemy's generated entry.
 - `src/workers/composition.ts`: final selection of the complete development or production application Layer.
 - `src/workers/application.ts`: the complete Worker implementation graph and its fixed development and production dependencies.
 - `src/workers/runtime-composition.ts`: fixed frontend runtime capture assembly, separate from deployment resource provisioning.
@@ -79,13 +82,24 @@ Use Effect HttpClient for HTTP clients and Effect HTTP for API routing and respo
 Use native Request, Response, Promise, and Cloudflare binding interfaces only in the smallest adapters required by the runtime or a typed library.
 Document each unavoidable interoperability boundary.
 Compose dependencies with Context services and Layers at entry points.
+Build a complete production or test Layer graph per Worker or Durable Object runtime, and acquire stable dependencies when constructing each service.
+Do not provide dependencies again inside individual service operations.
+Any unavoidable lower-level provide must explain the runtime constraint and why composition at the entry point cannot replace it.
+Prefer Alchemy's Effect APIs over direct Cloudflare platform calls.
+Use `raw` only at a necessary interoperability boundary, with a detailed explanation of the missing Effect API, the native consumer, and the scope of native access.
+Do not use `raw` to recreate execution behavior already supplied by Alchemy or Effect.
 Prefer the established Effect, Effront, and Effect HTTP extension points over custom function wrappers or argument-based dependency injection.
 Define HTTP interception, error translation, and failure logging as registered Middleware.
-Log failures once at the outer operation boundary, preserving the original cause and stack rather than logging again in storage adapters.
+Log failures once at each service's outer operation boundary, retaining the original cause and stack in that service's logs rather than logging again in storage adapters.
+Treat RPC as an external API boundary: validate requests and return only Schema-encoded JSON text.
+Log the original failure with a unique error ID before sending an RFC 9457 problem, and create a new local error at the caller with that validated problem as its required cause.
+Do not revive child exceptions or propagate their stacks and internal causes across RPC.
+See [RPC boundaries](docs/rpc-boundaries.md).
 
 | Error contract                                                                                                                              | Enforcement                                                                                                                             |
 | ------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | Domain `Conflict` has only a message. `StorageConflict` requires an operation and cause. Do not add an optional cause to merge these cases. | Constructor type assertions in `src/features/workflow/domain/errors.test.ts`, checked by `check:tsc`; D1 and RPC/HTTP regression tests. |
+| RPC replies contain JSON only. Child diagnostics stay in child logs, correlated by the problem's `instance`.                                | JSON-only RPC service signatures and `rpcResponse` type assertions; codec, HTTP, and real native Worker RPC boundary tests.             |
 
 Keep workflow effects independent from deployment configuration.
 Select infrastructure-specific implementations only when injecting dependencies at the final composition boundary.

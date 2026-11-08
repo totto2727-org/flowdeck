@@ -1,18 +1,8 @@
-import { WorkerEnvironment } from 'alchemy/Cloudflare/Workers'
-import { Effect, Predicate, Schema } from 'effect'
+import { Effect } from 'effect'
 
 import { Control, Frontend } from '../definitions'
 import { FrontendSecurity } from './access'
-import { authorizeFrontend } from './assembly'
-import { frontendAuthorization } from './features/authorization'
-import { type ControlBinding, makeWebWorker } from './features/worker'
-
-const ControlEnvironment = Schema.Struct({
-  CONTROL: Schema.declare(
-    (input): input is ControlBinding =>
-      Predicate.isObject(input) && Predicate.hasProperty(input, 'fetch') && Predicate.isFunction(input.fetch),
-  ),
-})
+import { frontendRequest, FrontendRequestLayer } from './assembly'
 
 /** A native binding is decoded and resolved only while a request is executing. */
 export default Frontend.make(
@@ -29,10 +19,6 @@ export default Frontend.make(
     }
   }),
   Effect.succeed({
-    fetch: Effect.gen(function* () {
-      const environment = yield* Schema.decodeUnknownEffect(ControlEnvironment)(yield* WorkerEnvironment)
-      const worker = yield* makeWebWorker(environment.CONTROL)
-      return yield* worker.fetch
-    }).pipe(frontendAuthorization(authorizeFrontend), Effect.orDie),
+    fetch: frontendRequest.pipe(Effect.provide(FrontendRequestLayer), Effect.orDie),
   }),
 )

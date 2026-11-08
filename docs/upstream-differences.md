@@ -38,13 +38,12 @@ The TypeScript Content Mapper, SQLite inference rules, Vite/Rolldown integration
 The fork's own [retained differences](https://github.com/totto2727-org/reylo/blob/52e4740e2063b8310568b3b5bbca33c92a6f4e1d/docs/upstream-differences.md) describe its source changes and native SQLite regression coverage.
 Keep the exact upstream base and published fork revision current when updating the dependency.
 
-## Alchemy native D1 client and RPC errors
+## Alchemy native D1 client
 
 - Upstream release: [`alchemy@2.0.0-beta.83`](https://www.npmjs.com/package/alchemy/v/2.0.0-beta.83), with the exact package integrity and patch hash recorded in `pnpm-lock.yaml`.
 - Patch: [`patches/alchemy@2.0.0-beta.83.patch`](../patches/alchemy@2.0.0-beta.83.patch).
-- Purpose: native Durable Objects and Miniflare already receive a D1 binding but do not have Alchemy's Worker construction context for `QueryDatabaseBinding`.
+- Purpose: Miniflare database tests receive a native D1 binding without Alchemy's Worker construction context for `QueryDatabaseBinding`. Production Workers and Durable Objects obtain their client through Alchemy's Effect construction APIs.
 - D1 scope: re-export the existing `makeQueryDatabaseClientFrom` from the D1 source entry point, emitted JavaScript, and declarations.
 - D1 runtime implementation: unchanged; no copied executor, private imports, fake Worker resources, or alternative batch implementation.
-- RPC correction: retain non-enumerable standard Error `cause` and `stack` fields when `encodeRpcError` copies a tagged error, in source and emitted JavaScript. Effect tagged errors put their cause in this non-enumerable field, so dropping it loses the original database stack before Control can log it.
-- Operational impact: frozen dependency installation applies the D1 exports and RPC metadata preservation; no release-age exception, credential change, or schema change is required.
-- Removal criterion: adopt an age-eligible Alchemy release exposing an equivalent public native-binding client or Layer and preserving tagged error causes and stacks, then remove the corresponding patch hunks.
+- Operational impact: frozen dependency installation applies the D1 exports only; RPC serialization is unchanged, and no release-age exception, credential change, or schema change is required.
+- Removal criterion: adopt an age-eligible Alchemy release exposing an equivalent public native-binding client or Layer, then remove the export patch.

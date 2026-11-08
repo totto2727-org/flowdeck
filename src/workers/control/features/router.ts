@@ -1,5 +1,5 @@
 import type { RpcCallError, RpcDecodeError } from 'alchemy/Rpc'
-import { Effect, Layer, Schema } from 'effect'
+import { Effect, Layer, Match, Schema } from 'effect'
 import { Headers, HttpBody, HttpRouter, HttpServerError, HttpServerRequest, HttpServerResponse } from 'effect/http'
 
 import { operationFailureLogging } from '../../../features/operation-logging'
@@ -29,6 +29,34 @@ const ApiErrors = HttpRouter.middleware<{ handles: ApiFailure }>()((handler) =>
         Effect.fail(new ExternalError({ operation: 'call workflow worker', cause, kind: 'service' })),
     }),
     Effect.catchTags({
+      RemoteWorkerError: (error) =>
+        errorResponse(
+          error.cause.status,
+          Match.value(error.cause.type).pipe(
+            Match.when(
+              'https://github.com/totto2727-org/flowdeck/blob/main/docs/rpc-boundaries.md#not-found',
+              () => 'NotFound',
+            ),
+            Match.when(
+              'https://github.com/totto2727-org/flowdeck/blob/main/docs/rpc-boundaries.md#conflict',
+              () => 'Conflict',
+            ),
+            Match.when(
+              'https://github.com/totto2727-org/flowdeck/blob/main/docs/rpc-boundaries.md#invalid-operation',
+              () => 'InvalidOperation',
+            ),
+            Match.when(
+              'https://github.com/totto2727-org/flowdeck/blob/main/docs/rpc-boundaries.md#invalid-snapshot',
+              () => 'InvalidSnapshot',
+            ),
+            Match.when(
+              'https://github.com/totto2727-org/flowdeck/blob/main/docs/rpc-boundaries.md#invalid-request',
+              () => 'InvalidRequest',
+            ),
+            Match.orElse(() => 'ExternalError'),
+          ),
+          error.cause.detail,
+        ),
       NotFound: () => errorResponse(404, 'NotFound', 'Run or graph not found'),
       Conflict: () => errorResponse(409, 'Conflict', 'Run changed concurrently or a delivery ID was reused'),
       StorageConflict: () => errorResponse(409, 'Conflict', 'Run changed concurrently or a delivery ID was reused'),
