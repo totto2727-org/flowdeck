@@ -12,6 +12,11 @@ minimumReleaseAgeStrict: true
 minimumReleaseAgeExclude:
   - '@totto2727/reylo@0.7.0'
   - '@totto2727/reylo-sqlite@0.7.0'
+  # TODO: Remove these Effront exceptions after 2026-11-09T16:30:51.871Z.
+  - '@effront/alchemy@0.4.0'
+  - '@effront/core@0.4.0'
+  - '@effront/tailwind@0.4.0'
+  - '@effront/vite@0.4.0'
 
 # Only the native build tools required by Cloudflare's local runtime are trusted.
 allowBuilds:
