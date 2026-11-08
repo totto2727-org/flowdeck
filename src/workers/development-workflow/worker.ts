@@ -18,7 +18,7 @@ import { Database } from '@/workers/database'
 import { DevelopmentContainer } from './container'
 import { DevelopmentRun } from './development-run'
 import { DevelopmentWorkflow } from './development-workflow'
-import { resumeDevelopmentRun, startDevelopmentRun } from './features/development'
+import { DevelopmentExecutor, makeDevelopmentExecutor } from './features/development'
 import { DevelopmentSandbox } from './features/sandbox'
 import { workspaceProxyBuild } from './features/workspace-proxy-build'
 import { DevelopmentSdk } from './sdk-service'
@@ -45,10 +45,11 @@ const DevelopmentRunLive = DevelopmentRun.make(
     ).pipe(
       Layer.provideMerge(Layer.mergeAll(StoreLive, BrowserCrypto.layer, Layer.succeed(WorkerEnvironment, environment))),
     )
-    const RuntimeLive = Layer.effect(
+    const SandboxLive = Layer.effect(
       DevelopmentSandbox,
       Effect.map(DevelopmentSdk, (sdk) => sdk.sandbox),
     ).pipe(Layer.provideMerge(SdkLive))
+    const RuntimeLive = Layer.effect(DevelopmentExecutor, makeDevelopmentExecutor).pipe(Layer.provideMerge(SandboxLive))
     return Effect.gen(function* () {
       const ambient = yield* Effect.context<DurableObjectState | RuntimeContext>()
       // One complete service graph per activation. Native SDK callbacks and exported
@@ -56,8 +57,9 @@ const DevelopmentRunLive = DevelopmentRun.make(
       const services = yield* Layer.build(RuntimeLive)
       const context = Context.merge(ambient, services)
       const sdk = Context.get(services, DevelopmentSdk)
+      const executor = Context.get(services, DevelopmentExecutor)
       const respond = yield* makeRpcResponse.pipe(Effect.provideContext(context))
-      const command = (operation: string, execute: typeof startDevelopmentRun) => (input: RunId) =>
+      const command = (operation: string, execute: typeof executor.start) => (input: RunId) =>
         decodeRunId(input).pipe(
           Effect.flatMap((runId) => sdk.execute(runId, execute(runId))),
           Effect.as(null),
@@ -68,8 +70,8 @@ const DevelopmentRunLive = DevelopmentRun.make(
           Effect.provideContext(context),
         )
       return {
-        start: command('DevelopmentRun.start', startDevelopmentRun),
-        resume: command('DevelopmentRun.resume', resumeDevelopmentRun),
+        start: command('DevelopmentRun.start', executor.start),
+        resume: command('DevelopmentRun.resume', executor.resume),
         fetch: Request.pipe(
           Effect.flatMap((request) => sdk.fetch(request)),
           // Preserve the SDK's native WebSocket upgrade Response and its webSocket

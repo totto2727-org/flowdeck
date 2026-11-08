@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from 'v
 import { ExternalError } from '@/features/workflow/domain/errors'
 import { CommitId, EventId, ExecutionId, RunId } from '@/features/workflow/domain/identity'
 import { RunDetail, RunsResponse, type Run, type WorkflowVersion } from '@/features/workflow/domain/model'
+import { LifecycleHook } from '@/features/workflow/driver'
 import { ApiRoutes } from '@/workers/control/features/router'
 import { demoDefinition } from '@/workers/demo-workflow/features/definition'
 import {
@@ -37,6 +38,10 @@ import { Workflows } from './workflows'
 const version1 = SemVer.parseUnsafe('1.0.0')
 const version2 = SemVer.parseUnsafe('2.0.0')
 const now = DateTime.makeUnsafe('2026-10-17T12:00:00.000Z')
+const encodeDemo = Schema.encodeSync(Schema.toCodecJson(DemoSnapshot))
+const decodeJsonObject = Schema.decodeUnknownSync(Schema.JsonObject)
+const snapshotJson = (snapshot: DemoSnapshot) => decodeJsonObject(encodeDemo(snapshot))
+const initialDemo = initialSnapshot(version1)
 const newRun = (runId: string, version: WorkflowVersion = version1): Run => ({
   runId,
   workflowId: 'demo',
@@ -44,9 +49,7 @@ const newRun = (runId: string, version: WorkflowVersion = version1): Run => ({
   graphId: demoGraph(version).graphId,
   status: 'pending',
   revision: 0,
-  snapshot: Schema.decodeUnknownSync(Schema.JsonObject)(
-    Schema.encodeSync(Schema.toCodecJson(DemoSnapshot))(initialSnapshot(version)),
-  ),
+  snapshot: snapshotJson(initialSnapshot(version)),
   createdAt: now,
   updatedAt: now,
 })
@@ -55,13 +58,17 @@ const command = (overrides: Partial<CommitCommand> = {}): CommitCommand => ({
   runId: 'run_00000000-0000-4000-8000-000000000001',
   expectedRevision: 0,
   status: 'running',
-  snapshot: {
-    _tag: 'Preparing',
-    schemaVersion: 1,
-    version: '1.0.0',
-    executionId: 'execution_00000000-0000-4000-8000-000000000001',
-    attempt: 1,
-  },
+  snapshot: snapshotJson(
+    DemoSnapshot.cases.Running.make({
+      schemaVersion: initialDemo.schemaVersion,
+      version: initialDemo.version,
+      state: initialDemo.state,
+      machine: initialDemo.machine,
+      context: initialDemo.context,
+      executionId: 'execution_00000000-0000-4000-8000-000000000001',
+      attempt: 1,
+    }),
+  ),
   events: [
     {
       eventId: 'event_00000000-0000-4000-8000-000000000001',
@@ -212,11 +219,11 @@ describe('D1 persisted run store', () => {
       workflows: expect.arrayContaining([expect.objectContaining({ workflowId: 'demo' })]),
     })
     const created = await Effect.runPromise(workflows.createRun({ workflowId: 'demo', version: version1 }))
-    expect(created.run).toMatchObject({ status: 'waiting', revision: 2 })
+    expect(created.run).toMatchObject({ status: 'waiting', revision: 3 })
     expect(await Effect.runPromise(workflows.getRunDetail(created.run.runId))).toEqual(created)
     expect(await Effect.runPromise(workflows.listRuns())).toEqual({ runs: [created.run] })
     const resumed = await Effect.runPromise(workflows.resumeRun(created.run.runId))
-    expect(resumed.run).toMatchObject({ runId: created.run.runId, status: 'completed', revision: 4 })
+    expect(resumed.run).toMatchObject({ runId: created.run.runId, status: 'completed', revision: 5 })
     expect(await Effect.runPromise(workflows.getRunDetail(created.run.runId))).toEqual(resumed)
     expect(await Effect.runPromise(workflows.listRuns())).toEqual({ runs: [resumed.run] })
   })
@@ -670,6 +677,78 @@ describe('D1 persisted run store', () => {
 })
 
 describe('demo cold restoration', () => {
+  it('observes lifecycle hooks only after the matching snapshot and complete event batch are readable in D1', async () => {
+    const runId = command().runId
+    await seed(runId)
+    let observations: ReadonlyArray<{
+      revision: number
+      persisted: Run
+      eventIds: ReadonlyArray<string>
+      storedEventIds: ReadonlyArray<string>
+    }> = []
+    const executor = Effect.runSync(
+      makeDemoExecutor.pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            Layer.succeed(Store, store),
+            BrowserCrypto.layer,
+            Layer.succeed(LifecycleHook, {
+              afterCommit: (events, ack) =>
+                Effect.gen(function* () {
+                  const persisted = yield* store.getRun(ack.runId).pipe(Effect.orDie)
+                  const committed = yield* store
+                    .getEvents(ack.runId, EventRange.ThroughRevision({ revision: ack.revision }))
+                    .pipe(Effect.orDie)
+                  observations = Array.append(observations, {
+                    revision: ack.revision,
+                    persisted,
+                    eventIds: Array.map(events, (event) => event.eventId),
+                    storedEventIds: Array.map(
+                      Array.filter(committed, (event) => event.sequence >= ack.firstSequence),
+                      (event) => event.eventId,
+                    ),
+                  })
+                }),
+            }),
+          ),
+        ),
+      ),
+    )
+    await Effect.runPromise(executor.start(runId))
+    await Effect.runPromise(executor.resume(runId))
+    expect(Array.map(observations, (observation) => observation.revision)).toEqual(Array.range(1, 5))
+    Array.forEach(observations, (observation) => {
+      expect(observation.persisted.revision).toBe(observation.revision)
+      expect(observation.storedEventIds).toEqual(observation.eventIds)
+    })
+    expect(Array.last(observations)).toMatchObject({ value: { persisted: { status: 'completed' } } })
+  })
+
+  it('does not dispatch lifecycle hooks when D1 rejects the checkpoint revision', async () => {
+    const runId = command().runId
+    await seed(runId)
+    const persisted = store
+    const afterCommit = vi.fn(() => Effect.void)
+    const executor = Effect.runSync(
+      makeDemoExecutor.pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            Layer.succeed(Store, {
+              ...persisted,
+              commit: (input) => persisted.commit({ ...input, expectedRevision: 999 }),
+            }),
+            Layer.succeed(LifecycleHook, { afterCommit }),
+            BrowserCrypto.layer,
+          ),
+        ),
+      ),
+    )
+    await expect(Effect.runPromise(executor.start(runId))).rejects.toBeDefined()
+    expect(afterCommit).not.toHaveBeenCalled()
+    expect(await Effect.runPromise(persisted.getRun(runId))).toMatchObject({ status: 'pending', revision: 0 })
+    expect(await Effect.runPromise(persisted.getEvents(runId, EventRange.All()))).toEqual([])
+  })
+
   it.each([version1, version2] as const)(
     'captures demo dependencies once and executes %s without a caller context',
     async (version) => {
@@ -686,9 +765,9 @@ describe('demo cold restoration', () => {
         ),
       )
       await Effect.runPromise(executor.start(runId))
-      expect(await Effect.runPromise(freshStore().getRun(runId))).toMatchObject({ status: 'waiting', revision: 2 })
+      expect(await Effect.runPromise(freshStore().getRun(runId))).toMatchObject({ status: 'waiting', revision: 3 })
       await Effect.runPromise(executor.resume(runId))
-      expect(await Effect.runPromise(freshStore().getRun(runId))).toMatchObject({ status: 'completed', revision: 4 })
+      expect(await Effect.runPromise(freshStore().getRun(runId))).toMatchObject({ status: 'completed', revision: 5 })
       expect(await Effect.runPromise(store.getEvents(runId, { _tag: 'All' }))).toHaveLength(10)
     },
   )
@@ -729,7 +808,7 @@ describe('demo cold restoration', () => {
       const waiting = await Effect.runPromise(store.getRun('run_00000000-0000-4000-8000-000000000001'))
       expect(waiting).toMatchObject({
         status: 'waiting',
-        revision: 2,
+        revision: 3,
         workflowVersion: version,
         snapshot: { _tag: 'Waiting', version: SemVer.format(version) },
       })
@@ -740,11 +819,11 @@ describe('demo cold restoration', () => {
       const completed = await Effect.runPromise(store.getRun('run_00000000-0000-4000-8000-000000000001'))
       expect(completed).toMatchObject({
         status: 'completed',
-        revision: 4,
+        revision: 5,
         snapshot: {
           _tag: 'Completed',
           version: SemVer.format(version),
-          result: SemVer.equals(version, version1) ? 'published:draft:v1' : 'published:draft:v2:reviewed',
+          context: { result: SemVer.equals(version, version1) ? 'published:draft:v1' : 'published:draft:v2:reviewed' },
         },
       })
       const events = await Effect.runPromise(
@@ -768,7 +847,7 @@ describe('demo cold restoration', () => {
     await run(resumeRun('run_00000000-0000-4000-8000-000000000001'))
     expect(await Effect.runPromise(store.getRun('run_00000000-0000-4000-8000-000000000001'))).toMatchObject({
       status: 'waiting',
-      revision: 2,
+      revision: 3,
     })
     expect(
       Array.filter(
@@ -836,9 +915,9 @@ describe('interrupted workflow recovery', () => {
       ),
     ).rejects.toMatchObject({ _tag: 'ExternalError', kind: 'storage' })
     expect(await Effect.runPromise(store.getRun('run_00000000-0000-4000-8000-000000000001'))).toMatchObject({
-      revision: 3,
+      revision: 4,
       status: 'running',
-      snapshot: { _tag: 'Publishing', prepared: 'draft:v1' },
+      snapshot: { _tag: 'Running', state: 'publish', context: { prepared: 'draft:v1' } },
     })
     store = freshStore()
     await run(resumeRun('run_00000000-0000-4000-8000-000000000001'))
@@ -849,7 +928,7 @@ describe('interrupted workflow recovery', () => {
     ).toHaveLength(1)
     expect(await Effect.runPromise(store.getRun('run_00000000-0000-4000-8000-000000000001'))).toMatchObject({
       status: 'completed',
-      revision: 4,
+      revision: 5,
     })
     await expect(run(startRun('run_00000000-0000-4000-8000-000000000001'))).rejects.toMatchObject({
       _tag: 'InvalidOperation',
@@ -883,7 +962,7 @@ describe('interrupted workflow recovery', () => {
     const pending = Array.getUnsafe(runs, 0)
     expect(pending).toMatchObject({ status: 'pending', revision: 0 })
     await run(resumeRun(pending.runId))
-    expect(await Effect.runPromise(store.getRun(pending.runId))).toMatchObject({ status: 'waiting', revision: 2 })
+    expect(await Effect.runPromise(store.getRun(pending.runId))).toMatchObject({ status: 'waiting', revision: 3 })
   })
 
   it('keeps the persisted checkpoint unchanged when an individual resume RPC rejects', async () => {
@@ -1161,7 +1240,7 @@ describe('Effect HTTP API', () => {
         expect(detail.status).toBe(200)
         expect(await detail.json()).toMatchObject({
           run: { status: 'waiting' },
-          state: { revision: 2 },
+          state: { revision: 3 },
           shapes: { nodes: [{ state: 'succeeded' }, { state: 'waiting' }, { state: 'idle' }] },
         })
         const listed = await handler.handler(new Request('http://localhost/api/runs'))
@@ -1173,7 +1252,7 @@ describe('Effect HTTP API', () => {
         expect(resumed.status).toBe(200)
         expect(await resumed.json()).toMatchObject({
           run: { status: 'completed', workflowVersion: version },
-          state: { revision: 4 },
+          state: { revision: 5 },
         })
         const again = await handler.handler(
           new Request(`http://localhost/api/runs/${body.run.runId}/resume`, { method: 'POST' }),

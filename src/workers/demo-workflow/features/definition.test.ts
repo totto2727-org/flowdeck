@@ -18,7 +18,14 @@ describe('demo definition', () => {
     const prepared = await Effect.runPromise(demoDefinition.prepare({ workflowId: 'demo', version }))
     expect(prepared).toEqual({
       graph: demoGraph(version),
-      snapshot: { _tag: 'Ready', schemaVersion: 1, version: SemVer.format(version) },
+      snapshot: {
+        _tag: 'Ready',
+        schemaVersion: 1,
+        version: SemVer.format(version),
+        state: 'prepare',
+        context: { prepared: '', result: '' },
+        machine: { _tag: 'MachineSnapshot', version: 2, active: [{ path: '' }, { path: 'prepare' }] },
+      },
     })
     expect(Schema.is(GraphDefinition)(prepared.graph)).toBe(true)
     expect(prepared.graph.graphId).toBe(
@@ -45,23 +52,28 @@ describe('demo definition', () => {
     ).rejects.toThrow()
   })
 
-  it.each(['Preparing', 'Publishing'] as const)('validates %s execution identity', (_tag) => {
-    const snapshot = { _tag, schemaVersion: 1, version: demoVersion1, attempt: 1, prepared: 'draft' }
+  it.each(['prepare', 'publish'])('validates running %s execution identity', (state) => {
+    const snapshot = { ...initialSnapshot(demoVersion1), _tag: 'Running', state, attempt: 1 }
     expect(
       Schema.is(DemoSnapshot)({ ...snapshot, executionId: 'execution_00000000-0000-4000-8000-000000000001' }),
     ).toBe(true)
     expect(Schema.is(DemoSnapshot)({ ...snapshot, executionId: 'run:prepare:1' })).toBe(false)
   })
 
-  it('validates checkpoint and failed node identities', () => {
-    const waiting = { _tag: 'Waiting', schemaVersion: 1, version: demoVersion1, prepared: 'draft' }
-    expect(
-      Schema.is(DemoSnapshot)({ ...waiting, checkpointExecutionId: 'execution_00000000-0000-4000-8000-000000000001' }),
-    ).toBe(true)
-    expect(Schema.is(DemoSnapshot)({ ...waiting, checkpointExecutionId: 'checkpoint' })).toBe(false)
-    const failed = { _tag: 'Failed', schemaVersion: 1, version: demoVersion1, message: 'failed' }
-    expect(Schema.is(DemoSnapshot)({ ...failed, nodeId: 'prepare' })).toBe(true)
-    expect(Schema.is(DemoSnapshot)({ ...failed, nodeId: 'invalid/node' })).toBe(false)
+  it('validates waiting execution and failed node identities', () => {
+    const waiting = { ...initialSnapshot(demoVersion1), _tag: 'Waiting', attempt: 1 }
+    expect(Schema.is(DemoSnapshot)({ ...waiting, executionId: 'execution_00000000-0000-4000-8000-000000000001' })).toBe(
+      true,
+    )
+    expect(Schema.is(DemoSnapshot)({ ...waiting, executionId: 'checkpoint' })).toBe(false)
+    const failed = {
+      ...waiting,
+      _tag: 'Failed',
+      executionId: 'execution_00000000-0000-4000-8000-000000000001',
+      message: 'failed',
+    }
+    expect(Schema.is(DemoSnapshot)({ ...failed, state: 'prepare' })).toBe(true)
+    expect(Schema.is(DemoSnapshot)({ ...failed, state: 'invalid/node' })).toBe(false)
   })
 
   it.each([

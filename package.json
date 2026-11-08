@@ -14,6 +14,7 @@
     "@effront/alchemy": "^0.3.1",
     "@effront/core": "^0.3.1",
     "@totto2727/reylo": "^0.7.0",
+    "@typeonce/effect-machine": "^0.46.0",
     "agents": "^0.28.1",
     "alchemy": "^2.0.0-beta.81",
     "class-variance-authority": "^0.7.1",
