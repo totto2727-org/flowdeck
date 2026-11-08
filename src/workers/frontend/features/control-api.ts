@@ -1,8 +1,8 @@
 import { Context, Data, Effect, Schema } from 'effect'
 import { HttpClient, HttpClientRequest, HttpClientResponse } from 'effect/http'
 
-import type { RunId } from '../../../features/workflow/domain/identity'
-import { CreateRun, RunDetail, RunsResponse, WorkflowsResponse } from '../../../features/workflow/domain/model'
+import type { RunId } from '@/features/workflow/domain/identity'
+import { CreateRun, RunDetail, RunsResponse, WorkflowsResponse } from '@/features/workflow/domain/model'
 
 const encodeCreateRun = Schema.encodeSync(Schema.toCodecJson(CreateRun))
 

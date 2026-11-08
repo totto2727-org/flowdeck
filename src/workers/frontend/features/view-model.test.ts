@@ -5,7 +5,8 @@ import {
   Run as DomainRun,
   RunDetail as DomainRunDetail,
   WorkflowSummary as DomainWorkflowSummary,
-} from '../../../features/workflow/domain/model'
+} from '@/features/workflow/domain/model'
+
 import { presentDetail, presentRun, presentWorkflow } from './view-model'
 
 const runJson = {

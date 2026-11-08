@@ -1,13 +1,13 @@
 import type { RpcCallError, RpcDecodeError } from 'alchemy/Rpc'
 import { Array, DateTime, Effect, Option } from 'effect'
 
-import { ExternalError, InvalidOperation, type DomainError } from '../../../features/workflow/domain/errors'
-import { makeRunIdGenerator, type RunId, type WorkflowId } from '../../../features/workflow/domain/identity'
-import type { CreateRun, Run, RunDetail } from '../../../features/workflow/domain/model'
-import { graphToShapes } from '../../../features/workflow/domain/projection'
-import { EventRange, Store } from '../../../features/workflow/services/store'
-import { WorkflowRegistry } from '../../../features/workflow/services/workflow-definition'
-import type { Workflows } from '../../../features/workflow/services/workflows'
+import { ExternalError, InvalidOperation, type DomainError } from '@/features/workflow/domain/errors'
+import { makeRunIdGenerator, type RunId, type WorkflowId } from '@/features/workflow/domain/identity'
+import type { CreateRun, Run, RunDetail } from '@/features/workflow/domain/model'
+import { graphToShapes } from '@/features/workflow/domain/projection'
+import { EventRange, Store } from '@/features/workflow/services/store'
+import { WorkflowRegistry } from '@/features/workflow/services/workflow-definition'
+import type { Workflows } from '@/features/workflow/services/workflows'
 
 // Alchemy's typed stub shape omits transport failures from its declared domain error channel.
 const bindingFailure = (error: DomainError | RpcCallError | RpcDecodeError) =>

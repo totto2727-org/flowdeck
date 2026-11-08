@@ -4,7 +4,8 @@ import { Array, Effect, Option, Record } from 'effect'
 import { Activity, ArrowRight, Box, Check, ChevronRight, GitBranch, Layers, Play, RefreshCw } from 'lucide-react'
 import { Fragment, useState, useSyncExternalStore, useTransition } from 'react'
 
-import type { NodeId, RunId } from '../../../features/workflow/domain/identity'
+import type { NodeId, RunId } from '@/features/workflow/domain/identity'
+
 import { Badge } from './components/generated/badge'
 import { Button } from './components/generated/button'
 import { Card, CardContent } from './components/generated/card'

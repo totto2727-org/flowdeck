@@ -1,6 +1,7 @@
 import { Effect, Schema } from 'effect'
 
-import type { WorkflowDefinition } from '../../../features/workflow/services/workflow-definition'
+import type { WorkflowDefinition } from '@/features/workflow/services/workflow-definition'
+
 import { demoGraph, demoWorkflow, encodeDemoSnapshot, initialSnapshot } from './demo'
 import { DemoCreateRun } from './input'
 

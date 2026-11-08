@@ -6,7 +6,8 @@ import { Miniflare } from 'miniflare'
 import { build } from 'vite-plus'
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vite-plus/test'
 
-import { Rfc9457ProblemDetails } from '../src/features/rpc-problem'
+import { Rfc9457ProblemDetails } from '@/features/rpc-problem'
+
 import type Parent from './fixtures/rpc-boundary-worker'
 
 const decodeReply = Schema.decodeUnknownSync(
@@ -41,6 +42,7 @@ const entrypoint = async (name: string) =>
 beforeAll(async () => {
   const output = await build({
     configFile: false,
+    resolve: { tsconfigPaths: true },
     logLevel: 'silent',
     build: {
       target: 'esnext',

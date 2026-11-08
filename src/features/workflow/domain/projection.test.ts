@@ -1,8 +1,9 @@
 import { Array, DateTime, HashMap, Option } from 'effect'
 import { describe, expect, it } from 'vite-plus/test'
 
-import { demoGraph } from '../../../workers/demo-workflow/features/demo'
-import { demoVersion1, demoVersion2 } from '../../../workers/demo-workflow/features/input'
+import { demoGraph } from '@/workers/demo-workflow/features/demo'
+import { demoVersion1, demoVersion2 } from '@/workers/demo-workflow/features/input'
+
 import type { NodeId } from './identity'
 import type { EventType, RunEvent } from './model'
 import { graphToShapes, projectEvents } from './projection'

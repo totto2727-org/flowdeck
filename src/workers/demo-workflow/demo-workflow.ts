@@ -4,14 +4,15 @@ import { QueryDatabase, QueryDatabaseBinding } from 'alchemy/Cloudflare/D1'
 import { DurableObject } from 'alchemy/Cloudflare/Workers'
 import { Effect, Layer, Schema } from 'effect'
 
-import { makeRpcResponse } from '../../features/rpc-boundary'
-import { RunId } from '../../features/workflow/domain/identity'
-import { D1StoreLive } from '../../features/workflow/services/d1-store'
-import { WorkflowDatabase } from '../../features/workflow/services/database'
-import { DatabaseQueriesLive } from '../../features/workflow/services/database-queries'
-import { rpcCall, rpcCommandResult, type WireWorkflowExecutor } from '../../features/workflow/services/workflow-rpc'
-import { Database } from '../database'
-import { DemoWorkflow } from '../definitions'
+import { makeRpcResponse } from '@/features/rpc-boundary'
+import { RunId } from '@/features/workflow/domain/identity'
+import { D1StoreLive } from '@/features/workflow/services/d1-store'
+import { WorkflowDatabase } from '@/features/workflow/services/database'
+import { DatabaseQueriesLive } from '@/features/workflow/services/database-queries'
+import { rpcCall, rpcCommandResult, type WireWorkflowExecutor } from '@/features/workflow/services/workflow-rpc'
+import { Database } from '@/workers/database'
+import { DemoWorkflow } from '@/workers/definitions'
+
 import { DemoExecutor, makeDemoExecutor } from './features/demo'
 
 const decodeRunId = Schema.decodeUnknownEffect(RunId)
@@ -32,7 +33,7 @@ const makeDemoRunRuntime = Effect.gen(function* () {
     ),
     BrowserCrypto.layer,
   )
-}).pipe(Effect.provide(QueryDatabaseBinding))
+})
 
 /** Each logical run name resolves to one object, but no checkpoint lives in memory. */
 export class FlowdeckRun extends DurableObject<FlowdeckRun>()(
@@ -52,7 +53,7 @@ export class FlowdeckRun extends DurableObject<FlowdeckRun>()(
           decodeRunId(runId).pipe(Effect.flatMap(executor.resume), Effect.as(null), respond('FlowdeckRun.resume')),
       } satisfies WireWorkflowExecutor
     }).pipe(Effect.provide(runtime))
-  }),
+  }).pipe(Effect.provide(QueryDatabaseBinding)),
 ) {}
 
 /** The entry resolves a run namespace and forwards only the fixed demo operations. */

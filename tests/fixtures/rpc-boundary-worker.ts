@@ -2,9 +2,9 @@ import { BrowserCrypto } from '@effect/platform-browser'
 import { WorkerEntrypoint } from 'cloudflare:workers'
 import { Cause, Effect, Logger, Option, References, Schema } from 'effect'
 
-import { rpcResponse, rpcResult } from '../../src/features/rpc-boundary'
-import { RemoteWorkerError } from '../../src/features/rpc-problem'
-import { ExternalError, NotFound } from '../../src/features/workflow/domain/errors'
+import { rpcResponse, rpcResult } from '@/features/rpc-boundary'
+import { RemoteWorkerError } from '@/features/rpc-problem'
+import { ExternalError, NotFound } from '@/features/workflow/domain/errors'
 
 type Scenario = 'success' | 'failure' | 'not-found' | 'defect'
 type ChildBinding = { start(scenario: Scenario): Promise<string> }

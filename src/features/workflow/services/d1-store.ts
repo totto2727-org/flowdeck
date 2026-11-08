@@ -1,8 +1,9 @@
 import { Array, DateTime, Effect, Layer, Match } from 'effect'
 
-import { Conflict, NotFound } from '../domain/errors'
-import type { GraphId, RunId } from '../domain/identity'
-import type { GraphDefinition, Run } from '../domain/model'
+import { Conflict, NotFound } from '@/features/workflow/domain/errors'
+import type { GraphId, RunId } from '@/features/workflow/domain/identity'
+import type { GraphDefinition, Run } from '@/features/workflow/domain/model'
+
 import {
   decodeAck,
   decodeCommand,

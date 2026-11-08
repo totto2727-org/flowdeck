@@ -1,21 +1,22 @@
 import { Crypto, DateTime, Effect, Match, Schema, SemVer } from 'effect'
 
-import { InvalidOperation, InvalidSnapshot, type DomainError } from '../../../features/workflow/domain/errors'
+import { InvalidOperation, InvalidSnapshot, type DomainError } from '@/features/workflow/domain/errors'
 import {
   ExecutionId,
   makeCommitId,
   makeEventId,
   makeExecutionId,
   type RunId,
-} from '../../../features/workflow/domain/identity'
+} from '@/features/workflow/domain/identity'
 import {
   JsonObject,
   type GraphDefinition,
   type Run,
   type RunStatus,
   type WorkflowSummary,
-} from '../../../features/workflow/domain/model'
-import { Store, type PendingEvent } from '../../../features/workflow/services/store'
+} from '@/features/workflow/domain/model'
+import { Store, type PendingEvent } from '@/features/workflow/services/store'
+
 import {
   developmentVersion,
   DevelopmentTask,

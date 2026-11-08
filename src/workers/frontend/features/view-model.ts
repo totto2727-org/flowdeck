@@ -5,7 +5,7 @@ import {
   RunDetail as DomainRunDetail,
   RunEvent as DomainRunEvent,
   WorkflowSummary as DomainWorkflowSummary,
-} from '../../../features/workflow/domain/model'
+} from '@/features/workflow/domain/model'
 
 // toCodecJson's Encoded type is Json, so compose official string codecs to retain typed DOM fields.
 const RunCodec = Schema.Struct({

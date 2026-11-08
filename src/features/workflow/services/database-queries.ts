@@ -3,7 +3,8 @@ import type { PreparedStatement } from 'alchemy/Cloudflare/D1'
 import { RuntimeContext } from 'alchemy/RuntimeContext'
 import { Context, Effect, Layer, String } from 'effect'
 
-import { ExternalError, StorageConflict } from '../domain/errors'
+import { ExternalError, StorageConflict } from '@/features/workflow/domain/errors'
+
 import { WorkflowDatabase } from './database'
 
 const databaseFailure = (operation: string, cause: unknown) => {

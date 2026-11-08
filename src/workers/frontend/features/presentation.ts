@@ -1,7 +1,8 @@
 import { Array, Match, Number, Option, Order, Schema, String } from 'effect'
 
-import type { NodeId } from '../../../features/workflow/domain/identity'
-import type { RunStatus, Shapes } from '../../../features/workflow/domain/model'
+import type { NodeId } from '@/features/workflow/domain/identity'
+import type { RunStatus, Shapes } from '@/features/workflow/domain/model'
+
 import type { RunEvent } from './view-model'
 
 const jsonIndentationSpaces = 2

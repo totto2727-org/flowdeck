@@ -8,9 +8,10 @@ import { DurableObjectState, WorkerEnvironment } from 'alchemy/Cloudflare/Worker
 import { DurableObject } from 'cloudflare:workers'
 import { Array, Clock, Effect, Schema, Semaphore } from 'effect'
 
-import { ExternalError } from '../../features/workflow/domain/errors'
-import { RunId } from '../../features/workflow/domain/identity'
-import { Store } from '../../features/workflow/services/store'
+import { ExternalError } from '@/features/workflow/domain/errors'
+import { RunId } from '@/features/workflow/domain/identity'
+import { Store } from '@/features/workflow/services/store'
+
 import { CommandId, SessionId, type Session, type TurnReceipt } from './features/model'
 import { makeDevelopmentModels } from './features/models'
 import { DevelopmentSandbox } from './features/sandbox'

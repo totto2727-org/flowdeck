@@ -1,6 +1,7 @@
 import { Effect } from 'effect'
 
-import type { GraphDefinition } from '../../../features/workflow/domain/model'
+import type { GraphDefinition } from '@/features/workflow/domain/model'
+
 import { demoVersion2 } from './input'
 
 export const demoVersion2Definition = {

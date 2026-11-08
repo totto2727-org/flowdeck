@@ -29,12 +29,7 @@ For agent-assisted coding tasks, see [Pi development setup and limits](docs/deve
 | Alchemy Cloudflare credentials                    | Access the intended Cloudflare account.                            |
 | Alchemy Cloudflare state store                    | Store remote deployment state; local development uses local state. |
 | `FLOWDECK_ACCESS_POLICY_ID` for remote deployment | Reference the existing Pulumi-managed SAML Access policy.          |
-| Unpublished Reylo HCL support                     | Analyze this branch's SQL imports; see the warning below.          |
-
-> [!WARNING]
-> The declared registry packages do not yet include the required Reylo HCL support.
-> A registry-only installation cannot currently start this branch.
-> For a temporary local trial, follow [local fork validation](docs/database.md#local-analysis-and-checks).
+| Published Reylo packages from the lockfile        | Analyze SQL imports against the HCL schema.                        |
 
 Pi tasks also require Docker and configured inference access.
 See the [Pi prerequisites](docs/development-sandbox.md) before starting a task.
@@ -72,10 +67,12 @@ Local development supplies a fixed audience and identity through Alchemy's `dev.
 
 ## Reference
 
-| Guide                                                         | Contents                                                          |
-| ------------------------------------------------------------- | ----------------------------------------------------------------- |
-| [Pi development](docs/development-sandbox.md)                 | Task inputs, credentials, workspace setup, and acceptance limits. |
-| [Workspace retention](docs/development-workflow-retention.md) | Workspace lifetime, costs, and recovery limits.                   |
+| Guide                                                         | Contents                                                               |
+| ------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| [Pi development](docs/development-sandbox.md)                 | Task inputs, credentials, workspace setup, and acceptance limits.      |
+| [Workspace retention](docs/development-workflow-retention.md) | Workspace lifetime, costs, and recovery limits.                        |
+| [Workflow graphs](docs/workflow-graphs.md)                    | Graph definitions, execution, versioning, checkpoints, and recovery.   |
+| [RPC boundaries](docs/rpc-boundaries.md)                      | Error conversion, origin logging, Result codecs, and RFC 9457 details. |
 
 ## Development
 

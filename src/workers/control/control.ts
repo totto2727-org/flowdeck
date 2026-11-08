@@ -10,9 +10,10 @@ import {
   rpcCall,
   rpcValue,
   type WireWorkflowService,
-} from '../../features/workflow/services/workflow-rpc'
-import { Workflows } from '../../features/workflow/services/workflows'
-import { Control, Workflow } from '../definitions'
+} from '@/features/workflow/services/workflow-rpc'
+import { Workflows } from '@/features/workflow/services/workflows'
+import { Control, Workflow } from '@/workers/definitions'
+
 import { ApiRoutes } from './features/router'
 
 const decodeWorkflowsResponse = rpcValue('Workflow.listWorkflows', RpcWorkflowsResponse)

@@ -2,7 +2,8 @@ import { Effect } from 'effect'
 import { HttpEffect, HttpServerResponse } from 'effect/http'
 import { describe, expect, it } from 'vite-plus/test'
 
-import { AccessDenied } from '../access-auth'
+import { AccessDenied } from '@/workers/frontend/access-auth'
+
 import { frontendAuthorization } from './authorization'
 
 describe('frontend HTTP authorization middleware', () => {

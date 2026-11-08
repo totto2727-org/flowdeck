@@ -1,8 +1,14 @@
 import { Context, Data, Effect, Schema } from 'effect'
 
-import type { Conflict, NotFound, ExternalError, StorageConflict } from '../domain/errors'
-import { CommitId, GraphId, RunId } from '../domain/identity'
-import { type GraphDefinition, PendingRunEvent, PositiveInt, Run, type RunEvent } from '../domain/model'
+import type { Conflict, NotFound, ExternalError, StorageConflict } from '@/features/workflow/domain/errors'
+import { CommitId, GraphId, RunId } from '@/features/workflow/domain/identity'
+import {
+  type GraphDefinition,
+  PendingRunEvent,
+  PositiveInt,
+  Run,
+  type RunEvent,
+} from '@/features/workflow/domain/model'
 
 export type StoreFailure = ExternalError | NotFound | Conflict | StorageConflict
 export const PendingEvent = PendingRunEvent

@@ -1,7 +1,7 @@
 import { Effect } from 'effect'
 import { HttpMiddleware, HttpServerResponse } from 'effect/http'
 
-import type { AccessDenied } from '../access-auth'
+import type { AccessDenied } from '@/workers/frontend/access-auth'
 
 export const frontendAuthorization = <AuthorizationR>(
   authorize: Effect.Effect<undefined, AccessDenied, AuthorizationR>,

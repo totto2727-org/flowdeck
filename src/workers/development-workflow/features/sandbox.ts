@@ -1,7 +1,8 @@
 import { Context, Effect } from 'effect'
 
-import type { ExternalError } from '../../../features/workflow/domain/errors'
-import type { RunId } from '../../../features/workflow/domain/identity'
+import type { ExternalError } from '@/features/workflow/domain/errors'
+import type { RunId } from '@/features/workflow/domain/identity'
+
 import type { CommandId, Session, TurnReceipt, TurnRequest } from './model'
 
 /** The composition root supplies one native container handle per run, never per node. */

@@ -1,7 +1,8 @@
 import { DateTime, Effect, Schema, SemVer } from 'effect'
 import { describe, expect, it } from 'vite-plus/test'
 
-import type { Run } from '../../../features/workflow/domain/model'
+import type { Run } from '@/features/workflow/domain/model'
+
 import { developmentDefinition } from './definition'
 import { restoreDevelopment } from './development'
 import { DevelopmentCreateRun } from './input'

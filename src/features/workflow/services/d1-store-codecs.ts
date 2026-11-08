@@ -1,8 +1,9 @@
 import { Effect, Schema } from 'effect'
 
-import { ExternalError } from '../domain/errors'
-import { EventId, GraphId, RunId } from '../domain/identity'
-import { GraphDefinition, JsonObject, Run, RunEvent } from '../domain/model'
+import { ExternalError } from '@/features/workflow/domain/errors'
+import { EventId, GraphId, RunId } from '@/features/workflow/domain/identity'
+import { GraphDefinition, JsonObject, Run, RunEvent } from '@/features/workflow/domain/model'
+
 import type getEventsQuery from './queries/get-events.sql'
 import type getRunQuery from './queries/get-run.sql'
 import { CommitAck, CommitCommand } from './store'

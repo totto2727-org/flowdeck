@@ -9,8 +9,8 @@ import { DurableObject } from 'cloudflare:workers'
 import { Context, Effect, Layer } from 'effect'
 import { HttpServerResponse } from 'effect/http'
 
-import { Store } from '../../src/features/workflow/services/store'
-import { makeDevelopmentSdk } from '../../src/workers/development-workflow/sdk-runtime'
+import { Store } from '@/features/workflow/services/store'
+import { makeDevelopmentSdk } from '@/workers/development-workflow/sdk-runtime'
 
 const unexpected = Effect.die(new Error('Unexpected workflow persistence access'))
 const StoreLive = Layer.succeed(

@@ -1,7 +1,8 @@
 import { Array, Option, String } from 'effect'
 import { describe, expect, it } from 'vite-plus/test'
 
-import type { ExecutionId, NodeId } from '../../../features/workflow/domain/identity'
+import type { ExecutionId, NodeId } from '@/features/workflow/domain/identity'
+
 import {
   eventLabel,
   graphSize,

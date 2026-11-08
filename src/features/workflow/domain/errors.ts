@@ -1,6 +1,6 @@
 import { Data, type PlatformError, type Schema } from 'effect'
 
-import type { RemoteWorkerError } from '../../rpc-problem'
+import type { RemoteWorkerError } from '@/features/rpc-problem'
 
 export class NotFound extends Data.TaggedError('NotFound')<{
   readonly resource: string

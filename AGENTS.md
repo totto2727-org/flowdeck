@@ -62,6 +62,7 @@ Do not deploy, change DNS, or change Access policies without operator authorizat
 ## Effect-first implementation
 
 Write Effect programs, not imperative TypeScript with Effect wrappers.
+Use `@/` for imports from parent directories within `src/`, including test imports; keep same-directory imports relative.
 Use Effect Array, String, Record, Match, Schema, Clock, and collection APIs instead of equivalent standard-library APIs.
 Use `Schema.isUUID(4)`, `Schema.URLFromString`, and `Schema.SemVerFromString` instead of custom identity, URL, or version parsers.
 Keep ideal domain values independent from their serialized representation.
@@ -167,6 +168,7 @@ Never promise generic replay or exactly-once external side effects.
 Do not introduce a generic runner protocol, artifact store, or a custom general-purpose state-machine engine.
 Effect 4 currently has no official Machine module in the inspected releases.
 Keep the demo checkpoint transitions workflow-specific and identify official Machine integration as unresolved until a compatible API exists.
+See [Workflow graphs](docs/workflow-graphs.md) for graph construction, execution, versioning, and recovery contracts.
 
 ## Frontend and infrastructure
 

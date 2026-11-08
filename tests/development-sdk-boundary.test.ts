@@ -8,7 +8,7 @@ import { Miniflare } from 'miniflare'
 import { build } from 'vite-plus'
 import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test'
 
-import { workspaceProxyBuild } from '../src/workers/development-workflow/features/workspace-proxy-build'
+import { workspaceProxyBuild } from '@/workers/development-workflow/features/workspace-proxy-build'
 
 const caller = `export default { async fetch(request, env) {
   const stub = env.PROBE.getByName('test')
@@ -30,6 +30,7 @@ describe('Alchemy Effect DO and official native SDK raw boundary', () => {
     const virtualEntry = await Effect.runPromise(virtualEntryPlugin.pipe(Effect.provide(NodeServices.layer)))
     const result = await build({
       configFile: false,
+      resolve: { tsconfigPaths: true },
       logLevel: 'silent',
       plugins: [
         workspaceProxyBuild(),

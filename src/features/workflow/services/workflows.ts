@@ -1,8 +1,8 @@
 import { Context, Effect } from 'effect'
 
-import type { DomainError } from '../domain/errors'
-import type { RunId } from '../domain/identity'
-import type { CreateRun, Run, RunDetail, WorkflowSummary } from '../domain/model'
+import type { DomainError } from '@/features/workflow/domain/errors'
+import type { RunId } from '@/features/workflow/domain/identity'
+import type { CreateRun, Run, RunDetail, WorkflowSummary } from '@/features/workflow/domain/model'
 
 export type WorkflowService<R = never> = {
   readonly listWorkflows: () => Effect.Effect<{ readonly workflows: ReadonlyArray<WorkflowSummary> }, DomainError, R>

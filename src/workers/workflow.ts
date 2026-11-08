@@ -4,12 +4,12 @@ import { QueryDatabase, QueryDatabaseBinding } from 'alchemy/Cloudflare/D1'
 import { makeRpcStub, WorkerEnvironment } from 'alchemy/Cloudflare/Workers'
 import { Context, Effect, Layer, Schema } from 'effect'
 
-import { makeRpcResponse } from '../features/rpc-boundary'
-import { RunId } from '../features/workflow/domain/identity'
-import { D1StoreLive } from '../features/workflow/services/d1-store'
-import { WorkflowDatabase } from '../features/workflow/services/database'
-import { DatabaseQueriesLive } from '../features/workflow/services/database-queries'
-import { WorkflowRegistry } from '../features/workflow/services/workflow-definition'
+import { makeRpcResponse } from '@/features/rpc-boundary'
+import { RunId } from '@/features/workflow/domain/identity'
+import { D1StoreLive } from '@/features/workflow/services/d1-store'
+import { WorkflowDatabase } from '@/features/workflow/services/database'
+import { DatabaseQueriesLive } from '@/features/workflow/services/database-queries'
+import { WorkflowRegistry } from '@/features/workflow/services/workflow-definition'
 import {
   RpcCreateRun,
   encodeRunDetail,
@@ -19,8 +19,9 @@ import {
   rpcCommandResult,
   type WireWorkflowExecutor,
   type WireWorkflowService,
-} from '../features/workflow/services/workflow-rpc'
-import { Workflows } from '../features/workflow/services/workflows'
+} from '@/features/workflow/services/workflow-rpc'
+import { Workflows } from '@/features/workflow/services/workflows'
+
 import { Database } from './database'
 import { DemoWorkflow, Workflow } from './definitions'
 import { DevelopmentWorkflow } from './development-workflow/development-workflow'
@@ -67,7 +68,7 @@ const WorkflowDatabaseLive = Layer.effect(
   Effect.gen(function* () {
     return yield* QueryDatabase(yield* Database)
   }),
-).pipe(Layer.provide(QueryDatabaseBinding))
+)
 const WorkflowRuntimeLive = Layer.mergeAll(
   Layer.effect(Workflows, makeWorkflows).pipe(
     Layer.provide(
@@ -79,7 +80,7 @@ const WorkflowRuntimeLive = Layer.mergeAll(
     ),
   ),
   BrowserCrypto.layer,
-)
+).pipe(Layer.provide(QueryDatabaseBinding))
 
 /** Catalog, run persistence, and fixed workflow bindings live behind one service. */
 export default Workflow.make(

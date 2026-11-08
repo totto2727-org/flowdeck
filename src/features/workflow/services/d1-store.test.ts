@@ -9,8 +9,11 @@ import { TestCrypto } from 'effect/testing'
 import { Miniflare } from 'miniflare'
 import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from 'vite-plus/test'
 
-import { ApiRoutes } from '../../../workers/control/features/router'
-import { demoDefinition } from '../../../workers/demo-workflow/features/definition'
+import { ExternalError } from '@/features/workflow/domain/errors'
+import { CommitId, EventId, ExecutionId, RunId } from '@/features/workflow/domain/identity'
+import { RunDetail, RunsResponse, type Run, type WorkflowVersion } from '@/features/workflow/domain/model'
+import { ApiRoutes } from '@/workers/control/features/router'
+import { demoDefinition } from '@/workers/demo-workflow/features/definition'
 import {
   DemoSnapshot,
   demoGraph,
@@ -18,13 +21,11 @@ import {
   makeDemoExecutor,
   resumeRun,
   startRun,
-} from '../../../workers/demo-workflow/features/demo'
-import { makeWorkflowRegistry } from '../../../workers/workflow/features/registration'
-import { createRun, makeWorkflows, resumeRun as resumeWorkflowRun } from '../../../workers/workflow/features/workflow'
-import { DevelopmentWorkflowBinding, WorkflowBinding } from '../../../workers/workflow/features/workflow-binding'
-import { ExternalError } from '../domain/errors'
-import { CommitId, EventId, ExecutionId, RunId } from '../domain/identity'
-import { RunDetail, RunsResponse, type Run, type WorkflowVersion } from '../domain/model'
+} from '@/workers/demo-workflow/features/demo'
+import { makeWorkflowRegistry } from '@/workers/workflow/features/registration'
+import { createRun, makeWorkflows, resumeRun as resumeWorkflowRun } from '@/workers/workflow/features/workflow'
+import { DevelopmentWorkflowBinding, WorkflowBinding } from '@/workers/workflow/features/workflow-binding'
+
 import { D1StoreLive } from './d1-store'
 import { WorkflowDatabase } from './database'
 import { DatabaseQueries, DatabaseQueriesLive, makeDatabaseQueries } from './database-queries'

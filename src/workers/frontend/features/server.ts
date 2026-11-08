@@ -2,8 +2,9 @@
 
 import { Array, Effect, Schema } from 'effect'
 
-import { RunId } from '../../../features/workflow/domain/identity'
-import { CreateRun } from '../../../features/workflow/domain/model'
+import { RunId } from '@/features/workflow/domain/identity'
+import { CreateRun } from '@/features/workflow/domain/model'
+
 import { ControlApi, type ControlError } from './control-api'
 import { EFFRONT } from './effront'
 import {

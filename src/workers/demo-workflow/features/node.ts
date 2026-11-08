@@ -1,9 +1,9 @@
 import { DateTime, Effect, type Schema } from 'effect'
 
-import type { UserDefinedId } from '../../../features/identity/id'
-import type { ExecutionId, RunId } from '../../../features/workflow/domain/identity'
-import type { JsonObject } from '../../../features/workflow/domain/model'
-import type { PendingEvent } from '../../../features/workflow/services/store'
+import type { UserDefinedId } from '@/features/identity/id'
+import type { ExecutionId, RunId } from '@/features/workflow/domain/identity'
+import type { JsonObject } from '@/features/workflow/domain/model'
+import type { PendingEvent } from '@/features/workflow/services/store'
 
 export interface Execution {
   readonly runId: RunId

@@ -4,7 +4,8 @@ import { Cause, Context, Crypto, Effect, Exit, Layer, Logger, Option, References
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from 'effect/http'
 import { describe, expect, it } from 'vite-plus/test'
 
-import { ApiRoutes } from '../workers/control/features/router'
+import { ApiRoutes } from '@/workers/control/features/router'
+
 import { operationFailureLogging } from './operation-logging'
 import { rpcResponse, rpcResult } from './rpc-boundary'
 import { RemoteWorkerError } from './rpc-problem'

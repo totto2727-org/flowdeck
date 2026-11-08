@@ -1,7 +1,8 @@
 import { Effect, Schema } from 'effect'
 
-import { JsonObject } from '../../../features/workflow/domain/model'
-import type { WorkflowDefinition } from '../../../features/workflow/services/workflow-definition'
+import { JsonObject } from '@/features/workflow/domain/model'
+import type { WorkflowDefinition } from '@/features/workflow/services/workflow-definition'
+
 import {
   DevelopmentSnapshotJson,
   developmentGraphFor,

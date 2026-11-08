@@ -1,8 +1,8 @@
 import { Context, Effect, Schema } from 'effect'
 
-import type { DomainError } from '../domain/errors'
-import type { RunId } from '../domain/identity'
-import type { CreateRun, GraphDefinition, JsonObject, WorkflowSummary } from '../domain/model'
+import type { DomainError } from '@/features/workflow/domain/errors'
+import type { RunId } from '@/features/workflow/domain/identity'
+import type { CreateRun, GraphDefinition, JsonObject, WorkflowSummary } from '@/features/workflow/domain/model'
 
 /** Each workflow owns input validation, supported versions, and its initial checkpoint. */
 export interface WorkflowDefinition {

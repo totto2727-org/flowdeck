@@ -3,7 +3,8 @@
 import { Array, Option } from 'effect'
 import { useRef, type KeyboardEvent } from 'react'
 
-import type { NodeId } from '../../../features/workflow/domain/identity'
+import type { NodeId } from '@/features/workflow/domain/identity'
+
 import { Badge } from './components/generated/badge'
 import { graphSize, latestExecution, nextNode, nodeEvents, renderJson } from './presentation'
 import type { RunDetail } from './view-model'

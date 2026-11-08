@@ -6,8 +6,8 @@ import { Crypto, Effect, Layer, Schema, DateTime } from 'effect'
 import { HttpRouter } from 'effect/http'
 import { describe, expect, it, vi } from 'vite-plus/test'
 
-import { rpcResponse, rpcResult } from '../../../features/rpc-boundary'
-import { RemoteWorkerError } from '../../../features/rpc-problem'
+import { rpcResponse, rpcResult } from '@/features/rpc-boundary'
+import { RemoteWorkerError } from '@/features/rpc-problem'
 import {
   Conflict,
   ExternalError,
@@ -15,9 +15,10 @@ import {
   InvalidSnapshot,
   NotFound,
   StorageConflict,
-} from '../../../features/workflow/domain/errors'
-import { RpcCreateRun, RpcRunDetail, RpcWorkflowsResponse } from '../../../features/workflow/services/workflow-rpc'
-import { Workflows } from '../../../features/workflow/services/workflows'
+} from '@/features/workflow/domain/errors'
+import { RpcCreateRun, RpcRunDetail, RpcWorkflowsResponse } from '@/features/workflow/services/workflow-rpc'
+import { Workflows } from '@/features/workflow/services/workflows'
+
 import { ApiRoutes } from './router'
 
 const crypto = Crypto.make({

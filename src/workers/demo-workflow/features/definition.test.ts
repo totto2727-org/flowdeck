@@ -1,7 +1,8 @@
 import { DateTime, Effect, Schema, SemVer } from 'effect'
 import { describe, expect, it } from 'vite-plus/test'
 
-import { GraphDefinition, type Run } from '../../../features/workflow/domain/model'
+import { GraphDefinition, type Run } from '@/features/workflow/domain/model'
+
 import { demoDefinition } from './definition'
 import { demoGraph, DemoSnapshot, encodeDemoSnapshot, initialSnapshot, restoreDemo } from './demo'
 import { DemoCreateRun, demoVersion1, demoVersion2 } from './input'

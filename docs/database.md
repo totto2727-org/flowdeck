@@ -78,6 +78,7 @@ Never point local analysis or migration generation at a deployment database.
 ## Atomic writes and the public query contract
 
 `DatabaseQueriesLive` captures the selected Alchemy client from `WorkflowDatabase` when the Layer is built.
+`D1StoreLive` requires `DatabaseQueries`; Worker, run Durable Object, and test composition roots supply `DatabaseQueriesLive` with their selected database Layer.
 `D1StoreLive` constructs the `Store` service from separate operation factories that capture those query capabilities once.
 Service methods do not provide or rebuild their dependencies when called.
 `d1-store.ts` defines each run, graph, event, creation, and commit operation separately; `d1-store-codecs.ts` owns persisted value conversion.

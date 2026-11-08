@@ -2,17 +2,17 @@ import type { RpcCallError, RpcDecodeError } from 'alchemy/Rpc'
 import { Effect, Layer, Match, Schema } from 'effect'
 import { Headers, HttpBody, HttpRouter, HttpServerError, HttpServerRequest, HttpServerResponse } from 'effect/http'
 
-import { operationFailureLogging } from '../../../features/operation-logging'
-import { ExternalError, type DomainError } from '../../../features/workflow/domain/errors'
-import { RunId } from '../../../features/workflow/domain/identity'
+import { operationFailureLogging } from '@/features/operation-logging'
+import { ExternalError, type DomainError } from '@/features/workflow/domain/errors'
+import { RunId } from '@/features/workflow/domain/identity'
 import {
   ApiErrorResponse,
   CreateRun,
   RunDetail,
   RunsResponse,
   WorkflowsResponse,
-} from '../../../features/workflow/domain/model'
-import { Workflows } from '../../../features/workflow/services/workflows'
+} from '@/features/workflow/domain/model'
+import { Workflows } from '@/features/workflow/services/workflows'
 
 type ApiFailure = DomainError | HttpServerError.HttpServerError | HttpBody.HttpBodyError | RpcCallError | RpcDecodeError
 const respondApiError = HttpServerResponse.schemaJson(Schema.toCodecJson(ApiErrorResponse))

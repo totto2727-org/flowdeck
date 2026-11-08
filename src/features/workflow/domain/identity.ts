@@ -1,4 +1,4 @@
-import { makePrefixedUUIDv4, UserDefinedId } from '../../identity/id'
+import { makePrefixedUUIDv4, UserDefinedId } from '@/features/identity/id'
 
 export const WorkflowId = UserDefinedId
 export type WorkflowId = typeof WorkflowId.Type

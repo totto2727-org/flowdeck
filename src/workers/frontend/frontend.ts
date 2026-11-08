@@ -1,6 +1,7 @@
 import { Effect } from 'effect'
 
-import { Control, Frontend } from '../definitions'
+import { Control, Frontend } from '@/workers/definitions'
+
 import { FrontendSecurity } from './access'
 import { frontendRequest, FrontendRequestLayer } from './assembly'
 

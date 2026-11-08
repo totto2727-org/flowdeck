@@ -5,10 +5,11 @@ import { Cause, Context, Effect, Exit, Layer, Logger, Option, Schema } from 'eff
 import { HttpRouter } from 'effect/http'
 import { describe, expect, expectTypeOf, it } from 'vite-plus/test'
 
-import { ApiRoutes } from '../../../workers/control/features/router'
-import { rpcResponse } from '../../rpc-boundary'
-import { RemoteWorkerError } from '../../rpc-problem'
-import { Conflict, ExternalError } from '../domain/errors'
+import { rpcResponse } from '@/features/rpc-boundary'
+import { RemoteWorkerError } from '@/features/rpc-problem'
+import { Conflict, ExternalError } from '@/features/workflow/domain/errors'
+import { ApiRoutes } from '@/workers/control/features/router'
+
 import {
   RpcRunsResponse,
   RpcWorkflowsResponse,

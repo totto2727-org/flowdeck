@@ -1,16 +1,17 @@
 import { Context, Effect, Match, Ref, Schema, SemVer } from 'effect'
 
-import { UserDefinedId } from '../../../features/identity/id'
-import { InvalidOperation, InvalidSnapshot } from '../../../features/workflow/domain/errors'
+import { UserDefinedId } from '@/features/identity/id'
+import { InvalidOperation, InvalidSnapshot } from '@/features/workflow/domain/errors'
 import {
   ExecutionId,
   makeCommitIdGenerator,
   makeEventIdGenerator,
   makeExecutionIdGenerator,
   type RunId,
-} from '../../../features/workflow/domain/identity'
-import { type GraphDefinition, type Run, type WorkflowSummary } from '../../../features/workflow/domain/model'
-import { Store } from '../../../features/workflow/services/store'
+} from '@/features/workflow/domain/identity'
+import { type GraphDefinition, type Run, type WorkflowSummary } from '@/features/workflow/domain/model'
+import { Store } from '@/features/workflow/services/store'
+
 import { DemoWorkflowVersion, demoVersion1, demoVersion2 } from './input'
 import { type EventDraft, type Execution, nodeEvent, observeNode, timestamp } from './node'
 import { demoVersion1Definition } from './version-1'
