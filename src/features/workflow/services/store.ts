@@ -1,4 +1,4 @@
-import { Context, Effect, Schema } from 'effect'
+import { Context, Data, Effect, Schema } from 'effect'
 
 import type { Conflict, NotFound, ExternalError, StorageConflict } from '../domain/errors'
 import { CommitId, GraphId, RunId } from '../domain/identity'
@@ -7,7 +7,11 @@ import { type GraphDefinition, PendingRunEvent, PositiveInt, Run, type RunEvent 
 export type StoreFailure = ExternalError | NotFound | Conflict | StorageConflict
 export const PendingEvent = PendingRunEvent
 export type PendingEvent = typeof PendingEvent.Type
-export type EventRange = { readonly _tag: 'All' } | { readonly _tag: 'ThroughRevision'; readonly revision: number }
+export type EventRange = Data.TaggedEnum<{
+  All: {}
+  ThroughRevision: { readonly revision: number }
+}>
+export const EventRange = Data.taggedEnum<EventRange>()
 export const CommitCommand = Schema.Struct({
   commitId: CommitId,
   runId: RunId,

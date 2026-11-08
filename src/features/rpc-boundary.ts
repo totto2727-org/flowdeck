@@ -10,18 +10,18 @@ import {
   StorageConflict,
 } from './workflow/domain/errors'
 
-const RpcReply = Schema.Union([
-  Schema.Struct({ _tag: Schema.Literal('Success'), value: Schema.Json }),
-  Schema.Struct({ _tag: Schema.Literal('Failure'), problem: RpcProblem }),
-])
+const RpcReply = Schema.TaggedUnion({
+  Success: { value: Schema.Json },
+  Failure: { problem: RpcProblem },
+})
 const wire = Schema.fromJsonString(RpcReply)
 const encode = Schema.encodeEffect(wire, { onExcessProperty: 'error' })
 const decodeEnvelope = Schema.decodeUnknownEffect(
   Schema.fromJsonString(
-    Schema.Union([
-      Schema.Struct({ _tag: Schema.Literal('Success'), value: Schema.Json }),
-      Schema.Struct({ _tag: Schema.Literal('Failure'), problem: Schema.Json }),
-    ]),
+    Schema.TaggedUnion({
+      Success: { value: Schema.Json },
+      Failure: { problem: Schema.Json },
+    }),
   ),
   { onExcessProperty: 'error' },
 )
@@ -31,7 +31,7 @@ const decode = (response: unknown) =>
       reply._tag === 'Success'
         ? Effect.succeed(reply)
         : Schema.decodeUnknownEffect(RpcProblem, { onExcessProperty: 'ignore' })(reply.problem).pipe(
-            Effect.map((problem) => ({ _tag: 'Failure' as const, problem })),
+            Effect.map((problem) => RpcReply.cases.Failure.make({ problem })),
           ),
     ),
   )
@@ -106,7 +106,7 @@ export const makeRpcResponse = Effect.map(
     (operation: string) =>
     <A extends Schema.Json, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<string, never, R> =>
       effect.pipe(
-        Effect.flatMap((value) => encode({ _tag: 'Success', value }).pipe(Effect.orDie)),
+        Effect.flatMap((value) => encode(RpcReply.cases.Success.make({ value })).pipe(Effect.orDie)),
         Effect.catchCause((cause) => {
           if (Cause.hasInterruptsOnly(cause)) return Effect.interrupt
           return Effect.gen(function* () {
@@ -116,7 +116,7 @@ export const makeRpcResponse = Effect.map(
             yield* Effect.logError('RPC operation failed', cause).pipe(
               Effect.annotateLogs({ operation, errorId: problem.instance }),
             )
-            return yield* encode({ _tag: 'Failure', problem }).pipe(Effect.orDie)
+            return yield* encode(RpcReply.cases.Failure.make({ problem })).pipe(Effect.orDie)
           })
         }),
       ),

@@ -33,7 +33,7 @@ export const DemoSnapshot = Schema.Union([
   }),
   Schema.TaggedStruct('Completed', { ...fields, result: Schema.String }),
   Schema.TaggedStruct('Failed', { ...fields, nodeId: UserDefinedId, message: Schema.String }),
-])
+]).pipe(Schema.toTaggedUnion('_tag'))
 export type DemoSnapshot = typeof DemoSnapshot.Type
 
 const demoSnapshotCodec = Schema.toCodecJson(DemoSnapshot)
@@ -64,11 +64,11 @@ const demoImplementation = (version: DemoWorkflowVersion) =>
     Match.orElseAbsurd,
   )
 export const demoGraph = (version: DemoWorkflowVersion): GraphDefinition => demoImplementation(version).graph
-export const initialSnapshot = (version: DemoWorkflowVersion): DemoSnapshot => ({
-  _tag: 'Ready',
-  schemaVersion: 1,
-  version,
-})
+export const initialSnapshot = (version: DemoWorkflowVersion): DemoSnapshot =>
+  DemoSnapshot.cases.Ready.make({
+    schemaVersion: 1,
+    version,
+  })
 const statusFor = (snapshot: DemoSnapshot) =>
   Match.value(snapshot).pipe(
     Match.tag('Ready', () => 'pending' as const),
@@ -145,13 +145,12 @@ const makePrepare = Effect.gen(function* () {
           ? Effect.void
           : save(
               run,
-              {
-                _tag: 'Preparing',
+              DemoSnapshot.cases.Preparing.make({
                 schemaVersion: 1,
                 version: snapshot.version,
                 executionId: execution.executionId,
                 attempt: execution.attempt,
-              },
+              }),
               [runEvent('run.started'), event],
             ).pipe(Effect.flatMap((next) => Ref.set(current, next))),
       succeeded: (event, prepared) =>
@@ -160,7 +159,12 @@ const makePrepare = Effect.gen(function* () {
           const checkpointExecutionId = yield* executionId()
           yield* save(
             latest,
-            { _tag: 'Waiting', schemaVersion: 1, version: snapshot.version, prepared, checkpointExecutionId },
+            DemoSnapshot.cases.Waiting.make({
+              schemaVersion: 1,
+              version: snapshot.version,
+              prepared,
+              checkpointExecutionId,
+            }),
             [
               event,
               nodeEvent(
@@ -182,13 +186,12 @@ const makePrepare = Effect.gen(function* () {
           const latest = yield* Ref.get(current)
           yield* save(
             latest,
-            {
-              _tag: 'Failed',
+            DemoSnapshot.cases.Failed.make({
               schemaVersion: 1,
               version: snapshot.version,
               nodeId: 'prepare',
               message: 'Prepare failed',
-            },
+            }),
             [event, runEvent('run.failed')],
           )
         }),
@@ -216,14 +219,13 @@ const makePublish = Effect.gen(function* () {
           ? Effect.void
           : save(
               run,
-              {
-                _tag: 'Publishing',
+              DemoSnapshot.cases.Publishing.make({
                 schemaVersion: 1,
                 version: snapshot.version,
                 prepared: snapshot.prepared,
                 executionId: execution.executionId,
                 attempt: execution.attempt,
-              },
+              }),
               [
                 runEvent('run.resumed'),
                 nodeEvent(
@@ -237,23 +239,23 @@ const makePublish = Effect.gen(function* () {
       succeeded: (event, result) =>
         Effect.gen(function* () {
           const latest = yield* Ref.get(current)
-          yield* save(latest, { _tag: 'Completed', schemaVersion: 1, version: snapshot.version, result }, [
-            event,
-            runEvent('run.completed'),
-          ])
+          yield* save(
+            latest,
+            DemoSnapshot.cases.Completed.make({ schemaVersion: 1, version: snapshot.version, result }),
+            [event, runEvent('run.completed')],
+          )
         }),
       failed: (event) =>
         Effect.gen(function* () {
           const latest = yield* Ref.get(current)
           yield* save(
             latest,
-            {
-              _tag: 'Failed',
+            DemoSnapshot.cases.Failed.make({
               schemaVersion: 1,
               version: snapshot.version,
               nodeId: 'publish',
               message: 'Publish failed',
-            },
+            }),
             [event, runEvent('run.failed')],
           )
         }),

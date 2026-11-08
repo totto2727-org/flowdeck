@@ -5,7 +5,7 @@ import { ExternalError, InvalidOperation, type DomainError } from '../../../feat
 import { makeRunIdGenerator, type RunId, type WorkflowId } from '../../../features/workflow/domain/identity'
 import type { CreateRun, Run, RunDetail } from '../../../features/workflow/domain/model'
 import { graphToShapes } from '../../../features/workflow/domain/projection'
-import { Store } from '../../../features/workflow/services/store'
+import { EventRange, Store } from '../../../features/workflow/services/store'
 import { WorkflowRegistry } from '../../../features/workflow/services/workflow-definition'
 import type { Workflows } from '../../../features/workflow/services/workflows'
 
@@ -47,7 +47,7 @@ const makeGetRunDetail = Effect.gen(function* () {
     const run = yield* store.getRun(runId)
     const graph = yield* store.getGraph(run.graphId)
     // A revision-bounded prefix cannot include a newer checkpoint's events.
-    const events = yield* store.getEvents(runId, { _tag: 'ThroughRevision', revision: run.revision })
+    const events = yield* store.getEvents(runId, EventRange.ThroughRevision({ revision: run.revision }))
     return {
       run,
       graph,

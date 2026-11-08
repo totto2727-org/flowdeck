@@ -54,7 +54,7 @@ export const DevelopmentSnapshot = Schema.Union([
   }),
   Schema.TaggedStruct('Completed', { ...base, sessionId: SessionId, result: Schema.String }),
   Schema.TaggedStruct('Failed', { ...base, nodeId: Schema.Literals(['implement', 'verify']), message: Schema.String }),
-])
+]).pipe(Schema.toTaggedUnion('_tag'))
 export const DevelopmentSnapshotJson = Schema.toCodecJson(DevelopmentSnapshot)
 const decodeSnapshot = Schema.decodeUnknownEffect(DevelopmentSnapshotJson)
 const encodeSnapshot = Schema.encodeSync(DevelopmentSnapshotJson)
@@ -94,14 +94,14 @@ export const developmentGraph: GraphDefinition = {
 }
 export const developmentGraphFor = (_version: typeof DevelopmentWorkflowVersion.Type): GraphDefinition =>
   developmentGraph
-export const initialDevelopmentSnapshot = (input: DevelopmentCreateRun): DevelopmentSnapshot => ({
-  _tag: 'Ready',
-  schemaVersion: 1,
-  version: input.version,
-  runtime: 'pi-harness',
-  repository: input.repository,
-  task: input.task,
-})
+export const initialDevelopmentSnapshot = (input: DevelopmentCreateRun): DevelopmentSnapshot =>
+  DevelopmentSnapshot.cases.Ready.make({
+    schemaVersion: 1,
+    version: input.version,
+    runtime: 'pi-harness',
+    repository: input.repository,
+    task: input.task,
+  })
 const statusFor = (snapshot: DevelopmentSnapshot): RunStatus =>
   Match.value(snapshot).pipe(
     Match.tag('Ready', () => 'pending' as const),
@@ -180,7 +180,7 @@ const fail = (
   nodeId: 'implement' | 'verify',
   message: string,
 ) =>
-  save(run, { ...fields(snapshot), _tag: 'Failed', nodeId, message }, [
+  save(run, DevelopmentSnapshot.cases.Failed.make({ ...fields(snapshot), nodeId, message }), [
     nodeEvent(snapshot.executionId, nodeId, 'node.failed', {
       message,
     }),
@@ -211,9 +211,17 @@ const submitPending = (run: Run, snapshot: Extract<DevelopmentSnapshot, { _tag: 
       return yield* fail(run, snapshot, snapshot.nodeId, 'Gateway returned a different command identity')
     if (receipt.status === 'failed' || receipt.status === 'interrupted')
       return yield* fail(run, snapshot, snapshot.nodeId, receipt.error)
-    yield* save(run, { ...snapshot, _tag: 'AwaitingTurn' }, [
-      nodeEvent(snapshot.executionId, snapshot.nodeId, 'run.waiting'),
-    ])
+    yield* save(
+      run,
+      DevelopmentSnapshot.cases.AwaitingTurn.make({
+        ...fields(snapshot),
+        sessionId: snapshot.sessionId,
+        nodeId: snapshot.nodeId,
+        commandId: snapshot.commandId,
+        executionId: snapshot.executionId,
+      }),
+      [nodeEvent(snapshot.executionId, snapshot.nodeId, 'run.waiting')],
+    )
   })
 const start = (run: Run, snapshot: Extract<DevelopmentSnapshot, { _tag: 'Ready' | 'Starting' }>) =>
   Effect.gen(function* () {
@@ -222,27 +230,27 @@ const start = (run: Run, snapshot: Extract<DevelopmentSnapshot, { _tag: 'Ready' 
     const executionId = snapshot._tag === 'Starting' ? snapshot.executionId : yield* makeExecutionId
     const starting =
       snapshot._tag === 'Ready'
-        ? yield* save(run, { ...fields(snapshot), _tag: 'Starting', commandId: implementationId, executionId }, [
-            runEvent(run, 'run.started'),
-            nodeEvent(executionId, 'implement', 'node.started'),
-          ])
+        ? yield* save(
+            run,
+            DevelopmentSnapshot.cases.Starting.make({ ...fields(snapshot), commandId: implementationId, executionId }),
+            [runEvent(run, 'run.started'), nodeEvent(executionId, 'implement', 'node.started')],
+          )
         : run
     const session = yield* sandbox.ensureSession(run.runId)
     if (session.status !== 'active')
       return yield* fail(
         starting,
-        { ...fields(snapshot), _tag: 'Starting', commandId: implementationId, executionId },
+        DevelopmentSnapshot.cases.Starting.make({ ...fields(snapshot), commandId: implementationId, executionId }),
         'implement',
         'Pi session is already complete',
       )
-    const pending: Extract<DevelopmentSnapshot, { _tag: 'PendingTurn' }> = {
+    const pending = DevelopmentSnapshot.cases.PendingTurn.make({
       ...fields(snapshot),
-      _tag: 'PendingTurn',
       sessionId: session.sessionId,
       nodeId: 'implement',
       commandId: implementationId,
       executionId,
-    }
+    })
     const current = yield* save(starting, pending, [])
     yield* submitPending(current, pending)
   })
@@ -256,12 +264,20 @@ const complete = (run: Run, snapshot: Extract<DevelopmentSnapshot, { _tag: 'Comp
     if (session.sessionId !== snapshot.sessionId || session.status !== 'completed')
       return yield* fail(run, snapshot, 'verify', 'Could not complete the original Pi session')
     // Completion marks the Pi work complete, never destroys its container or workspace.
-    yield* save(run, { ...snapshot, _tag: 'Completed' }, [
-      nodeEvent(snapshot.executionId, 'verify', 'node.succeeded', {
-        output: snapshot.result,
+    yield* save(
+      run,
+      DevelopmentSnapshot.cases.Completed.make({
+        ...fields(snapshot),
+        sessionId: snapshot.sessionId,
+        result: snapshot.result,
       }),
-      runEvent(run, 'run.completed'),
-    ])
+      [
+        nodeEvent(snapshot.executionId, 'verify', 'node.succeeded', {
+          output: snapshot.result,
+        }),
+        runEvent(run, 'run.completed'),
+      ],
+    )
   })
 const poll = (
   run: Run,
@@ -282,14 +298,13 @@ const poll = (
     if (receipt.status === 'running') return
     if (receipt.status !== 'completed') return yield* fail(run, snapshot, snapshot.nodeId, receipt.error)
     if (snapshot.nodeId === 'implement') {
-      const pending: Extract<DevelopmentSnapshot, { _tag: 'PendingTurn' }> = {
+      const pending = DevelopmentSnapshot.cases.PendingTurn.make({
         ...fields(snapshot),
-        _tag: 'PendingTurn',
         nodeId: 'verify',
         commandId: yield* makeCommandId,
         executionId: yield* makeExecutionId,
         sessionId: snapshot.sessionId,
-      }
+      })
       const current = yield* save(run, pending, [
         nodeEvent(snapshot.executionId, 'implement', 'node.succeeded', { output: receipt.text }),
         runEvent(run, 'run.resumed'),
@@ -297,14 +312,13 @@ const poll = (
       ])
       return yield* submitPending(current, pending)
     }
-    const completing: Extract<DevelopmentSnapshot, { _tag: 'Completing' }> = {
+    const completing = DevelopmentSnapshot.cases.Completing.make({
       ...fields(snapshot),
-      _tag: 'Completing',
       sessionId: snapshot.sessionId,
       result: receipt.text,
       commandId: snapshot.commandId,
       executionId: snapshot.executionId,
-    }
+    })
     const current = yield* save(run, completing, [runEvent(run, 'run.resumed')])
     yield* complete(current, completing)
   })
