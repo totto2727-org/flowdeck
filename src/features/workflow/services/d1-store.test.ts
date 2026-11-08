@@ -220,7 +220,7 @@ describe('D1 persisted run store', () => {
     await seed()
     await Effect.runPromise(store.commit(command()))
     const error = await Effect.runPromise(store.commit(command({ snapshot: { changed: true } })).pipe(Effect.flip))
-    expect(error).toMatchObject({ _tag: 'Conflict', cause: { message: expect.stringContaining('flowdeck_') } })
+    expect(error).toMatchObject({ _tag: 'StorageConflict', cause: { message: expect.stringContaining('flowdeck_') } })
     expect(error).toHaveProperty('cause', expect.any(Error))
     expect(error).toHaveProperty('cause.stack', expect.any(String))
   })
@@ -425,7 +425,7 @@ describe('D1 persisted run store', () => {
     await seed()
     await Effect.runPromise(store.commit(command()))
     await expect(Effect.runPromise(store.commit(command({ snapshot: { altered: true } })))).rejects.toMatchObject({
-      _tag: 'Conflict',
+      _tag: 'StorageConflict',
     })
     expect(await Effect.runPromise(store.getRun('run_00000000-0000-4000-8000-000000000001'))).toMatchObject({
       revision: 1,
@@ -468,7 +468,7 @@ describe('D1 persisted run store', () => {
           }),
         ),
       ),
-    ).rejects.toMatchObject({ _tag: 'Conflict' })
+    ).rejects.toMatchObject({ _tag: 'StorageConflict' })
     expect(await Effect.runPromise(store.getRun('run_00000000-0000-4000-8000-000000000001'))).toMatchObject({
       revision: 1,
       snapshot: command().snapshot,
@@ -496,7 +496,7 @@ describe('D1 persisted run store', () => {
           command({ commitId: 'commit_00000000-0000-4000-8000-000000000005', expectedRevision: 1, events: [] }),
         ),
       ),
-    ).rejects.toMatchObject({ _tag: 'Conflict' })
+    ).rejects.toMatchObject({ _tag: 'StorageConflict' })
     expect(await Effect.runPromise(store.commit(terminal))).toEqual(ack)
     expect(await Effect.runPromise(store.getRun('run_00000000-0000-4000-8000-000000000001'))).toMatchObject({
       status: 'completed',
@@ -544,7 +544,7 @@ describe('D1 persisted run store', () => {
           demoDefinition.summary.name,
         ),
       ),
-    ).rejects.toMatchObject({ _tag: 'Conflict' })
+    ).rejects.toMatchObject({ _tag: 'StorageConflict' })
     expect(await Effect.runPromise(store.listRuns)).toHaveLength(1)
     expect(await Effect.runPromise(store.getGraph(demoGraph(version1).graphId))).toEqual(demoGraph(version1))
   })

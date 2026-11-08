@@ -3,7 +3,7 @@ import type { PreparedStatement } from 'alchemy/Cloudflare/D1'
 import { RuntimeContext } from 'alchemy/RuntimeContext'
 import { Array, DateTime, Effect, Layer, Match, Schema, String } from 'effect'
 
-import { Conflict, NotFound, ExternalError } from '../domain/errors'
+import { Conflict, NotFound, ExternalError, StorageConflict } from '../domain/errors'
 import { EventId, GraphId, RunId } from '../domain/identity'
 import { GraphDefinition, JsonObject, Run, RunEvent } from '../domain/model'
 import { WorkflowDatabase } from './database'
@@ -52,7 +52,7 @@ const decodeEventIds = Schema.decodeUnknownEffect(EventIds)
 const databaseFailure = (operation: string, cause: unknown) => {
   const message = cause instanceof Error ? cause.message : 'Database operation failed'
   return String.includes('flowdeck_')(message) || String.includes('UNIQUE constraint')(message)
-    ? new Conflict({ message, cause })
+    ? new StorageConflict({ message, operation, cause })
     : new ExternalError({ operation, cause, kind: 'storage' })
 }
 

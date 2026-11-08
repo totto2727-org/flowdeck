@@ -96,6 +96,8 @@ See [upstream differences](upstream-differences.md) for provenance, patch scope,
 
 Alchemy reports rejected D1 operations as defects.
 The store translates those defects into typed storage failures, retains the original cause and stack, and leaves interruption unchanged.
+Database constraint conflicts use `StorageConflict`, with a required operation and cause; domain validation conflicts use `Conflict`, with only a message.
+Control maps both to the same sanitized HTTP 409 response.
 Control registers failure logging and HTTP error translation through `HttpRouter.middleware`.
 The logging Middleware records the original Effect cause once before HTTP translation, without logging request bodies or changing client error responses.
 

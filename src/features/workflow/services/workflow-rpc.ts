@@ -6,6 +6,7 @@ import {
   InvalidOperation,
   InvalidSnapshot,
   NotFound,
+  StorageConflict,
   type DomainError,
 } from '../domain/errors'
 import type { RunId } from '../domain/identity'
@@ -15,7 +16,7 @@ export const RpcCreateRun = Schema.toCodecJson(CreateRun)
 export const RpcRunDetail = Schema.toCodecJson(RunDetail)
 export const RpcRunsResponse = Schema.toCodecJson(RunsResponse)
 export const RpcWorkflowsResponse = Schema.toCodecJson(WorkflowsResponse)
-export const workflowRpcErrors = [NotFound, Conflict, InvalidOperation, InvalidSnapshot, ExternalError]
+export const workflowRpcErrors = [NotFound, Conflict, StorageConflict, InvalidOperation, InvalidSnapshot, ExternalError]
 
 /** Native Worker RPC carries encoded values, never domain SemVer prototypes. */
 export type WireWorkflowService<R = never> = {

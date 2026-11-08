@@ -1,10 +1,10 @@
 import { Context, Effect, Schema } from 'effect'
 
-import type { Conflict, NotFound, ExternalError } from '../domain/errors'
+import type { Conflict, NotFound, ExternalError, StorageConflict } from '../domain/errors'
 import { CommitId, GraphId, RunId } from '../domain/identity'
 import { type GraphDefinition, PendingRunEvent, PositiveInt, Run, type RunEvent } from '../domain/model'
 
-export type StoreFailure = ExternalError | NotFound | Conflict
+export type StoreFailure = ExternalError | NotFound | Conflict | StorageConflict
 export const PendingEvent = PendingRunEvent
 export type PendingEvent = typeof PendingEvent.Type
 export type EventRange = { readonly _tag: 'All' } | { readonly _tag: 'ThroughRevision'; readonly revision: number }

@@ -1,3 +1,5 @@
+import { ok } from 'node:assert/strict'
+
 import { encodeRpcError, makeRpcErrorReviver } from 'alchemy/Rpc'
 import { Cause, Context, Effect, Exit, Layer, Logger } from 'effect'
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from 'effect/http'
@@ -5,7 +7,7 @@ import { describe, expect, it } from 'vite-plus/test'
 
 import { ApiRoutes } from '../workers/control/features/router'
 import { operationFailureLogging } from './operation-logging'
-import { Conflict, ExternalError } from './workflow/domain/errors'
+import { Conflict, ExternalError, StorageConflict } from './workflow/domain/errors'
 import { workflowRpcErrors } from './workflow/services/workflow-rpc'
 import { Workflows } from './workflow/services/workflows'
 
@@ -33,11 +35,54 @@ describe('operation failure logging', () => {
       const error =
         kind === 'storage'
           ? new ExternalError({ operation: 'persist run', kind: 'storage', cause: original })
-          : new Conflict({ message: 'flowdeck_conflict', cause: original })
+          : new StorageConflict({ message: 'flowdeck_conflict', operation: 'persist run', cause: original })
       const revived = makeRpcErrorReviver(workflowRpcErrors)(structuredClone(encodeRpcError(error)))
+      expect(revived).toBeInstanceOf(error.constructor)
       const { entries } = capture(Effect.fail(revived).pipe(operationFailureLogging))
       expect(entries).toHaveLength(1)
       expect(Cause.pretty(entries[0]!.cause)).toContain('at executeQuery (database.ts:42:7)')
+    },
+  )
+  it.each(['domain', 'storage'] as const)(
+    'returns the same sanitized HTTP conflict after RPC for a %s conflict',
+    async (kind) => {
+      const original = new Error('private database constraint')
+      const error =
+        kind === 'domain'
+          ? new Conflict({ message: 'private domain conflict' })
+          : new StorageConflict({ message: original.message, operation: 'batch', cause: original })
+      const revived = makeRpcErrorReviver(workflowRpcErrors)(structuredClone(encodeRpcError(error)))
+      ok(revived instanceof Conflict || revived instanceof StorageConflict)
+      const unavailable = () => Effect.fail(revived)
+      const workflows: Workflows['Service'] = {
+        listWorkflows: unavailable,
+        listRuns: unavailable,
+        getRunDetail: unavailable,
+        createRun: unavailable,
+        resumeRun: unavailable,
+      }
+      const entries: Array<Logger.Options<unknown>> = []
+      const logger = Logger.make((entry) => entries.push(entry))
+      const handler = HttpRouter.toWebHandler(
+        ApiRoutes.pipe(HttpRouter.provideRequest(Layer.succeed(Workflows, workflows))),
+      )
+      try {
+        const response = await handler.handler(
+          new Request('http://localhost/api/runs'),
+          Context.make(Logger.CurrentLoggers, new Set([logger])),
+        )
+        expect(response.status).toBe(409)
+        expect(await response.json()).toEqual({
+          error: 'Conflict',
+          message: 'Run changed concurrently or a delivery ID was reused',
+        })
+        expect(entries).toHaveLength(1)
+        if (kind === 'storage') {
+          expect(Cause.prettyErrors(entries[0]!.cause)[0]?.cause).toMatchObject({ stack: original.stack })
+        }
+      } finally {
+        await handler.dispose()
+      }
     },
   )
   it.each(['typed failure', 'defect'] as const)(

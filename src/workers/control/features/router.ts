@@ -31,6 +31,7 @@ const ApiErrors = HttpRouter.middleware<{ handles: ApiFailure }>()((handler) =>
     Effect.catchTags({
       NotFound: () => errorResponse(404, 'NotFound', 'Run or graph not found'),
       Conflict: () => errorResponse(409, 'Conflict', 'Run changed concurrently or a delivery ID was reused'),
+      StorageConflict: () => errorResponse(409, 'Conflict', 'Run changed concurrently or a delivery ID was reused'),
       InvalidOperation: (error) => errorResponse(409, 'InvalidOperation', error.message),
       InvalidSnapshot: () => errorResponse(409, 'InvalidSnapshot', 'Persisted workflow state is invalid'),
       PlatformError: () => errorResponse(500, 'PlatformError', 'Run identity could not be generated'),

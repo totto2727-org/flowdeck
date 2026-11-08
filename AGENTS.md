@@ -82,6 +82,11 @@ Compose dependencies with Context services and Layers at entry points.
 Prefer the established Effect, Effront, and Effect HTTP extension points over custom function wrappers or argument-based dependency injection.
 Define HTTP interception, error translation, and failure logging as registered Middleware.
 Log failures once at the outer operation boundary, preserving the original cause and stack rather than logging again in storage adapters.
+
+| Error contract                                                                                                                              | Enforcement                                                                                                                             |
+| ------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Domain `Conflict` has only a message. `StorageConflict` requires an operation and cause. Do not add an optional cause to merge these cases. | Constructor type assertions in `src/features/workflow/domain/errors.test.ts`, checked by `check:tsc`; D1 and RPC/HTTP regression tests. |
+
 Keep workflow effects independent from deployment configuration.
 Select infrastructure-specific implementations only when injecting dependencies at the final composition boundary.
 Select the complete `DevelopmentLayer` or `ProductionLayer`, not individual feature Layers, at the deployment entry.

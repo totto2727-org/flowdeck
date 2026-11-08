@@ -5,7 +5,11 @@ export class NotFound extends Data.TaggedError('NotFound')<{
 }> {}
 export class Conflict extends Data.TaggedError('Conflict')<{
   readonly message: string
-  readonly cause?: unknown
+}> {}
+export class StorageConflict extends Data.TaggedError('StorageConflict')<{
+  readonly message: string
+  readonly operation: string
+  readonly cause: unknown
 }> {}
 export class InvalidOperation extends Data.TaggedError('InvalidOperation')<{
   readonly message: string
@@ -21,6 +25,7 @@ export class ExternalError extends Data.TaggedError('ExternalError')<{
 export type DomainError =
   | NotFound
   | Conflict
+  | StorageConflict
   | InvalidOperation
   | InvalidSnapshot
   | ExternalError
