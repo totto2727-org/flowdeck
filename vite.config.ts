@@ -2,7 +2,6 @@ import { effrontAlchemy } from '@effront/alchemy/cloudflare/vite'
 import { effrontTailwind } from '@effront/tailwind'
 import { effront } from '@effront/vite'
 import { generateIgnorePatterns } from '@totto2727/gitignore-patterns'
-import { Array } from 'effect'
 import reylo from 'reylo/vite'
 import { defineConfig } from 'vite-plus'
 
@@ -27,7 +26,7 @@ export default defineConfig({
     proseWrap: 'preserve',
     semi: false,
     singleQuote: true,
-    ignorePatterns: Array.append(ignorePatterns, 'pnpm-lock.yaml'),
+    ignorePatterns,
   },
   lint: {
     ignorePatterns,
