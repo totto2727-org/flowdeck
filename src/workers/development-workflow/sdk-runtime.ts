@@ -23,6 +23,8 @@ const Environment = Schema.Struct({
 })
 const decodeSessionId = Schema.decodeUnknownSync(SessionId)
 const decodeCommandId = Schema.decodeUnknownSync(CommandId)
+const decodeEnvironment = Schema.decodeUnknownEffect(Environment)
+const decodeRunId = Schema.decodeUnknownEffect(RunId)
 const LEASE_JOB = 'workspace-lease'
 const RENEW_AFTER_MS = 5 * 60 * 60 * 1_000
 const INACTIVITY_MS = 6 * 60 * 60 * 1_000
@@ -71,7 +73,7 @@ class SdkHost extends withWorkspace(ContainerHost, (host) => host.workspaceOptio
 export const makeDevelopmentSdk = Effect.gen(function* () {
   const state = yield* DurableObjectState
   const store = yield* Store
-  const env = yield* WorkerEnvironment.pipe(Effect.flatMap(Schema.decodeUnknownEffect(Environment)), Effect.orDie)
+  const env = yield* WorkerEnvironment.pipe(Effect.flatMap(decodeEnvironment), Effect.orDie)
   const context = yield* Effect.context<DurableObjectState | import('alchemy/RuntimeContext').RuntimeContext>()
   const lock = yield* Semaphore.make(1)
 
@@ -94,7 +96,7 @@ export const makeDevelopmentSdk = Effect.gen(function* () {
         Effect.gen(function* () {
           const active = yield* state.storage.get<unknown>('active-run-id')
           if (active === undefined) return undefined
-          const runId = yield* Schema.decodeUnknownEffect(RunId)(active)
+          const runId = yield* decodeRunId(active)
           const run = yield* store.getRun(runId)
           const container = host.getWorkspaceContainer()
           if (run.status === 'completed' || !(yield* Effect.promise(() => container.status())).running) return undefined

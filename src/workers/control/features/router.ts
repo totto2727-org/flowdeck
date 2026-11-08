@@ -15,8 +15,16 @@ import {
 import { Workflows } from '../../../features/workflow/services/workflows'
 
 type ApiFailure = DomainError | HttpServerError.HttpServerError | HttpBody.HttpBodyError | RpcCallError | RpcDecodeError
+const respondApiError = HttpServerResponse.schemaJson(Schema.toCodecJson(ApiErrorResponse))
+const respondWorkflows = HttpServerResponse.schemaJson(Schema.toCodecJson(WorkflowsResponse))
+const respondRuns = HttpServerResponse.schemaJson(Schema.toCodecJson(RunsResponse))
+const respondRunDetail = HttpServerResponse.schemaJson(Schema.toCodecJson(RunDetail))
+const decodeRunParams = Schema.decodeUnknownEffect(Schema.Struct({ runId: RunId }))
+const createRunBody = HttpServerRequest.schemaBodyJson(Schema.toCodecJson(CreateRun), {
+  onExcessProperty: 'error',
+})
 const errorResponse = (status: number, error: string, message: string) =>
-  HttpServerResponse.schemaJson(Schema.toCodecJson(ApiErrorResponse))({ error, message }, { status })
+  respondApiError({ error, message }, { status })
 
 const ApiErrors = HttpRouter.middleware<{ handles: ApiFailure }>()((handler) =>
   handler.pipe(
@@ -86,7 +94,7 @@ const ServerMutations = HttpRouter.middleware((handler) =>
 )
 
 const runId = HttpRouter.params.pipe(
-  Effect.flatMap(Schema.decodeUnknownEffect(Schema.Struct({ runId: RunId }))),
+  Effect.flatMap(decodeRunParams),
   Effect.map((params) => params.runId),
 )
 
@@ -97,7 +105,7 @@ export const ApiRoutes = HttpRouter.use((router) =>
       '/api/workflows',
       Workflows.pipe(
         Effect.flatMap((workflows) => workflows.listWorkflows()),
-        Effect.flatMap(HttpServerResponse.schemaJson(Schema.toCodecJson(WorkflowsResponse))),
+        Effect.flatMap(respondWorkflows),
       ),
     ),
     HttpRouter.route(
@@ -105,18 +113,16 @@ export const ApiRoutes = HttpRouter.use((router) =>
       '/api/runs',
       Workflows.pipe(
         Effect.flatMap((workflows) => workflows.listRuns()),
-        Effect.flatMap(HttpServerResponse.schemaJson(Schema.toCodecJson(RunsResponse))),
+        Effect.flatMap(respondRuns),
       ),
     ),
     HttpRouter.route(
       'POST',
       '/api/runs',
       Effect.gen(function* () {
-        const input = yield* HttpServerRequest.schemaBodyJson(Schema.toCodecJson(CreateRun), {
-          onExcessProperty: 'error',
-        })
+        const input = yield* createRunBody
         const workflows = yield* Workflows
-        return yield* HttpServerResponse.schemaJson(Schema.toCodecJson(RunDetail))(yield* workflows.createRun(input), {
+        return yield* respondRunDetail(yield* workflows.createRun(input), {
           status: 201,
         })
       }),
@@ -126,9 +132,7 @@ export const ApiRoutes = HttpRouter.use((router) =>
       '/api/runs/:runId',
       Effect.gen(function* () {
         const workflows = yield* Workflows
-        return yield* HttpServerResponse.schemaJson(Schema.toCodecJson(RunDetail))(
-          yield* workflows.getRunDetail(yield* runId),
-        )
+        return yield* respondRunDetail(yield* workflows.getRunDetail(yield* runId))
       }),
     ),
     HttpRouter.route(
@@ -136,9 +140,7 @@ export const ApiRoutes = HttpRouter.use((router) =>
       '/api/runs/:runId/resume',
       Effect.gen(function* () {
         const workflows = yield* Workflows
-        return yield* HttpServerResponse.schemaJson(Schema.toCodecJson(RunDetail))(
-          yield* workflows.resumeRun(yield* runId),
-        )
+        return yield* respondRunDetail(yield* workflows.resumeRun(yield* runId))
       }),
     ),
   ]),

@@ -1,4 +1,4 @@
-import { Cause, Effect, Schema } from 'effect'
+import { Cause, Effect, Schema, flow } from 'effect'
 
 import { rpcResult } from '../../rpc-boundary'
 import { ExternalError } from '../domain/errors'
@@ -11,12 +11,9 @@ export const RpcRunsResponse = Schema.toCodecJson(RunsResponse)
 export const RpcWorkflowsResponse = Schema.toCodecJson(WorkflowsResponse)
 
 // Invalid server-produced values are defects, not checked inbound request failures.
-export const encodeWorkflowsResponse = (value: typeof RpcWorkflowsResponse.Type) =>
-  Schema.encodeEffect(RpcWorkflowsResponse)(value).pipe(Effect.orDie)
-export const encodeRunsResponse = (value: typeof RpcRunsResponse.Type) =>
-  Schema.encodeEffect(RpcRunsResponse)(value).pipe(Effect.orDie)
-export const encodeRunDetail = (value: typeof RpcRunDetail.Type) =>
-  Schema.encodeEffect(RpcRunDetail)(value).pipe(Effect.orDie)
+export const encodeWorkflowsResponse = flow(Schema.encodeEffect(RpcWorkflowsResponse), Effect.orDie)
+export const encodeRunsResponse = flow(Schema.encodeEffect(RpcRunsResponse), Effect.orDie)
+export const encodeRunDetail = flow(Schema.encodeEffect(RpcRunDetail), Effect.orDie)
 
 export type WireWorkflowService<R = never> = {
   readonly listWorkflows: () => Effect.Effect<string, never, R>
@@ -50,11 +47,11 @@ export const rpcCall =
       ),
     )
 
-export const rpcValue =
-  <S extends Schema.Constraint>(operation: string, schema: S) =>
-  (response: unknown) =>
+const makeRpcValueDecoder = <S extends Schema.Constraint>(schema: S) => {
+  const decode = Schema.decodeUnknownEffect(schema, { onExcessProperty: 'error' })
+  return (operation: string) => (response: unknown) =>
     rpcResult(operation)(response).pipe(
-      Effect.flatMap(Schema.decodeUnknownEffect(schema, { onExcessProperty: 'error' })),
+      Effect.flatMap(decode),
       Effect.catchTag('SchemaError', () =>
         Effect.fail(
           new ExternalError({
@@ -65,6 +62,10 @@ export const rpcValue =
         ),
       ),
     )
+}
 
-export const rpcCommandResult = (operation: string) => (response: unknown) =>
-  rpcValue(operation, Schema.Null)(response).pipe(Effect.asVoid)
+export const rpcValue = <S extends Schema.Constraint>(operation: string, schema: S) =>
+  makeRpcValueDecoder(schema)(operation)
+
+const decodeCommandReply = makeRpcValueDecoder(Schema.Null)
+export const rpcCommandResult = (operation: string) => flow(decodeCommandReply(operation), Effect.asVoid)

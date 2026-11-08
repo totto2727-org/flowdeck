@@ -27,9 +27,9 @@ import { CommitId, EventId, ExecutionId, RunId } from '../domain/identity'
 import { RunDetail, RunsResponse, type Run, type WorkflowVersion } from '../domain/model'
 import { D1StoreLive } from './d1-store'
 import { WorkflowDatabase } from './database'
-import { makeDatabaseQueries } from './database-queries'
+import { DatabaseQueries, DatabaseQueriesLive, makeDatabaseQueries } from './database-queries'
 import { D1Binding, NativeWorkflowDatabase } from './native-database'
-import { type CommitCommand, Store, type StoreService } from './store'
+import { type CommitCommand, EventRange, Store, type StoreService } from './store'
 import { WorkflowRegistry, type RegisteredWorkflow } from './workflow-definition'
 import { Workflows } from './workflows'
 
@@ -98,6 +98,7 @@ beforeEach(async () => {
     ),
   )
   storeLayer = D1StoreLive.pipe(
+    Layer.provide(DatabaseQueriesLive),
     Layer.provide(NativeWorkflowDatabase),
     Layer.provide(Layer.succeed(D1Binding, database)),
   )
@@ -160,6 +161,30 @@ const api = (registry?: ReadonlyArray<RegisteredWorkflow>) =>
   )
 
 describe('D1 persisted run store', () => {
+  it('captures an externally composed query service without requiring a database at Store construction', async () => {
+    expectTypeOf(D1StoreLive).toEqualTypeOf<Layer.Layer<Store, never, DatabaseQueries>>()
+    const queries = Effect.runSync(
+      DatabaseQueries.pipe(
+        Effect.provide(
+          DatabaseQueriesLive.pipe(
+            Layer.provide(NativeWorkflowDatabase),
+            Layer.provide(Layer.succeed(D1Binding, database)),
+          ),
+        ),
+      ),
+    )
+    const supplied = Effect.runSync(
+      Store.pipe(Effect.provide(D1StoreLive.pipe(Layer.provide(Layer.succeed(DatabaseQueries, queries))))),
+    )
+    const initial = newRun(command().runId)
+    await Effect.runPromise(supplied.create(initial, demoGraph(version1), demoDefinition.summary.name))
+    expect(await Effect.runPromise(supplied.getRun(initial.runId))).toEqual(initial)
+    expect(await Effect.runPromise(supplied.listRuns)).toEqual([initial])
+    expect(await Effect.runPromise(supplied.getGraph(initial.graphId))).toEqual(demoGraph(version1))
+    expect(await Effect.runPromise(supplied.commit(command()))).toMatchObject({ revision: 1 })
+    expect(await Effect.runPromise(supplied.getEvents(initial.runId, EventRange.All()))).toHaveLength(1)
+  })
+
   it('captures workflow service dependencies once and runs every operation without a caller context', async () => {
     const workflows = Effect.runSync(
       Workflows.pipe(
@@ -233,6 +258,7 @@ describe('D1 persisted run store', () => {
       Store.pipe(
         Effect.provide(
           D1StoreLive.pipe(
+            Layer.provide(DatabaseQueriesLive),
             Layer.provide(NativeWorkflowDatabase),
             Layer.provide(Layer.succeed(D1Binding, otherDatabase)),
           ),
@@ -257,6 +283,7 @@ describe('D1 persisted run store', () => {
       Store.pipe(
         Effect.provide(
           D1StoreLive.pipe(
+            Layer.provide(DatabaseQueriesLive),
             Layer.provide(
               Layer.succeed(WorkflowDatabase, {
                 ...client,
@@ -287,6 +314,7 @@ describe('D1 persisted run store', () => {
       Store.pipe(
         Effect.provide(
           D1StoreLive.pipe(
+            Layer.provide(DatabaseQueriesLive),
             Layer.provide(
               Layer.succeed(WorkflowDatabase, {
                 ...client,

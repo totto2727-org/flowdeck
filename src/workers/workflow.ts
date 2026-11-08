@@ -8,6 +8,7 @@ import { makeRpcResponse } from '../features/rpc-boundary'
 import { RunId } from '../features/workflow/domain/identity'
 import { D1StoreLive } from '../features/workflow/services/d1-store'
 import { WorkflowDatabase } from '../features/workflow/services/database'
+import { DatabaseQueriesLive } from '../features/workflow/services/database-queries'
 import { WorkflowRegistry } from '../features/workflow/services/workflow-definition'
 import {
   RpcCreateRun,
@@ -70,7 +71,11 @@ const WorkflowDatabaseLive = Layer.effect(
 const WorkflowRuntimeLive = Layer.mergeAll(
   Layer.effect(Workflows, makeWorkflows).pipe(
     Layer.provide(
-      Layer.mergeAll(D1StoreLive.pipe(Layer.provide(WorkflowDatabaseLive)), WorkflowRegistryLive, BrowserCrypto.layer),
+      Layer.mergeAll(
+        D1StoreLive.pipe(Layer.provide(DatabaseQueriesLive), Layer.provide(WorkflowDatabaseLive)),
+        WorkflowRegistryLive,
+        BrowserCrypto.layer,
+      ),
     ),
   ),
   BrowserCrypto.layer,

@@ -1,6 +1,6 @@
-import { Cause, Crypto, Effect, Option, Schema } from 'effect'
+import { Cause, Crypto, Effect, Option, Result, Schema } from 'effect'
 
-import { RemoteWorkerError, RpcProblem } from './rpc-problem'
+import { RemoteWorkerError, Rfc9457ProblemDetails } from './rpc-problem'
 import {
   Conflict,
   ExternalError,
@@ -10,36 +10,28 @@ import {
   StorageConflict,
 } from './workflow/domain/errors'
 
-const RpcReply = Schema.TaggedUnion({
-  Success: { value: Schema.Json },
-  Failure: { problem: RpcProblem },
-})
-const wire = Schema.fromJsonString(RpcReply)
+const RpcReply = Schema.Result(Schema.Json, Rfc9457ProblemDetails)
+const wire = Schema.fromJsonString(Schema.toCodecJson(RpcReply))
 const encode = Schema.encodeEffect(wire, { onExcessProperty: 'error' })
 const decodeEnvelope = Schema.decodeUnknownEffect(
-  Schema.fromJsonString(
-    Schema.TaggedUnion({
-      Success: { value: Schema.Json },
-      Failure: { problem: Schema.Json },
-    }),
-  ),
+  Schema.fromJsonString(Schema.toCodecJson(Schema.Result(Schema.Json, Schema.Json))),
   { onExcessProperty: 'error' },
 )
+const decodeRemoteProblem = Schema.decodeUnknownEffect(Rfc9457ProblemDetails, { onExcessProperty: 'ignore' })
+const decodeRemoteProblemOption = Schema.decodeUnknownOption(Rfc9457ProblemDetails, { onExcessProperty: 'ignore' })
 const decode = (response: unknown) =>
   decodeEnvelope(response).pipe(
     Effect.flatMap((reply): Effect.Effect<typeof RpcReply.Type, Schema.SchemaError> =>
-      reply._tag === 'Success'
-        ? Effect.succeed(reply)
-        : Schema.decodeUnknownEffect(RpcProblem, { onExcessProperty: 'ignore' })(reply.problem).pipe(
-            Effect.map((problem) => RpcReply.cases.Failure.make({ problem })),
-          ),
+      Result.isSuccess(reply)
+        ? Effect.succeed(Result.succeed(reply.success))
+        : decodeRemoteProblem(reply.failure).pipe(Effect.map(Result.fail)),
     ),
   )
-const decodeProblem = Schema.decodeUnknownSync(RpcProblem, { onExcessProperty: 'error' })
+const decodeProblem = Schema.decodeUnknownSync(Rfc9457ProblemDetails, { onExcessProperty: 'error' })
 
-const classify = (error: unknown): Omit<RpcProblem, 'instance'> => {
+const classify = (error: unknown): Omit<Rfc9457ProblemDetails, 'instance'> => {
   if (error instanceof RemoteWorkerError) {
-    const validated = Schema.decodeUnknownOption(RpcProblem, { onExcessProperty: 'ignore' })(error.cause)
+    const validated = decodeRemoteProblemOption(error.cause)
     if (Option.isSome(validated)) return validated.value
   }
   if (error instanceof NotFound)
@@ -106,7 +98,7 @@ export const makeRpcResponse = Effect.map(
     (operation: string) =>
     <A extends Schema.Json, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<string, never, R> =>
       effect.pipe(
-        Effect.flatMap((value) => encode(RpcReply.cases.Success.make({ value })).pipe(Effect.orDie)),
+        Effect.flatMap((value) => encode(Result.succeed(value)).pipe(Effect.orDie)),
         Effect.catchCause((cause) => {
           if (Cause.hasInterruptsOnly(cause)) return Effect.interrupt
           return Effect.gen(function* () {
@@ -116,7 +108,7 @@ export const makeRpcResponse = Effect.map(
             yield* Effect.logError('RPC operation failed', cause).pipe(
               Effect.annotateLogs({ operation, errorId: problem.instance }),
             )
-            return yield* encode(RpcReply.cases.Failure.make({ problem })).pipe(Effect.orDie)
+            return yield* encode(Result.fail(problem)).pipe(Effect.orDie)
           })
         }),
       ),
@@ -138,8 +130,8 @@ export const rpcResult =
         () => new ExternalError({ operation, kind: 'service', cause: new Error('Invalid RPC response') }),
       ),
       Effect.flatMap((reply) =>
-        reply._tag === 'Success'
-          ? Effect.succeed(reply.value)
-          : Effect.fail(new RemoteWorkerError({ operation, cause: reply.problem })),
+        Result.isSuccess(reply)
+          ? Effect.succeed(reply.success)
+          : Effect.fail(new RemoteWorkerError({ operation, cause: reply.failure })),
       ),
     )

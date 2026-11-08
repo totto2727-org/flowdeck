@@ -18,7 +18,7 @@ import {
   fromJson,
   json,
 } from './d1-store-codecs'
-import { DatabaseQueries, DatabaseQueriesLive, execute } from './database-queries'
+import { DatabaseQueries, execute } from './database-queries'
 import getAckQuery from './queries/get-ack.sql'
 import getEventsQuery from './queries/get-events.sql'
 import getGraphQuery from './queries/get-graph.sql'
@@ -165,4 +165,4 @@ export const D1StoreLive = Layer.effect(
       commit: yield* makeCommit,
     } satisfies StoreService
   }),
-).pipe(Layer.provide(DatabaseQueriesLive))
+)

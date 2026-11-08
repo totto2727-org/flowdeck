@@ -9,6 +9,10 @@ import { CommitAck, CommitCommand } from './store'
 
 const EventIds = Schema.Array(EventId).check(Schema.isUnique())
 const Json = Schema.fromJsonString(Schema.Json)
+const encodeJson = Schema.encodeEffect(Json)
+const decodeJson = Schema.decodeUnknownEffect(Json)
+const encodeSemVer = Schema.encodeEffect(Schema.SemVerFromString)
+const encodeCommitCommand = Schema.encodeEffect(Schema.toCodecJson(CommitCommand))
 const storedDecoder = <S extends Schema.Constraint>(schema: S) => {
   const decode = Schema.decodeUnknownEffect(schema, { onExcessProperty: 'error' })
   return (value: unknown) =>
@@ -29,19 +33,19 @@ const decodeObject = storedDecoder(JsonObject)
 const decodeEvent = storedDecoder(Schema.toCodecJson(RunEvent))
 
 export const json = (value: Schema.Json) =>
-  Schema.encodeEffect(Json)(value).pipe(
+  encodeJson(value).pipe(
     Effect.mapError((cause) => new ExternalError({ operation: 'encode persisted data', cause, kind: 'storage' })),
   )
 export const fromJson = (value: string) =>
-  Schema.decodeUnknownEffect(Json)(value).pipe(
+  decodeJson(value).pipe(
     Effect.mapError((cause) => new ExternalError({ operation: 'decode persisted JSON', cause, kind: 'storage' })),
   )
 export const encodeVersion = (version: Run['workflowVersion']) =>
-  Schema.encodeEffect(Schema.SemVerFromString)(version).pipe(
+  encodeSemVer(version).pipe(
     Effect.mapError((cause) => new ExternalError({ operation: 'encode workflow version', cause, kind: 'storage' })),
   )
 export const encodeCommand = (command: CommitCommand) =>
-  Schema.encodeEffect(Schema.toCodecJson(CommitCommand))(command).pipe(
+  encodeCommitCommand(command).pipe(
     Effect.mapError((cause) => new ExternalError({ operation: 'encode commit command', cause, kind: 'storage' })),
   )
 

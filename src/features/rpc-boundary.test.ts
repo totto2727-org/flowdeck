@@ -1,10 +1,10 @@
 import { ok } from 'node:assert/strict'
 
-import { Cause, Crypto, Effect, Exit, Logger, Option, References, Schema } from 'effect'
+import { Cause, Crypto, Effect, Exit, Logger, Option, References, Result, Schema } from 'effect'
 import { describe, expect, expectTypeOf, it } from 'vite-plus/test'
 
 import { makeRpcResponse, rpcResponse, rpcResult } from './rpc-boundary'
-import { RemoteWorkerError, RpcProblem } from './rpc-problem'
+import { RemoteWorkerError, Rfc9457ProblemDetails } from './rpc-problem'
 import {
   Conflict,
   ExternalError,
@@ -43,6 +43,10 @@ const failure = <A, E>(exit: Exit.Exit<A, E>) => {
   return Option.getOrThrow(Cause.findErrorOption(exit.cause))
 }
 const parse = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Json))
+const standardWire = Schema.fromJsonString(Schema.toCodecJson(Schema.Result(Schema.Json, Rfc9457ProblemDetails)))
+const decodeStandard = Schema.decodeUnknownSync(standardWire, { onExcessProperty: 'error' })
+const encodeStandard = Schema.encodeSync(standardWire, { onExcessProperty: 'error' })
+const encodePeer = Schema.encodeSync(Schema.fromJsonString(Schema.toCodecJson(Schema.Result(Schema.Json, Schema.Json))))
 
 describe('JSON RPC boundary', () => {
   it('captures Crypto at initialization and responds repeatedly without operation-level provision', () => {
@@ -68,6 +72,11 @@ describe('JSON RPC boundary', () => {
     const { entries, exit } = capture(Effect.succeed(value).pipe(rpcResponse('read')))
     const text = success(exit)
     expect(typeof text).toBe('string')
+    expect(Result.isResult(parse(text))).toBe(false)
+    const decoded = decodeStandard(text)
+    ok(Result.isSuccess(decoded))
+    expect(decoded.success).toEqual(value)
+    expect(Effect.runSync(rpcResult('standard peer')(encodeStandard(Result.succeed(value))))).toEqual(value)
     expect(Effect.runSync(rpcResult('parent')(text))).toEqual(value)
     expect(entries).toHaveLength(0)
   })
@@ -75,7 +84,7 @@ describe('JSON RPC boundary', () => {
   it('requires a validated problem cause and disallows non-JSON success types', () => {
     expectTypeOf<ConstructorParameters<typeof RemoteWorkerError>[0]>().toEqualTypeOf<{
       readonly operation: string
-      readonly cause: RpcProblem
+      readonly cause: Rfc9457ProblemDetails
     }>()
     const invalidCalls = () => {
       // @ts-expect-error Error is not JSON.
@@ -101,6 +110,13 @@ describe('JSON RPC boundary', () => {
     const text = success(exit)
     expect(entries).toHaveLength(1)
     expect(text).not.toContain('private')
+    const decoded = decodeStandard(text)
+    ok(Result.isFailure(decoded))
+    expect(decoded.failure.status).toBe(status)
+    const standardPeer = failure(
+      Effect.runSyncExit(rpcResult('standard peer')(encodeStandard(Result.fail(decoded.failure)))),
+    )
+    expect(standardPeer).toMatchObject({ cause: decoded.failure })
     const local = failure(Effect.runSyncExit(rpcResult('parent')(text)))
     ok(local instanceof RemoteWorkerError)
     expect(local.operation).toBe('parent')
@@ -108,7 +124,7 @@ describe('JSON RPC boundary', () => {
       `https://github.com/totto2727-org/flowdeck/blob/main/docs/rpc-boundaries.md#${local.cause.title}`,
     )
     expect(local.cause.status).toBe(status)
-    expect(Schema.is(RpcProblem)(local.cause)).toBe(true)
+    expect(Schema.is(Rfc9457ProblemDetails)(local.cause)).toBe(true)
     expect(local.cause).not.toHaveProperty('stack')
     expect(local.cause).not.toHaveProperty('cause')
     expect(local.stack).not.toContain('private')
@@ -164,10 +180,12 @@ describe('JSON RPC boundary', () => {
 
   it.each([
     'private token',
-    '{"_tag":"Success","value":1,"secret":"private token"}',
+    '{"_tag":"Success","success":1,"secret":"private token"}',
     '{"_tag":"Success"}',
-    '{"_tag":"Failure","problem":{"status":500,"detail":"private token"}}',
-    { _tag: 'Success', value: 'private token' },
+    '{"_tag":"Failure","failure":{"status":500,"detail":"private token"}}',
+    '{"_tag":"Success","value":"private token"}',
+    '{"_tag":"Failure","problem":{"status":500}}',
+    Result.succeed('private token'),
     undefined,
   ])('rejects malformed or non-text envelopes without retaining peer bytes', (response) => {
     const error = failure(Effect.runSyncExit(rpcResult('decode')(response)))
@@ -180,29 +198,23 @@ describe('JSON RPC boundary', () => {
 
   it('strips unknown problem extensions and rejects non-UUID correlation instances', () => {
     const text = success(capture(Effect.fail(new Conflict({ message: 'private' })).pipe(rpcResponse('child'))).exit)
-    const reply = Schema.decodeUnknownSync(
-      Schema.fromJsonString(Schema.Struct({ _tag: Schema.Literal('Failure'), problem: RpcProblem })),
-    )(text)
+    const reply = decodeStandard(text)
+    ok(Result.isFailure(reply))
     const extended = failure(
       Effect.runSyncExit(
         rpcResult('parent')(
-          JSON.stringify({
-            ...reply,
-            problem: { ...reply.problem, stack: 'private stack', future: { secret: 'private token' } },
-          }),
+          encodePeer(Result.fail({ ...reply.failure, stack: 'private stack', future: { secret: 'private token' } })),
         ),
       ),
     )
     ok(extended instanceof RemoteWorkerError)
-    expect(extended.cause).toEqual(reply.problem)
+    expect(extended.cause).toEqual(reply.failure)
     expect(extended.cause).not.toHaveProperty('stack')
     expect(extended.cause).not.toHaveProperty('future')
     expect(
       failure(
         Effect.runSyncExit(
-          rpcResult('parent')(
-            JSON.stringify({ ...reply, problem: { ...reply.problem, instance: 'urn:uuid:invalid' } }),
-          ),
+          rpcResult('parent')(encodePeer(Result.fail({ ...reply.failure, instance: 'urn:uuid:invalid' }))),
         ),
       ),
     ).toBeInstanceOf(ExternalError)

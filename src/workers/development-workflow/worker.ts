@@ -11,6 +11,7 @@ import { makeRpcResponse } from '../../features/rpc-boundary'
 import { RunId } from '../../features/workflow/domain/identity'
 import { D1StoreLive } from '../../features/workflow/services/d1-store'
 import { WorkflowDatabase } from '../../features/workflow/services/database'
+import { DatabaseQueriesLive } from '../../features/workflow/services/database-queries'
 import { rpcCall, rpcCommandResult } from '../../features/workflow/services/workflow-rpc'
 import { Database } from '../database'
 import { DevelopmentContainer } from './container'
@@ -29,7 +30,10 @@ const DevelopmentRunLive = DevelopmentRun.make(
     yield* DevelopmentContainer
     const database = yield* QueryDatabase(yield* Database)
     const environment = yield* WorkerEnvironment
-    const StoreLive = D1StoreLive.pipe(Layer.provide(Layer.succeed(WorkflowDatabase, database)))
+    const StoreLive = D1StoreLive.pipe(
+      Layer.provide(DatabaseQueriesLive),
+      Layer.provide(Layer.succeed(WorkflowDatabase, database)),
+    )
     // Native Cloudflare classes can only load inside workerd, not during Node
     // provisioning. This official SDK adapter loads once at actual activation.
     const SdkLive = Layer.effect(

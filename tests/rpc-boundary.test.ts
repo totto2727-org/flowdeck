@@ -1,18 +1,16 @@
 import { ok } from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
 
-import { Array, Schema } from 'effect'
+import { Array, Option, Result, Schema } from 'effect'
 import { Miniflare } from 'miniflare'
 import { build } from 'vite-plus'
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vite-plus/test'
 
-import { RpcProblem } from '../src/features/rpc-problem'
+import { Rfc9457ProblemDetails } from '../src/features/rpc-problem'
 import type Parent from './fixtures/rpc-boundary-worker'
 
-const Failure = Schema.Struct({ _tag: Schema.Literal('Failure'), problem: RpcProblem })
-const decodeFailure = Schema.decodeUnknownSync(Schema.fromJsonString(Failure), { onExcessProperty: 'error' })
-const decodeSuccess = Schema.decodeUnknownSync(
-  Schema.fromJsonString(Schema.Struct({ _tag: Schema.Literal('Success'), value: Schema.Json })),
+const decodeReply = Schema.decodeUnknownSync(
+  Schema.fromJsonString(Schema.toCodecJson(Schema.Result(Schema.Json, Rfc9457ProblemDetails))),
   { onExcessProperty: 'error' },
 )
 const decodeLogs = Schema.decodeUnknownSync(
@@ -26,7 +24,7 @@ const decodeLogs = Schema.decodeUnknownSync(
         originalStack: Schema.String,
         remoteError: Schema.Boolean,
         externalError: Schema.Boolean,
-        priorProblem: Schema.NullOr(RpcProblem),
+        priorProblem: Schema.NullOr(Rfc9457ProblemDetails),
       }),
     ),
   ),
@@ -60,7 +58,7 @@ beforeAll(async () => {
   const result = Array.isArray(output) ? output[0] : output
   ok(result && 'output' in result)
   const chunk = Array.findFirst(result.output, (entry) => entry.type === 'chunk')
-  ok(chunk._tag === 'Some' && chunk.value.type === 'chunk')
+  ok(Option.isSome(chunk) && chunk.value.type === 'chunk')
   script = chunk.value.code
 })
 
@@ -89,7 +87,9 @@ describe('native Worker RPC JSON boundary', () => {
     const child = await entrypoint('child')
     const response = await parent.start('success')
     expect(typeof response).toBe('string')
-    expect(decodeSuccess(response)).toEqual({ _tag: 'Success', value: { answer: 42, values: [null, true, 'ok'] } })
+    const reply = decodeReply(response)
+    ok(Result.isSuccess(reply))
+    expect(reply.success).toEqual({ answer: 42, values: [null, true, 'ok'] })
     expect(decodeLogs(await parent.logs())).toEqual([])
     expect(decodeLogs(await child.logs())).toEqual([])
   })
@@ -101,32 +101,30 @@ describe('native Worker RPC JSON boundary', () => {
       const child = await entrypoint('child')
       const response = await parent.start(scenario)
       expect(typeof response).toBe('string')
-      const reply = decodeFailure(response)
-      expect(reply).toEqual({
-        _tag: 'Failure',
-        problem: {
-          ...(scenario === 'not-found'
+      const reply = decodeReply(response)
+      ok(Result.isFailure(reply))
+      expect(reply.failure).toEqual({
+        ...(scenario === 'not-found'
+          ? {
+              type: 'https://github.com/totto2727-org/flowdeck/blob/main/docs/rpc-boundaries.md#not-found',
+              title: 'not-found',
+              status: 404,
+              detail: 'The requested resource was not found.',
+            }
+          : scenario === 'failure'
             ? {
-                type: 'https://github.com/totto2727-org/flowdeck/blob/main/docs/rpc-boundaries.md#not-found',
-                title: 'not-found',
-                status: 404,
-                detail: 'The requested resource was not found.',
+                type: 'https://github.com/totto2727-org/flowdeck/blob/main/docs/rpc-boundaries.md#storage',
+                title: 'storage',
+                status: 500,
+                detail: 'A persistence operation failed.',
               }
-            : scenario === 'failure'
-              ? {
-                  type: 'https://github.com/totto2727-org/flowdeck/blob/main/docs/rpc-boundaries.md#storage',
-                  title: 'storage',
-                  status: 500,
-                  detail: 'A persistence operation failed.',
-                }
-              : {
-                  type: 'https://github.com/totto2727-org/flowdeck/blob/main/docs/rpc-boundaries.md#internal',
-                  title: 'internal',
-                  status: 500,
-                  detail: 'The operation could not be completed.',
-                }),
-          instance: expect.any(String),
-        },
+            : {
+                type: 'https://github.com/totto2727-org/flowdeck/blob/main/docs/rpc-boundaries.md#internal',
+                title: 'internal',
+                status: 500,
+                detail: 'The operation could not be completed.',
+              }),
+        instance: expect.any(String),
       })
       const childLogs = decodeLogs(await child.logs())
       const parentLogs = decodeLogs(await parent.logs())
@@ -142,11 +140,11 @@ describe('native Worker RPC JSON boundary', () => {
       expect(childLog.externalError).toBe(scenario === 'failure')
       expect(parentLog).toMatchObject({
         operation: 'parent.start',
-        errorId: reply.problem.instance,
+        errorId: reply.failure.instance,
         remoteError: true,
         externalError: false,
         originalStack: '',
-        priorProblem: { ...reply.problem, instance: childLog.errorId },
+        priorProblem: { ...reply.failure, instance: childLog.errorId },
       })
       expect(parentLog.errorId).not.toBe(childLog.errorId)
       expect(parentLog.renderedCause).toContain(childLog.errorId)
@@ -157,8 +155,8 @@ describe('native Worker RPC JSON boundary', () => {
       expect(response).not.toContain('PRIVATE_RPC_DATABASE_PASSWORD')
       expect(response).not.toContain('childOnlyPrivateFrame')
       expect(response).not.toContain('RemoteWorkerError')
-      expect(reply.problem).not.toHaveProperty('stack')
-      expect(reply.problem).not.toHaveProperty('cause')
+      expect(reply.failure).not.toHaveProperty('stack')
+      expect(reply.failure).not.toHaveProperty('cause')
     },
   )
 })

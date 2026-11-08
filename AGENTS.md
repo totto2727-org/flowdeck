@@ -66,6 +66,8 @@ Use Effect Array, String, Record, Match, Schema, Clock, and collection APIs inst
 Use `Schema.isUUID(4)`, `Schema.URLFromString`, and `Schema.SemVerFromString` instead of custom identity, URL, or version parsers.
 Keep ideal domain values independent from their serialized representation.
 Use official codecs at persistence and transport boundaries, including `Schema.SemVer` internally and its JSON/string codecs at those boundaries.
+Construct fixed schemas, decoders, encoders, and HTTP schema adapters once at module scope.
+Schema-parameterized factories must capture their codec when the factory is constructed, not when each value is processed.
 Use `Schema.DateTimeUtc` for internal timestamps and the official codecs for serialized ISO timestamps.
 Use the shared `JsonObject` schema for JSON snapshots and event payloads, not repeated unrestricted record schemas.
 Model each event kind with a discriminated union: node execution fields are required where applicable and absent otherwise.
@@ -92,6 +94,7 @@ Prefer the established Effect, Effront, and Effect HTTP extension points over cu
 Define HTTP interception, error translation, and failure logging as registered Middleware.
 Log failures once at each service's outer operation boundary, retaining the original cause and stack in that service's logs rather than logging again in storage adapters.
 Treat RPC as an external API boundary: validate requests and return only Schema-encoded JSON text.
+Use the official `Schema.Result` JSON codec for RPC replies and `Result.isSuccess` or `Result.isFailure` to inspect decoded values, not direct `_tag` comparisons.
 Log the original failure with a unique error ID before sending an RFC 9457 problem, and create a new local error at the caller with that validated problem as its required cause.
 Do not revive child exceptions or propagate their stacks and internal causes across RPC.
 See [RPC boundaries](docs/rpc-boundaries.md).

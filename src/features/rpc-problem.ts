@@ -14,8 +14,12 @@ const problem = <const T extends string, const S extends number, const D extends
     instance,
   })
 
-/** RFC 9457 types are documented by their absolute URLs. Unknown extensions are discarded. */
-export const RpcProblem = Schema.Union([
+/**
+ * Application profile of RFC 9457 Problem Details: https://www.rfc-editor.org/rfc/rfc9457.html#section-3
+ * This profile fixes the public problem types and messages and uses UUIDv4 occurrence URIs.
+ * RPC carries these JSON details as its failure value, not as an HTTP response body.
+ */
+export const Rfc9457ProblemDetails = Schema.Union([
   problem('not-found', 404, 'The requested resource was not found.'),
   problem('conflict', 409, 'The operation conflicts with the current state.'),
   problem('invalid-operation', 409, 'The operation is not allowed in the current state.'),
@@ -25,10 +29,10 @@ export const RpcProblem = Schema.Union([
   problem('invalid-request', 400, 'The request did not match the expected schema.'),
   problem('internal', 500, 'The operation could not be completed.'),
 ])
-export type RpcProblem = typeof RpcProblem.Type
+export type Rfc9457ProblemDetails = typeof Rfc9457ProblemDetails.Type
 
 /** A new local error, never a revived remote exception or remote stack. */
 export class RemoteWorkerError extends Data.TaggedError('RemoteWorkerError')<{
   readonly operation: string
-  readonly cause: RpcProblem
+  readonly cause: Rfc9457ProblemDetails
 }> {}
