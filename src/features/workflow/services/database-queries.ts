@@ -40,5 +40,7 @@ export const all = <Input, Row, C extends Cardinality>(query: Query<Input, Row, 
     Effect.map((result) => result.results),
   )
 
-export const batch = (statements: PreparedStatement[]) =>
-  execute('batch', WorkflowDatabase.pipe(Effect.flatMap((database) => database.batch(statements))))
+export const batch = Effect.fn('D1Store.batch')(function* (statements: PreparedStatement[]) {
+  const database = yield* WorkflowDatabase
+  return yield* execute('batch', database.batch(statements))
+})

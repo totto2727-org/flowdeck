@@ -1,12 +1,13 @@
 import { readD1Migrations } from '@cloudflare/vitest-plugin'
 import type { D1Database } from '@cloudflare/workers-types'
 import { BrowserCrypto } from '@effect/platform-browser'
+import type { PreparedStatement } from 'alchemy/Cloudflare/D1'
 import { makeRpcStub } from 'alchemy/Cloudflare/Workers'
 import { Array, Crypto, DateTime, Effect, Exit, Layer, Schema, SemVer } from 'effect'
 import { HttpRouter } from 'effect/http'
 import { TestCrypto } from 'effect/testing'
 import { Miniflare } from 'miniflare'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
+import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from 'vite-plus/test'
 
 import { ApiRoutes } from '../../../workers/control/features/router'
 import { demoDefinition } from '../../../workers/demo-workflow/features/definition'
@@ -25,6 +26,7 @@ import { CommitId, EventId, ExecutionId, RunId } from '../domain/identity'
 import { RunDetail, RunsResponse, type Run, type WorkflowVersion } from '../domain/model'
 import { D1StoreLive } from './d1-store'
 import { WorkflowDatabase } from './database'
+import { batch } from './database-queries'
 import { D1Binding, NativeWorkflowDatabase } from './native-database'
 import { type CommitCommand, Store, type StoreService } from './store'
 import { WorkflowRegistry, type RegisteredWorkflow } from './workflow-definition'
@@ -157,6 +159,26 @@ const api = (registry?: ReadonlyArray<RegisteredWorkflow>) =>
   )
 
 describe('D1 persisted run store', () => {
+  it('executes already prepared statements without preparing inside batch', async () => {
+    expectTypeOf<Parameters<typeof batch>[0]>().toEqualTypeOf<PreparedStatement[]>()
+    const client = Effect.runSync(
+      WorkflowDatabase.pipe(
+        Effect.provide(NativeWorkflowDatabase.pipe(Layer.provide(Layer.succeed(D1Binding, database)))),
+      ),
+    )
+    const prepared = client
+      .prepare('INSERT INTO workflows (workflow_id, name) VALUES (?, ?)')
+      .bind('prepared', 'Prepared')
+    const prepare = vi.fn(() => {
+      throw new Error('Preparation must happen before batch')
+    })
+    await Effect.runPromise(batch([prepared]).pipe(Effect.provideService(WorkflowDatabase, { ...client, prepare })))
+    expect(prepare).not.toHaveBeenCalled()
+    expect(await database.prepare('SELECT name FROM workflows WHERE workflow_id = ?').bind('prepared').first()).toEqual(
+      { name: 'Prepared' },
+    )
+  })
+
   it('keeps each store bound to its own Layer-provided database', async () => {
     const otherDatabase = await miniflare.getD1Database('OTHER')
     const migrations = await readD1Migrations('migrations')

@@ -83,6 +83,8 @@ Never point local analysis or migration generation at a deployment database.
 Reylo supplies SQL, inferred input and row types, and parameter encoding; Alchemy executes reads through `first` and `all`.
 This integration uses Reylo's existing Standard Query contract rather than adding an Alchemy dependency or Flowdeck-specific error mapping to Reylo.
 Creation and commits submit prepared statements together through Alchemy's `batch`, which delegates to one native atomic D1 batch.
+Flowdeck's `batch` is an independent Effect function that obtains the Alchemy client through `WorkflowDatabase` and accepts only `PreparedStatement[]`.
+Each calling operation prepares and binds the statements before invoking it; the batch Effect does not prepare statements.
 The store never evaluates the client's `raw` binding or recreates its Promise-to-Effect executor.
 The receipt guard, revision update, snapshot, and events must not be split into separate query calls.
 The commit acknowledgment is read only after that batch succeeds.
