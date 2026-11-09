@@ -19,7 +19,8 @@ import {
   fromJson,
   json,
 } from './d1-store-codecs'
-import { DatabaseQueries, execute } from './database-queries'
+import { execute } from './database'
+import { DatabaseQueries } from './database-queries'
 import getAckQuery from './queries/get-ack.sql'
 import getEventsQuery from './queries/get-events.sql'
 import getGraphQuery from './queries/get-graph.sql'
@@ -37,10 +38,10 @@ import updateStateQuery from './queries/update-state.sql'
 import { type CommitCommand, type EventRange, Store, type StoreService } from './store'
 
 const makeGetRun = Effect.gen(function* () {
-  const { first } = yield* DatabaseQueries
+  const { run: query } = yield* DatabaseQueries
   return Effect.fn('D1Store.getRun')(function* (runId: RunId) {
     yield* decodeRunId(runId)
-    const row = yield* execute('get run', first(getRunQuery, { runId }))
+    const row = yield* execute('get run', query(getRunQuery, { runId }))
     if (!row) return yield* Effect.fail(new NotFound({ resource: `run:${runId}` }))
     return yield* decodeRun(row)
   })
@@ -79,7 +80,7 @@ const makeCreate = Effect.gen(function* () {
 })
 
 const makeCommit = Effect.gen(function* () {
-  const { prepare, batch, first } = yield* DatabaseQueries
+  const { prepare, batch, run: query } = yield* DatabaseQueries
   return Effect.fn('D1Store.commit')(function* (command: CommitCommand) {
     yield* decodeCommand(command)
     yield* decodeEventIds(Array.map(command.events, (event) => event.eventId)).pipe(
@@ -119,29 +120,29 @@ const makeCommit = Effect.gen(function* () {
       }),
     )
     yield* batch([receipt, updateRun, updateState, ...events])
-    const ack = yield* execute('read commit acknowledgement', first(getAckQuery, identity))
+    const ack = yield* execute('read commit acknowledgement', query(getAckQuery, identity))
     if (!ack) return yield* Effect.fail(new NotFound({ resource: `run:${command.runId}` }))
     return yield* decodeAck(ack)
   })
 })
 
 const makeListRuns = Effect.gen(function* () {
-  const { all } = yield* DatabaseQueries
-  return execute('list runs', all(listRunsQuery, {})).pipe(Effect.flatMap((rows) => Effect.forEach(rows, decodeRun)))
+  const { run: query } = yield* DatabaseQueries
+  return execute('list runs', query(listRunsQuery)).pipe(Effect.flatMap((rows) => Effect.forEach(rows, decodeRun)))
 })
 
 const makeGetGraph = Effect.gen(function* () {
-  const { first } = yield* DatabaseQueries
+  const { run: query } = yield* DatabaseQueries
   return Effect.fn('D1Store.getGraph')(function* (graphId: GraphId) {
     yield* decodeGraphId(graphId)
-    const row = yield* execute('get graph', first(getGraphQuery, { graphId }))
+    const row = yield* execute('get graph', query(getGraphQuery, { graphId }))
     if (!row) return yield* Effect.fail(new NotFound({ resource: `graph:${graphId}` }))
     return yield* decodeGraph(yield* fromJson(row.graph_json))
   })
 })
 
 const makeGetEvents = Effect.gen(function* () {
-  const { all } = yield* DatabaseQueries
+  const { run: query } = yield* DatabaseQueries
   return Effect.fn('D1Store.getEvents')(function* (runId: RunId, range: EventRange) {
     yield* decodeRunId(runId)
     const maxRevision = Match.value(range).pipe(
@@ -149,7 +150,7 @@ const makeGetEvents = Effect.gen(function* () {
       Match.tag('ThroughRevision', ({ revision }) => revision),
       Match.exhaustive,
     )
-    const rows = yield* execute('get events', all(getEventsQuery, { runId, maxRevision }))
+    const rows = yield* execute('get events', query(getEventsQuery, { runId, maxRevision }))
     return yield* Effect.forEach(rows, decodeEventRow)
   })
 })

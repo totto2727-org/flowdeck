@@ -39,7 +39,24 @@ exports[`demo definition > keeps the published definition SemVer(1.0.0) stable >
   },
   "snapshot": {
     "_tag": "Ready",
+    "context": {
+      "prepared": "",
+      "result": "",
+    },
+    "machine": {
+      "_tag": "MachineSnapshot",
+      "active": [
+        {
+          "path": "",
+        },
+        {
+          "path": "prepare",
+        },
+      ],
+      "version": 2,
+    },
     "schemaVersion": 1,
+    "state": "prepare",
     "version": "1.0.0",
   },
 }
@@ -84,7 +101,24 @@ exports[`demo definition > keeps the published definition SemVer(2.0.0) stable >
   },
   "snapshot": {
     "_tag": "Ready",
+    "context": {
+      "prepared": "",
+      "result": "",
+    },
+    "machine": {
+      "_tag": "MachineSnapshot",
+      "active": [
+        {
+          "path": "",
+        },
+        {
+          "path": "prepare",
+        },
+      ],
+      "version": 2,
+    },
     "schemaVersion": 1,
+    "state": "prepare",
     "version": "2.0.0",
   },
 }

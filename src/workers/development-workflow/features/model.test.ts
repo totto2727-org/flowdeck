@@ -4,6 +4,19 @@ import { describe, expect, it } from 'vite-plus/test'
 import { DevelopmentSnapshot, DevelopmentSnapshotJson, initialDevelopmentSnapshot } from './development'
 import { developmentVersion, PublicRepository } from './input'
 import { CommandId, SessionId, TurnReceipt, TurnRequest } from './model'
+import { DevelopmentContext, DevelopmentContextJson, PiPhase } from './pi-task'
+
+const decodeNativeDevelopmentContext = Schema.decodeUnknownSync(DevelopmentContext)
+const encodeDevelopmentContext = Schema.encodeSync(DevelopmentContextJson)
+const decodeDevelopmentContext = Schema.decodeUnknownSync(DevelopmentContextJson)
+const encodeDevelopmentSnapshot = Schema.encodeSync(DevelopmentSnapshotJson)
+const decodeDevelopmentSnapshot = Schema.decodeUnknownSync(DevelopmentSnapshotJson)
+const initialSnapshot = initialDevelopmentSnapshot({
+  workflowId: 'jcode-development',
+  version: developmentVersion,
+  repository: new URL('https://github.com/example/project'),
+  task: 'Verify the change.',
+})
 
 const commandId = 'command_3d360c7a-4b1a-4df3-9633-861a220bf5b7'
 
@@ -42,35 +55,48 @@ describe('development operation wire schemas', () => {
   it.each(['Starting', 'PendingTurn', 'AwaitingTurn', 'Completing'] as const)(
     'requires strict command identities in %s snapshots',
     (_tag) => {
-      const snapshot = {
+      const phase = {
         _tag,
-        schemaVersion: 1,
-        version: developmentVersion,
-        runtime: 'pi-harness',
-        repository: new URL('https://github.com/example/project'),
-        task: 'Verify the change.',
         sessionId: '1',
-        nodeId: 'verify',
         result: 'done',
         commandId,
+      }
+      const context = { ...decodeDevelopmentContext(initialSnapshot.context), phase }
+      expect(Schema.is(PiPhase)(phase)).toBe(true)
+      expect(Schema.is(DevelopmentContext)(context)).toBe(true)
+      expect(Schema.is(PiPhase)({ ...phase, commandId: 'run:verify:1' })).toBe(false)
+      expect(Schema.is(DevelopmentContext)({ ...context, phase: { ...phase, commandId: 'run:verify:1' } })).toBe(false)
+      if (_tag !== 'Starting') {
+        expect(Schema.is(PiPhase)({ ...phase, sessionId: 'replacement-session' })).toBe(false)
+        expect(
+          Schema.is(DevelopmentContext)({ ...context, phase: { ...phase, sessionId: 'replacement-session' } }),
+        ).toBe(false)
+      }
+      const snapshot = {
+        ...initialSnapshot,
+        _tag: 'Running',
+        state: 'verify',
+        attempt: 1,
+        context: encodeDevelopmentContext(decodeNativeDevelopmentContext(context)),
         executionId: 'execution_3d360c7a-4b1a-4df3-9633-861a220bf5b7',
       }
       expect(Schema.is(DevelopmentSnapshot)(snapshot)).toBe(true)
-      expect(Schema.is(DevelopmentSnapshot)({ ...snapshot, commandId: 'run:verify:1' })).toBe(false)
       expect(Schema.is(DevelopmentSnapshot)({ ...snapshot, executionId: commandId })).toBe(false)
     },
   )
 
   it('round-trips native versions through the snapshot JSON boundary', () => {
-    const snapshot = initialDevelopmentSnapshot({
-      workflowId: 'jcode-development',
-      version: developmentVersion,
-      repository: new URL('https://github.com/example/project'),
-      task: 'Verify the change.',
+    const snapshot = initialSnapshot
+    const encoded = encodeDevelopmentSnapshot(snapshot)
+    expect(encoded).toMatchObject({
+      version: '1.0.0',
+      context: { version: '1.0.0', repository: 'https://github.com/example/project' },
     })
-    const encoded = Schema.encodeSync(DevelopmentSnapshotJson)(snapshot)
-    expect(encoded).toMatchObject({ version: '1.0.0', repository: 'https://github.com/example/project' })
-    expect(Schema.decodeUnknownSync(DevelopmentSnapshotJson)(encoded)).toEqual(snapshot)
+    expect(decodeDevelopmentSnapshot(encoded)).toEqual(snapshot)
+    const context = decodeDevelopmentContext(snapshot.context)
+    expect(context.version).toEqual(developmentVersion)
+    expect(context.repository).toBeInstanceOf(URL)
+    expect(encodeDevelopmentContext(context)).toEqual(snapshot.context)
     expect(Schema.is(DevelopmentSnapshot)(encoded)).toBe(false)
   })
 

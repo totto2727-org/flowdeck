@@ -1,6 +1,8 @@
 import { readD1Migrations } from '@cloudflare/vitest-plugin'
 import type { D1Database } from '@cloudflare/workers-types'
 import { BrowserCrypto } from '@effect/platform-browser'
+import { defineQuery } from '@totto2727/reylo'
+import { QueryDecodeError, QueryExecutor } from '@totto2727/reylo/effect'
 import type { PreparedStatement } from 'alchemy/Cloudflare/D1'
 import { makeRpcStub } from 'alchemy/Cloudflare/Workers'
 import { Array, Crypto, DateTime, Effect, Exit, Layer, Schema, SemVer } from 'effect'
@@ -12,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from 'v
 import { ExternalError } from '@/features/workflow/domain/errors'
 import { CommitId, EventId, ExecutionId, RunId } from '@/features/workflow/domain/identity'
 import { RunDetail, RunsResponse, type Run, type WorkflowVersion } from '@/features/workflow/domain/model'
+import { LifecycleHook } from '@/features/workflow/driver'
 import { ApiRoutes } from '@/workers/control/features/router'
 import { demoDefinition } from '@/workers/demo-workflow/features/definition'
 import {
@@ -26,9 +29,10 @@ import { makeWorkflowRegistry } from '@/workers/workflow/features/registration'
 import { createRun, makeWorkflows, resumeRun as resumeWorkflowRun } from '@/workers/workflow/features/workflow'
 import { DevelopmentWorkflowBinding, WorkflowBinding } from '@/workers/workflow/features/workflow-binding'
 
+import { makeD1Batch } from './d1-batch'
 import { D1StoreLive } from './d1-store'
-import { WorkflowDatabase } from './database'
-import { DatabaseQueries, DatabaseQueriesLive, makeDatabaseQueries } from './database-queries'
+import { WorkflowDatabase, execute } from './database'
+import { AlchemyQueryExecutorLive, DatabaseQueries, DatabaseQueriesLive } from './database-queries'
 import { D1Binding, NativeWorkflowDatabase } from './native-database'
 import { type CommitCommand, EventRange, Store, type StoreService } from './store'
 import { WorkflowRegistry, type RegisteredWorkflow } from './workflow-definition'
@@ -37,6 +41,10 @@ import { Workflows } from './workflows'
 const version1 = SemVer.parseUnsafe('1.0.0')
 const version2 = SemVer.parseUnsafe('2.0.0')
 const now = DateTime.makeUnsafe('2026-10-17T12:00:00.000Z')
+const encodeDemo = Schema.encodeSync(Schema.toCodecJson(DemoSnapshot))
+const decodeJsonObject = Schema.decodeUnknownSync(Schema.JsonObject)
+const snapshotJson = (snapshot: DemoSnapshot) => decodeJsonObject(encodeDemo(snapshot))
+const initialDemo = initialSnapshot(version1)
 const newRun = (runId: string, version: WorkflowVersion = version1): Run => ({
   runId,
   workflowId: 'demo',
@@ -44,9 +52,7 @@ const newRun = (runId: string, version: WorkflowVersion = version1): Run => ({
   graphId: demoGraph(version).graphId,
   status: 'pending',
   revision: 0,
-  snapshot: Schema.decodeUnknownSync(Schema.JsonObject)(
-    Schema.encodeSync(Schema.toCodecJson(DemoSnapshot))(initialSnapshot(version)),
-  ),
+  snapshot: snapshotJson(initialSnapshot(version)),
   createdAt: now,
   updatedAt: now,
 })
@@ -55,13 +61,17 @@ const command = (overrides: Partial<CommitCommand> = {}): CommitCommand => ({
   runId: 'run_00000000-0000-4000-8000-000000000001',
   expectedRevision: 0,
   status: 'running',
-  snapshot: {
-    _tag: 'Preparing',
-    schemaVersion: 1,
-    version: '1.0.0',
-    executionId: 'execution_00000000-0000-4000-8000-000000000001',
-    attempt: 1,
-  },
+  snapshot: snapshotJson(
+    DemoSnapshot.cases.Running.make({
+      schemaVersion: initialDemo.schemaVersion,
+      version: initialDemo.version,
+      state: initialDemo.state,
+      machine: initialDemo.machine,
+      context: initialDemo.context,
+      executionId: 'execution_00000000-0000-4000-8000-000000000001',
+      attempt: 1,
+    }),
+  ),
   events: [
     {
       eventId: 'event_00000000-0000-4000-8000-000000000001',
@@ -83,6 +93,18 @@ let database: D1Database
 let store: StoreService
 let storeLayer: Layer.Layer<Store>
 const freshStore = () => Effect.runSync(Store.pipe(Effect.provide(storeLayer)))
+const freshQueries = () =>
+  Effect.runSync(
+    DatabaseQueries.pipe(
+      Effect.provide(
+        DatabaseQueriesLive.pipe(
+          Layer.provide(AlchemyQueryExecutorLive),
+          Layer.provide(NativeWorkflowDatabase),
+          Layer.provide(Layer.succeed(D1Binding, database)),
+        ),
+      ),
+    ),
+  )
 beforeEach(async () => {
   miniflare = new Miniflare({
     modules: true,
@@ -100,6 +122,7 @@ beforeEach(async () => {
   )
   storeLayer = D1StoreLive.pipe(
     Layer.provide(DatabaseQueriesLive),
+    Layer.provide(AlchemyQueryExecutorLive),
     Layer.provide(NativeWorkflowDatabase),
     Layer.provide(Layer.succeed(D1Binding, database)),
   )
@@ -162,12 +185,119 @@ const api = (registry?: ReadonlyArray<RegisteredWorkflow>) =>
   )
 
 describe('D1 persisted run store', () => {
+  it('uses the published Reylo decoder and captured Alchemy executor despite a conflicting caller context', async () => {
+    const lookup = defineQuery<{ active: boolean }, { active: boolean; document: { name: string } }, 'one', 'sqlite'>({
+      dialect: 'sqlite',
+      sql: `SELECT :active AS active, '{"name":"Flowdeck"}' AS document`,
+      params: ['active'],
+      inputs: { active: { type: { kind: 'scalar', name: 'BOOLEAN' }, nullable: false } },
+      columns: [
+        ['active', 'bool'],
+        ['document', 'json'],
+      ],
+      cardinality: 'one',
+    })
+    const queries = freshQueries()
+    const result = queries.run(lookup, { active: true })
+    expectTypeOf<Effect.Services<typeof result>>().toEqualTypeOf<never>()
+    const unexpected = vi.fn(() => Effect.die('The caller executor must not be used'))
+    const expected = { active: true, document: { name: 'Flowdeck' } }
+    expect(await Effect.runPromise(result)).toEqual(expected)
+    expect(
+      await Effect.runPromise(
+        result.pipe(Effect.provideService(QueryExecutor, { dialect: 'sqlite', execute: unexpected })),
+      ),
+    ).toEqual(expected)
+    expect(unexpected).not.toHaveBeenCalled()
+  })
+
+  it('maps a published Reylo cardinality failure to a storage failure without losing its original cause', async () => {
+    const query = defineQuery<{}, { value: number }, 'one', 'sqlite'>({
+      dialect: 'sqlite',
+      sql: 'SELECT 1 AS value UNION ALL SELECT 2 AS value',
+      params: [],
+      columns: [['value', 'int']],
+      cardinality: 'one',
+    })
+    const result = freshQueries().run(query)
+    const queryError = await Effect.runPromise(result.pipe(Effect.flip))
+    expect(queryError).toBeInstanceOf(QueryDecodeError)
+    const error = await Effect.runPromise(execute('read one value', Effect.fail(queryError)).pipe(Effect.flip))
+    expect(error).toBeInstanceOf(ExternalError)
+    expect(error.cause).toBe(queryError.cause)
+    expect(error).toMatchObject({ operation: 'read one value', kind: 'storage' })
+    expect(error.cause).toMatchObject({ message: expect.stringContaining('Expected exactly one row, got 2') })
+  })
+
+  it('retains a preparation failure before constructing or executing an atomic write batch', async () => {
+    const query = defineQuery<{ value: number }, never, 'none', 'sqlite'>({
+      dialect: 'sqlite',
+      sql: 'INSERT INTO workflows (workflow_id, name) VALUES (:value, :value)',
+      params: ['value'],
+      inputs: { value: { type: { kind: 'scalar', name: 'INTEGER' }, nullable: false } },
+      columns: [],
+      cardinality: 'none',
+    })
+    const cause = new Error('Input accessor failed')
+    const input = {
+      get value(): number {
+        throw cause
+      },
+    }
+    const error = await Effect.runPromise(freshQueries().prepare(query, input).pipe(Effect.flip))
+    expect(error).toBeInstanceOf(ExternalError)
+    expect(error.cause).toBe(cause)
+    expect(await Effect.runPromise(store.listRuns)).toEqual([])
+    expect(await database.prepare('SELECT count(*) AS count FROM workflows').first()).toEqual({ count: 0 })
+  })
+
+  it('preserves read interruption through the Alchemy executor and published query runner', async () => {
+    const client = Effect.runSync(
+      WorkflowDatabase.pipe(
+        Effect.provide(NativeWorkflowDatabase.pipe(Layer.provide(Layer.succeed(D1Binding, database)))),
+      ),
+    )
+    const statement = client.prepare('SELECT 1 AS value')
+    const bind = vi.spyOn(statement, 'bind').mockReturnValue(statement)
+    const interrupt = vi.spyOn(statement, 'all').mockReturnValue(Effect.interrupt)
+    const query = defineQuery<{}, { value: number }, 'one', 'sqlite'>({
+      dialect: 'sqlite',
+      sql: 'SELECT 1 AS value',
+      params: [],
+      columns: [['value', 'int']],
+      cardinality: 'one',
+    })
+    const queries = Effect.runSync(
+      DatabaseQueries.pipe(
+        Effect.provide(
+          DatabaseQueriesLive.pipe(
+            Layer.provide(AlchemyQueryExecutorLive),
+            Layer.provide(
+              Layer.succeed(WorkflowDatabase, {
+                ...client,
+                prepare: () => statement,
+              }),
+            ),
+          ),
+        ),
+      ),
+    )
+    try {
+      const exit = await Effect.runPromiseExit(execute('read value', queries.run(query)))
+      expect(Exit.hasInterrupts(exit)).toBe(true)
+    } finally {
+      interrupt.mockRestore()
+      bind.mockRestore()
+    }
+  })
+
   it('captures an externally composed query service without requiring a database at Store construction', async () => {
     expectTypeOf(D1StoreLive).toEqualTypeOf<Layer.Layer<Store, never, DatabaseQueries>>()
     const queries = Effect.runSync(
       DatabaseQueries.pipe(
         Effect.provide(
           DatabaseQueriesLive.pipe(
+            Layer.provide(AlchemyQueryExecutorLive),
             Layer.provide(NativeWorkflowDatabase),
             Layer.provide(Layer.succeed(D1Binding, database)),
           ),
@@ -212,19 +342,17 @@ describe('D1 persisted run store', () => {
       workflows: expect.arrayContaining([expect.objectContaining({ workflowId: 'demo' })]),
     })
     const created = await Effect.runPromise(workflows.createRun({ workflowId: 'demo', version: version1 }))
-    expect(created.run).toMatchObject({ status: 'waiting', revision: 2 })
+    expect(created.run).toMatchObject({ status: 'waiting', revision: 3 })
     expect(await Effect.runPromise(workflows.getRunDetail(created.run.runId))).toEqual(created)
     expect(await Effect.runPromise(workflows.listRuns())).toEqual({ runs: [created.run] })
     const resumed = await Effect.runPromise(workflows.resumeRun(created.run.runId))
-    expect(resumed.run).toMatchObject({ runId: created.run.runId, status: 'completed', revision: 4 })
+    expect(resumed.run).toMatchObject({ runId: created.run.runId, status: 'completed', revision: 5 })
     expect(await Effect.runPromise(workflows.getRunDetail(created.run.runId))).toEqual(resumed)
     expect(await Effect.runPromise(workflows.listRuns())).toEqual({ runs: [resumed.run] })
   })
 
   it('executes already prepared statements without preparing inside batch', async () => {
-    expectTypeOf<Parameters<Effect.Success<typeof makeDatabaseQueries>['batch']>[0]>().toEqualTypeOf<
-      PreparedStatement[]
-    >()
+    expectTypeOf<Parameters<Effect.Success<typeof makeD1Batch>>[0]>().toEqualTypeOf<PreparedStatement[]>()
     const client = Effect.runSync(
       WorkflowDatabase.pipe(
         Effect.provide(NativeWorkflowDatabase.pipe(Layer.provide(Layer.succeed(D1Binding, database)))),
@@ -236,10 +364,8 @@ describe('D1 persisted run store', () => {
     const prepare = vi.fn(() => {
       throw new Error('Preparation must happen before batch')
     })
-    const queries = Effect.runSync(
-      makeDatabaseQueries.pipe(Effect.provideService(WorkflowDatabase, { ...client, prepare })),
-    )
-    await Effect.runPromise(queries.batch([prepared]))
+    const batch = Effect.runSync(makeD1Batch.pipe(Effect.provideService(WorkflowDatabase, { ...client, prepare })))
+    await Effect.runPromise(batch([prepared]))
     expect(prepare).not.toHaveBeenCalled()
     expect(await database.prepare('SELECT name FROM workflows WHERE workflow_id = ?').bind('prepared').first()).toEqual(
       { name: 'Prepared' },
@@ -260,6 +386,7 @@ describe('D1 persisted run store', () => {
         Effect.provide(
           D1StoreLive.pipe(
             Layer.provide(DatabaseQueriesLive),
+            Layer.provide(AlchemyQueryExecutorLive),
             Layer.provide(NativeWorkflowDatabase),
             Layer.provide(Layer.succeed(D1Binding, otherDatabase)),
           ),
@@ -285,6 +412,7 @@ describe('D1 persisted run store', () => {
         Effect.provide(
           D1StoreLive.pipe(
             Layer.provide(DatabaseQueriesLive),
+            Layer.provide(AlchemyQueryExecutorLive),
             Layer.provide(
               Layer.succeed(WorkflowDatabase, {
                 ...client,
@@ -316,6 +444,7 @@ describe('D1 persisted run store', () => {
         Effect.provide(
           D1StoreLive.pipe(
             Layer.provide(DatabaseQueriesLive),
+            Layer.provide(AlchemyQueryExecutorLive),
             Layer.provide(
               Layer.succeed(WorkflowDatabase, {
                 ...client,
@@ -670,6 +799,78 @@ describe('D1 persisted run store', () => {
 })
 
 describe('demo cold restoration', () => {
+  it('observes lifecycle hooks only after the matching snapshot and complete event batch are readable in D1', async () => {
+    const runId = command().runId
+    await seed(runId)
+    let observations: ReadonlyArray<{
+      revision: number
+      persisted: Run
+      eventIds: ReadonlyArray<string>
+      storedEventIds: ReadonlyArray<string>
+    }> = []
+    const executor = Effect.runSync(
+      makeDemoExecutor.pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            Layer.succeed(Store, store),
+            BrowserCrypto.layer,
+            Layer.succeed(LifecycleHook, {
+              afterCommit: (events, ack) =>
+                Effect.gen(function* () {
+                  const persisted = yield* store.getRun(ack.runId).pipe(Effect.orDie)
+                  const committed = yield* store
+                    .getEvents(ack.runId, EventRange.ThroughRevision({ revision: ack.revision }))
+                    .pipe(Effect.orDie)
+                  observations = Array.append(observations, {
+                    revision: ack.revision,
+                    persisted,
+                    eventIds: Array.map(events, (event) => event.eventId),
+                    storedEventIds: Array.map(
+                      Array.filter(committed, (event) => event.sequence >= ack.firstSequence),
+                      (event) => event.eventId,
+                    ),
+                  })
+                }),
+            }),
+          ),
+        ),
+      ),
+    )
+    await Effect.runPromise(executor.start(runId))
+    await Effect.runPromise(executor.resume(runId))
+    expect(Array.map(observations, (observation) => observation.revision)).toEqual(Array.range(1, 5))
+    Array.forEach(observations, (observation) => {
+      expect(observation.persisted.revision).toBe(observation.revision)
+      expect(observation.storedEventIds).toEqual(observation.eventIds)
+    })
+    expect(Array.last(observations)).toMatchObject({ value: { persisted: { status: 'completed' } } })
+  })
+
+  it('does not dispatch lifecycle hooks when D1 rejects the checkpoint revision', async () => {
+    const runId = command().runId
+    await seed(runId)
+    const persisted = store
+    const afterCommit = vi.fn(() => Effect.void)
+    const executor = Effect.runSync(
+      makeDemoExecutor.pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            Layer.succeed(Store, {
+              ...persisted,
+              commit: (input) => persisted.commit({ ...input, expectedRevision: 999 }),
+            }),
+            Layer.succeed(LifecycleHook, { afterCommit }),
+            BrowserCrypto.layer,
+          ),
+        ),
+      ),
+    )
+    await expect(Effect.runPromise(executor.start(runId))).rejects.toBeDefined()
+    expect(afterCommit).not.toHaveBeenCalled()
+    expect(await Effect.runPromise(persisted.getRun(runId))).toMatchObject({ status: 'pending', revision: 0 })
+    expect(await Effect.runPromise(persisted.getEvents(runId, EventRange.All()))).toEqual([])
+  })
+
   it.each([version1, version2] as const)(
     'captures demo dependencies once and executes %s without a caller context',
     async (version) => {
@@ -686,9 +887,9 @@ describe('demo cold restoration', () => {
         ),
       )
       await Effect.runPromise(executor.start(runId))
-      expect(await Effect.runPromise(freshStore().getRun(runId))).toMatchObject({ status: 'waiting', revision: 2 })
+      expect(await Effect.runPromise(freshStore().getRun(runId))).toMatchObject({ status: 'waiting', revision: 3 })
       await Effect.runPromise(executor.resume(runId))
-      expect(await Effect.runPromise(freshStore().getRun(runId))).toMatchObject({ status: 'completed', revision: 4 })
+      expect(await Effect.runPromise(freshStore().getRun(runId))).toMatchObject({ status: 'completed', revision: 5 })
       expect(await Effect.runPromise(store.getEvents(runId, { _tag: 'All' }))).toHaveLength(10)
     },
   )
@@ -729,7 +930,7 @@ describe('demo cold restoration', () => {
       const waiting = await Effect.runPromise(store.getRun('run_00000000-0000-4000-8000-000000000001'))
       expect(waiting).toMatchObject({
         status: 'waiting',
-        revision: 2,
+        revision: 3,
         workflowVersion: version,
         snapshot: { _tag: 'Waiting', version: SemVer.format(version) },
       })
@@ -740,11 +941,11 @@ describe('demo cold restoration', () => {
       const completed = await Effect.runPromise(store.getRun('run_00000000-0000-4000-8000-000000000001'))
       expect(completed).toMatchObject({
         status: 'completed',
-        revision: 4,
+        revision: 5,
         snapshot: {
           _tag: 'Completed',
           version: SemVer.format(version),
-          result: SemVer.equals(version, version1) ? 'published:draft:v1' : 'published:draft:v2:reviewed',
+          context: { result: SemVer.equals(version, version1) ? 'published:draft:v1' : 'published:draft:v2:reviewed' },
         },
       })
       const events = await Effect.runPromise(
@@ -768,7 +969,7 @@ describe('demo cold restoration', () => {
     await run(resumeRun('run_00000000-0000-4000-8000-000000000001'))
     expect(await Effect.runPromise(store.getRun('run_00000000-0000-4000-8000-000000000001'))).toMatchObject({
       status: 'waiting',
-      revision: 2,
+      revision: 3,
     })
     expect(
       Array.filter(
@@ -836,9 +1037,9 @@ describe('interrupted workflow recovery', () => {
       ),
     ).rejects.toMatchObject({ _tag: 'ExternalError', kind: 'storage' })
     expect(await Effect.runPromise(store.getRun('run_00000000-0000-4000-8000-000000000001'))).toMatchObject({
-      revision: 3,
+      revision: 4,
       status: 'running',
-      snapshot: { _tag: 'Publishing', prepared: 'draft:v1' },
+      snapshot: { _tag: 'Running', state: 'publish', context: { prepared: 'draft:v1' } },
     })
     store = freshStore()
     await run(resumeRun('run_00000000-0000-4000-8000-000000000001'))
@@ -849,7 +1050,7 @@ describe('interrupted workflow recovery', () => {
     ).toHaveLength(1)
     expect(await Effect.runPromise(store.getRun('run_00000000-0000-4000-8000-000000000001'))).toMatchObject({
       status: 'completed',
-      revision: 4,
+      revision: 5,
     })
     await expect(run(startRun('run_00000000-0000-4000-8000-000000000001'))).rejects.toMatchObject({
       _tag: 'InvalidOperation',
@@ -883,7 +1084,7 @@ describe('interrupted workflow recovery', () => {
     const pending = Array.getUnsafe(runs, 0)
     expect(pending).toMatchObject({ status: 'pending', revision: 0 })
     await run(resumeRun(pending.runId))
-    expect(await Effect.runPromise(store.getRun(pending.runId))).toMatchObject({ status: 'waiting', revision: 2 })
+    expect(await Effect.runPromise(store.getRun(pending.runId))).toMatchObject({ status: 'waiting', revision: 3 })
   })
 
   it('keeps the persisted checkpoint unchanged when an individual resume RPC rejects', async () => {
@@ -1161,7 +1362,7 @@ describe('Effect HTTP API', () => {
         expect(detail.status).toBe(200)
         expect(await detail.json()).toMatchObject({
           run: { status: 'waiting' },
-          state: { revision: 2 },
+          state: { revision: 3 },
           shapes: { nodes: [{ state: 'succeeded' }, { state: 'waiting' }, { state: 'idle' }] },
         })
         const listed = await handler.handler(new Request('http://localhost/api/runs'))
@@ -1173,7 +1374,7 @@ describe('Effect HTTP API', () => {
         expect(resumed.status).toBe(200)
         expect(await resumed.json()).toMatchObject({
           run: { status: 'completed', workflowVersion: version },
-          state: { revision: 4 },
+          state: { revision: 5 },
         })
         const again = await handler.handler(
           new Request(`http://localhost/api/runs/${body.run.runId}/resume`, { method: 'POST' }),

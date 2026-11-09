@@ -57,7 +57,8 @@ The constructor assertions in [the error contract tests](../src/features/workflo
 
 ### Database and domain origin
 
-[DatabaseQueries.execute](../src/features/workflow/services/database-queries.ts) catches defects from the selected D1 executor and converts them into checked storage failures.
+[The Alchemy query adapter](../src/features/workflow/services/database-queries.ts) converts D1 defects to Reylo execution failures.
+[Storage translation](../src/features/workflow/services/database.ts) converts those failures and native batch defects into checked storage failures, retaining their original causes.
 The current classifier uses an `Error` message containing `flowdeck_` or `UNIQUE constraint` to construct `StorageConflict`.
 Other database execution defects become `ExternalError` with `kind: 'storage'`.
 Both cases retain the original value as the required `cause` and attach the operation name.

@@ -8,7 +8,7 @@ import { makeRpcResponse } from '@/features/rpc-boundary'
 import { RunId } from '@/features/workflow/domain/identity'
 import { D1StoreLive } from '@/features/workflow/services/d1-store'
 import { WorkflowDatabase } from '@/features/workflow/services/database'
-import { DatabaseQueriesLive } from '@/features/workflow/services/database-queries'
+import { AlchemyQueryExecutorLive, DatabaseQueriesLive } from '@/features/workflow/services/database-queries'
 import { rpcCall, rpcCommandResult, type WireWorkflowExecutor } from '@/features/workflow/services/workflow-rpc'
 import { Database } from '@/workers/database'
 import { DemoWorkflow } from '@/workers/definitions'
@@ -25,6 +25,7 @@ const makeDemoRunRuntime = Effect.gen(function* () {
         Layer.mergeAll(
           D1StoreLive.pipe(
             Layer.provide(DatabaseQueriesLive),
+            Layer.provide(AlchemyQueryExecutorLive),
             Layer.provide(Layer.succeed(WorkflowDatabase, database)),
           ),
           BrowserCrypto.layer,

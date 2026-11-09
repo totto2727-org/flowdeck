@@ -37,6 +37,28 @@ describe('development strict restore boundary', () => {
     result: 'done',
   }
 
+  it.each([{}, { runtime: 'pi' }, { runtime: null }, { runtime: false }])(
+    'rejects a malformed runtime in the current machine envelope',
+    async (runtime) => {
+      const prepared = await Effect.runPromise(developmentDefinition.prepare(input))
+      const snapshot = {
+        ...prepared.snapshot,
+        context: {
+          version: '1.0.0',
+          repository: input.repository,
+          task: input.task,
+          phase: { _tag: 'Ready' },
+          ...runtime,
+        },
+      }
+      await expect(
+        Effect.runPromise(restoreDevelopment({ ...run, status: 'pending', snapshot })),
+      ).rejects.toMatchObject({
+        _tag: 'InvalidSnapshot',
+      })
+    },
+  )
+
   it('rejects omitted runtime and command identities instead of restoring them', async () => {
     await expect(Effect.runPromise(restoreDevelopment({ ...run, snapshot: completing }))).rejects.toMatchObject({
       _tag: 'InvalidSnapshot',
@@ -58,7 +80,7 @@ describe('development strict restore boundary', () => {
 
 describe('development definition', () => {
   it('prepares the workflow-owned graph and PiHarness snapshot', async () => {
-    expect(await Effect.runPromise(developmentDefinition.prepare(input))).toEqual({
+    expect(await Effect.runPromise(developmentDefinition.prepare(input))).toMatchObject({
       graph: {
         graphId: 'jcode-development-1_0_0-graph-1',
         schemaVersion: 1,
@@ -73,10 +95,15 @@ describe('development definition', () => {
       snapshot: {
         _tag: 'Ready',
         schemaVersion: 1,
+        state: 'implement',
         version: '1.0.0',
-        runtime: 'pi-harness',
-        repository: input.repository,
-        task: input.task,
+        context: {
+          version: '1.0.0',
+          runtime: 'pi-harness',
+          repository: input.repository,
+          task: input.task,
+          phase: { _tag: 'Ready' },
+        },
       },
     })
   })
@@ -85,7 +112,7 @@ describe('development definition', () => {
     'preserves the validated URL string %s',
     async (repository) => {
       const prepared = await Effect.runPromise(developmentDefinition.prepare({ ...input, repository }))
-      expect(prepared.snapshot).toMatchObject({ repository })
+      expect(prepared.snapshot).toMatchObject({ context: { repository } })
     },
   )
 

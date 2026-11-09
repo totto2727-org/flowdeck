@@ -11,7 +11,7 @@ import { ExternalError } from '@/features/workflow/domain/errors'
 import { CommitId, EventId, ExecutionId } from '@/features/workflow/domain/identity'
 import { JsonObject, RunDetail, type Run } from '@/features/workflow/domain/model'
 import { D1StoreLive } from '@/features/workflow/services/d1-store'
-import { DatabaseQueriesLive } from '@/features/workflow/services/database-queries'
+import { AlchemyQueryExecutorLive, DatabaseQueriesLive } from '@/features/workflow/services/database-queries'
 import { D1Binding, NativeWorkflowDatabase } from '@/features/workflow/services/native-database'
 import { Store, type StoreService } from '@/features/workflow/services/store'
 import { WorkflowRegistry } from '@/features/workflow/services/workflow-definition'
@@ -25,6 +25,7 @@ import {
   DevelopmentSnapshotJson,
   developmentGraph,
   initialDevelopmentSnapshot,
+  makeDevelopmentExecutor,
   restoreDevelopment,
   resumeDevelopmentRun,
   startDevelopmentRun,
@@ -32,6 +33,7 @@ import {
 import { DevelopmentCreateRun, developmentVersion } from './input'
 import { CommandId } from './model'
 import type { Session, TurnReceipt, TurnRequest } from './model'
+import { DevelopmentContextJson } from './pi-task'
 import { DevelopmentSandbox } from './sandbox'
 
 const input = {
@@ -81,6 +83,7 @@ beforeEach(async () => {
   )
   storeLayer = D1StoreLive.pipe(
     Layer.provide(DatabaseQueriesLive),
+    Layer.provide(AlchemyQueryExecutorLive),
     Layer.provide(NativeWorkflowDatabase),
     Layer.provide(Layer.succeed(D1Binding, database)),
   )
@@ -97,9 +100,8 @@ beforeEach(async () => {
       Effect.gen(function* () {
         const current = yield* store.getRun(runId)
         expect(current.snapshot).toMatchObject({
-          _tag: 'PendingTurn',
-          commandId: request.commandId,
-          sessionId: session.sessionId,
+          _tag: 'Running',
+          context: { phase: { _tag: 'PendingTurn', commandId: request.commandId, sessionId: session.sessionId } },
         })
         submissions = Array.append(submissions, { runId, input: request })
         const receipt = { commandId: request.commandId, status: 'running' } as const
@@ -129,6 +131,9 @@ const execute = <A, E>(
     ),
   )
 const current = () => Effect.runPromise(freshStore().getRun(initialRun.runId))
+const decodeContext = Schema.decodeUnknownSync(DevelopmentContextJson)
+const decodeDevelopmentSnapshot = Schema.decodeUnknownSync(DevelopmentSnapshotJson)
+const contextOf = (snapshot: unknown) => decodeContext(decodeDevelopmentSnapshot(snapshot).context)
 const start = () => execute(startDevelopmentRun(initialRun.runId))
 const resume = () => execute(resumeDevelopmentRun(initialRun.runId))
 const finishTurn = (node: 'implement' | 'verify') => {
@@ -137,6 +142,26 @@ const finishTurn = (node: 'implement' | 'verify') => {
 }
 
 describe('development workflow with canonical D1 checkpoints', () => {
+  it('captures the Pi sandbox and store once and completes with no caller context', async () => {
+    const executor = await execute(makeDevelopmentExecutor)
+    sandbox = {
+      ensureSession: () => Effect.die('A new caller sandbox must not be used'),
+      getTurn: () => Effect.die('A new caller sandbox must not be used'),
+      submitTurn: () => Effect.die('A new caller sandbox must not be used'),
+      complete: () => Effect.die('A new caller sandbox must not be used'),
+    }
+    await Effect.runPromise(executor.start(initialRun.runId))
+    expect(await current()).toMatchObject({ status: 'waiting', snapshot: { state: 'implement' } })
+    finishTurn('implement')
+    await Effect.runPromise(executor.resume(initialRun.runId))
+    expect(await current()).toMatchObject({ status: 'waiting', snapshot: { state: 'verify' } })
+    finishTurn('verify')
+    await Effect.runPromise(executor.resume(initialRun.runId))
+    expect(await current()).toMatchObject({ status: 'completed' })
+    expect(submissions).toHaveLength(2)
+    expect(completeCalls).toEqual([initialRun.runId])
+  })
+
   it.each(['run_00000000-0000-4000-8000-000000000002:implement:1', '3d360c7a-4b1a-4df3-9633-861a220bf5b7'])(
     'rejects a historical PiHarness pending command identity %s',
     async (commandId) => {
@@ -147,16 +172,17 @@ describe('development workflow with canonical D1 checkpoints', () => {
           expectedRevision: 0,
           status: 'running',
           snapshot: {
-            schemaVersion: 1,
-            version: '1.0.0',
-            runtime: 'pi-harness',
-            repository: input.repository.href,
-            task: input.task,
-            _tag: 'PendingTurn',
-            sessionId: '1',
-            nodeId: 'implement',
+            ...initialRun.snapshot,
+            _tag: 'Running',
             executionId: 'execution_00000000-0000-4000-8000-000000000001',
-            commandId,
+            attempt: 1,
+            context: {
+              version: '1.0.0',
+              runtime: 'pi-harness',
+              repository: input.repository.href,
+              task: input.task,
+              phase: { _tag: 'PendingTurn', sessionId: '1', commandId },
+            },
           },
           updatedAt: timestamp,
           events: [],
@@ -176,14 +202,17 @@ describe('development workflow with canonical D1 checkpoints', () => {
             ...initialRun,
             status: 'running',
             snapshot: {
-              schemaVersion: 1,
-              version: '1.0.0',
-              runtime: 'pi-harness',
-              repository: input.repository.href,
-              task: input.task,
-              _tag: 'Starting',
+              ...initialRun.snapshot,
+              _tag: 'Running',
               executionId: 'execution_00000000-0000-4000-8000-000000000001',
-              commandId,
+              attempt: 1,
+              context: {
+                version: '1.0.0',
+                runtime: 'pi-harness',
+                repository: input.repository.href,
+                task: input.task,
+                phase: { _tag: 'Starting', commandId },
+              },
             },
           }),
         ),
@@ -250,7 +279,14 @@ describe('development workflow with canonical D1 checkpoints', () => {
         workflowId: 'jcode-development',
         workflowVersion: developmentVersion,
         status: 'waiting',
-        snapshot: { runtime: 'pi-harness', sessionId: '1', repository: input.repository.href, task: input.task },
+        snapshot: {
+          context: {
+            runtime: 'pi-harness',
+            phase: { sessionId: '1' },
+            repository: input.repository.href,
+            task: input.task,
+          },
+        },
       })
       const resumed = await handler.handler(
         new Request(`http://localhost/api/runs/${detail.run.runId}/resume`, { method: 'POST' }),
@@ -264,7 +300,7 @@ describe('development workflow with canonical D1 checkpoints', () => {
   })
   it('persists repository, task, pinned version and immutable graph before starting', async () => {
     expect(await current()).toEqual(initialRun)
-    expect(initialRun.snapshot).toMatchObject({ runtime: 'pi-harness' })
+    expect(initialRun.snapshot).toMatchObject({ context: { runtime: 'pi-harness' } })
     expect(await Effect.runPromise(store.getGraph(initialRun.graphId))).toEqual(developmentGraph)
   })
   describe.each([undefined, 'pi'] as const)('legacy runtime %s', (runtime) => {
@@ -328,18 +364,19 @@ describe('development workflow with canonical D1 checkpoints', () => {
         return store.commit(command)
       },
     })
-    expect(commitIds).toHaveLength(3)
+    expect(commitIds).toHaveLength(4)
     expect(Array.every(commitIds, Schema.is(CommitId))).toBe(true)
     expect(Schema.is(CommandId)(submissions[0]?.input.commandId)).toBe(true)
     expect(await current()).toMatchObject({
       status: 'waiting',
       snapshot: {
-        _tag: 'AwaitingTurn',
-        runtime: 'pi-harness',
-        commandId: expect.any(String),
-        sessionId: '1',
-        repository: input.repository.href,
-        task: input.task,
+        _tag: 'Waiting',
+        context: {
+          runtime: 'pi-harness',
+          phase: { _tag: 'AwaitingTurn', commandId: expect.any(String), sessionId: '1' },
+          repository: input.repository.href,
+          task: input.task,
+        },
       },
     })
     expect(submissions).toEqual([
@@ -369,10 +406,10 @@ describe('development workflow with canonical D1 checkpoints', () => {
     expect(events[0]).not.toHaveProperty('executionId')
     expect(events[0]).not.toHaveProperty('attempt')
     expect(Array.every(events, (event) => DateTime.isUtc(event.createdAt))).toBe(true)
-    if (checkpoint._tag !== 'AwaitingTurn') throw new Error('Expected awaiting checkpoint')
+    if (checkpoint._tag !== 'Waiting') throw new Error('Expected awaiting checkpoint')
     expect(events[2]).toMatchObject({
       type: 'run.waiting',
-      nodeId: checkpoint.nodeId,
+      nodeId: checkpoint.state,
       executionId: checkpoint.executionId,
       attempt: 1,
     })
@@ -394,7 +431,7 @@ describe('development workflow with canonical D1 checkpoints', () => {
     finishTurn('implement')
     await start()
     expect(submissions).toHaveLength(1)
-    expect(await current()).toMatchObject({ snapshot: { nodeId: 'implement' } })
+    expect(await current()).toMatchObject({ snapshot: { state: 'implement' } })
   })
   it('reconstructs runtime from D1 and submits verification in the same run and Pi session', async () => {
     await start()
@@ -403,10 +440,9 @@ describe('development workflow with canonical D1 checkpoints', () => {
     expect(await current()).toMatchObject({
       status: 'waiting',
       snapshot: {
-        _tag: 'AwaitingTurn',
-        nodeId: 'verify',
-        commandId: expect.any(String),
-        sessionId: '1',
+        _tag: 'Waiting',
+        state: 'verify',
+        context: { phase: { _tag: 'AwaitingTurn', commandId: expect.any(String), sessionId: '1' } },
       },
     })
     expect(submissions).toHaveLength(2)
@@ -436,7 +472,10 @@ describe('development workflow with canonical D1 checkpoints', () => {
     await resume()
     expect(await current()).toMatchObject({
       status: 'completed',
-      snapshot: { _tag: 'Completed', runtime: 'pi-harness', sessionId: '1', result: 'verify result' },
+      snapshot: {
+        _tag: 'Completed',
+        context: { runtime: 'pi-harness', phase: { _tag: 'TurnComplete', sessionId: '1', result: 'verify result' } },
+      },
     })
     expect(completeCalls).toEqual([initialRun.runId])
     const events = await Effect.runPromise(store.getEvents(initialRun.runId, { _tag: 'All' }))
@@ -458,8 +497,9 @@ describe('development workflow with canonical D1 checkpoints', () => {
       'run.started',
       'node.started',
       'run.waiting',
-      'node.succeeded',
+      // The common lifecycle policy records accepted resume before its resulting node success.
       'run.resumed',
+      'node.succeeded',
       'node.started',
       'run.waiting',
       'run.resumed',
@@ -480,7 +520,7 @@ describe('development workflow with canonical D1 checkpoints', () => {
         },
       }
       await resume()
-      expect(await current()).toMatchObject({ status: 'failed', snapshot: { _tag: 'Failed', nodeId: 'implement' } })
+      expect(await current()).toMatchObject({ status: 'failed', snapshot: { _tag: 'Failed', state: 'implement' } })
       const events = await Effect.runPromise(store.getEvents(initialRun.runId, { _tag: 'All' }))
       expect(Array.map(Array.takeRight(events, 2), (event) => event.type)).toEqual(['node.failed', 'run.failed'])
       expect(submissions).toHaveLength(1)
@@ -503,7 +543,7 @@ describe('development workflow with canonical D1 checkpoints', () => {
       commit: (command) =>
         Option.exists(
           Schema.decodeUnknownOption(DevelopmentSnapshotJson)(command.snapshot),
-          (snapshot) => snapshot._tag === 'AwaitingTurn',
+          (snapshot) => snapshot._tag === 'Waiting',
         )
           ? Effect.fail(
               new ExternalError({ kind: 'storage', operation: 'test checkpoint failure', cause: 'unavailable' }),
@@ -516,10 +556,13 @@ describe('development workflow with canonical D1 checkpoints', () => {
     })
     expect(await current()).toMatchObject({
       status: 'running',
-      snapshot: { _tag: 'PendingTurn', commandId: expect.any(String) },
+      snapshot: { _tag: 'Running', context: { phase: { _tag: 'PendingTurn', commandId: expect.any(String) } } },
     })
     await resume()
-    expect(await current()).toMatchObject({ status: 'waiting', snapshot: { _tag: 'AwaitingTurn' } })
+    expect(await current()).toMatchObject({
+      status: 'waiting',
+      snapshot: { _tag: 'Waiting', context: { phase: { _tag: 'AwaitingTurn' } } },
+    })
     expect(submissions).toHaveLength(1)
     expect(
       Array.filter(
@@ -536,18 +579,20 @@ describe('development workflow with canonical D1 checkpoints', () => {
         Effect.fail(new ExternalError({ kind: 'service', operation: 'test binding', cause: 'offline' })),
     }
     await expect(start()).rejects.toMatchObject({ _tag: 'ExternalError', kind: 'service' })
-    expect(await current()).toMatchObject({ status: 'running', snapshot: { _tag: 'Starting' } })
+    expect(await current()).toMatchObject({ status: 'running', snapshot: { context: { phase: { _tag: 'Starting' } } } })
     const starting = Schema.decodeUnknownSync(DevelopmentSnapshotJson)((await current()).snapshot)
-    if (starting._tag !== 'Starting') throw new Error('Expected starting checkpoint')
+    if (starting._tag !== 'Running') throw new Error('Expected active node execution')
+    const startingContext = contextOf((await current()).snapshot)
+    if (startingContext.phase._tag !== 'Starting') throw new Error('Expected starting checkpoint')
     expect(submissions).toEqual([])
     sandbox = { ...sandbox, ensureSession: original }
     await resume()
     expect(submissions).toHaveLength(1)
-    expect(submissions[0]?.input.commandId).toBe(starting.commandId)
+    expect(submissions[0]?.input.commandId).toBe(startingContext.phase.commandId)
     const resumed = Schema.decodeUnknownSync(DevelopmentSnapshotJson)((await current()).snapshot)
     expect(resumed).toMatchObject({ executionId: starting.executionId })
     expect(Schema.is(ExecutionId)(starting.executionId)).toBe(true)
-    expect(starting.executionId).not.toBe(starting.commandId)
+    expect(starting.executionId).not.toBe(startingContext.phase.commandId)
     expect(
       Array.filter(
         await Effect.runPromise(store.getEvents(initialRun.runId, { _tag: 'All' })),
@@ -562,7 +607,7 @@ describe('development workflow with canonical D1 checkpoints', () => {
     await resume()
     expect(await current()).toMatchObject({
       status: 'failed',
-      snapshot: { nodeId: 'verify', message: expect.stringContaining('original active Pi session') },
+      snapshot: { state: 'verify', message: expect.stringContaining('original active Pi session') },
     })
     expect(submissions).toHaveLength(1)
     expect(completeCalls).toEqual([])
@@ -590,7 +635,7 @@ describe('development workflow with canonical D1 checkpoints', () => {
     })
     expect(await current()).toMatchObject({
       status: 'running',
-      snapshot: { _tag: 'Completing', sessionId: '1' },
+      snapshot: { context: { phase: { _tag: 'Completing', sessionId: '1' } } },
     })
     expect(session.status).toBe('completed')
     await resume()
@@ -639,7 +684,7 @@ describe('development workflow with canonical D1 checkpoints', () => {
     finishTurn('verify')
     sandbox = { ...sandbox, complete: () => Effect.succeed(session) }
     await resume()
-    expect(await current()).toMatchObject({ status: 'failed', snapshot: { nodeId: 'verify' } })
+    expect(await current()).toMatchObject({ status: 'failed', snapshot: { state: 'verify' } })
     expect(completeCalls).toEqual([])
   })
   it('recovers a pending submission rejected before gateway acceptance using its original command ID', async () => {
@@ -652,8 +697,10 @@ describe('development workflow with canonical D1 checkpoints', () => {
         ),
     }
     await expect(start()).rejects.toMatchObject({ _tag: 'ExternalError', kind: 'service' })
-    expect(await current()).toMatchObject({ snapshot: { _tag: 'PendingTurn', commandId: expect.any(String) } })
-    const pending = Schema.decodeUnknownSync(DevelopmentSnapshotJson)((await current()).snapshot)
+    expect(await current()).toMatchObject({
+      snapshot: { context: { phase: { _tag: 'PendingTurn', commandId: expect.any(String) } } },
+    })
+    const pending = contextOf((await current()).snapshot).phase
     if (pending._tag !== 'PendingTurn') throw new Error('Expected pending turn')
     const commandId = pending.commandId
     expect(Schema.is(CommandId)(commandId)).toBe(true)

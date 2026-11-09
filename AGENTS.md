@@ -131,7 +131,9 @@ Use `fix` for Atlas HCL formatting and `check` for definition validation with an
 Keep existing `check` and `test` task names; do not add automatic migration checksum or schema drift validation.
 Use the published `@totto2727/reylo` and `@totto2727/reylo-sqlite` packages at matching versions.
 Do not replace registry dependencies with package links, Reylo patches, or fork checkout/build steps in CI.
-Keep receipt, state, and event writes in one native D1 batch using Reylo's public Standard Query `text` and `encode` contract.
+Use `@totto2727/reylo/effect` with an Alchemy-backed `QueryExecutor` Layer composed at each runtime root.
+Capture `makeQueryRunner` when constructing the query service, not when executing each operation.
+Keep receipt, state, and event writes in one native D1 batch using Reylo's public Effect `prepare` contract.
 Prepare and bind statements before calling the batch Effect.
 Its `PreparedStatement[]` input and the real-D1 test `executes already prepared statements without preparing inside batch` enforce this boundary.
 Use Alchemy's Effect-native D1 executor for reads and atomic batches; do not extract its raw binding and recreate Promise-to-Effect execution wrappers.
@@ -165,9 +167,12 @@ Treat committed shared-DB workflow state as canonical, not DO memory or pending 
 The official PiHarness owns durable conversation and operation state in its Durable Object storage.
 Make recovery explicit and workflow-owned.
 Never promise generic replay or exactly-once external side effects.
-Do not introduce a generic runner protocol, artifact store, or a custom general-purpose state-machine engine.
-Effect 4 currently has no official Machine module in the inspected releases.
-Keep the demo checkpoint transitions workflow-specific and identify official Machine integration as unresolved until a compatible API exists.
+Use the shared Effect Machine foundation for JavaScript workflow execution and graph generation.
+Keep tasks, transitions, and version-specific metadata in each workflow definition; do not maintain a second visual edge list.
+Let Effect Machine compute transitions and guards, and let the shared Effect driver own checkpoint commits, lifecycle events, and registered hooks.
+Do not add a handwritten transition interpreter, artifact store, or competing in-memory source of durable state.
+Keep external task reconciliation, such as Pi command receipts, in the owning task adapter rather than in the common driver.
+Use `@typeonce/effect-machine` and its version-matched [agent guide](https://effect-machine.typeonce.dev/agent-guide/); this package is not an installed Effect core module.
 See [Workflow graphs](docs/workflow-graphs.md) for graph construction, execution, versioning, and recovery contracts.
 
 ## Frontend and infrastructure

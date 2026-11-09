@@ -22,7 +22,9 @@ flowchart TB
   DevelopmentRun <--> DB
   DevelopmentRun --> Pi[Official PiHarness and pi-durable]
   Pi -->|official Computer Workspace tools| Container[computerd Container\nshared checkout]
-  V --> N[Thin observed node effects]
+  V --> Foundation[Shared Machine planner and Effect driver]
+  DevelopmentRun --> Foundation
+  Foundation --> N[Workflow-owned Effect tasks]
 ```
 
 All Workers, the D1 database, and the workspace Container belong to the `flowdeck` Alchemy project.
@@ -43,17 +45,20 @@ Development binds local ports 4380 through 4384 to loopback.
 | Workflow integration    | Expose the catalog and run operations, persist new runs, and select fixed workflow bindings.     |
 | Workflow entry          | Resolve the run DO and forward typed operations.                                                 |
 | Run DO                  | Load committed state and invoke the pinned workflow implementation.                              |
-| Workflow implementation | Define version-specific nodes, transitions, checkpoint interpretation, and recovery.             |
+| Workflow implementation | Declare versioned machines, context schemas, tasks, and external-operation reconciliation.       |
+| Shared foundation       | Plan with the library, derive graphs, and commit task checkpoints and lifecycle events.          |
 | Shared DB               | Store workflow versions, immutable graphs, runs, snapshots, ordered events, and commit receipts. |
 
-Do not add dynamic workflow registration, dynamic dispatch, a common runner protocol, binary transfer, or a shared artifact store.
-Runtime resources and side-effect recovery belong to the workflow that uses them.
+Keep workflow registration and static bindings at the application composition boundary rather than introducing dynamic workflow discovery or dynamic service binding lookup.
+The shared foundation owns task driving and lifecycle persistence, while runtime resources and external-side-effect reconciliation belong to workflow-owned task adapters.
+Do not add a competing transition interpreter or shared artifact store.
 
 Worker entry points and Worker-specific features live under `src/workers/<worker>/`.
-Shared workflow schemas, projections, and persistence live under `src/features/workflow/`.
+Shared workflow schemas, projections, persistence, the native planner adapter, and the Effect task driver live under `src/features/workflow/`.
 The shared `Workflows` service is Control's only workflow dependency.
 The application follows modular-monolith boundaries: each workflow is an independent application module behind a shared interface.
-Workflow IDs, supported versions, input validation, initial snapshots, and graphs live under that workflow's own `features/input.ts` and `features/definition.ts`.
+Workflow IDs, supported versions, input validation, native machine declarations, task adapters, and initial context live under that workflow's own `features/` directory.
+Versioned demo definitions live in `version-1.ts` and `version-2.ts`, while development declares its topology in `development-machine.ts`.
 `src/features/workflow/services/workflow-definition.ts` defines only the neutral definition, executor, and registry contracts.
 `src/workers/workflow/features/registration.ts` combines the workflow-provided definitions and fixed execution bindings into an array.
 The integration service uses registry lookup for catalog, create, and resume operations without branching on workflow IDs.
@@ -91,21 +96,18 @@ Each service logs its original failure locally with an error ID and sends only a
 The parent creates a new local error with that problem as its cause; it does not reconstruct the child's exception or receive its stack.
 React and Playwright remain framework boundaries.
 
-### State Machine API constraint
+### State-machine library and durable execution
 
-The design references the Effect 3 experimental Machine API.
-The inspected Effect 4.0.1, 4.0.2, 4.0.5, and installed 4.0.6 do not export a compatible Machine module.
-Do not describe this experiment as an official Machine integration.
-The demo uses a small workflow-owned tagged state with a Schema restore boundary and Match transitions.
-There is no replacement general-purpose state-machine engine.
-Official Machine integration remains unresolved until an API compatible with the application Effect version is available.
+Flowdeck selects [`@typeonce/effect-machine`](https://github.com/typeonce-dev/effect-machine), a schema-first community library for Effect.
+The installed package is `0.46.0`, with peer dependency `effect: ^4.0.0`.
+Effect core `4.0.6` does not contain the earlier experimental Machine API, so this is adoption of the separately published library, not an official core module.
+XState and native Cloudflare Workflows are not the selected execution foundation.
 
-The node wrapper records start, success, and failure through persistence hooks.
-The workflow commits snapshots at its transition boundaries.
-The demo states are Ready, Preparing, Waiting, Publishing, Completed, and Failed.
-The two bundled implementations use different graph labels and task results.
-The sample task bodies are pure, so a repeated interrupted task is safe.
-This does not establish exactly-once external side effects.
+The library's [planning and persistence contracts](https://github.com/typeonce-dev/effect-machine/blob/main/packages/effect-machine/README.md#persistence) distinguish logical state from a running machine process.
+Pure planning computes state changes without executing command effects.
+The application integrates that planning boundary with Effect task execution and shared D1 checkpoints rather than treating a process-local machine instance as durable state.
+See [Workflow graphs](workflow-graphs.md) for the implemented definition, driver, lifecycle-hook, and recovery contracts.
+This integration does not establish exactly-once external side effects.
 
 ## Data and graph identity
 
@@ -145,6 +147,11 @@ Neither ordering path depends on lexical ID order or UUIDv7.
 | Run event        | Event ID, run ID, ordered sequence, kind-specific execution identity, payload. |
 | Commit receipt   | Commit ID, exact command, revision, first event sequence, event count.         |
 
+The machine definition supplies the single topology source used for execution and graph derivation.
+`src/features/workflow/machine.ts` uses the selected library's compiled state nodes and transition definitions to construct `GraphDefinition`.
+Workflow modules do not maintain a second visual edge list.
+The graph JSON records that derived contract for the run, not executable tasks or a complete machine runtime.
+
 The current graph IDs are explicit versioned identifiers, not content hashes.
 A repeated identical graph is reused.
 Database guards reject reuse of a graph ID with different content and prevent graph or version updates.
@@ -161,7 +168,8 @@ Other run lifecycle events do not carry those fields, and boundary decoders use 
 SQL nullable columns are a persistence detail that the D1 adapter converts at its boundary, not a domain state representation.
 Run and event timestamps are official `DateTime.Utc` values internally, with official JSON codecs and ISO formatting at persistence and transport boundaries.
 Snapshots and event payloads use the shared official `Schema.JsonObject`, which permits nested JSON but rejects arrays or scalars as the root and rejects non-JSON nested values.
-Each workflow validates and encodes its own richer checkpoint schema before handing the resulting JSON object to shared persistence.
+The shared driver validates and encodes the execution envelope and library logical snapshot.
+Each workflow supplies the context schema for its domain data and external-operation recovery phases.
 The routing envelope leaves workflow-specific input unknown until the selected workflow validates it, rather than importing workflow domain knowledge into the common interface.
 
 ## Commit and acknowledgment
@@ -171,6 +179,11 @@ The routing envelope leaves workflow-specific input unknown until the selected w
 3. Submit the statements in one D1 batch.
 4. Reject a stale revision or a changed command that reuses a commit ID.
 5. Return an acknowledgment only after the batch succeeds and the receipt is read.
+
+The shared driver invokes registered lifecycle hooks after the D1 acknowledgment.
+Hooks are best-effort observation: a failure does not roll back state, and a crash can occur after commit but before hook delivery.
+No transactional hook outbox or replay guarantee is provided.
+Workflow progression and external-operation reconciliation must not depend on an observational hook.
 
 The revision guard executes inside the database transaction.
 Duplicate event IDs within a command are rejected before the batch starts.
@@ -190,10 +203,20 @@ Control forwards creation to the integration Worker.
 The integration Worker persists a new pending run, its version, and its graph before calling the selected workflow binding.
 A binding failure must leave the pending run available for explicit recovery.
 A DO call loads the last committed state instead of using a cached continuation.
-Start runs the first node and waits at the manual checkpoint.
-Resume completes the checkpoint and runs the second node.
-Preparing and Publishing snapshots identify interrupted node executions and permit the demo's safe task retry.
+The shared checkpoint states are Ready, Running, Waiting, Completed, and Failed.
+The native machine snapshot and workflow context are decoded and checked against the run's pinned identity, version, graph, status, and task position.
+The selected library computes transitions, while the common Effect driver commits task intent before invoking its task.
+Tasks expose `execute(context)` and obtain invocation identity, operation, and checkpoint writes through the shared `TaskExecution` Effect service.
+The driver scopes that service to the current invocation's revision and checkpoint references, while stable dependencies remain captured at runtime construction.
+Checkpoint inputs are validated with the definition's context schema before persistence.
+A restored Running checkpoint reuses execution identity and does not emit a duplicate node start.
 Completed and Failed are terminal and cannot run again.
+
+The demo's start path executes preparation, then persists a wait at its approval task.
+Explicit resume completes that approval and drives publishing through the same shared lifecycle path.
+The Pi workflow uses the same driver for implement and verify, with external command/session phases inside its own typed context.
+Its task adapter returns an unchanged outcome while a polled turn remains running, without new checkpoints or events.
+See [Workflow graphs](workflow-graphs.md) for task results, lifecycle hooks, and the Pi recovery phase diagram.
 
 ```mermaid
 sequenceDiagram
@@ -207,7 +230,7 @@ sequenceDiagram
   W->>E: start(runId)
   E->>O: Resolve same logical run ID
   O->>D: Load committed snapshot
-  O->>D: Commit node events and Waiting snapshot
+  O->>D: Commit node events and Waiting checkpoint
   D-->>O: Atomic commit succeeds
   O-->>E: Committed result
   E-->>W: Operation acknowledged
@@ -218,8 +241,8 @@ sequenceDiagram
   W->>D: Read pinned workflow ID
   W->>E: resume(runId)
   E->>O: Resolve same logical run ID
-  O->>D: Reload version and Waiting snapshot
-  O->>D: Commit completion snapshot and events
+  O->>D: Reload pinned native snapshot and task context
+  O->>D: Commit completion checkpoint and events
 ```
 
 DO replacement does not itself trigger execution.
@@ -270,15 +293,15 @@ Production DNS, Access admission, and deployment behavior require a separate aut
 
 ## Remaining work
 
-- Integrate an official Effect Machine API if a compatible version becomes available.
 - Resolve the remaining PiHarness task acceptance and environment limits before deployment; see [development sandbox](development-sandbox.md).
-- Add Cloudflare Workflows nodes as another workflow-owned integration.
 - Establish production operating limits, retention, pagination, and old-version removal procedures before a larger deployment.
 - Authorize and validate the real production domain and Access policy before release.
 
 ## Source references
 
-- [Effect Machine v3](https://effect.website/docs/v3/api/experimental/Machine)
+- [Effect Machine library](https://github.com/typeonce-dev/effect-machine)
+- [Effect Machine planning and snapshot API source](https://github.com/typeonce-dev/effect-machine/blob/main/packages/effect-machine/src/Machine.ts)
+- [Effect Machine API reference](https://effect-machine.typeonce.dev)
 - [Cloudflare service bindings](https://developers.cloudflare.com/workers/runtime-apis/bindings/service-bindings/)
 - [Durable Object lifecycle](https://developers.cloudflare.com/durable-objects/concepts/durable-object-lifecycle/)
 - [D1 atomic batch API](https://developers.cloudflare.com/d1/worker-api/d1-database/#batch)

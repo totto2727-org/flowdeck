@@ -17,6 +17,7 @@ For agent-assisted coding tasks, see [Pi development setup and limits](docs/deve
 ## Key features
 
 - Versioned workflows with immutable run graphs.
+- Shared Effect Machine transitions and Effect tasks, with execution and visual graphs derived from one definition.
 - Saved checkpoints, explicit resume, and recovery.
 - Graph navigation and inspection of state and ordered events.
 - A Pi development workflow for implementation and verification in one workspace.
