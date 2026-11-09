@@ -12,6 +12,12 @@ minimumReleaseAgeStrict: true
 minimumReleaseAgeExclude:
   - '@totto2727/reylo@0.7.1'
   - '@totto2727/reylo-sqlite@0.7.1'
+  # TODO: Remove these approved exact-version exceptions after 2026-11-10T12:45:19.626Z.
+  # Latest registry publication: @effront/core@0.4.1, 2026-11-09T12:45:19.626Z.
+  - '@effront/alchemy@0.4.1'
+  - '@effront/core@0.4.1'
+  - '@effront/tailwind@0.4.1'
+  - '@effront/vite@0.4.1'
 
 # Only the native build tools required by Cloudflare's local runtime are trusted.
 allowBuilds:
