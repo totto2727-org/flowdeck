@@ -9,6 +9,7 @@ overrides:
   vitest@*: 5.0.5
 
 patchedDependencies:
+  '@effront/alchemy@0.4.0': 6fd41fd71d65517fb752597addad4177ebccb3227422d178ca68774ece8e5267
   alchemy@2.0.0-beta.83: 2d5d1cd63b0b8149a3d52b1f4920dd9f8d4f31117389fbcd70fae71de8edff50
 
 importers:
@@ -31,11 +32,11 @@ importers:
         specifier: ^4.0.6
         version: 4.0.6(effect@4.0.6)
       '@effront/alchemy':
-        specifier: ^0.3.1
-        version: 0.3.1(bd771975c29bc56b9f946ec86a1a5bd1)
+        specifier: ^0.4.0
+        version: 0.4.0(patch_hash=6fd41fd71d65517fb752597addad4177ebccb3227422d178ca68774ece8e5267)(43af3e0a3f20c5db4c29e39ac708129f)
       '@effront/core':
-        specifier: ^0.3.1
-        version: 0.3.1(@effect/platform-browser@4.0.6(effect@4.0.6))(@voidzero-dev/vite-plus-core@1.4.0(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(typescript@7.1.0-dev.20261030.1)(yaml@2.9.1))(effect@4.0.6)(react-dom@19.3.1(react@19.3.1))(react-server-dom-webpack@19.3.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(webpack@5.112.0(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.30)(sharp@0.35.5(@types/node@24.19.2))))(react@19.3.1)
+        specifier: ^0.4.0
+        version: 0.4.0(@effect/platform-browser@4.0.6(effect@4.0.6))(@voidzero-dev/vite-plus-core@1.4.0(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(typescript@7.1.0-dev.20261030.1)(yaml@2.9.1))(effect@4.0.6)(react-dom@19.3.1(react@19.3.1))(react-server-dom-webpack@19.3.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(webpack@5.112.0(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.30)(sharp@0.35.5(@types/node@24.19.2))))(react@19.3.1)
       '@totto2727/reylo':
         specifier: ^0.7.1
         version: 0.7.1(@totto2727/reylo-sqlite@0.7.1)(effect@4.0.6)
@@ -86,11 +87,11 @@ importers:
         specifier: ^4.0.6
         version: 4.0.6(effect@4.0.6)(redis@6.3.0)
       '@effront/tailwind':
-        specifier: ^0.3.1
-        version: 0.3.1(@voidzero-dev/vite-plus-core@1.4.0(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(typescript@7.1.0-dev.20261030.1)(yaml@2.9.1))
+        specifier: ^0.4.0
+        version: 0.4.0(@voidzero-dev/vite-plus-core@1.4.0(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(typescript@7.1.0-dev.20261030.1)(yaml@2.9.1))
       '@effront/vite':
-        specifier: ^0.3.1
-        version: 0.3.1(0fa4493669290627edb63d0429f6eaeb)
+        specifier: ^0.4.0
+        version: 0.4.0(a35e63304c7c6148165331dbe697cfc6)
       '@playwright/test':
         specifier: ^1.64.0
         version: 1.64.1
@@ -708,32 +709,32 @@ packages:
     peerDependencies:
       effect: ^4.0.5
 
-  '@effront/alchemy@0.3.1':
-    resolution: {integrity: sha512-Jty4pn4Ijzy9jQDMifdmdURySnOhBlv4GE1LN0ZiUwcqihVg705SEBUNh0E6ZPYfh5CVc7F7DQHP0ez0tAM/zg==}
+  '@effront/alchemy@0.4.0':
+    resolution: {integrity: sha512-VNAokqJt1hkc9W9mpV6zJSGOKxSOuRJBYe6rkAFGDcHa09Wf96hPfxIilXMcO5ulbgsDerCF6HT4MlB33wqFqQ==}
     peerDependencies:
-      '@effront/core': ^0.3.1
-      '@effront/vite': ^0.3.1
-      alchemy: 2.0.0-beta.81
-      effect: ^4.0.1
+      '@effront/core': ^0.4.0
+      '@effront/vite': ^0.4.0
+      alchemy: ^2.0.0-beta.81
+      effect: ^4.0.2
       vite: '*'
 
-  '@effront/core@0.3.1':
-    resolution: {integrity: sha512-XLXX8s17CDd4M9AsW/UMSohu5dQUk+FWgTle/dJD+vRNcV3zng5yBConbLOVwKeS9enctMFu9Q09rx7sAGjXGw==}
+  '@effront/core@0.4.0':
+    resolution: {integrity: sha512-QMlw65zBd0lE6CZHwAFJQtvn+BQ2Fh5mbhiYRxPEGGbx4ccufB4UV4qggW9llyxrdRQr+A1LAxUv+mMorOoRlQ==}
     peerDependencies:
-      '@effect/platform-browser': ^4.0.1
-      effect: ^4.0.1
-      react: 19.3.0
-      react-dom: 19.3.0
+      '@effect/platform-browser': ^4.0.2
+      effect: ^4.0.2
+      react: ^19.3.0
+      react-dom: ^19.3.0
 
-  '@effront/tailwind@0.3.1':
-    resolution: {integrity: sha512-UxkGMl9xZ0U2z450tuqExhGqaQ9jrgrIUcfEhXBbH66i/ay0nKWDwIsQR63aIi4oz2c6E5IdpclbkfO5C/wp/Q==}
+  '@effront/tailwind@0.4.0':
+    resolution: {integrity: sha512-7a0KI3MNXsvmFQ7SJJCDtV7fV+vNXq0k77UvE1kOpAlFPMuqb9v4XoxWDHpZQ3t2ZgeriUSD7Ll3d10KkKG01Q==}
     peerDependencies:
       vite: '*'
 
-  '@effront/vite@0.3.1':
-    resolution: {integrity: sha512-JZSuyd3UM+jv4R3WZL9xOMBwar6ooMEJkmDsu6tuh4ItDy/eQMavDYBHlqeAd8XuUcmsbja9LwHuR9+DqEh4DA==}
+  '@effront/vite@0.4.0':
+    resolution: {integrity: sha512-OJousxDowbGlph79djmQcuMkSn2bf+8x39nTr68dLeOCe3gajUkL/vDH/966Ug73NX5uHwpI685dIs/phRh7MQ==}
     peerDependencies:
-      '@effront/core': ^0.3.1
+      '@effront/core': ^0.4.0
       vite: '*'
 
   '@electric-sql/pglite-socket@0.0.20':
@@ -2398,13 +2399,13 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@vitejs/plugin-react@6.1.1':
-    resolution: {integrity: sha512-yxLaQV9gkhS8ezJqCM6+ndU7mDY6gqAg75NQ+0IjwEI8IYOmQCgkRwHKVSfWXW076DsqMo0Dk+0FK1U+M5RgFw==}
+  '@vitejs/plugin-react@6.2.1':
+    resolution: {integrity: sha512-9KyWCij3r0+qLG3Q62vBmv0VyevmYibAtxaCIVK9o0k6CXgaajZRIe8tpfchQcdZArJ5b/7OrIz4W3b2uxVRDA==}
     engines: {node: ^20.19.0 || >=22.12.0}
     peerDependencies:
-      '@rolldown/plugin-babel': ^0.1.7 || ^0.2.0
+      '@rolldown/plugin-babel': ^0.1.7 || ^0.2.0 || ^0.3.0
       babel-plugin-react-compiler: ^1.0.0
-      oxc-transform-react: ^0.145.0
+      oxc-transform-react: '>=0.152.0 <0.157.0'
       vite: ^8.0.0
     peerDependenciesMeta:
       '@rolldown/plugin-babel':
@@ -2414,8 +2415,8 @@ packages:
       oxc-transform-react:
         optional: true
 
-  '@vitejs/plugin-rsc@0.5.35':
-    resolution: {integrity: sha512-OZtJ57o5luSeNb2lqi3xeHHF41W8jCgm4nGb/1qmKjLb5gk/szIHS0Wxfo82WWQkKIqBBu6M697ohKWXrP0qqg==}
+  '@vitejs/plugin-rsc@0.5.39':
+    resolution: {integrity: sha512-hRa6CK119r1NkwgPWlPRiDP8e4rELCsIZwjGmQK0sOnayAkYPBkyJMip0GhYEt2ukBZaO0Uw3ICHHO9T692OFw==}
     peerDependencies:
       react: '*'
       react-dom: '*'
@@ -3134,6 +3135,9 @@ packages:
   es-module-lexer@2.3.2:
     resolution: {integrity: sha512-poHGpORABojJJucnV9KbOavETW8lBVnphkW77ER5/BQ5Fz7oXSoCNek7IH3vR5nRjdsEz926ibFYX8KtLQmdyw==}
 
+  es-module-lexer@3.0.4:
+    resolution: {integrity: sha512-BldNY5mwkVu+cQ5Ymn3e6hB9Sx8XHx4ZevWbiUyZbfKxJxYO27Hf0wfzkxIaD5CAJMaGl3YspKELj0ff/7nCMA==}
+
   es-object-atoms@1.1.2:
     resolution: {integrity: sha512-HWcBoN6NileqtSydK2FqHbS/LoDd2pqrnQHLyJzBj4kOp/ky2MWMN694xOfkK8/SnUsW2DH7EfyVlydKCsm1Zw==}
     engines: {node: '>= 0.4'}
@@ -3654,6 +3658,9 @@ packages:
 
   magic-string@1.4.3:
     resolution: {integrity: sha512-z12OxmaPGE0F4xlpGdjuAUckipLpQlTAuAmyGhNoD7ODpYUzvDfvtxUbjM/jwznyP178oju/KDdyi220wNJ0RQ==}
+
+  magic-string@1.4.5:
+    resolution: {integrity: sha512-oLLC2+YvQUfAa+vxoufE/yc1icb87M9iXIRqAoR/2EhE/8cb3SF/+Gi0c2By1B+5Vz2e2vQtUvHiu1+63Znh+w==}
 
   math-intrinsics@1.1.0:
     resolution: {integrity: sha512-/IXtbwEk5HTPyEwyKX6hGkYXxM9nbj64B+ilVJnC/R6B0pH5G4V3b0pVbL7DBj4tkhBAppbQUlf6F6Xl9LHu1g==}
@@ -4224,8 +4231,8 @@ packages:
   sql.js@1.15.0:
     resolution: {integrity: sha512-54VT5h9/VGlLaQan5pX/Zx8k6Vbykwl5hRUtl4h4+VYnaZCTraUs4P1i2WLz21O6oPVp6Gvg+d1OyPo01ZG5ig==}
 
-  srvx@0.12.8:
-    resolution: {integrity: sha512-7k9HoDhluTlD7UJ+F+OopZoPZXB2J8f/5nW2VMLaB8KsSlZlRQxyyoX0hWEQCxB+F+3ZvB5QX3LqB6xSBRfxQQ==}
+  srvx@1.0.8:
+    resolution: {integrity: sha512-ngFS/J6St4PJfHRHGjr78xkPPtbyXtdMOLNE4x/XZunEK3OhV7aGUWMHf9WTUEy6wm1U0W4okkd82ZFFWRVQTw==}
     engines: {node: '>=20.16.0'}
     hasBin: true
 
@@ -5323,18 +5330,18 @@ snapshots:
     dependencies:
       effect: 4.0.6
 
-  '@effront/alchemy@0.3.1(bd771975c29bc56b9f946ec86a1a5bd1)':
+  '@effront/alchemy@0.4.0(patch_hash=6fd41fd71d65517fb752597addad4177ebccb3227422d178ca68774ece8e5267)(43af3e0a3f20c5db4c29e39ac708129f)':
     dependencies:
-      '@effront/core': 0.3.1(@effect/platform-browser@4.0.6(effect@4.0.6))(@voidzero-dev/vite-plus-core@1.4.0(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(typescript@7.1.0-dev.20261030.1)(yaml@2.9.1))(effect@4.0.6)(react-dom@19.3.1(react@19.3.1))(react-server-dom-webpack@19.3.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(webpack@5.112.0(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.30)(sharp@0.35.5(@types/node@24.19.2))))(react@19.3.1)
-      '@effront/vite': 0.3.1(0fa4493669290627edb63d0429f6eaeb)
+      '@effront/core': 0.4.0(@effect/platform-browser@4.0.6(effect@4.0.6))(@voidzero-dev/vite-plus-core@1.4.0(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(typescript@7.1.0-dev.20261030.1)(yaml@2.9.1))(effect@4.0.6)(react-dom@19.3.1(react@19.3.1))(react-server-dom-webpack@19.3.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(webpack@5.112.0(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.30)(sharp@0.35.5(@types/node@24.19.2))))(react@19.3.1)
+      '@effront/vite': 0.4.0(a35e63304c7c6148165331dbe697cfc6)
       alchemy: 2.0.0-beta.83(patch_hash=2d5d1cd63b0b8149a3d52b1f4920dd9f8d4f31117389fbcd70fae71de8edff50)(@effect/platform-node@4.0.6(effect@4.0.6)(redis@6.3.0))(@types/node@24.19.2)(@types/react@19.3.0)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(typescript@7.1.0-dev.20261030.1)(yaml@2.9.1))(effect@4.0.6)(hono@4.11.4)(typescript@7.1.0-dev.20261030.1)(ws@8.22.0)
       effect: 4.0.6
       vite: '@voidzero-dev/vite-plus-core@1.4.0(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(typescript@7.1.0-dev.20261030.1)(yaml@2.9.1)'
 
-  '@effront/core@0.3.1(@effect/platform-browser@4.0.6(effect@4.0.6))(@voidzero-dev/vite-plus-core@1.4.0(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(typescript@7.1.0-dev.20261030.1)(yaml@2.9.1))(effect@4.0.6)(react-dom@19.3.1(react@19.3.1))(react-server-dom-webpack@19.3.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(webpack@5.112.0(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.30)(sharp@0.35.5(@types/node@24.19.2))))(react@19.3.1)':
+  '@effront/core@0.4.0(@effect/platform-browser@4.0.6(effect@4.0.6))(@voidzero-dev/vite-plus-core@1.4.0(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(typescript@7.1.0-dev.20261030.1)(yaml@2.9.1))(effect@4.0.6)(react-dom@19.3.1(react@19.3.1))(react-server-dom-webpack@19.3.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(webpack@5.112.0(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.30)(sharp@0.35.5(@types/node@24.19.2))))(react@19.3.1)':
     dependencies:
       '@effect/platform-browser': 4.0.6(effect@4.0.6)
-      '@vitejs/plugin-rsc': 0.5.35(@voidzero-dev/vite-plus-core@1.4.0(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(typescript@7.1.0-dev.20261030.1)(yaml@2.9.1))(react-dom@19.3.1(react@19.3.1))(react-server-dom-webpack@19.3.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(webpack@5.112.0(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.30)(sharp@0.35.5(@types/node@24.19.2))))(react@19.3.1)
+      '@vitejs/plugin-rsc': 0.5.39(@voidzero-dev/vite-plus-core@1.4.0(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(typescript@7.1.0-dev.20261030.1)(yaml@2.9.1))(react-dom@19.3.1(react@19.3.1))(react-server-dom-webpack@19.3.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(webpack@5.112.0(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.30)(sharp@0.35.5(@types/node@24.19.2))))(react@19.3.1)
       effect: 4.0.6
       react: 19.3.1
       react-dom: 19.3.1(react@19.3.1)
@@ -5342,17 +5349,17 @@ snapshots:
       - react-server-dom-webpack
       - vite
 
-  '@effront/tailwind@0.3.1(@voidzero-dev/vite-plus-core@1.4.0(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(typescript@7.1.0-dev.20261030.1)(yaml@2.9.1))':
+  '@effront/tailwind@0.4.0(@voidzero-dev/vite-plus-core@1.4.0(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(typescript@7.1.0-dev.20261030.1)(yaml@2.9.1))':
     dependencies:
       '@tailwindcss/vite': 4.3.3(@voidzero-dev/vite-plus-core@1.4.0(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(typescript@7.1.0-dev.20261030.1)(yaml@2.9.1))
       tailwindcss: 4.3.3
       vite: '@voidzero-dev/vite-plus-core@1.4.0(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(typescript@7.1.0-dev.20261030.1)(yaml@2.9.1)'
 
-  '@effront/vite@0.3.1(0fa4493669290627edb63d0429f6eaeb)':
+  '@effront/vite@0.4.0(a35e63304c7c6148165331dbe697cfc6)':
     dependencies:
-      '@effront/core': 0.3.1(@effect/platform-browser@4.0.6(effect@4.0.6))(@voidzero-dev/vite-plus-core@1.4.0(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(typescript@7.1.0-dev.20261030.1)(yaml@2.9.1))(effect@4.0.6)(react-dom@19.3.1(react@19.3.1))(react-server-dom-webpack@19.3.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(webpack@5.112.0(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.30)(sharp@0.35.5(@types/node@24.19.2))))(react@19.3.1)
-      '@vitejs/plugin-react': 6.1.1(@rolldown/plugin-babel@0.2.4(@babel/core@8.0.7)(@babel/runtime@8.0.7)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(typescript@7.1.0-dev.20261030.1)(yaml@2.9.1))(rolldown@1.2.5))(@voidzero-dev/vite-plus-core@1.4.0(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(typescript@7.1.0-dev.20261030.1)(yaml@2.9.1))(oxc-transform-react@0.145.0)
-      '@vitejs/plugin-rsc': 0.5.35(@voidzero-dev/vite-plus-core@1.4.0(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(typescript@7.1.0-dev.20261030.1)(yaml@2.9.1))(react-dom@19.3.1(react@19.3.1))(react-server-dom-webpack@19.3.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(webpack@5.112.0(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.30)(sharp@0.35.5(@types/node@24.19.2))))(react@19.3.1)
+      '@effront/core': 0.4.0(@effect/platform-browser@4.0.6(effect@4.0.6))(@voidzero-dev/vite-plus-core@1.4.0(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(typescript@7.1.0-dev.20261030.1)(yaml@2.9.1))(effect@4.0.6)(react-dom@19.3.1(react@19.3.1))(react-server-dom-webpack@19.3.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(webpack@5.112.0(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.30)(sharp@0.35.5(@types/node@24.19.2))))(react@19.3.1)
+      '@vitejs/plugin-react': 6.2.1(@rolldown/plugin-babel@0.2.4(@babel/core@8.0.7)(@babel/runtime@8.0.7)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(typescript@7.1.0-dev.20261030.1)(yaml@2.9.1))(rolldown@1.2.5))(@voidzero-dev/vite-plus-core@1.4.0(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(typescript@7.1.0-dev.20261030.1)(yaml@2.9.1))(oxc-transform-react@0.145.0)
+      '@vitejs/plugin-rsc': 0.5.39(@voidzero-dev/vite-plus-core@1.4.0(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(typescript@7.1.0-dev.20261030.1)(yaml@2.9.1))(react-dom@19.3.1(react@19.3.1))(react-server-dom-webpack@19.3.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(webpack@5.112.0(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.30)(sharp@0.35.5(@types/node@24.19.2))))(react@19.3.1)
       oxc-transform-react: 0.145.0
       vite: '@voidzero-dev/vite-plus-core@1.4.0(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(typescript@7.1.0-dev.20261030.1)(yaml@2.9.1)'
     transitivePeerDependencies:
@@ -6531,7 +6538,7 @@ snapshots:
   '@typescript/typescript-win32-x64@7.1.0-dev.20261030.1':
     optional: true
 
-  '@vitejs/plugin-react@6.1.1(@rolldown/plugin-babel@0.2.4(@babel/core@8.0.7)(@babel/runtime@8.0.7)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(typescript@7.1.0-dev.20261030.1)(yaml@2.9.1))(rolldown@1.2.5))(@voidzero-dev/vite-plus-core@1.4.0(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(typescript@7.1.0-dev.20261030.1)(yaml@2.9.1))(oxc-transform-react@0.145.0)':
+  '@vitejs/plugin-react@6.2.1(@rolldown/plugin-babel@0.2.4(@babel/core@8.0.7)(@babel/runtime@8.0.7)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(typescript@7.1.0-dev.20261030.1)(yaml@2.9.1))(rolldown@1.2.5))(@voidzero-dev/vite-plus-core@1.4.0(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(typescript@7.1.0-dev.20261030.1)(yaml@2.9.1))(oxc-transform-react@0.145.0)':
     dependencies:
       '@rolldown/pluginutils': 1.0.1
       vite: '@voidzero-dev/vite-plus-core@1.4.0(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(typescript@7.1.0-dev.20261030.1)(yaml@2.9.1)'
@@ -6539,16 +6546,16 @@ snapshots:
       '@rolldown/plugin-babel': 0.2.4(@babel/core@8.0.7)(@babel/runtime@8.0.7)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(typescript@7.1.0-dev.20261030.1)(yaml@2.9.1))(rolldown@1.2.5)
       oxc-transform-react: 0.145.0
 
-  '@vitejs/plugin-rsc@0.5.35(@voidzero-dev/vite-plus-core@1.4.0(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(typescript@7.1.0-dev.20261030.1)(yaml@2.9.1))(react-dom@19.3.1(react@19.3.1))(react-server-dom-webpack@19.3.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(webpack@5.112.0(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.30)(sharp@0.35.5(@types/node@24.19.2))))(react@19.3.1)':
+  '@vitejs/plugin-rsc@0.5.39(@voidzero-dev/vite-plus-core@1.4.0(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(typescript@7.1.0-dev.20261030.1)(yaml@2.9.1))(react-dom@19.3.1(react@19.3.1))(react-server-dom-webpack@19.3.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(webpack@5.112.0(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.30)(sharp@0.35.5(@types/node@24.19.2))))(react@19.3.1)':
     dependencies:
       '@rolldown/pluginutils': 1.0.1
-      es-module-lexer: 2.3.2
+      es-module-lexer: 3.0.4
       estree-walker: 3.0.3
-      magic-string: 1.4.3
+      magic-string: 1.4.5
       obug: 3.0.0
       react: 19.3.1
       react-dom: 19.3.1(react@19.3.1)
-      srvx: 0.12.8
+      srvx: 1.0.8
       strip-literal: 4.0.0
       turbo-stream: 3.2.1
       vite: '@voidzero-dev/vite-plus-core@1.4.0(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(typescript@7.1.0-dev.20261030.1)(yaml@2.9.1)'
@@ -6574,7 +6581,7 @@ snapshots:
       '@vitest/mocker': 5.0.5(@voidzero-dev/vite-plus-core@1.4.0(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(typescript@7.1.0-dev.20261030.1)(yaml@2.9.1))
       '@vitest/ui': 5.0.5(vitest@5.0.5)
       '@vitest/utils': 5.0.5
-      magic-string: 1.4.3
+      magic-string: 1.4.5
       pngjs: 7.0.0
       sirv: 3.0.2
       tinyrainbow: 3.2.0
@@ -7133,6 +7140,8 @@ snapshots:
 
   es-module-lexer@2.3.2: {}
 
+  es-module-lexer@3.0.4: {}
+
   es-object-atoms@1.1.2:
     dependencies:
       es-errors: 1.3.0
@@ -7665,6 +7674,10 @@ snapshots:
       '@jridgewell/sourcemap-codec': 1.6.0
 
   magic-string@1.4.3:
+    dependencies:
+      '@jridgewell/sourcemap-codec': 1.6.0
+
+  magic-string@1.4.5:
     dependencies:
       '@jridgewell/sourcemap-codec': 1.6.0
 
@@ -8293,7 +8306,7 @@ snapshots:
 
   sql.js@1.15.0: {}
 
-  srvx@0.12.8: {}
+  srvx@1.0.8: {}
 
   standardwebhooks@1.1.1:
     dependencies:
@@ -8551,7 +8564,7 @@ snapshots:
       chai: 6.3.0
       es-module-lexer: 2.3.2
       expect-type: 1.4.0
-      magic-string: 1.4.3
+      magic-string: 1.4.5
       obug: 3.0.0
       picomatch: 4.0.7
       std-env: 4.3.0
