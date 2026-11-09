@@ -4,7 +4,7 @@ import { ClusterMachine } from '@typeonce/effect-machine/cluster'
 import { Array, Effect, Exit, Layer, ManagedRuntime, Option } from 'effect'
 import { ClusterError, EntityAddress, EntityId, EntityType, ShardId, Snowflake, TestRunner } from 'effect/cluster'
 import { Miniflare } from 'miniflare'
-import { afterEach, beforeEach, describe, expect, expectTypeOf, it } from 'vite-plus/test'
+import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from 'vite-plus/test'
 
 import { D1Client } from '@/features/d1/client'
 import { D1Binding, NativeD1Client } from '@/features/d1/native'
@@ -101,6 +101,76 @@ describe('D1 Cluster machine checkpoints', () => {
     )
     expect(await Effect.runPromise(freshStorage().load(address(), laterRequest))).toEqual({
       checkpoint: Option.some(checkpoint(laterRequest, 'verify')),
+      processed: true,
+    })
+  })
+
+  it('commits with two native prepares and one batch without reads, then loads with one read', async () => {
+    const client = nativeClient()
+    const nativePrepare = client.prepare.bind(client)
+    const read = vi.fn()
+    const prepare = vi.spyOn(client, 'prepare').mockImplementation((sql) => {
+      const statement = nativePrepare(sql)
+      const nativeBind = statement.bind.bind(statement)
+      vi.spyOn(statement, 'bind').mockImplementation((...values) => {
+        const bound = nativeBind(...values)
+        const nativeAll = bound.all.bind(bound)
+        vi.spyOn(bound, 'all').mockImplementation(<T>() => {
+          read()
+          return nativeAll<T>()
+        })
+        return bound
+      })
+      return statement
+    })
+    const batch = vi.spyOn(client, 'batch')
+    try {
+      const storage = storageWithClient(client)
+      expect(await Effect.runPromise(storage.commit(address(), checkpoint()))).toEqual(
+        ClusterMachine.CommitResult.Committed(),
+      )
+      expect(prepare).toHaveBeenCalledTimes(2)
+      expect(batch).toHaveBeenCalledTimes(1)
+      expect(batch.mock.calls[0]?.[0]).toHaveLength(2)
+      expect(read).not.toHaveBeenCalled()
+      prepare.mockClear()
+      batch.mockClear()
+      expect(await Effect.runPromise(storage.load(address(), request))).toEqual({
+        checkpoint: Option.some(checkpoint()),
+        processed: true,
+      })
+      expect(prepare).toHaveBeenCalledTimes(1)
+      expect(read).toHaveBeenCalledTimes(1)
+      expect(batch).not.toHaveBeenCalled()
+    } finally {
+      prepare.mockRestore()
+      batch.mockRestore()
+    }
+  })
+
+  it('roundtrips every optional public snapshot field through a newly constructed storage service', async () => {
+    const value: ClusterMachine.Checkpoint = {
+      ...checkpoint(),
+      snapshot: {
+        _tag: 'MachineSnapshot',
+        version: 2,
+        active: [{ path: '' }, { path: 'implement', value: { nested: [null, true, 3, '日本語'], empty: {} } }],
+        completed: [
+          { path: 'first' },
+          { path: 'second', output: null },
+          { path: 'third', output: { result: [1, 'done'] } },
+        ],
+        history: {
+          shallow: { mode: 'shallow', active: ['implement'], values: { implement: { draft: 'retained' } } },
+          deep: { mode: 'deep', active: ['parent.child'], values: { 'parent.child': [false, null, 'saved'] } },
+        },
+      },
+    }
+    expect(await Effect.runPromise(freshStorage().commit(address(), value))).toEqual(
+      ClusterMachine.CommitResult.Committed(),
+    )
+    expect(await Effect.runPromise(freshStorage().load(address(), request))).toEqual({
+      checkpoint: Option.some(value),
       processed: true,
     })
   })

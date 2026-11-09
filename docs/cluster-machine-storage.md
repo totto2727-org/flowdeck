@@ -77,6 +77,8 @@ Migrating the existing workflow driver also requires an explicit design for its 
 
 The maintained [integration tests](../src/features/cluster/d1-storage.test.ts) initialize real Miniflare D1 from the generated project migration and use the official Alchemy native client.
 They exercise the storage service and the official Cluster Entity client rather than a copied transition interpreter.
+Delegated native-client observations check the two-statement, one-batch commit and one-query load while still executing real D1 operations.
+Round-trip checks preserve active state values, completion outputs, and history as well as the checkpoint's identity and version.
 The [schema tests](../tests/database.test.ts) check snapshot JSON and receipt foreign-key constraints.
 The [feature-boundary tests](../tests/feature-boundaries.test.ts) enforce the cluster capability's dependency cut.
 
