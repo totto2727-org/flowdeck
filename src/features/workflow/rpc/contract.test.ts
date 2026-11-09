@@ -5,11 +5,11 @@ import { Cause, Context, Effect, Exit, Layer, Logger, Option, Schema } from 'eff
 import { HttpRouter } from 'effect/http'
 import { describe, expect, expectTypeOf, it } from 'vite-plus/test'
 
-import { rpcResponse } from '@/features/rpc-boundary'
-import { RemoteWorkerError } from '@/features/rpc-problem'
 import { Conflict, ExternalError } from '@/features/workflow/domain/errors'
+import { Workflows } from '@/features/workflow/services/workflows'
 import { ApiRoutes } from '@/workers/control/features/router'
 
+import { rpcResponse } from './boundary'
 import {
   RpcRunsResponse,
   RpcWorkflowsResponse,
@@ -19,8 +19,8 @@ import {
   rpcValue,
   type WireWorkflowExecutor,
   type WireWorkflowService,
-} from './workflow-rpc'
-import { Workflows } from './workflows'
+} from './contract'
+import { RemoteWorkerError } from './problem'
 
 const response = <A extends Schema.Json>(value: A) =>
   Effect.runSync(Effect.succeed(value).pipe(rpcResponse('child.test'), Effect.provide(BrowserCrypto.layer)))

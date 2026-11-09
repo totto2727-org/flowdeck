@@ -1,7 +1,8 @@
 import { Effect, Match, Schema } from 'effect'
 
-import { InvalidSnapshot, type DomainError } from '@/features/workflow/domain/errors'
+import { InvalidSnapshot } from '@/features/workflow/domain/errors'
 import { TaskExecution, type Task, type TaskResult } from '@/features/workflow/driver'
+import type { WorkflowFailure } from '@/features/workflow/services/failures'
 
 import { DevelopmentTask, DevelopmentWorkflowVersion, PublicRepository } from './input'
 import { CommandId, makeCommandIdGenerator, SessionId } from './model'
@@ -129,7 +130,7 @@ export const makePiTasks = Effect.gen(function* () {
     })
 
   const implement: Task<DevelopmentContext> = {
-    execute: (context): Effect.Effect<Outcome, DomainError, TaskExecution> =>
+    execute: (context): Effect.Effect<Outcome, WorkflowFailure, TaskExecution> =>
       Effect.gen(function* () {
         const control = yield* TaskExecution
         return yield* Match.value(context.phase).pipe(
@@ -152,7 +153,7 @@ export const makePiTasks = Effect.gen(function* () {
       }),
   }
   const verify: Task<DevelopmentContext> = {
-    execute: (context): Effect.Effect<Outcome, DomainError, TaskExecution> =>
+    execute: (context): Effect.Effect<Outcome, WorkflowFailure, TaskExecution> =>
       Effect.gen(function* () {
         const control = yield* TaskExecution
         return yield* Match.value(context.phase).pipe(

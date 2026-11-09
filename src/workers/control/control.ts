@@ -10,7 +10,7 @@ import {
   rpcCall,
   rpcValue,
   type WireWorkflowService,
-} from '@/features/workflow/services/workflow-rpc'
+} from '@/features/workflow/rpc/contract'
 import { Workflows } from '@/features/workflow/services/workflows'
 import { Control, Workflow } from '@/workers/definitions'
 

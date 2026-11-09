@@ -3,8 +3,6 @@ import { ok } from 'node:assert/strict'
 import { Cause, Crypto, Effect, Exit, Logger, Option, References, Result, Schema } from 'effect'
 import { describe, expect, expectTypeOf, it } from 'vite-plus/test'
 
-import { makeRpcResponse, rpcResponse, rpcResult } from './rpc-boundary'
-import { RemoteWorkerError, Rfc9457ProblemDetails } from './rpc-problem'
 import {
   Conflict,
   ExternalError,
@@ -12,7 +10,10 @@ import {
   InvalidSnapshot,
   NotFound,
   StorageConflict,
-} from './workflow/domain/errors'
+} from '@/features/workflow/domain/errors'
+
+import { makeRpcResponse, rpcResponse, rpcResult } from './boundary'
+import { RemoteWorkerError, Rfc9457ProblemDetails } from './problem'
 
 const crypto = Crypto.make({
   randomBytes: (size) => globalThis.crypto.getRandomValues(new Uint8Array(size)),

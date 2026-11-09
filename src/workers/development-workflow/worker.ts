@@ -7,12 +7,13 @@ import { RuntimeContext } from 'alchemy/RuntimeContext'
 import { Config, Context, Effect, Layer, Schema } from 'effect'
 import { HttpServerResponse } from 'effect/http'
 
-import { makeRpcResponse } from '@/features/rpc-boundary'
+import { D1Client } from '@/features/d1/client'
+import { AlchemyQueryExecutorLive } from '@/features/d1/reylo'
 import { RunId } from '@/features/workflow/domain/identity'
+import { makeRpcResponse } from '@/features/workflow/rpc/boundary'
+import { rpcCall, rpcCommandResult } from '@/features/workflow/rpc/contract'
 import { D1StoreLive } from '@/features/workflow/services/d1-store'
-import { WorkflowDatabase } from '@/features/workflow/services/database'
-import { AlchemyQueryExecutorLive, DatabaseQueriesLive } from '@/features/workflow/services/database-queries'
-import { rpcCall, rpcCommandResult } from '@/features/workflow/services/workflow-rpc'
+import { DatabaseQueriesLive } from '@/features/workflow/services/database-queries'
 import { Database } from '@/workers/database'
 
 import { DevelopmentContainer } from './container'
@@ -34,7 +35,7 @@ const DevelopmentRunLive = DevelopmentRun.make(
     const StoreLive = D1StoreLive.pipe(
       Layer.provide(DatabaseQueriesLive),
       Layer.provide(AlchemyQueryExecutorLive),
-      Layer.provide(Layer.succeed(WorkflowDatabase, database)),
+      Layer.provide(Layer.succeed(D1Client, D1Client.fromBinding(database))),
     )
     // Native Cloudflare classes can only load inside workerd, not during Node
     // provisioning. This official SDK adapter loads once at actual activation.

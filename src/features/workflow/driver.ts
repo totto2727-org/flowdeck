@@ -1,6 +1,6 @@
 import { Context, Data, DateTime, Effect, Match, Ref, Schema, SemVer } from 'effect'
 
-import { InvalidOperation, InvalidSnapshot, type DomainError } from '@/features/workflow/domain/errors'
+import { InvalidOperation, InvalidSnapshot } from '@/features/workflow/domain/errors'
 import {
   ExecutionId,
   makeCommitIdGenerator,
@@ -11,6 +11,7 @@ import {
 } from '@/features/workflow/domain/identity'
 import { JsonObject, PositiveInt, WorkflowVersion, type Run, type RunStatus } from '@/features/workflow/domain/model'
 import type { Machine } from '@/features/workflow/machine'
+import type { WorkflowFailure } from '@/features/workflow/services/failures'
 import { Store, type CommitAck, type PendingEvent } from '@/features/workflow/services/store'
 
 const base = {
@@ -57,7 +58,7 @@ export class TaskExecution extends Context.Service<
     readonly runId: RunId
     readonly executionId: ExecutionId
     readonly operation: 'start' | 'resume'
-    readonly checkpoint: (context: unknown) => Effect.Effect<void, DomainError>
+    readonly checkpoint: (context: unknown) => Effect.Effect<void, WorkflowFailure>
   }
 >()('flowdeck/TaskExecution') {}
 export type TaskResult<C> = Data.TaggedEnum<{
@@ -68,7 +69,7 @@ export type TaskResult<C> = Data.TaggedEnum<{
 }>
 export const taskResult = <C>() => Data.taggedEnum<TaskResult<C>>()
 export interface Task<C> {
-  readonly execute: (context: C) => Effect.Effect<TaskResult<C>, DomainError, TaskExecution>
+  readonly execute: (context: C) => Effect.Effect<TaskResult<C>, WorkflowFailure, TaskExecution>
 }
 export interface DefinitionOptions<C extends Record<string, unknown>, R = never> {
   readonly workflowId: string
@@ -190,7 +191,7 @@ export const makeDriver = <C extends Record<string, unknown>, R>(definition: Def
       run: Run,
       snapshot: MachineSnapshot,
       operation: 'start' | 'resume',
-    ): Effect.Effect<void, DomainError> =>
+    ): Effect.Effect<void, WorkflowFailure> =>
       Effect.suspend(() =>
         Effect.gen(function* () {
           if (MachineSnapshot.guards.Completed(snapshot) || MachineSnapshot.guards.Failed(snapshot))

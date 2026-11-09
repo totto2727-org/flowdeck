@@ -1,15 +1,20 @@
 import { Context, Effect } from 'effect'
 
-import type { DomainError } from '@/features/workflow/domain/errors'
 import type { RunId } from '@/features/workflow/domain/identity'
 import type { CreateRun, Run, RunDetail, WorkflowSummary } from '@/features/workflow/domain/model'
 
+import type { WorkflowFailure } from './failures'
+
 export type WorkflowService<R = never> = {
-  readonly listWorkflows: () => Effect.Effect<{ readonly workflows: ReadonlyArray<WorkflowSummary> }, DomainError, R>
-  readonly listRuns: () => Effect.Effect<{ readonly runs: ReadonlyArray<Run> }, DomainError, R>
-  readonly getRunDetail: (runId: RunId) => Effect.Effect<RunDetail, DomainError, R>
-  readonly createRun: (input: CreateRun) => Effect.Effect<RunDetail, DomainError, R>
-  readonly resumeRun: (runId: RunId) => Effect.Effect<RunDetail, DomainError, R>
+  readonly listWorkflows: () => Effect.Effect<
+    { readonly workflows: ReadonlyArray<WorkflowSummary> },
+    WorkflowFailure,
+    R
+  >
+  readonly listRuns: () => Effect.Effect<{ readonly runs: ReadonlyArray<Run> }, WorkflowFailure, R>
+  readonly getRunDetail: (runId: RunId) => Effect.Effect<RunDetail, WorkflowFailure, R>
+  readonly createRun: (input: CreateRun) => Effect.Effect<RunDetail, WorkflowFailure, R>
+  readonly resumeRun: (runId: RunId) => Effect.Effect<RunDetail, WorkflowFailure, R>
 }
 
 /** The single application contract between Control and the workflow integration Worker. */

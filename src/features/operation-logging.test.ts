@@ -4,11 +4,11 @@ import { Cause, Context, Crypto, Effect, Exit, Layer, Logger, Option, References
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from 'effect/http'
 import { describe, expect, it } from 'vite-plus/test'
 
+import { rpcResponse, rpcResult } from '@/features/workflow/rpc/boundary'
+import { RemoteWorkerError } from '@/features/workflow/rpc/problem'
 import { ApiRoutes } from '@/workers/control/features/router'
 
 import { operationFailureLogging } from './operation-logging'
-import { rpcResponse, rpcResult } from './rpc-boundary'
-import { RemoteWorkerError } from './rpc-problem'
 import { Conflict, ExternalError, StorageConflict } from './workflow/domain/errors'
 import { Workflows } from './workflow/services/workflows'
 

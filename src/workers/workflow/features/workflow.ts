@@ -1,16 +1,17 @@
 import type { RpcCallError, RpcDecodeError } from 'alchemy/Rpc'
 import { Array, DateTime, Effect, Option } from 'effect'
 
-import { ExternalError, InvalidOperation, type DomainError } from '@/features/workflow/domain/errors'
+import { ExternalError, InvalidOperation } from '@/features/workflow/domain/errors'
 import { makeRunIdGenerator, type RunId, type WorkflowId } from '@/features/workflow/domain/identity'
 import type { CreateRun, Run, RunDetail } from '@/features/workflow/domain/model'
 import { graphToShapes } from '@/features/workflow/domain/projection'
+import type { WorkflowFailure } from '@/features/workflow/services/failures'
 import { EventRange, Store } from '@/features/workflow/services/store'
 import { WorkflowRegistry } from '@/features/workflow/services/workflow-definition'
 import type { Workflows } from '@/features/workflow/services/workflows'
 
 // Alchemy's typed stub shape omits transport failures from its declared domain error channel.
-const bindingFailure = (error: DomainError | RpcCallError | RpcDecodeError) =>
+const bindingFailure = (error: WorkflowFailure | RpcCallError | RpcDecodeError) =>
   error._tag === 'RpcCallError' || error._tag === 'RpcDecodeError'
     ? new ExternalError({ operation: 'call workflow worker', kind: 'service', cause: error })
     : error

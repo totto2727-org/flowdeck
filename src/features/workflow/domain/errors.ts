@@ -1,6 +1,4 @@
-import { Data, type PlatformError, type Schema } from 'effect'
-
-import type { RemoteWorkerError } from '@/features/rpc-problem'
+import { Data } from 'effect'
 
 export class NotFound extends Data.TaggedError('NotFound')<{
   readonly resource: string
@@ -24,13 +22,3 @@ export class ExternalError extends Data.TaggedError('ExternalError')<{
   readonly operation: string
   readonly kind: 'storage' | 'service'
 }> {}
-export type DomainError =
-  | NotFound
-  | Conflict
-  | StorageConflict
-  | InvalidOperation
-  | InvalidSnapshot
-  | ExternalError
-  | RemoteWorkerError
-  | PlatformError.PlatformError
-  | Schema.SchemaError

@@ -3,7 +3,7 @@ import type { WebSocket } from 'alchemy/Cloudflare/Workers/WebSocket'
 import type { Effect } from 'effect'
 import type { HttpServerResponse } from 'effect/http'
 
-import type { WireWorkflowExecutor } from '@/features/workflow/services/workflow-rpc'
+import type { WireWorkflowExecutor } from '@/features/workflow/rpc/contract'
 
 type DevelopmentRunShape = WireWorkflowExecutor & {
   readonly fetch: Effect.Effect<

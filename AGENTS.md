@@ -25,7 +25,10 @@ The application uses Effect 4, Effront, shadcn/ui, Cloudflare Workers, Durable O
 - `src/workers/runtime-composition.ts`: fixed frontend runtime capture assembly, separate from deployment resource provisioning.
 - `src/workers/frontend/assembly.ts`: native request binding decoding and typed Access audience injection.
 - `src/workers/database.ts`: the shared D1 resource declaration.
-- `src/features/workflow/`: shared wire schemas, graph projection, typed SQL persistence, and the `Workflows` service contract.
+- `src/features/d1/`: reusable Alchemy execution and Reylo adaptation, independent from workflow policy and Worker resources.
+- `src/features/workflow/`: shared workflow values, graph projection, Machine execution, typed SQL persistence, and the `Workflows` service contract.
+- `src/features/workflow/rpc/`: the application-specific workflow wire protocol, RFC 9457 profile, and sanitized RPC boundaries.
+- `src/features/workflow/services/failures.ts`: aggregate application failures; domain constructors must not depend on transport types.
 - `schema/`: Atlas Pro schema definitions, including tables, constraints, indexes, and triggers.
 - `src/features/workflow/services/queries/`: one Reylo-typed SQL statement per file.
 - `migrations/`: maintained D1 schema migrations.
@@ -112,6 +115,9 @@ Keep native runtime capture in a separate fixed composition so it does not initi
 Decode environment bindings in assembly adapters and inject typed values into authorization logic.
 Do not branch on development flags, deployment stages, or infrastructure phases inside feature logic or request authorization.
 Keep Worker-specific features with their Worker, and put shared features under `src/features/`.
+Keep reusable D1 execution free of workflow error translation, SQL files, and application resource imports.
+Keep workflow domain modules independent from services and transport; aggregate cross-boundary failures at the application service boundary.
+The compiler-backed tests in `tests/feature-boundaries.test.ts` enforce these import boundaries.
 Use explicitly named modules instead of `index.ts` by default.
 Use Atlas Pro HCL for SQLite tables, constraints, indexes, and triggers, with generated SQL migrations consumed by Alchemy.
 Keep Atlas-generated migrations unchanged by default.

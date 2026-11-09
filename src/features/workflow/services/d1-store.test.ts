@@ -11,6 +11,10 @@ import { TestCrypto } from 'effect/testing'
 import { Miniflare } from 'miniflare'
 import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from 'vite-plus/test'
 
+import { makeD1Batch } from '@/features/d1/batch'
+import { D1Client } from '@/features/d1/client'
+import { D1Binding, NativeD1Client } from '@/features/d1/native'
+import { AlchemyQueryExecutorLive } from '@/features/d1/reylo'
 import { ExternalError } from '@/features/workflow/domain/errors'
 import { CommitId, EventId, ExecutionId, RunId } from '@/features/workflow/domain/identity'
 import { RunDetail, RunsResponse, type Run, type WorkflowVersion } from '@/features/workflow/domain/model'
@@ -29,11 +33,9 @@ import { makeWorkflowRegistry } from '@/workers/workflow/features/registration'
 import { createRun, makeWorkflows, resumeRun as resumeWorkflowRun } from '@/workers/workflow/features/workflow'
 import { DevelopmentWorkflowBinding, WorkflowBinding } from '@/workers/workflow/features/workflow-binding'
 
-import { makeD1Batch } from './d1-batch'
 import { D1StoreLive } from './d1-store'
-import { WorkflowDatabase, execute } from './database'
-import { AlchemyQueryExecutorLive, DatabaseQueries, DatabaseQueriesLive } from './database-queries'
-import { D1Binding, NativeWorkflowDatabase } from './native-database'
+import { execute } from './database'
+import { DatabaseQueries, DatabaseQueriesLive } from './database-queries'
 import { type CommitCommand, EventRange, Store, type StoreService } from './store'
 import { WorkflowRegistry, type RegisteredWorkflow } from './workflow-definition'
 import { Workflows } from './workflows'
@@ -99,7 +101,7 @@ const freshQueries = () =>
       Effect.provide(
         DatabaseQueriesLive.pipe(
           Layer.provide(AlchemyQueryExecutorLive),
-          Layer.provide(NativeWorkflowDatabase),
+          Layer.provide(NativeD1Client),
           Layer.provide(Layer.succeed(D1Binding, database)),
         ),
       ),
@@ -123,7 +125,7 @@ beforeEach(async () => {
   storeLayer = D1StoreLive.pipe(
     Layer.provide(DatabaseQueriesLive),
     Layer.provide(AlchemyQueryExecutorLive),
-    Layer.provide(NativeWorkflowDatabase),
+    Layer.provide(NativeD1Client),
     Layer.provide(Layer.succeed(D1Binding, database)),
   )
   store = freshStore()
@@ -253,9 +255,7 @@ describe('D1 persisted run store', () => {
 
   it('preserves read interruption through the Alchemy executor and published query runner', async () => {
     const client = Effect.runSync(
-      WorkflowDatabase.pipe(
-        Effect.provide(NativeWorkflowDatabase.pipe(Layer.provide(Layer.succeed(D1Binding, database)))),
-      ),
+      D1Client.pipe(Effect.provide(NativeD1Client.pipe(Layer.provide(Layer.succeed(D1Binding, database))))),
     )
     const statement = client.prepare('SELECT 1 AS value')
     const bind = vi.spyOn(statement, 'bind').mockReturnValue(statement)
@@ -273,7 +273,7 @@ describe('D1 persisted run store', () => {
           DatabaseQueriesLive.pipe(
             Layer.provide(AlchemyQueryExecutorLive),
             Layer.provide(
-              Layer.succeed(WorkflowDatabase, {
+              Layer.succeed(D1Client, {
                 ...client,
                 prepare: () => statement,
               }),
@@ -298,7 +298,7 @@ describe('D1 persisted run store', () => {
         Effect.provide(
           DatabaseQueriesLive.pipe(
             Layer.provide(AlchemyQueryExecutorLive),
-            Layer.provide(NativeWorkflowDatabase),
+            Layer.provide(NativeD1Client),
             Layer.provide(Layer.succeed(D1Binding, database)),
           ),
         ),
@@ -354,9 +354,7 @@ describe('D1 persisted run store', () => {
   it('executes already prepared statements without preparing inside batch', async () => {
     expectTypeOf<Parameters<Effect.Success<typeof makeD1Batch>>[0]>().toEqualTypeOf<PreparedStatement[]>()
     const client = Effect.runSync(
-      WorkflowDatabase.pipe(
-        Effect.provide(NativeWorkflowDatabase.pipe(Layer.provide(Layer.succeed(D1Binding, database)))),
-      ),
+      D1Client.pipe(Effect.provide(NativeD1Client.pipe(Layer.provide(Layer.succeed(D1Binding, database))))),
     )
     const prepared = client
       .prepare('INSERT INTO workflows (workflow_id, name) VALUES (?, ?)')
@@ -364,7 +362,7 @@ describe('D1 persisted run store', () => {
     const prepare = vi.fn(() => {
       throw new Error('Preparation must happen before batch')
     })
-    const batch = Effect.runSync(makeD1Batch.pipe(Effect.provideService(WorkflowDatabase, { ...client, prepare })))
+    const batch = Effect.runSync(makeD1Batch.pipe(Effect.provideService(D1Client, { ...client, prepare })))
     await Effect.runPromise(batch([prepared]))
     expect(prepare).not.toHaveBeenCalled()
     expect(await database.prepare('SELECT name FROM workflows WHERE workflow_id = ?').bind('prepared').first()).toEqual(
@@ -387,7 +385,7 @@ describe('D1 persisted run store', () => {
           D1StoreLive.pipe(
             Layer.provide(DatabaseQueriesLive),
             Layer.provide(AlchemyQueryExecutorLive),
-            Layer.provide(NativeWorkflowDatabase),
+            Layer.provide(NativeD1Client),
             Layer.provide(Layer.succeed(D1Binding, otherDatabase)),
           ),
         ),
@@ -403,9 +401,7 @@ describe('D1 persisted run store', () => {
 
   it('preserves executor interruption without converting it into a storage failure', async () => {
     const client = Effect.runSync(
-      WorkflowDatabase.pipe(
-        Effect.provide(NativeWorkflowDatabase.pipe(Layer.provide(Layer.succeed(D1Binding, database)))),
-      ),
+      D1Client.pipe(Effect.provide(NativeD1Client.pipe(Layer.provide(Layer.succeed(D1Binding, database))))),
     )
     const interrupted = Effect.runSync(
       Store.pipe(
@@ -414,7 +410,7 @@ describe('D1 persisted run store', () => {
             Layer.provide(DatabaseQueriesLive),
             Layer.provide(AlchemyQueryExecutorLive),
             Layer.provide(
-              Layer.succeed(WorkflowDatabase, {
+              Layer.succeed(D1Client, {
                 ...client,
                 batch: () => Effect.interrupt,
               }),
@@ -432,9 +428,7 @@ describe('D1 persisted run store', () => {
 
   it('uses Alchemy executors without evaluating the raw client binding', async () => {
     const client = Effect.runSync(
-      WorkflowDatabase.pipe(
-        Effect.provide(NativeWorkflowDatabase.pipe(Layer.provide(Layer.succeed(D1Binding, database)))),
-      ),
+      D1Client.pipe(Effect.provide(NativeD1Client.pipe(Layer.provide(Layer.succeed(D1Binding, database))))),
     )
     const raw = vi.fn(() => {
       throw new Error('Raw access is forbidden')
@@ -446,7 +440,7 @@ describe('D1 persisted run store', () => {
             Layer.provide(DatabaseQueriesLive),
             Layer.provide(AlchemyQueryExecutorLive),
             Layer.provide(
-              Layer.succeed(WorkflowDatabase, {
+              Layer.succeed(D1Client, {
                 ...client,
                 raw: Effect.sync(raw),
               }),

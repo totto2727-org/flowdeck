@@ -55,6 +55,23 @@ Do not add a competing transition interpreter or shared artifact store.
 
 Worker entry points and Worker-specific features live under `src/workers/<worker>/`.
 Shared workflow schemas, projections, persistence, the native planner adapter, and the Effect task driver live under `src/features/workflow/`.
+Reusable Alchemy D1 execution lives under `src/features/d1/`, without workflow errors, SQL statements, or Worker resource declarations.
+The fixed workflow RPC protocol lives under `src/features/workflow/rpc/`; it is an application protocol, not a general-purpose RPC framework.
+
+| Owner                        | Contents                                                                                     | Dependency boundary                                                          |
+| ---------------------------- | -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `features/identity`          | Reusable identifier schema and generation                                                    | Effect only; each capability owns its concrete identifiers.                  |
+| `features/d1`                | Captured Alchemy client, Reylo executor, statement preparation, and prepared batch execution | No workflow policy or application resources.                                 |
+| `features/workflow/domain`   | Workflow values, identities, rejections, and graph projections                               | No persistence implementation or RPC error types.                            |
+| `features/workflow/services` | Store and workflow ports, D1 persistence, SQL, and application failure aggregation           | Storage conflict interpretation stays here, above the D1 capability.         |
+| `features/workflow/rpc`      | Wire codecs, RFC 9457 profile, response sanitization, and SDK-call admission                 | Uses workflow domain contracts, not D1 or concrete workflow implementations. |
+| `features/workflow`          | Shared Machine planner and Effect checkpoint driver                                          | Uses the Store port, not its D1 implementation.                              |
+| `workers/<worker>`           | Resource bindings, complete runtime Layers, and Worker-owned behavior                        | Selects concrete implementations at each runtime root.                       |
+
+`WorkflowFailure` aggregates application failures in `services/failures.ts`; the domain error constructors do not import transport types.
+The HTTP failure-logging middleware remains one shared module because another service or feature abstraction adds no capability.
+The [feature-boundary tests](../tests/feature-boundaries.test.ts) parse production imports with the installed TypeScript compiler and enforce the shared-feature, D1, and domain dependency cuts, including type-only imports.
+Keep the SQL statements and persistence codecs with workflow storage rather than moving all database-adjacent code into D1.
 The shared `Workflows` service is Control's only workflow dependency.
 The application follows modular-monolith boundaries: each workflow is an independent application module behind a shared interface.
 Workflow IDs, supported versions, input validation, native machine declarations, task adapters, and initial context live under that workflow's own `features/` directory.
@@ -71,8 +88,8 @@ Adding a workflow requires its typed input schema, implementation, and integrati
 An unknown persisted workflow ID is rejected rather than sent to the demo worker.
 The final composition boundary in `src/workers/composition.ts` selects deployment and authorization Layers.
 The frontend always invokes the injected authorization service before dispatch.
-The Access implementation always verifies admission, audience, and identity, and never checks a development flag.
-Local authorization is a separate injected implementation, not a fallback inside Access verification.
+The Access implementation verifies trusted platform admission and the configured audience, and never checks a development flag.
+Local composition injects Alchemy's fixed development Access simulation, not a fallback inside authorization logic.
 Feature logic does not inspect deployment stages, infrastructure phases, or development flags.
 
 ## Effect and interoperability
@@ -272,14 +289,14 @@ No code-removal automation exists in this experiment.
 ## Access and domain
 
 The production hostname is `flowdeck.totto2727.dev`.
-Production declares a self-hosted Cloudflare Access application and an exact-email allow policy in the same stack.
-`FLOWDECK_ACCESS_EMAILS` must be nonempty and must not contain wildcard or domain-wide grants.
-The runtime checks the trusted native Access execution context, its audience, and the admitted identity before handling any Effront request, including ServerFns.
+Production declares a self-hosted Cloudflare Access application and references the existing reusable SAML policy through `FLOWDECK_ACCESS_POLICY_ID`.
+That policy is managed outside Flowdeck; this application does not create duplicate email allowlists or policy rules.
+The runtime checks trusted native Access admission and its audience before handling any Effront request, including ServerFns.
 Caller-supplied identity headers grant no access.
 The private Control mutation routes reject browser Origin headers before parsing the body.
 Browser mutations use authenticated Effront ServerFns, which call Control through the server-side binding.
-A missing Access context returns 401, a wrong audience or identity returns 403, and an unavailable identity service or invalid configuration returns 503.
-Only the local composition boundary can inject the development bypass.
+A missing Access context returns 401, a wrong audience returns 403, and invalid audience configuration returns 503.
+Only the local composition boundary injects the development Access simulation.
 There is no public API token or browser-controlled bypass.
 Control trusts the Worker that holds its service binding, rather than authenticating an end user again.
 Every admitted frontend identity currently has access to the same runs.

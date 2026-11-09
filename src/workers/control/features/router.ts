@@ -3,7 +3,7 @@ import { Effect, Layer, Match, Schema } from 'effect'
 import { Headers, HttpBody, HttpRouter, HttpServerError, HttpServerRequest, HttpServerResponse } from 'effect/http'
 
 import { operationFailureLogging } from '@/features/operation-logging'
-import { ExternalError, type DomainError } from '@/features/workflow/domain/errors'
+import { ExternalError } from '@/features/workflow/domain/errors'
 import { RunId } from '@/features/workflow/domain/identity'
 import {
   ApiErrorResponse,
@@ -12,9 +12,15 @@ import {
   RunsResponse,
   WorkflowsResponse,
 } from '@/features/workflow/domain/model'
+import type { WorkflowFailure } from '@/features/workflow/services/failures'
 import { Workflows } from '@/features/workflow/services/workflows'
 
-type ApiFailure = DomainError | HttpServerError.HttpServerError | HttpBody.HttpBodyError | RpcCallError | RpcDecodeError
+type ApiFailure =
+  | WorkflowFailure
+  | HttpServerError.HttpServerError
+  | HttpBody.HttpBodyError
+  | RpcCallError
+  | RpcDecodeError
 const respondApiError = HttpServerResponse.schemaJson(Schema.toCodecJson(ApiErrorResponse))
 const respondWorkflows = HttpServerResponse.schemaJson(Schema.toCodecJson(WorkflowsResponse))
 const respondRuns = HttpServerResponse.schemaJson(Schema.toCodecJson(RunsResponse))

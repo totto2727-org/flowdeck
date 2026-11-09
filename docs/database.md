@@ -77,13 +77,15 @@ Never point local analysis or migration generation at a deployment database.
 
 ## Atomic writes and the public query contract
 
-`AlchemyQueryExecutorLive` adapts the selected `WorkflowDatabase` Alchemy service to the client-independent `QueryExecutor` contract from `@totto2727/reylo/effect`.
-`DatabaseQueriesLive` captures that executor once through `makeQueryRunner` and captures the Alchemy client for batch preparation.
+`features/d1/reylo.ts` adapts the selected `D1Client` Alchemy service to the client-independent `QueryExecutor` contract from `@totto2727/reylo/effect`.
+Its `AlchemyQueryExecutorLive` and `makeD1Queries` capture the Alchemy client and published `makeQueryRunner` once during service construction.
+The workflow-owned `DatabaseQueriesLive` applies storage failure translation to prepared statements and batches without changing the generic D1 executor.
 `D1StoreLive` requires `DatabaseQueries`; Worker, run Durable Object, and test composition roots supply both Layers with their selected database Layer.
 `D1StoreLive` constructs the `Store` service from separate operation factories that capture those query capabilities once.
 Service methods do not provide or rebuild their dependencies when called.
 `d1-store.ts` defines each run, graph, event, creation, and commit operation separately; `d1-store-codecs.ts` owns persisted value conversion.
-`database-queries.ts` adapts Alchemy's object-row executor and captures Reylo's published runner; `database.ts` translates storage failures, and `d1-batch.ts` owns the native batch Effect.
+`features/workflow/services/database-queries.ts` is the workflow persistence facade, and its sibling `database.ts` interprets workflow constraint failures.
+`features/d1/batch.ts` owns prepared batch execution and knows nothing about workflow trigger names, receipts, or errors.
 Reylo owns parameter encoding, result decoding, and inferred cardinality; Alchemy executes queries through `PreparedStatement.all`.
 Reylo depends on neither Alchemy nor D1 and does not own Flowdeck's storage error mapping.
 Creation and commits submit prepared statements together through Alchemy's `batch`, which delegates to one native atomic D1 batch.
@@ -99,10 +101,17 @@ Reylo decodes object rows and enforces query cardinality, then domain Schema cod
 Reylo owns placeholder ordering, parameter validation, and encoding, with inferred query parameters retained at the store boundary.
 Flowdeck does not add a SQL compiler, access private query internals, or patch a batch-binding method.
 Worker and Effect-native Durable Object entry points obtain the client through `QueryDatabaseBinding`.
-Miniflare database tests provide `D1Binding` to `NativeWorkflowDatabase`, which delegates to Alchemy's existing client builder.
+Miniflare database tests provide `D1Binding` to `NativeD1Client` in `features/d1/native.ts`, which delegates to Alchemy's existing client builder.
 Production Workers and Durable Objects do not use this native-binding test adapter.
 A version-scoped dependency patch exports that builder from the D1 entry point without modifying its implementation.
 See [upstream differences](upstream-differences.md) for provenance, patch scope, and removal criteria.
+
+`D1Client.fromBinding` applies one type override at the captured-binding construction boundary.
+For the selected `QueryDatabaseBinding` implementation, Alchemy resolves statements and batches from its captured Worker environment rather than looking up `RuntimeContext` during those operations.
+The native test adapter instead captures an already resolved binding.
+The override narrows only statement `all`, chained `bind`, and `batch`; the SDK's other methods retain their declared context requirements.
+It does not initialize a service, supply a phantom Layer, wrap each query with `provide`, or replace Alchemy's executor.
+Do not use it for `QueryDatabaseLocal` or a deferred database-ID client: the common SDK client type does not prove that those executions are independent of runtime context.
 
 Alchemy reports rejected D1 operations as defects.
 The executor converts query defects to Reylo's `QueryExecutionError`; storage translation retains the original cause from preparation, execution, or decoding failures.

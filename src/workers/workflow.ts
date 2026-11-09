@@ -4,12 +4,10 @@ import { QueryDatabase, QueryDatabaseBinding } from 'alchemy/Cloudflare/D1'
 import { makeRpcStub, WorkerEnvironment } from 'alchemy/Cloudflare/Workers'
 import { Context, Effect, Layer, Schema } from 'effect'
 
-import { makeRpcResponse } from '@/features/rpc-boundary'
+import { D1Client } from '@/features/d1/client'
+import { AlchemyQueryExecutorLive } from '@/features/d1/reylo'
 import { RunId } from '@/features/workflow/domain/identity'
-import { D1StoreLive } from '@/features/workflow/services/d1-store'
-import { WorkflowDatabase } from '@/features/workflow/services/database'
-import { AlchemyQueryExecutorLive, DatabaseQueriesLive } from '@/features/workflow/services/database-queries'
-import { WorkflowRegistry } from '@/features/workflow/services/workflow-definition'
+import { makeRpcResponse } from '@/features/workflow/rpc/boundary'
 import {
   RpcCreateRun,
   encodeRunDetail,
@@ -19,7 +17,10 @@ import {
   rpcCommandResult,
   type WireWorkflowExecutor,
   type WireWorkflowService,
-} from '@/features/workflow/services/workflow-rpc'
+} from '@/features/workflow/rpc/contract'
+import { D1StoreLive } from '@/features/workflow/services/d1-store'
+import { DatabaseQueriesLive } from '@/features/workflow/services/database-queries'
+import { WorkflowRegistry } from '@/features/workflow/services/workflow-definition'
 import { Workflows } from '@/features/workflow/services/workflows'
 
 import { Database } from './database'
@@ -64,9 +65,9 @@ const WorkflowRegistryLive = Layer.effect(WorkflowRegistry, makeWorkflowRegistry
   Layer.provide(WorkflowBindingsLive),
 )
 const WorkflowDatabaseLive = Layer.effect(
-  WorkflowDatabase,
+  D1Client,
   Effect.gen(function* () {
-    return yield* QueryDatabase(yield* Database)
+    return D1Client.fromBinding(yield* QueryDatabase(yield* Database))
   }),
 )
 const WorkflowRuntimeLive = Layer.mergeAll(

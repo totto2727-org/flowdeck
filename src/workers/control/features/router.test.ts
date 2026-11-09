@@ -6,8 +6,6 @@ import { Crypto, Effect, Layer, Schema, DateTime } from 'effect'
 import { HttpRouter } from 'effect/http'
 import { describe, expect, it, vi } from 'vite-plus/test'
 
-import { rpcResponse, rpcResult } from '@/features/rpc-boundary'
-import { RemoteWorkerError } from '@/features/rpc-problem'
 import {
   Conflict,
   ExternalError,
@@ -16,7 +14,9 @@ import {
   NotFound,
   StorageConflict,
 } from '@/features/workflow/domain/errors'
-import { RpcCreateRun, RpcRunDetail, RpcWorkflowsResponse } from '@/features/workflow/services/workflow-rpc'
+import { rpcResponse, rpcResult } from '@/features/workflow/rpc/boundary'
+import { RpcCreateRun, RpcRunDetail, RpcWorkflowsResponse } from '@/features/workflow/rpc/contract'
+import { RemoteWorkerError } from '@/features/workflow/rpc/problem'
 import { Workflows } from '@/features/workflow/services/workflows'
 
 import { ApiRoutes } from './router'

@@ -7,12 +7,13 @@ import { TestCrypto } from 'effect/testing'
 import { Miniflare } from 'miniflare'
 import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test'
 
+import { D1Binding, NativeD1Client } from '@/features/d1/native'
+import { AlchemyQueryExecutorLive } from '@/features/d1/reylo'
 import { ExternalError } from '@/features/workflow/domain/errors'
 import { CommitId, EventId, ExecutionId } from '@/features/workflow/domain/identity'
 import { JsonObject, RunDetail, type Run } from '@/features/workflow/domain/model'
 import { D1StoreLive } from '@/features/workflow/services/d1-store'
-import { AlchemyQueryExecutorLive, DatabaseQueriesLive } from '@/features/workflow/services/database-queries'
-import { D1Binding, NativeWorkflowDatabase } from '@/features/workflow/services/native-database'
+import { DatabaseQueriesLive } from '@/features/workflow/services/database-queries'
 import { Store, type StoreService } from '@/features/workflow/services/store'
 import { WorkflowRegistry } from '@/features/workflow/services/workflow-definition'
 import { Workflows } from '@/features/workflow/services/workflows'
@@ -84,7 +85,7 @@ beforeEach(async () => {
   storeLayer = D1StoreLive.pipe(
     Layer.provide(DatabaseQueriesLive),
     Layer.provide(AlchemyQueryExecutorLive),
-    Layer.provide(NativeWorkflowDatabase),
+    Layer.provide(NativeD1Client),
     Layer.provide(Layer.succeed(D1Binding, database)),
   )
   store = freshStore()

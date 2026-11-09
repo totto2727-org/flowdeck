@@ -1,6 +1,5 @@
 import { Cause, Crypto, Effect, Option, Result, Schema } from 'effect'
 
-import { RemoteWorkerError, Rfc9457ProblemDetails } from './rpc-problem'
 import {
   Conflict,
   ExternalError,
@@ -8,7 +7,9 @@ import {
   InvalidSnapshot,
   NotFound,
   StorageConflict,
-} from './workflow/domain/errors'
+} from '@/features/workflow/domain/errors'
+
+import { RemoteWorkerError, Rfc9457ProblemDetails } from './problem'
 
 const RpcReply = Schema.Result(Schema.Json, Rfc9457ProblemDetails)
 const wire = Schema.fromJsonString(Schema.toCodecJson(RpcReply))

@@ -2,7 +2,7 @@ import { Worker, type WorkerServices } from 'alchemy/Cloudflare/Workers'
 import type { HttpEffect } from 'alchemy/Http'
 import type { RuntimeContext } from 'alchemy/RuntimeContext'
 
-import type { WireWorkflowExecutor, WireWorkflowService } from '@/features/workflow/services/workflow-rpc'
+import type { WireWorkflowExecutor, WireWorkflowService } from '@/features/workflow/rpc/contract'
 
 /** Lightweight identities and contracts shared by implementations and static bindings. */
 export class Frontend extends Worker<Frontend, { readonly fetch: HttpEffect<WorkerServices | RuntimeContext> }>()(

@@ -1,9 +1,10 @@
 import { Cause, Effect, Schema, flow } from 'effect'
 
-import { rpcResult } from '@/features/rpc-boundary'
 import { ExternalError } from '@/features/workflow/domain/errors'
 import type { RunId } from '@/features/workflow/domain/identity'
 import { CreateRun, RunDetail, RunsResponse, WorkflowsResponse } from '@/features/workflow/domain/model'
+
+import { rpcResult } from './boundary'
 
 export const RpcCreateRun = Schema.toCodecJson(CreateRun)
 export const RpcRunDetail = Schema.toCodecJson(RunDetail)

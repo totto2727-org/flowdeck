@@ -1,8 +1,9 @@
 import { Context, Effect, Schema } from 'effect'
 
-import type { DomainError } from '@/features/workflow/domain/errors'
 import type { RunId } from '@/features/workflow/domain/identity'
 import type { CreateRun, GraphDefinition, JsonObject, WorkflowSummary } from '@/features/workflow/domain/model'
+
+import type { WorkflowFailure } from './failures'
 
 /** Each workflow owns input validation, supported versions, and its initial checkpoint. */
 export interface WorkflowDefinition {
@@ -14,8 +15,8 @@ export interface WorkflowDefinition {
 
 /** Static execution binding supplied by the application's composition root. */
 export type WorkflowExecutor = {
-  readonly start: (runId: RunId) => Effect.Effect<void, DomainError>
-  readonly resume: (runId: RunId) => Effect.Effect<void, DomainError>
+  readonly start: (runId: RunId) => Effect.Effect<void, WorkflowFailure>
+  readonly resume: (runId: RunId) => Effect.Effect<void, WorkflowFailure>
 }
 
 export interface RegisteredWorkflow extends WorkflowDefinition {
