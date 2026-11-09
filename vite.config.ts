@@ -9,8 +9,6 @@ const ignorePatterns = await generateIgnorePatterns(new URL('.', import.meta.url
 
 export default defineConfig({
   resolve: { tsconfigPaths: true },
-  // Effront client references and route providers must share the same module context.
-  optimizeDeps: { exclude: ['@effront/core'] },
   plugins: [
     reylo(),
     effront({ application: './src/workers/frontend/features/entry.effront.tsx' }),

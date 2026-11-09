@@ -1,17 +1,5 @@
 # Retained upstream differences
 
-## Effront 0.4.0 declaration resolution
-
-- Upstream release: [`@effront/alchemy@0.4.0`](https://www.npmjs.com/package/@effront/alchemy/v/0.4.0), based on release commit [`8e3bea2c3f2d7ebc852718052a848900f1b6f232`](https://github.com/totto2727-org/effront/commit/8e3bea2c3f2d7ebc852718052a848900f1b6f232).
-- Patch: [`patches/@effront__alchemy@0.4.0.patch`](../patches/@effront__alchemy@0.4.0.patch), generated with `vp pm patch` and `vp pm patch-commit` and applied through the declared `patchedDependencies` entry.
-- Purpose: repair published declaration module specifiers that Alchemy's public export map cannot resolve.
-- Scope: only `dist/cloudflare/application.d.ts`, `application-runtime.d.ts`, `index.d.ts`, and `runtime.d.ts` change.
-- Replacements: `alchemy/Cloudflare/CloudflareEnvironmentService` becomes `alchemy/Cloudflare` for `CloudflareEnvironment`, and `alchemy/Cloudflare/index` becomes `alchemy/Cloudflare/Workers` for Worker host services.
-- Operational impact: restore TypeScript's application capability, request-scope, and error inference without casts, ambient module shims, or suppressed checks.
-- Runtime source and JavaScript artifacts are unchanged, and this is not a deployment customization.
-- TODO: remove this exact-version patch and its `patchedDependencies` entry after consuming a fixed published release from [Effront PR #33](https://github.com/totto2727-org/effront/pull/33).
-- Regression coverage: `src/workers/frontend/features/worker.test.ts` asserts the configured helper's captured `ControlApi`, host-owned request and scope requirements, and typed failures through the normal TypeScript check.
-
 ## Published Reylo customization
 
 - Upstream: [colinhacks/reylo](https://github.com/colinhacks/reylo).
