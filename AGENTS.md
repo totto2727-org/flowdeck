@@ -26,6 +26,7 @@ The application uses Effect 4, Effront, shadcn/ui, Cloudflare Workers, Durable O
 - `src/workers/frontend/assembly.ts`: native request binding decoding and typed Access audience injection.
 - `src/workers/database.ts`: the shared D1 resource declaration.
 - `src/features/d1/`: reusable Alchemy execution and Reylo adaptation, independent from workflow policy and Worker resources.
+- `src/features/cluster/`: official ClusterMachine checkpoint storage, codecs, and typed SQL, independent from workflow policy and Worker resources.
 - `src/features/workflow/`: shared workflow values, graph projection, Machine execution, typed SQL persistence, and the `Workflows` service contract.
 - `src/features/workflow/rpc/`: the application-specific workflow wire protocol, RFC 9457 profile, and sanitized RPC boundaries.
 - `src/features/workflow/services/failures.ts`: aggregate application failures; domain constructors must not depend on transport types.
@@ -116,6 +117,8 @@ Decode environment bindings in assembly adapters and inject typed values into au
 Do not branch on development flags, deployment stages, or infrastructure phases inside feature logic or request authorization.
 Keep Worker-specific features with their Worker, and put shared features under `src/features/`.
 Keep reusable D1 execution free of workflow error translation, SQL files, and application resource imports.
+Keep ClusterMachine storage dependent only on the shared D1 capability, not workflow policy or Worker resources.
+Its D1 batch covers checkpoints and request receipts, not MessageStorage emissions; see [ClusterMachine D1 storage](docs/cluster-machine-storage.md).
 Keep workflow domain modules independent from services and transport; aggregate cross-boundary failures at the application service boundary.
 The compiler-backed tests in `tests/feature-boundaries.test.ts` enforce these import boundaries.
 Use explicitly named modules instead of `index.ts` by default.

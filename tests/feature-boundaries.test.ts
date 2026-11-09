@@ -55,6 +55,14 @@ describe('shared feature boundaries', () => {
     ).toEqual([])
   })
 
+  it('keeps Cluster checkpoint storage independent from workflow policy and application resources', () => {
+    const cluster = Array.filter(dependencies, ({ file }) => file.startsWith('/src/features/cluster/'))
+    expect(cluster).not.toHaveLength(0)
+    expect(
+      Array.filter(cluster, ({ target }) => !within(target, 'features/cluster') && !within(target, 'features/d1')),
+    ).toEqual([])
+  })
+
   it('keeps workflow domain values independent from services and transport', () => {
     const domain = Array.filter(dependencies, ({ file }) => file.startsWith('/src/features/workflow/domain/'))
     expect(domain).not.toHaveLength(0)

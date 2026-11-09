@@ -68,12 +68,13 @@ Local development supplies a fixed audience and identity through Alchemy's `dev.
 
 ## Reference
 
-| Guide                                                         | Contents                                                               |
-| ------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| [Pi development](docs/development-sandbox.md)                 | Task inputs, credentials, workspace setup, and acceptance limits.      |
-| [Workspace retention](docs/development-workflow-retention.md) | Workspace lifetime, costs, and recovery limits.                        |
-| [Workflow graphs](docs/workflow-graphs.md)                    | Graph definitions, execution, versioning, checkpoints, and recovery.   |
-| [RPC boundaries](docs/rpc-boundaries.md)                      | Error conversion, origin logging, Result codecs, and RFC 9457 details. |
+| Guide                                                         | Contents                                                                  |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| [Pi development](docs/development-sandbox.md)                 | Task inputs, credentials, workspace setup, and acceptance limits.         |
+| [Workspace retention](docs/development-workflow-retention.md) | Workspace lifetime, costs, and recovery limits.                           |
+| [Workflow graphs](docs/workflow-graphs.md)                    | Graph definitions, execution, versioning, checkpoints, and recovery.      |
+| [RPC boundaries](docs/rpc-boundaries.md)                      | Error conversion, origin logging, Result codecs, and RFC 9457 details.    |
+| [ClusterMachine D1 storage](docs/cluster-machine-storage.md)  | Opt-in checkpoint storage, request deduplication, and transaction limits. |
 
 ## Development
 

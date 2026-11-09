@@ -83,4 +83,20 @@ describe('generated D1 schema', () => {
         .run(),
     ).rejects.toThrow('UNIQUE constraint failed: run_events.run_id, run_events.sequence')
   })
+
+  it('rejects invalid JSON in a Cluster machine checkpoint', async () => {
+    await expect(
+      database
+        .prepare(
+          "INSERT INTO cluster_machine_checkpoints VALUES ('default', 1, 'machine', 'entity', 'id', '1', '1', 'invalid')",
+        )
+        .run(),
+    ).rejects.toThrow('CHECK constraint failed: json_valid(snapshot_json)')
+  })
+
+  it('rejects a Cluster request receipt without its full checkpoint address', async () => {
+    await expect(
+      database.prepare("INSERT INTO cluster_machine_requests VALUES ('default', 1, 'machine', 'entity', '1')").run(),
+    ).rejects.toThrow('FOREIGN KEY constraint failed')
+  })
 })

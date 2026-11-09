@@ -296,5 +296,78 @@ table "run_events" {
     expr = "(json_valid(payload_json))"
   }
 }
+table "cluster_machine_checkpoints" {
+  schema = schema.main
+  column "shard_group" {
+    null = false
+    type = text
+  }
+  column "shard_id" {
+    null = false
+    type = integer
+  }
+  column "entity_type" {
+    null = false
+    type = text
+  }
+  column "entity_id" {
+    null = false
+    type = text
+  }
+  column "machine_id" {
+    null = false
+    type = text
+  }
+  column "version" {
+    null = false
+    type = text
+  }
+  column "request_id" {
+    null = false
+    type = text
+  }
+  column "snapshot_json" {
+    null = false
+    type = text
+  }
+  primary_key {
+    columns = [column.shard_group, column.shard_id, column.entity_type, column.entity_id]
+  }
+  check {
+    expr = "(json_valid(snapshot_json))"
+  }
+}
+table "cluster_machine_requests" {
+  schema = schema.main
+  column "shard_group" {
+    null = false
+    type = text
+  }
+  column "shard_id" {
+    null = false
+    type = integer
+  }
+  column "entity_type" {
+    null = false
+    type = text
+  }
+  column "entity_id" {
+    null = false
+    type = text
+  }
+  column "request_id" {
+    null = false
+    type = text
+  }
+  primary_key {
+    columns = [column.shard_group, column.shard_id, column.entity_type, column.entity_id, column.request_id]
+  }
+  foreign_key "cluster_machine_requests_checkpoint" {
+    columns     = [column.shard_group, column.shard_id, column.entity_type, column.entity_id]
+    ref_columns = [table.cluster_machine_checkpoints.column.shard_group, table.cluster_machine_checkpoints.column.shard_id, table.cluster_machine_checkpoints.column.entity_type, table.cluster_machine_checkpoints.column.entity_id]
+    on_update   = NO_ACTION
+    on_delete   = NO_ACTION
+  }
+}
 schema "main" {
 }

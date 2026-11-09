@@ -6,10 +6,11 @@ Flowdeck targets SQLite and Cloudflare D1 only.
 Atlas Pro HCL in [`schema/`](../schema/) defines tables, columns, checks, foreign keys, indexes, and triggers.
 Versioned SQL in [`migrations/`](../migrations/) remains the deployment input for Alchemy's D1 resource.
 Atlas does not deploy to D1.
-Reylo infers query input and result types from the SQL files in `src/features/workflow/services/queries/`.
+Reylo infers query input and result types from the SQL files in `src/features/workflow/services/queries/` and `src/features/cluster/queries/`.
 There is no handwritten TypeScript table model or query builder.
 
 D1 integration tests exercise the generated migration files.
+The opt-in [ClusterMachine D1 storage](cluster-machine-storage.md) reuses the same execution capability for checkpoints and request receipts without changing existing workflow persistence.
 
 ## Local analysis and checks
 

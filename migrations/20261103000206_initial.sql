@@ -139,3 +139,26 @@ CREATE TABLE `run_events` (
 );
 -- Create index "run_events_run_sequence" to table: "run_events"
 CREATE UNIQUE INDEX `run_events_run_sequence` ON `run_events` (`run_id`, `sequence`);
+-- Create "cluster_machine_checkpoints" table
+CREATE TABLE `cluster_machine_checkpoints` (
+  `shard_group` text NOT NULL,
+  `shard_id` integer NOT NULL,
+  `entity_type` text NOT NULL,
+  `entity_id` text NOT NULL,
+  `machine_id` text NOT NULL,
+  `version` text NOT NULL,
+  `request_id` text NOT NULL,
+  `snapshot_json` text NOT NULL,
+  PRIMARY KEY (`shard_group`, `shard_id`, `entity_type`, `entity_id`),
+  CHECK (json_valid(snapshot_json))
+);
+-- Create "cluster_machine_requests" table
+CREATE TABLE `cluster_machine_requests` (
+  `shard_group` text NOT NULL,
+  `shard_id` integer NOT NULL,
+  `entity_type` text NOT NULL,
+  `entity_id` text NOT NULL,
+  `request_id` text NOT NULL,
+  PRIMARY KEY (`shard_group`, `shard_id`, `entity_type`, `entity_id`, `request_id`),
+  CONSTRAINT `cluster_machine_requests_checkpoint` FOREIGN KEY (`shard_group`, `shard_id`, `entity_type`, `entity_id`) REFERENCES `cluster_machine_checkpoints` (`shard_group`, `shard_id`, `entity_type`, `entity_id`) ON UPDATE NO ACTION ON DELETE NO ACTION
+);

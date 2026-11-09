@@ -56,12 +56,15 @@ Do not add a competing transition interpreter or shared artifact store.
 Worker entry points and Worker-specific features live under `src/workers/<worker>/`.
 Shared workflow schemas, projections, persistence, the native planner adapter, and the Effect task driver live under `src/features/workflow/`.
 Reusable Alchemy D1 execution lives under `src/features/d1/`, without workflow errors, SQL statements, or Worker resource declarations.
+Opt-in official ClusterMachine checkpoint storage lives under `src/features/cluster/`; it does not replace the existing workflow driver or provide durable Cluster messaging.
+See [ClusterMachine D1 storage](cluster-machine-storage.md) for composition and transaction limits.
 The fixed workflow RPC protocol lives under `src/features/workflow/rpc/`; it is an application protocol, not a general-purpose RPC framework.
 
 | Owner                        | Contents                                                                                     | Dependency boundary                                                          |
 | ---------------------------- | -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
 | `features/identity`          | Reusable identifier schema and generation                                                    | Effect only; each capability owns its concrete identifiers.                  |
 | `features/d1`                | Captured Alchemy client, Reylo executor, statement preparation, and prepared batch execution | No workflow policy or application resources.                                 |
+| `features/cluster`           | Official ClusterMachine checkpoint storage, request receipts, codecs, and typed SQL          | Uses shared D1 execution, not workflow policy or application resources.      |
 | `features/workflow/domain`   | Workflow values, identities, rejections, and graph projections                               | No persistence implementation or RPC error types.                            |
 | `features/workflow/services` | Store and workflow ports, D1 persistence, SQL, and application failure aggregation           | Storage conflict interpretation stays here, above the D1 capability.         |
 | `features/workflow/rpc`      | Wire codecs, RFC 9457 profile, response sanitization, and SDK-call admission                 | Uses workflow domain contracts, not D1 or concrete workflow implementations. |
@@ -70,7 +73,7 @@ The fixed workflow RPC protocol lives under `src/features/workflow/rpc/`; it is 
 
 `WorkflowFailure` aggregates application failures in `services/failures.ts`; the domain error constructors do not import transport types.
 The HTTP failure-logging middleware remains one shared module because another service or feature abstraction adds no capability.
-The [feature-boundary tests](../tests/feature-boundaries.test.ts) parse production imports with the installed TypeScript compiler and enforce the shared-feature, D1, and domain dependency cuts, including type-only imports.
+The [feature-boundary tests](../tests/feature-boundaries.test.ts) parse production imports with the installed TypeScript compiler and enforce the shared-feature, D1, Cluster storage, and domain dependency cuts, including type-only imports.
 Keep the SQL statements and persistence codecs with workflow storage rather than moving all database-adjacent code into D1.
 The shared `Workflows` service is Control's only workflow dependency.
 The application follows modular-monolith boundaries: each workflow is an independent application module behind a shared interface.
