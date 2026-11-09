@@ -311,6 +311,35 @@ const persisted = () =>
     .first<{ machine_id: string; version: string; request_id: string; snapshot_json: string }>()
 
 describe('official Cluster machine with D1 checkpoint storage', () => {
+  it('rejects a failed receipt insert without partial persistence and recovers after host reconstruction', async () => {
+    await database.exec(
+      "CREATE TRIGGER reject_receipt BEFORE INSERT ON cluster_machine_requests BEGIN SELECT RAISE(ABORT, 'receipt rejected'); END",
+    )
+    const failed = host()
+    try {
+      expect(await failed.send()).toMatchObject({ _tag: 'Rejected', reason: 'PersistenceFailure' })
+      expect(await persisted()).toBeNull()
+      expect(await database.prepare('SELECT count(*) AS count FROM cluster_machine_requests').first()).toEqual({
+        count: 0,
+      })
+    } finally {
+      await failed.runtime.dispose()
+    }
+    await database.exec('DROP TRIGGER reject_receipt')
+    const recovered = host()
+    try {
+      expect(await recovered.send()).toEqual(new ClusterMachine.Accepted({}))
+      const restored = await persisted()
+      expect(restored).toMatchObject({ machine_id: DevelopmentMachine.id, version: '1' })
+      expect(JSON.parse(restored!.snapshot_json)).toMatchObject({ active: [{ path: '' }, { path: 'verify' }] })
+      expect(await database.prepare('SELECT request_id FROM cluster_machine_requests').all()).toMatchObject({
+        results: [{ request_id: restored!.request_id }],
+      })
+    } finally {
+      await recovered.runtime.dispose()
+    }
+  })
+
   it('resumes DevelopmentMachine after host disposal and accepts final requests as no-ops', async () => {
     const first = host()
     try {
