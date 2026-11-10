@@ -76,13 +76,13 @@ Production deployments share one non-cancelling concurrency group; GitHub can re
 
 Configure these settings in the GitHub `production` environment before enabling deployment:
 
-| Kind | Name | Purpose |
-| --- | --- | --- |
-| Variable | `CLOUDFLARE_ACCOUNT_ID` | Intended Cloudflare account. |
-| Variable | `CLOUDFLARE_AI_GATEWAY_ID` | Explicit existing AI Gateway with configured stored BYOK. |
-| Variable | `FLOWDECK_ACCESS_POLICY_ID` | Existing Pulumi-managed `allowSaml` policy ID. |
-| Secret | `CLOUDFLARE_API_TOKEN` | Alchemy provisioning access for the application's Workers, D1, Containers/images, Access application/domain, and official Cloudflare state store. |
-| Secret | `CLOUDFLARE_AI_GATEWAY_API_KEY` | Gateway authentication, deployed as the development workflow Worker's secret binding. |
+| Kind     | Name                            | Purpose                                                                                                                                           |
+| -------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Variable | `CLOUDFLARE_ACCOUNT_ID`         | Intended Cloudflare account.                                                                                                                      |
+| Variable | `CLOUDFLARE_AI_GATEWAY_ID`      | Explicit existing AI Gateway with configured stored BYOK.                                                                                         |
+| Variable | `FLOWDECK_ACCESS_POLICY_ID`     | Existing Pulumi-managed `allowSaml` policy ID.                                                                                                    |
+| Secret   | `CLOUDFLARE_API_TOKEN`          | Alchemy provisioning access for the application's Workers, D1, Containers/images, Access application/domain, and official Cloudflare state store. |
+| Secret   | `CLOUDFLARE_AI_GATEWAY_API_KEY` | Gateway authentication, deployed as the development workflow Worker's secret binding.                                                             |
 
 Credentials are supplied only to the deploy step, not dependency installation or CI.
 Use environment protection rules to control production authorization.
