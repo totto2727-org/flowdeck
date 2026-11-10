@@ -66,6 +66,37 @@ The Effront runtime uses a separate fixed capture assembly so it does not provis
 Request assembly decodes the native audience binding and injects a typed expected audience into the same authorization logic in every environment.
 Local development supplies a fixed audience and identity through Alchemy's `dev.access` without an authorization bypass.
 
+## Automatic production deployment
+
+[Deploy production](.github/workflows/deploy.yml) is separate from [CI](.github/workflows/ci.yml).
+It runs only after successful push CI on `main` in this repository and checks out that run's exact `head_sha`.
+Pull request CI does not deploy, and there are no preview deployments.
+The workflow must be present on the default branch before `workflow_run` can trigger it.
+Production deployments share one non-cancelling concurrency group; GitHub can replace older pending runs, so this is not a FIFO release queue.
+
+Configure these settings in the GitHub `production` environment before enabling deployment:
+
+| Kind | Name | Purpose |
+| --- | --- | --- |
+| Variable | `CLOUDFLARE_ACCOUNT_ID` | Intended Cloudflare account. |
+| Variable | `CLOUDFLARE_AI_GATEWAY_ID` | Explicit existing AI Gateway with configured stored BYOK. |
+| Variable | `FLOWDECK_ACCESS_POLICY_ID` | Existing Pulumi-managed `allowSaml` policy ID. |
+| Secret | `CLOUDFLARE_API_TOKEN` | Alchemy provisioning access for the application's Workers, D1, Containers/images, Access application/domain, and official Cloudflare state store. |
+| Secret | `CLOUDFLARE_AI_GATEWAY_API_KEY` | Gateway authentication, deployed as the development workflow Worker's secret binding. |
+
+Credentials are supplied only to the deploy step, not dependency installation or CI.
+Use environment protection rules to control production authorization.
+Before the first approved run, confirm the account, official Cloudflare state-store availability, any required migration from local state, and sufficient token permissions.
+The existing `alchemy.run.ts` selects the official remote backend; the workflow does not replace it or migrate state.
+Alchemy's `--yes` authorizes the application update and any required state-store setup, so do not enable the workflow before operator approval.
+
+The hosted Linux runner must provide Docker with Buildx and sufficient disk and time for the full `sandbox/Dockerfile` build.
+Alchemy builds the `sandbox` context for `linux/amd64`, including its Nix/Home Manager provisioning and official computerd runtime, then publishes the Container image.
+No separate base-image publication, host Nix setup, registry login step, or inference credential build argument is required.
+The workflow intentionally does not select a prepared-image or Dockerfile override.
+The shared monorepo `deploy-alchemy` action is not used because it evaluates a root Nix shell and expects a `{ url }` stack output, whereas Flowdeck uses the Reylo SQL loader and returns `{ frontend }`.
+Dependency installation keeps the frozen lockfile and repository release-age/build-script safeguards.
+
 ## Reference
 
 | Guide                                                         | Contents                                                               |

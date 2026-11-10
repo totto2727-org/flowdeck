@@ -1,0 +1,55 @@
+name: Deploy production
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: flowdeck-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment:
+      name: production
+      url: https://flowdeck.totto2727.dev
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+      - uses: totto2727-org/monorepo/.github/actions/setup-typescript@main
+      - name: Check container build prerequisites
+        run: |
+          docker info
+          docker buildx version
+      # The shared deploy-alchemy action requires Nix and a { url } output.
+      # Flowdeck uses its own SQL loader and returns { frontend } instead.
+      - name: Deploy Alchemy application
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_AI_GATEWAY_ID: ${{ vars.CLOUDFLARE_AI_GATEWAY_ID }}
+          CLOUDFLARE_AI_GATEWAY_API_KEY: ${{ secrets.CLOUDFLARE_AI_GATEWAY_API_KEY }}
+          FLOWDECK_ACCESS_POLICY_ID: ${{ vars.FLOWDECK_ACCESS_POLICY_ID }}
+          DOCKER_DEFAULT_PLATFORM: linux/amd64
+        run: |
+          for name in CLOUDFLARE_ACCOUNT_ID CLOUDFLARE_API_TOKEN CLOUDFLARE_AI_GATEWAY_ID CLOUDFLARE_AI_GATEWAY_API_KEY FLOWDECK_ACCESS_POLICY_ID; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Missing required deployment setting: $name"
+              exit 1
+            fi
+          done
+          vp exec node --import @totto2727/reylo/register node_modules/alchemy/bin/cli.js deploy --config alchemy.run.ts --stage production --yes --no-input
