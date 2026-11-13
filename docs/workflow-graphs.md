@@ -21,15 +21,15 @@ Use `invoke` for asynchronous work whose completion drives a native `onDone` tra
 Branch resolvers select the declared next state synchronously from that result.
 Do not start detached asynchronous work from an action and move its completion handling into an external executor.
 
-| Component                                                       | Responsibility                                                                                                         |
-| --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| Versioned native Machine                                        | Define states, asynchronous effects, routing, waiting, and business failure.                                           |
-| [Persistence host](../src/features/workflow/managed-runtime.ts) | Load canonical D1 state, validate identity, open native execution, commit snapshots, and wait for ACK before replying. |
-| [ResourceStore](../src/features/workflow/resource-store.ts)     | Share typed volatile resources within one execution Scope.                                                             |
-| [Graph projection](../src/features/workflow/graph.ts)           | Derive visible nodes and edges from native introspection without running effects or resolvers.                         |
-| Store / D1                                                      | Atomically commit snapshots, ordered events, revision checks, and commit receipts.                                     |
-| PiHarness Durable Object                                        | Persist conversations and external operation receipts and manage Pi execution.                                         |
-| Frontend                                                        | Display the stored graph and committed events, without executing nodes.                                                |
+| Component                                                           | Responsibility                                                                                                         |
+| ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Versioned native Machine                                            | Define states, asynchronous effects, routing, waiting, and business failure.                                           |
+| [Persistence host](../src/core/feature/workflow/managed-runtime.ts) | Load canonical D1 state, validate identity, open native execution, commit snapshots, and wait for ACK before replying. |
+| [ResourceStore](../src/core/feature/workflow/resource-store.ts)     | Share typed volatile resources within one execution Scope.                                                             |
+| [Graph projection](../src/core/feature/workflow/graph.ts)           | Derive visible nodes and edges from native introspection without running effects or resolvers.                         |
+| Store / D1                                                          | Atomically commit snapshots, ordered events, revision checks, and commit receipts.                                     |
+| PiHarness Durable Object                                            | Persist conversations and external operation receipts and manage Pi execution.                                         |
+| Frontend                                                            | Display the stored graph and committed events, without executing nodes.                                                |
 
 `ClusterMachine` is not the workflow runtime.
 The installed ClusterMachine rejects process-local activities such as `invoke` with `UnsupportedProcessLocal`.
@@ -263,7 +263,7 @@ Retention callbacks do not choose or advance workflow nodes.
 ## Registration and frontend
 
 Each workflow supplies a neutral catalog `summary` and `prepare(input)` returning its graph and encoded initial snapshot.
-[Registration](../src/workers/workflow/features/registration.ts) binds these definitions to fixed workflow service bindings.
+[Registration](../src/bridge/workflow/user-land/feature/registration.ts) binds these definitions to fixed workflow service bindings.
 The integration service routes mechanically from that registry.
 Control uses only the integration Worker binding, and each workflow entry routes to its run Durable Object.
 
@@ -280,14 +280,14 @@ It does not promise durable timers, parallel independent invokes, child-machine 
 In particular, restoring a child Machine is not equivalent to restoring an instruction offset inside its invoke.
 Expand these contracts only with explicit persistence semantics and public-path tests.
 
-| Maintained tests                                                                      | Observable contract                                                                                                          |
-| ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| [Native graph tests](../src/features/workflow/graph.test.ts)                          | Native automatic invoke progression matches displayed edges, including nested and hidden allocation states.                  |
-| [Persistence host tests](../src/features/workflow/managed-runtime.test.ts)            | Native start/resume selection, ACK ordering, unchanged polls, error identity, and post-ACK hooks.                            |
-| [ResourceStore tests](../src/features/workflow/resource-store.test.ts)                | Typed volatile sharing, concurrent acquisition, retry, immediate failed-attempt cleanup, and fresh-scope isolation.          |
-| [D1 and public workflow tests](../src/features/workflow/services/d1-store.test.ts)    | Actual D1 atomicity, cold restoration, both versions, HTTP routes, commit conflicts, and RPC failure recovery.               |
-| [Development tests](../src/workers/development-workflow/features/development.test.ts) | Actual D1 checkpoints with sandbox-boundary controls for receipt recovery, no duplicate submission, and workflow completion. |
-| [Cluster storage tests](../src/features/cluster/d1-storage.test.ts)                   | Independent data-only Cluster storage through official Entity.client and actual local D1.                                    |
+| Maintained tests                                                                       | Observable contract                                                                                                          |
+| -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| [Native graph tests](../src/core/feature/workflow/graph.test.ts)                       | Native automatic invoke progression matches displayed edges, including nested and hidden allocation states.                  |
+| [Persistence host tests](../src/core/feature/workflow/managed-runtime.test.ts)         | Native start/resume selection, ACK ordering, unchanged polls, error identity, and post-ACK hooks.                            |
+| [ResourceStore tests](../src/core/feature/workflow/resource-store.test.ts)             | Typed volatile sharing, concurrent acquisition, retry, immediate failed-attempt cleanup, and fresh-scope isolation.          |
+| [D1 and public workflow tests](../tests/integration/d1-workflows.test.ts)              | Actual D1 atomicity, cold restoration, both versions, HTTP routes, commit conflicts, and RPC failure recovery.               |
+| [Development tests](../src/user-land/workflow/development/feature/development.test.ts) | Actual D1 checkpoints with sandbox-boundary controls for receipt recovery, no duplicate submission, and workflow completion. |
+| [Cluster storage tests](../src/core/feature/cluster/d1-storage.test.ts)                | Independent data-only Cluster storage through official Entity.client and actual local D1.                                    |
 
 Sandbox boundary controls do not establish deployed Pi inference or real Container acceptance.
 Local D1 and official local Cluster tests do not establish distributed runner transport or deployed storage behavior.

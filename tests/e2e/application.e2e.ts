@@ -75,8 +75,8 @@ Array.map(['1.0.0', '2.0.0'] as const, (version) => {
     await expect(graph.getByRole('button').nth(1)).toHaveAttribute('data-state', 'waiting')
 
     await page.getByRole('button', { name: /^State / }).click()
-    await expect(page.getByLabel('Committed run state')).toContainText('Waiting')
-    await expect(page.getByLabel('Committed run state')).toContainText(version)
+    await expect(page.getByLabel('Committed run state')).toContainText('"path": "approval"')
+    await expect(page.getByLabel('Committed run state')).toContainText(`"version": "${version}"`)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
     await page.screenshot({ path: info.outputPath(`${version}-waiting.png`), fullPage: true })
 
@@ -85,7 +85,8 @@ Array.map(['1.0.0', '2.0.0'] as const, (version) => {
     await runs.getByRole('button').filter({ hasText: runLabel }).click()
     await expect(page.getByText(`Resume continues this run with ${version}.`, { exact: false })).toBeVisible()
     await page.getByRole('button', { name: /^State / }).click()
-    await expect(page.getByLabel('Committed run state')).toContainText('Waiting')
+    await expect(page.getByLabel('Committed run state')).toContainText('"path": "approval"')
+    await expect(page.getByLabel('Committed run state')).toContainText(`"version": "${version}"`)
     await page.getByRole('button', { name: 'Resume run', exact: true }).click()
     await expect(page.getByRole('button', { name: 'Resume run', exact: true })).toHaveCount(0)
     await expect(page.getByRole('status')).toContainText('completed')
@@ -97,8 +98,8 @@ Array.map(['1.0.0', '2.0.0'] as const, (version) => {
     await persistedRun.click()
     await expect(graph.getByRole('button').last()).toHaveAttribute('data-state', 'succeeded')
     await page.getByRole('button', { name: /^State / }).click()
-    await expect(page.getByLabel('Committed run state')).toContainText('Completed')
-    await expect(page.getByLabel('Committed run state')).toContainText(version)
+    await expect(page.getByLabel('Committed run state')).toContainText('"path": "completed"')
+    await expect(page.getByLabel('Committed run state')).toContainText(`"version": "${version}"`)
     await page.getByRole('button', { name: /^Events / }).click()
     await expect(
       page.getByRole('region', { name: 'Persisted events' }).getByText('run completed', { exact: true }),

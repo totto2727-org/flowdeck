@@ -5,7 +5,7 @@ The current PiHarness retention integration is **pending acceptance validation**
 
 ## Workspace ownership
 
-Each Pi development run uses one `DevelopmentRun` Durable Object with official PiHarness and a Computer Workspace backed by `ContainerBackend`.
+Each Pi development run uses one `PiRun` Durable Object with official PiHarness and a Computer Workspace backed by `ContainerBackend`.
 PiHarness and pi-durable own durable conversation and operation state, while D1 owns workflow checkpoints and events.
 The persisted workflow ID remains `jcode-development`, and the Container resource remains `JcodeSandbox`.
 Implementation and verification reuse official `ROOT_SESSION = '1'` within that run Durable Object and the Workspace checkout at `/workspace/project`.
@@ -68,6 +68,7 @@ See [sandbox acceptance limits](development-sandbox.md#trust-and-acceptance-boun
 ## Sources
 
 - Official installed APIs: `agents/lifecycle`, `agents/harness/pi`, `@earendil-works/pi-durable`, and `@cloudflare/computer/backends/container`.
-- Integration: the runtime entry and Container resource composition under `src/workers/development-workflow/`.
+- Integration: `src/user-land/workflow/development/worker.ts` assembles the workflow runtime.
+- Shared Pi resources: `src/core/worker/pi/run.ts`, `container.ts`, and `sdk-runtime.ts` own `PiRun`, `PiContainer`, and the native SDK lifecycle adapter.
 - [Cloudflare Container inactivity timeout](https://developers.cloudflare.com/containers/api/durable-object-container/#setinactivitytimeout)
 - [Cloudflare Durable Object alarms](https://developers.cloudflare.com/durable-objects/api/alarms/)

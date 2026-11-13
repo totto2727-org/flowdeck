@@ -60,7 +60,7 @@ vp run dev
 Remote deployment attaches the existing `allowSaml` policy from [Pulumi's Cloudflare definitions](https://github.com/totto2727-org/monorepo/blob/main/infra/cloudflare/src/access-policy.ts).
 Set `FLOWDECK_ACCESS_POLICY_ID` to that policy's deployed ID, not the SAML group or identity-provider ID.
 Alchemy owns the Flowdeck Access application, not the shared policy or group.
-The deployment composition selects one complete `DevelopmentLayer` or `ProductionLayer` from `src/workers/application.ts`.
+The deployment composition selects one complete `DevelopmentLayer` or `ProductionLayer` from `src/user-land/application.ts`.
 Both Layers assemble the same Worker implementation graph, with fixed dependencies for their environment.
 The Effront runtime uses a separate fixed capture assembly so it does not provision sibling Workers or recreate the Access application.
 Request assembly decodes the native audience binding and injects a typed expected audience into the same authorization logic in every environment.
@@ -79,6 +79,9 @@ Local development supplies a fixed audience and identity through Alchemy's `dev.
 ## Development
 
 For repository maintenance, commands, and implementation rules, see [AGENTS.md](AGENTS.md).
+See [architecture](docs/architecture.md) for ownership boundaries and [Add a workflow](docs/add-workflow.md) for the edit checklist.
+Adding a workflow changes user-land and the bridge's user-land registration, not core.
+`alchemy.ts` only re-exports the deployment resource list from `src/user-land/resources.ts`.
 
 ## License
 

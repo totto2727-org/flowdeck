@@ -18,7 +18,7 @@ flowchart TB
   Run <--> DB
   Run --> V[Workflow-owned pinned implementation version]
   Workflow -->|static typed RPC binding| Development[Development Workflow Worker]
-  Development -->|getByName runId| DevelopmentRun[Development Run DO]
+  Development -->|getByName runId| DevelopmentRun[PiRun DO]
   DevelopmentRun <--> DB
   DevelopmentRun --> Pi[Official PiHarness and pi-durable]
   Pi -->|official Computer Workspace tools| Container[computerd Container\nshared checkout]
@@ -55,34 +55,63 @@ The shared persistence host owns canonical snapshot validation, D1 commits, ACK 
 Workflow-owned invokes acquire runtime resources and reconcile external effects through an execution-scoped ResourceStore.
 Do not add a competing transition interpreter or shared artifact store.
 
-Worker entry points and Worker-specific features live under `src/workers/<worker>/`.
-Shared workflow schemas, graph projection, native execution persistence, and volatile ResourceStore live under `src/features/workflow/`.
-Reusable Alchemy D1 execution lives under `src/features/d1/`, without workflow errors, SQL statements, or Worker resource declarations.
-Opt-in official ClusterMachine checkpoint storage lives under `src/features/cluster/`; it is independent from ordinary Machine workflows and does not provide durable Cluster messaging.
+Core Worker entry points and Worker-specific features live under `src/core/worker/<worker>/`.
+Workflow-owned entries and features live under `src/user-land/workflow/<workflow>/`.
+The integration Worker entry is `src/bridge/workflow/bridge/worker.ts`.
+Shared workflow schemas, graph projection, native execution persistence, and volatile ResourceStore live under `src/core/feature/workflow/`.
+Reusable Alchemy D1 execution lives under `src/core/feature/d1/`, without workflow errors, SQL statements, or Worker resource declarations.
+Opt-in official ClusterMachine checkpoint storage lives under `src/core/feature/cluster/`; it is independent from ordinary Machine workflows and does not provide durable Cluster messaging.
 See [ClusterMachine D1 storage](cluster-machine-storage.md) for composition and transaction limits.
-The fixed workflow RPC protocol lives under `src/features/workflow/rpc/`; it is an application protocol, not a general-purpose RPC framework.
+The fixed workflow RPC protocol lives under `src/core/feature/workflow/rpc/`; it is an application protocol, not a general-purpose RPC framework.
 
-| Owner                        | Contents                                                                                     | Dependency boundary                                                          |
-| ---------------------------- | -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| `features/identity`          | Reusable identifier schema and generation                                                    | Effect only; each capability owns its concrete identifiers.                  |
-| `features/d1`                | Captured Alchemy client, Reylo executor, statement preparation, and prepared batch execution | No workflow policy or application resources.                                 |
-| `features/cluster`           | Official ClusterMachine checkpoint storage, request receipts, codecs, and typed SQL          | Uses shared D1 execution, not workflow policy or application resources.      |
-| `features/workflow/domain`   | Workflow values, identities, rejections, and graph projections                               | No persistence implementation or RPC error types.                            |
-| `features/workflow/services` | Store and workflow ports, D1 persistence, SQL, and application failure aggregation           | Storage conflict interpretation stays here, above the D1 capability.         |
-| `features/workflow/rpc`      | Wire codecs, RFC 9457 profile, response sanitization, and SDK-call admission                 | Uses workflow domain contracts, not D1 or concrete workflow implementations. |
-| `features/workflow`          | Native Machine persistence host and volatile ResourceStore                                   | Uses the Store port, not its D1 implementation.                              |
-| `workers/<worker>`           | Resource bindings, complete runtime Layers, and Worker-owned behavior                        | Selects concrete implementations at each runtime root.                       |
+| Owner                               | Contents                                                                                        | Dependency boundary                                                          |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `share/feature/identity`            | Reusable identifier schema and generation                                                       | Effect only; each capability owns its concrete identifiers.                  |
+| `core/feature/d1`                   | Captured Alchemy client, Reylo executor, statement preparation, and prepared batch execution    | No workflow policy or application resources.                                 |
+| `core/feature/cluster`              | Official ClusterMachine checkpoint storage, request receipts, codecs, and typed SQL             | Uses shared D1 execution, not workflow policy or application resources.      |
+| `core/feature/workflow/domain`      | Workflow values, identities, rejections, and graph projections                                  | No persistence implementation or RPC error types.                            |
+| `core/feature/workflow/services`    | Store and workflow ports, D1 persistence, SQL, and application failure aggregation              | Storage conflict interpretation stays here, above the D1 capability.         |
+| `core/feature/workflow/rpc`         | Wire codecs, RFC 9457 profile, response sanitization, and SDK-call admission                    | Uses workflow domain contracts, not D1 or concrete workflow implementations. |
+| `core/feature/workflow`             | Native Machine persistence host and volatile ResourceStore                                      | Uses the Store port, not its D1 implementation.                              |
+| `core/feature/pi`                   | Pi command and receipt schemas, `PiSandbox`, and reusable node operations                       | No workflow node names, prompts, or transitions.                             |
+| `core/worker/pi`                    | `PiSdk`, `makePiSdk`, `PiRun`, `PiContainer`, model provider, Workspace tools, and SDK adapters | No concrete workflow imports.                                                |
+| `core/worker/<worker>`              | Frontend, Control, and database resources and behavior                                          | Uses core, share, and the bridge's neutral core contract.                    |
+| `user-land/workflow/<workflow>`     | Input schemas, versions, machines, prompts, catalog definitions, and Worker assembly            | May import core and share.                                                   |
+| `bridge/workflow/core`              | Neutral Worker identity, run operations, database runtime, and RPC handlers                     | Cannot import user-land or the bridge's assembly side.                       |
+| `bridge/workflow/user-land/feature` | Installed definitions, static RPC bindings, and binding environment                             | Owns workflow-specific registration edits.                                   |
+| `bridge/workflow/bridge`            | Final integration Worker assembly                                                               | Connects the core and user-land sides.                                       |
+| `user-land/application.ts`          | Installed Worker implementation Layer graph                                                     | Composes core and workflow implementations.                                  |
+| `user-land/resources.ts`            | Deployment resource list                                                                        | Re-exported by the thin `alchemy.ts` entry.                                  |
+
+Core never imports user-land, including in tests, type-only imports, dynamic imports, and re-exports.
+Core imports only the neutral `core` side of a Worker bridge, never its `user-land` or `bridge` side.
+Share imports neither core nor bridge nor user-land.
+The Workflow bridge provides installed workflow functionality to Control through the neutral wire contract.
+Registration enters the integration runtime through Layer composition, not a core import of the installed workflow list.
+Adding a workflow requires no core edit.
+See [Add a workflow](add-workflow.md) for the edit checklist.
+
+The development machine owns `implement` and `verify`, their prompts, and their run and node events.
+Shared Pi operations do not choose those nodes or infer when the run starts or finishes.
+`PiSdk` and Workspace capabilities remain in the run Durable Object, not a separate shared Pi Worker.
+The TypeScript `PiRun` identity retains the native binding name `DevelopmentRun`.
+`PiContainer` retains the infrastructure resource name `JcodeSandbox`.
+The official root session remains `ROOT_SESSION = '1'`, scoped to each run Durable Object.
 
 `WorkflowFailure` aggregates application failures in `services/failures.ts`; the domain error constructors do not import transport types.
 The HTTP failure-logging middleware remains one shared module because another service or feature abstraction adds no capability.
-The [feature-boundary tests](../tests/feature-boundaries.test.ts) parse production imports with the installed TypeScript compiler and enforce the shared-feature, D1, Cluster storage, and domain dependency cuts, including type-only imports.
+The [feature-boundary tests](../tests/feature-boundaries.test.ts) parse TypeScript and TSX imports with the installed TypeScript compiler.
+They enforce ownership and feature boundaries, including tests, type-only imports, dynamic imports, and re-exports.
+Cross-layer workflow tests live in `tests/integration/d1-workflows.test.ts`, `operation-logging.test.ts`, and `demo-projection.test.ts`, not in core.
 Keep the SQL statements and persistence codecs with workflow storage rather than moving all database-adjacent code into D1.
 The shared `Workflows` service is Control's only workflow dependency.
 The application follows modular-monolith boundaries: each workflow is an independent application module behind a shared interface.
-Workflow IDs, supported versions, input validation, native machine declarations, task adapters, and initial context live under that workflow's own `features/` directory.
+Workflow IDs, supported versions, input validation, native machine declarations, task adapters, and initial context live under `src/user-land/workflow/<workflow>/feature/`.
 Versioned demo definitions live in `version-1.ts` and `version-2.ts`, while development declares its topology in `development-machine.ts`.
-`src/features/workflow/services/workflow-definition.ts` defines only the neutral definition, executor, and registry contracts.
-`src/workers/workflow/features/registration.ts` combines the workflow-provided definitions and fixed execution bindings into an array.
+`src/core/feature/workflow/services/workflow-definition.ts` defines only the neutral definition, executor, and registry contracts.
+`src/bridge/workflow/user-land/feature/registration.ts` combines the workflow-provided definitions and fixed execution bindings into an array.
+Its sibling `workflow-binding.ts` declares Context services.
+`environment.ts` declares fixed Worker bindings and their typed RPC adapters.
 The integration service uses registry lookup for catalog, create, and resume operations without branching on workflow IDs.
 The frontend renders version choices and input descriptors from the catalog without importing workflow implementations.
 The shared create schema validates only the routing envelope and semantic version format; the selected definition validates all workflow-specific fields before persistence or dispatch.
@@ -91,7 +120,9 @@ HTTP, Worker RPC, and D1 adapters use official Schema codecs to encode strings a
 Serializing a domain object directly is not a substitute for those codecs.
 Adding a workflow requires its typed input schema, implementation, and integration registration, but no new Control binding.
 An unknown persisted workflow ID is rejected rather than sent to the demo worker.
-The final composition boundary in `src/workers/composition.ts` selects deployment and authorization Layers.
+The final composition boundary in `src/user-land/composition.ts` selects deployment and authorization Layers.
+`src/user-land/application.ts` assembles the complete installed Worker graph.
+`src/core/worker/frontend/runtime-composition.ts` captures only the fixed frontend runtime and does not import that deployment graph.
 The frontend always invokes the injected authorization service before dispatch.
 The Access implementation verifies trusted platform admission and the configured audience, and never checks a development flag.
 Local composition injects Alchemy's fixed development Access simulation, not a fallback inside authorization logic.
@@ -134,7 +165,7 @@ This integration does not establish exactly-once external side effects.
 
 ## Data and graph identity
 
-`src/features/identity/id.ts` separates caller-defined IDs from app-generated random IDs.
+`src/share/feature/identity/id.ts` separates caller-defined IDs from app-generated random IDs.
 `UserDefinedId` accepts 1 to 128 ASCII letters, digits, underscores, or hyphens and rejects unsafe input instead of silently rewriting an identity.
 `makePrefixedUUIDv4(prefix)` validates the configured prefix and returns `{ schema, make }`.
 The schema uses official `Schema.TemplateLiteral` with `Schema.isUUID(4)` for the suffix.
@@ -144,7 +175,7 @@ The installed Effect 4.0.6 exposes UUID generation on `Crypto.Crypto`, not a mod
 Tests can provide official `TestCrypto.layer(seed)` for reproducible UUID sequences without changing production code.
 `PrefixedUUIDv4` and the concrete `RunId`, `ExecutionId`, `EventId`, `CommitId`, and `CommandId` types are inferred from their schemas and remain strings, without brands.
 For example, `const { schema: RunId, make: makeRunId } = makePrefixedUUIDv4('run')` defines validation and generation together.
-Shared workflow identities live in `src/features/workflow/domain/identity.ts`; the development feature owns its command identity.
+Shared workflow identities live in `src/core/feature/workflow/domain/identity.ts`; the shared Pi feature owns its command identity in `src/core/feature/pi/model.ts`.
 The generic identity feature contains no ID-kind union, registry, or central generation dispatcher.
 New app-owned IDs use `run_`, `execution_`, `event_`, `commit_`, or `command_` prefixes.
 These prefixes describe origin, not authorization or creation time.
@@ -171,7 +202,7 @@ Neither ordering path depends on lexical ID order or UUIDv7.
 | Commit receipt   | Commit ID, exact command, revision, first event sequence, event count.         |
 
 The machine definition supplies the single topology source used for execution and graph derivation.
-`src/features/workflow/graph.ts` uses the selected library's compiled state nodes and transition definitions to construct `GraphDefinition`.
+`src/core/feature/workflow/graph.ts` uses the selected library's compiled state nodes and transition definitions to construct `GraphDefinition`.
 Workflow modules do not maintain a second visual edge list.
 The graph JSON records that derived contract for the run, not executable tasks or a complete machine runtime.
 
@@ -278,7 +309,7 @@ Alarms, reconnecting runners, and environment-specific checkpoints are workflow 
 ## Frontend styling
 
 Application components use Tailwind utilities and the local shadcn/ui components.
-`src/workers/frontend/features/styles/app.css` contains only Tailwind imports, shadcn theme mappings, and base configuration, not application selectors.
+`src/core/worker/frontend/feature/styles/app.css` contains only Tailwind imports, shadcn theme mappings, and base configuration, not application selectors.
 Graph canvas dimensions and node coordinates come from persisted graph projections at runtime.
 These unbounded numeric values cannot be enumerated as statically discovered Tailwind classes, so the graph uses a documented inline geometry boundary while Tailwind controls its appearance, state, and interaction styling.
 Each unavoidable nonstandard implementation must document its purpose, rejected standard alternatives, and exact scope beside the code before review.

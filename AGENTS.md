@@ -3,39 +3,53 @@
 ## Scope and layout
 
 This file serves contributors and maintainers.
+The ownership map and workflow addition rules are in [architecture](docs/architecture.md) and the [workflow addition checklist](docs/add-workflow.md).
 Flowdeck is one private Vite+ application and one Alchemy project.
 The application uses Effect 4, Effront, shadcn/ui, Cloudflare Workers, Durable Objects, and Reylo SQL queries with a shared D1 database.
 
-- `src/workers/frontend/`: Frontend entry, Access implementations, and frontend-only features.
-- `src/workers/frontend/features/`: Effront pages, ServerFns, dashboard, graph, and shadcn components.
-- `src/workers/control/`: Control entry and HTTP routes, with one static binding to the integration Worker.
-- `src/workers/workflow.ts`: Workflow integration entry point.
-- `src/workers/workflow/`: Catalog, run commands, and fixed per-workflow bindings.
-- `src/workers/demo-workflow/`: Workflow entry, run Durable Object, and demo-only execution features.
-- `src/workers/development-workflow/`: development checkpoints, run Durable Object, official PiHarness, and Computer Workspace integration.
+- `src/core/worker/frontend/`: Frontend entry, Access implementations, and frontend-only features.
+- `src/core/worker/frontend/feature/`: Effront pages, ServerFns, dashboard, graph, and shadcn components.
+- `src/core/worker/control/`: Control entry and HTTP routes, with one static binding to the integration Worker.
+- `src/bridge/workflow/bridge/worker.ts`: Workflow integration entry point.
+- `src/bridge/workflow/`: Catalog, run commands, and fixed per-workflow bindings.
+- `src/user-land/workflow/demo/`: Workflow entry, run Durable Object, and demo-only execution features.
+- `src/user-land/workflow/development/`: development machine, prompts, checkpoints, and Worker assembly with shared Pi resources.
 - `sandbox/`: workspace image with the official `computerd` runtime.
-- `src/workers/development-workflow/features/model.ts`: development-owned session and turn receipt schemas.
-- `src/workers/definitions.ts`: lightweight Worker identities and contracts for `.make()` implementations and static bindings, with only a type re-export of `DevelopmentWorkflow` to keep infrastructure out of the frontend runtime graph.
-- `src/workers/development-workflow/development-workflow.ts`: the lightweight `DevelopmentWorkflow` resource identity.
-- `src/workers/development-workflow/worker.ts`: Effect Worker and Durable Object construction, including their complete runtime Layers.
-- `src/workers/development-workflow/sdk-runtime.ts`: the necessary native Pi and workspace SDK host adapter inside the Effect Durable Object.
-- `src/workers/development-workflow/features/workspace-proxy-build.ts`: the build hook retaining the SDK's required `WorkspaceProxy` export in Alchemy's generated entry.
-- `src/workers/composition.ts`: final selection of the complete development or production application Layer.
-- `src/workers/application.ts`: the complete Worker implementation graph and its fixed development and production dependencies.
-- `src/workers/runtime-composition.ts`: fixed frontend runtime capture assembly, separate from deployment resource provisioning.
-- `src/workers/frontend/assembly.ts`: native request binding decoding and typed Access audience injection.
-- `src/workers/database.ts`: the shared D1 resource declaration.
-- `src/features/d1/`: reusable Alchemy execution and Reylo adaptation, independent from workflow policy and Worker resources.
-- `src/features/cluster/`: official ClusterMachine checkpoint storage, codecs, and typed SQL, independent from workflow policy and Worker resources.
-- `src/features/workflow/`: shared workflow values, graph projection, Machine execution, typed SQL persistence, and the `Workflows` service contract.
-- `src/features/workflow/rpc/`: the application-specific workflow wire protocol, RFC 9457 profile, and sanitized RPC boundaries.
-- `src/features/workflow/services/failures.ts`: aggregate application failures; domain constructors must not depend on transport types.
+- `src/core/feature/pi/model.ts`: shared Pi command, session, and turn receipt schemas.
+- `src/core/feature/pi/sandbox.ts`: workflow-neutral `PiSandbox` capability.
+- `src/core/worker/frontend/definition.ts`, `src/core/worker/control/definition.ts`, and `src/bridge/workflow/core/definition.ts`: lightweight core Worker identities.
+- `src/user-land/workflow/development/definition.ts`: the lightweight `DevelopmentWorkflow` resource identity.
+- `src/user-land/workflow/development/worker.ts`: Effect Worker and Durable Object construction, including their complete runtime Layers.
+- `src/core/worker/pi/sdk-runtime.ts`: native `makePiSdk` adapter inside the Effect Durable Object.
+- `src/core/worker/pi/sdk-service.ts`: runtime-safe `PiSdk` service identity.
+- `src/core/worker/pi/run.ts` and `container.ts`: reusable `PiRun` and `PiContainer` identities.
+- `src/core/worker/pi/feature/workspace-proxy-build.ts`: the build hook retaining the SDK's required `WorkspaceProxy` export in Alchemy's generated entry.
+- `src/user-land/composition.ts`: final selection of the complete development or production application Layer.
+- `src/user-land/application.ts`: the complete Worker implementation graph and its fixed development and production dependencies.
+- `src/core/worker/frontend/runtime-composition.ts`: fixed frontend runtime capture assembly, separate from deployment resource provisioning.
+- `src/core/worker/frontend/assembly.ts`: native request binding decoding and typed Access audience injection.
+- `src/core/worker/database.ts`: the shared D1 resource declaration.
+- `src/core/feature/d1/`: reusable Alchemy execution and Reylo adaptation, independent from workflow policy and Worker resources.
+- `src/core/feature/cluster/`: official ClusterMachine checkpoint storage, codecs, and typed SQL, independent from workflow policy and Worker resources.
+- `src/core/feature/workflow/`: shared workflow values, graph projection, Machine execution, typed SQL persistence, and the `Workflows` service contract.
+- `src/core/feature/workflow/rpc/`: the application-specific workflow wire protocol, RFC 9457 profile, and sanitized RPC boundaries.
+- `src/core/feature/workflow/services/failures.ts`: aggregate application failures; domain constructors must not depend on transport types.
 - `schema/`: Atlas Pro schema definitions, including tables, constraints, indexes, and triggers.
-- `src/features/workflow/services/queries/`: one Reylo-typed SQL statement per file.
+- `src/core/feature/workflow/services/queries/`: one Reylo-typed SQL statement per file.
 - `migrations/`: maintained D1 schema migrations.
 - `alchemy.ts` and `alchemy.run.ts`: all application resources in one project.
 - `vite.config.ts`: canonical development and validation tasks.
+- `src/user-land/resources.ts`: installed deployment resources, re-exported by `alchemy.ts`.
+- `src/share/feature/`: cross-layer identity utilities and operation logging.
+- `tests/integration/`: cross-layer D1 workflow, operation logging, and demo projection tests.
 - `tmp/`: ignored experiment output and temporary review evidence.
+
+Core must not import user-land, including tests, type-only imports, dynamic imports, and re-exports.
+Share must not import core, user-land, or bridge.
+User-land may import core and share.
+Core accesses installed workflow functionality only through the neutral Workflow bridge contract.
+Adding a workflow must not require a core edit.
+The bridge's `core` side remains workflow-neutral, its `user-land` side owns registration and fixed bindings, and its `bridge` side assembles both.
 
 ## Commands
 
@@ -105,10 +119,10 @@ Log the original failure with a unique error ID before sending an RFC 9457 probl
 Do not revive child exceptions or propagate their stacks and internal causes across RPC.
 See [RPC boundaries](docs/rpc-boundaries.md).
 
-| Error contract                                                                                                                              | Enforcement                                                                                                                             |
-| ------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Domain `Conflict` has only a message. `StorageConflict` requires an operation and cause. Do not add an optional cause to merge these cases. | Constructor type assertions in `src/features/workflow/domain/errors.test.ts`, checked by `check:tsc`; D1 and RPC/HTTP regression tests. |
-| RPC replies contain JSON only. Child diagnostics stay in child logs, correlated by the problem's `instance`.                                | JSON-only RPC service signatures and `rpcResponse` type assertions; codec, HTTP, and real native Worker RPC boundary tests.             |
+| Error contract                                                                                                                              | Enforcement                                                                                                                                 |
+| ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Domain `Conflict` has only a message. `StorageConflict` requires an operation and cause. Do not add an optional cause to merge these cases. | Constructor type assertions in `src/core/feature/workflow/domain/errors.test.ts`, checked by `check:tsc`; D1 and RPC/HTTP regression tests. |
+| RPC replies contain JSON only. Child diagnostics stay in child logs, correlated by the problem's `instance`.                                | JSON-only RPC service signatures and `rpcResponse` type assertions; codec, HTTP, and real native Worker RPC boundary tests.                 |
 
 Keep workflow effects independent from deployment configuration.
 Select infrastructure-specific implementations only when injecting dependencies at the final composition boundary.
@@ -116,7 +130,7 @@ Select the complete `DevelopmentLayer` or `ProductionLayer`, not individual feat
 Keep native runtime capture in a separate fixed composition so it does not initialize sibling Workers or redeclare Access resources.
 Decode environment bindings in assembly adapters and inject typed values into authorization logic.
 Do not branch on development flags, deployment stages, or infrastructure phases inside feature logic or request authorization.
-Keep Worker-specific features with their Worker, and put shared features under `src/features/`.
+Keep Worker-specific features with their Worker, reusable capabilities under `src/core/feature/`, and cross-layer utilities under `src/share/feature/`.
 Keep reusable D1 execution free of workflow error translation, SQL files, and application resource imports.
 Keep ClusterMachine storage dependent only on the shared D1 capability, not workflow policy or Worker resources.
 Its D1 batch covers checkpoints and request receipts, not MessageStorage emissions; see [ClusterMachine D1 storage](docs/cluster-machine-storage.md).
@@ -159,14 +173,14 @@ Keep workflow IDs, supported versions, input schemas, initial snapshots, and gra
 Define different workflow versions separately and select them at the version boundary rather than branching inside a shared graph or behavior definition.
 Share processing only where the version behavior is identical.
 The shared `WorkflowDefinition` and `WorkflowExecutor` interfaces contain no individual workflow knowledge.
-Compose workflow-provided definitions and static bindings only in `src/workers/workflow/features/registration.ts`.
+Compose workflow-provided definitions and static bindings in `src/bridge/workflow/user-land/feature/registration.ts` and its sibling `environment.ts` and `workflow-binding.ts`.
 The integration service and frontend consume that registry and its catalog mechanically, without workflow-specific branches.
 Workflow versions are official `SemVer` values internally and strings only at explicit persistence and transport codecs.
 Use static service bindings only.
 Keep the workflow entry point a thin router to a Durable Object stub.
 Store the selected implementation version and immutable graph reference when a run is created.
 Keep node definition identity separate from execution identity and retry attempt.
-Use `UserDefinedId` for caller-defined identifiers and `makePrefixedUUIDv4(prefix)` for app-owned random identifier schemas from `src/features/identity/id.ts`.
+Use `UserDefinedId` for caller-defined identifiers and `makePrefixedUUIDv4(prefix)` for app-owned random identifier schemas from `src/share/feature/identity/id.ts`.
 Infer each ID type from its Schema, without brands or duplicate handwritten types.
 `makePrefixedUUIDv4(prefix)` returns `{ schema, make }`; define each named Schema and Crypto-backed factory in the feature that owns the identifier.
 Do not add a central ID-kind registry or a `randomId(kind)` dispatcher.
@@ -194,7 +208,7 @@ See [Workflow graphs](docs/workflow-graphs.md) for graph construction, execution
 
 Use Effront and the shadcn Base UI components referenced in `SHADCN.md`.
 Use Tailwind utilities and components for application styling.
-Keep `features/styles/app.css` limited to Tailwind imports and shadcn theme tokens and base configuration.
+Keep `src/core/worker/frontend/feature/styles/app.css` limited to Tailwind imports and shadcn theme tokens and base configuration.
 Do not add application-specific selectors or global component styles there.
 Do not write application-specific raw CSS when Tailwind utilities or normal components can express it.
 For a structurally unavoidable exception, document its purpose, why standard alternatives cannot satisfy the requirement, why the chosen solution is appropriate, and its exact scope beside the implementation.

@@ -51,20 +51,20 @@ That field is not the same as the enclosing `Effect.Cause`, which records how th
 A domain conflict has no external cause to preserve.
 A storage conflict must retain its original cause and operation.
 Keep `Conflict` and `StorageConflict` separate rather than adding an optional `cause` to one shared constructor.
-The constructor assertions in [the error contract tests](../src/features/workflow/domain/errors.test.ts) enforce this distinction.
+The constructor assertions in [the error contract tests](../src/core/feature/workflow/domain/errors.test.ts) enforce this distinction.
 
 ## Failure flow
 
 ### Database and domain origin
 
-[The Alchemy query adapter](../src/features/workflow/services/database-queries.ts) converts D1 defects to Reylo execution failures.
-[Storage translation](../src/features/workflow/services/database.ts) converts those failures and native batch defects into checked storage failures, retaining their original causes.
+[The Alchemy query adapter](../src/core/feature/workflow/services/database-queries.ts) converts D1 defects to Reylo execution failures.
+[Storage translation](../src/core/feature/workflow/services/database.ts) converts those failures and native batch defects into checked storage failures, retaining their original causes.
 The current classifier uses an `Error` message containing `flowdeck_` or `UNIQUE constraint` to construct `StorageConflict`.
 Other database execution defects become `ExternalError` with `kind: 'storage'`.
 Both cases retain the original value as the required `cause` and attach the operation name.
 This message-based classification is specific to the current database adapter, not a general domain-error revival mechanism.
 
-[D1Store](../src/features/workflow/services/d1-store.ts) also creates domain failures directly, such as `NotFound` for a missing row and `Conflict` for an invalid new-run state or duplicate event IDs within a commit.
+[D1Store](../src/core/feature/workflow/services/d1-store.ts) also creates domain failures directly, such as `NotFound` for a missing row and `Conflict` for an invalid new-run state or duplicate event IDs within a commit.
 The adapter does not emit a second failure log.
 The enclosing RPC or HTTP operation owns logging and response translation.
 
@@ -157,10 +157,10 @@ HTTP interception and failure translation remain registered `HttpRouter.middlewa
 
 ## Control HTTP and frontend translation
 
-[Control's RPC client](../src/workers/control/control.ts) uses `rpcCall` before `rpcValue` for its single Workflow service binding.
+[Control's RPC client](../src/core/worker/control/control.ts) uses `rpcCall` before `rpcValue` for its single Workflow service binding.
 `makeControl` builds the router and HTTP handler once in the Worker initialization scope, then reuses the handler in `fetch`.
 The lazy Alchemy RPC stub still resolves `WORKFLOW` from the current request's `WorkerEnvironment`, so handler reuse does not retain a previous request's binding.
-[The Control router](../src/workers/control/features/router.ts) installs `ApiErrors` as registered middleware.
+[The Control router](../src/core/worker/control/feature/router.ts) installs `ApiErrors` as registered middleware.
 It applies `operationFailureLogging` before translating typed failures, so the local cause is available to the log rather than being replaced by an HTTP response first.
 The logger skips cancellation-only interruption and disables duplicate standard response logging for the failure.
 It observes defects without converting them into typed failures.
@@ -177,12 +177,12 @@ In particular, local `InvalidOperation` uses its domain message, while a remote 
 Unexpected defects are logged, but the typed translation table does not convert them into the RPC problem schema.
 Do not infer that every HTTP failure follows the RPC classification path.
 
-[Frontend ControlApi](../src/workers/frontend/features/control-api.ts) uses Effect HttpClient, requires a successful HTTP status, and decodes the success body with the operation's domain codec.
+[Frontend ControlApi](../src/core/worker/frontend/feature/control-api.ts) uses Effect HttpClient, requires a successful HTTP status, and decodes the success body with the operation's domain codec.
 Transport, status, and success-body decoding failures become a new message-only `ControlError` with fixed retry guidance.
 Starting a run has a separate fixed failure message.
 It does not decode the Control error body or preserve its occurrence ID, and it does not add a failure log.
-[ServerFns](../src/workers/frontend/features/server.ts) convert `ControlError` into an `{ ok: false, message }` result.
-[The initial page](../src/workers/frontend/features/entry.effront.tsx) renders retry guidance for the same error.
+[ServerFns](../src/core/worker/frontend/feature/server.ts) convert `ControlError` into an `{ ok: false, message }` result.
+[The initial page](../src/core/worker/frontend/feature/entry.effront.tsx) renders retry guidance for the same error.
 The original diagnostic trail therefore ends in service logs, not in the dashboard message.
 
 ## Responsibilities and evidence
@@ -190,16 +190,16 @@ The original diagnostic trail therefore ends in service logs, not in the dashboa
 Source links describe the implementation, and test links identify maintained regression coverage.
 The test coverage listed here does not by itself establish deployment or live PiHarness acceptance.
 
-| Responsibility                                                                                  | Implementation                                                                                                                                                                                    | Maintained evidence                                                                                                                                                   |
-| ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Separate domain conflicts from storage failures with required original causes                   | [Domain errors](../src/features/workflow/domain/errors.ts)                                                                                                                                        | [Constructor type and runtime assertions](../src/features/workflow/domain/errors.test.ts)                                                                             |
-| Convert D1 execution defects without adapter-level duplicate logs                               | [DatabaseQueries](../src/features/workflow/services/database-queries.ts), [D1Store](../src/features/workflow/services/d1-store.ts)                                                                | [Real-D1 constraints](../tests/database.test.ts), [origin stack logging](../src/features/operation-logging.test.ts)                                                   |
-| Encode JSON-only replies, classify failures, and log complete causes with unique occurrence IDs | [RPC boundary](../src/features/workflow/rpc/boundary.ts), [problem schema](../src/features/workflow/rpc/problem.ts)                                                                               | [Codec, sanitization, defects, interruption, and multi-hop tests](../src/features/workflow/rpc/boundary.test.ts)                                                      |
-| Discard unsafe native SDK diagnostics before parent logging and validate operation values       | [Workflow RPC client adapters](../src/features/workflow/rpc/contract.ts)                                                                                                                          | [Native SDK stub and operation value tests](../src/features/workflow/rpc/contract.test.ts)                                                                            |
-| Apply the responder and decoder at actual Worker and DO entrypoints                             | [Integration Worker](../src/workers/workflow.ts), [Demo Worker and DO](../src/workers/demo-workflow/demo-workflow.ts), [Development Worker and DO](../src/workers/development-workflow/worker.ts) | [Native Worker service-binding fixture tests](../tests/rpc-boundary.test.ts)                                                                                          |
-| Log once before HTTP translation and preserve remote public classification                      | [HTTP operation logger](../src/features/operation-logging.ts), [Control router](../src/workers/control/features/router.ts)                                                                        | [Real router logging and conflict translation tests](../src/features/operation-logging.test.ts), [router codec tests](../src/workers/control/features/router.test.ts) |
-| Reuse the Control HTTP handler without retaining a previous request's service binding           | [Control initialization](../src/workers/control/control.ts)                                                                                                                                       | [Construction without bindings and concurrent binding isolation](../src/workers/control/control.test.ts)                                                              |
-| Give the frontend validated domain values or fixed retry feedback                               | [ControlApi](../src/workers/frontend/features/control-api.ts), [ServerFns](../src/workers/frontend/features/server.ts)                                                                            | [HTTP client response and failure tests](../src/workers/frontend/features/control-api.test.ts)                                                                        |
+| Responsibility                                                                                  | Implementation                                                                                                                                                                                              | Maintained evidence                                                                                                                                                           |
+| ----------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Separate domain conflicts from storage failures with required original causes                   | [Domain errors](../src/core/feature/workflow/domain/errors.ts)                                                                                                                                              | [Constructor type and runtime assertions](../src/core/feature/workflow/domain/errors.test.ts)                                                                                 |
+| Convert D1 execution defects without adapter-level duplicate logs                               | [DatabaseQueries](../src/core/feature/workflow/services/database-queries.ts), [D1Store](../src/core/feature/workflow/services/d1-store.ts)                                                                  | [Real-D1 constraints](../tests/database.test.ts), [origin stack logging](../tests/integration/operation-logging.test.ts)                                                      |
+| Encode JSON-only replies, classify failures, and log complete causes with unique occurrence IDs | [RPC boundary](../src/core/feature/workflow/rpc/boundary.ts), [problem schema](../src/core/feature/workflow/rpc/problem.ts)                                                                                 | [Codec, sanitization, defects, interruption, and multi-hop tests](../src/core/feature/workflow/rpc/boundary.test.ts)                                                          |
+| Discard unsafe native SDK diagnostics before parent logging and validate operation values       | [Workflow RPC client adapters](../src/core/feature/workflow/rpc/contract.ts)                                                                                                                                | [Native SDK stub and operation value tests](../src/core/feature/workflow/rpc/contract.test.ts)                                                                                |
+| Apply the responder and decoder at actual Worker and DO entrypoints                             | [Integration Worker](../src/bridge/workflow/bridge/worker.ts), [Demo Worker and DO](../src/user-land/workflow/demo/worker.ts), [Development Worker and DO](../src/user-land/workflow/development/worker.ts) | [Native Worker service-binding fixture tests](../tests/rpc-boundary.test.ts)                                                                                                  |
+| Log once before HTTP translation and preserve remote public classification                      | [HTTP operation logger](../src/share/feature/operation-logging.ts), [Control router](../src/core/worker/control/feature/router.ts)                                                                          | [Real router logging and conflict translation tests](../tests/integration/operation-logging.test.ts), [router codec tests](../src/core/worker/control/feature/router.test.ts) |
+| Reuse the Control HTTP handler without retaining a previous request's service binding           | [Control initialization](../src/core/worker/control/control.ts)                                                                                                                                             | [Construction without bindings and concurrent binding isolation](../src/core/worker/control/control.test.ts)                                                                  |
+| Give the frontend validated domain values or fixed retry feedback                               | [ControlApi](../src/core/worker/frontend/feature/control-api.ts), [ServerFns](../src/core/worker/frontend/feature/server.ts)                                                                                | [HTTP client response and failure tests](../src/core/worker/frontend/feature/control-api.test.ts)                                                                             |
 
 ## Problem types
 

@@ -18,7 +18,7 @@ Compose the selected database Layer once at the runtime composition boundary:
 ```ts
 import { Layer } from 'effect'
 
-import { D1ClusterMachineStorage } from '@/features/cluster/d1-storage'
+import { D1ClusterMachineStorage } from '@/core/feature/cluster/d1-storage'
 
 const ClusterStorageLive = D1ClusterMachineStorage.pipe(Layer.provide(DatabaseClientLive))
 ```
@@ -61,8 +61,8 @@ Retain historical receipts when the current checkpoint advances; deleting them w
 The official Entity runtime must serialize different requests for one entity.
 This storage contract has no expected-revision parameter and does not provide compare-and-swap for independently planned concurrent requests.
 
-`features/cluster/` owns these SQL statements, codecs, and `PersistenceError` translation.
-It depends only on `features/d1/` within application source, not workflow policy or Worker resource declarations.
+`src/core/feature/cluster/` owns these SQL statements, codecs, and `PersistenceError` translation.
+It depends only on `src/core/feature/d1/` within application source, not workflow policy or Worker resource declarations.
 Database failures retain their original cause, while Effect interruption remains interruption.
 
 ## Transaction limit
@@ -75,7 +75,7 @@ The application workflows instead use ordinary Machine invokes, explicit D1 chec
 
 ## Verification
 
-The maintained [integration tests](../src/features/cluster/d1-storage.test.ts) initialize real Miniflare D1 from the generated project migration and use the official Alchemy native client.
+The maintained [integration tests](../src/core/feature/cluster/d1-storage.test.ts) initialize real Miniflare D1 from the generated project migration and use the official Alchemy native client.
 They exercise the storage service and the official Cluster Entity client rather than a copied transition interpreter.
 Delegated native-client observations check the two-statement, one-batch commit and one-query load while still executing real D1 operations.
 Round-trip checks preserve active state values, completion outputs, and history as well as the checkpoint's identity and version.

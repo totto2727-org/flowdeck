@@ -10,7 +10,9 @@ This is a local experiment, not a production or multitenant execution service.
 - The run Durable Object uses official `PiHarness` from `agents/harness/pi` and `Harness` from `@earendil-works/pi-durable` for durable conversation and operation execution.
 - `@cloudflare/computer` Workspace owns the filesystem interface, with `ContainerBackend` for shell execution and official `createPiTools` declarations and dispatch installed in the pi-durable registry.
 - `sandbox/Dockerfile` supplies official `computerd` 0.5.1 and repository tool prerequisites, not an embedded Pi SDK, custom HTTP runner, or inference proxy.
-- `src/workers/development-workflow/` owns the run Durable Object, workspace integration, model configuration, checkpoints, and Container binding.
+- `src/user-land/workflow/development/` owns the development machine, prompts, checkpoints, and Worker assembly.
+- `src/core/feature/pi/` owns shared Pi schemas, the `PiSandbox` capability, and workflow-neutral node effects.
+- `src/core/worker/pi/` owns `PiSdk`, `makePiSdk`, `PiRun`, `PiContainer`, workspace tools, model configuration, and native SDK adapters.
 - The shared D1 database owns workflow identity, graph, checkpoints, and ordered events.
 - Control reaches the private `Workflow` integration Worker through one static service binding.
 - The integration Worker owns the catalog, initial run persistence, and fixed bindings to the individual workflow Workers.
@@ -173,7 +175,8 @@ Local startup does not authorize deployment, DNS or Access changes, or image pub
 ## Sources
 
 - Official installed APIs: `agents/harness/pi`, `agents/lifecycle`, `@earendil-works/pi-durable`, `@cloudflare/computer`, and `@cloudflare/computer/tools/pi-ai`.
-- Integration: the runtime entry, resource composition, `features/models.ts`, and `features/workspace.ts` under `src/workers/development-workflow/`.
+- Integration: `src/user-land/workflow/development/worker.ts` assembles the workflow runtime with shared Pi resources.
+- Pi runtime: `src/core/worker/pi/sdk-runtime.ts`, `feature/models.ts`, and `feature/workspace.ts`.
 - [Cloudflare Computer](https://github.com/cloudflare/computer)
 - [Cloudflare AI Gateway stored BYOK](https://developers.cloudflare.com/ai-gateway/configuration/bring-your-own-keys/)
 - [Cloudflare Container inactivity timeout](https://developers.cloudflare.com/containers/api/durable-object-container/#setinactivitytimeout)
