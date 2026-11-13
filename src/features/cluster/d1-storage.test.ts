@@ -1,5 +1,6 @@
 import { readD1Migrations } from '@cloudflare/vitest-plugin'
 import type { D1Database } from '@cloudflare/workers-types'
+import { Machine } from '@typeonce/effect-machine'
 import { ClusterMachine } from '@typeonce/effect-machine/cluster'
 import { Array, Effect, Exit, Layer, ManagedRuntime, Option } from 'effect'
 import { ClusterError, EntityAddress, EntityId, EntityType, ShardId, Snowflake, TestRunner } from 'effect/cluster'
@@ -8,9 +9,22 @@ import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from 'v
 
 import { D1Client } from '@/features/d1/client'
 import { D1Binding, NativeD1Client } from '@/features/d1/native'
-import { DevelopmentMachine } from '@/workers/development-workflow/features/development-machine'
 
 import { D1ClusterMachineStorage } from './d1-storage'
+
+// This data-only fixture verifies Cluster persistence independently of any application workflow runtime.
+const StorageTestMachine = Machine.make({
+  id: 'cluster-storage-test',
+  root: Machine.state({ states: { ready: {}, advanced: {}, completed: { type: 'final' } } }),
+  events: Machine.events({ Advance: {} }),
+}).handle({
+  initial: { target: 'ready' },
+  states: {
+    ready: { on: { Advance: { target: 'advanced' } } },
+    advanced: { on: { Advance: { target: 'completed' } } },
+    completed: {},
+  },
+})
 
 const address = (group = 'group', shard = 1, type = 'machine', id = 'run') =>
   EntityAddress.make({
@@ -20,8 +34,8 @@ const address = (group = 'group', shard = 1, type = 'machine', id = 'run') =>
   })
 const request = Snowflake.Snowflake('9007199254740993')
 const laterRequest = Snowflake.Snowflake('9007199254740995')
-const checkpoint = (requestId = request, path = 'implement'): ClusterMachine.Checkpoint => ({
-  machineId: 'jcode-development-1_0_0',
+const checkpoint = (requestId = request, path = 'ready'): ClusterMachine.Checkpoint => ({
+  machineId: 'cluster-storage-test',
   version: '1',
   requestId,
   snapshot: { _tag: 'MachineSnapshot', version: 2, active: [{ path }] },
@@ -81,16 +95,16 @@ describe('D1 Cluster machine checkpoints', () => {
     expect(await Effect.runPromise(storage.commit(address(), checkpoint()))).toEqual(
       ClusterMachine.CommitResult.Committed(),
     )
-    expect(await Effect.runPromise(storage.commit(address(), checkpoint(laterRequest, 'verify')))).toEqual(
+    expect(await Effect.runPromise(storage.commit(address(), checkpoint(laterRequest, 'advanced')))).toEqual(
       ClusterMachine.CommitResult.Committed(),
     )
     const restored = freshStorage()
     expect(await Effect.runPromise(restored.load(address(), request))).toEqual({
-      checkpoint: Option.some(checkpoint(laterRequest, 'verify')),
+      checkpoint: Option.some(checkpoint(laterRequest, 'advanced')),
       processed: true,
     })
     expect(await Effect.runPromise(restored.load(address(), Snowflake.Snowflake('9007199254740992')))).toEqual({
-      checkpoint: Option.some(checkpoint(laterRequest, 'verify')),
+      checkpoint: Option.some(checkpoint(laterRequest, 'advanced')),
       processed: false,
     })
     expect(
@@ -100,7 +114,7 @@ describe('D1 Cluster machine checkpoints', () => {
       ClusterMachine.CommitResult.Duplicate(),
     )
     expect(await Effect.runPromise(freshStorage().load(address(), laterRequest))).toEqual({
-      checkpoint: Option.some(checkpoint(laterRequest, 'verify')),
+      checkpoint: Option.some(checkpoint(laterRequest, 'advanced')),
       processed: true,
     })
   })
@@ -154,14 +168,14 @@ describe('D1 Cluster machine checkpoints', () => {
       snapshot: {
         _tag: 'MachineSnapshot',
         version: 2,
-        active: [{ path: '' }, { path: 'implement', value: { nested: [null, true, 3, '日本語'], empty: {} } }],
+        active: [{ path: '' }, { path: 'ready', value: { nested: [null, true, 3, '日本語'], empty: {} } }],
         completed: [
           { path: 'first' },
           { path: 'second', output: null },
           { path: 'third', output: { result: [1, 'done'] } },
         ],
         history: {
-          shallow: { mode: 'shallow', active: ['implement'], values: { implement: { draft: 'retained' } } },
+          shallow: { mode: 'shallow', active: ['ready'], values: { ready: { draft: 'retained' } } },
           deep: { mode: 'deep', active: ['parent.child'], values: { 'parent.child': [false, null, 'saved'] } },
         },
       },
@@ -203,7 +217,7 @@ describe('D1 Cluster machine checkpoints', () => {
       checkpoint: Option.none(),
       processed: false,
     })
-    expect(await Effect.runPromise(storage.commit(other, checkpoint(request, 'verify')))).toEqual(
+    expect(await Effect.runPromise(storage.commit(other, checkpoint(request, 'advanced')))).toEqual(
       ClusterMachine.CommitResult.Committed(),
     )
     expect(await Effect.runPromise(storage.load(first, request))).toEqual({
@@ -235,7 +249,7 @@ describe('D1 Cluster machine checkpoints', () => {
       "CREATE TRIGGER reject_receipt BEFORE INSERT ON cluster_machine_requests BEGIN SELECT RAISE(ABORT, 'receipt rejected'); END",
     )
     expect(
-      await Effect.runPromise(freshStorage().commit(address(), checkpoint(laterRequest, 'verify')).pipe(Effect.flip)),
+      await Effect.runPromise(freshStorage().commit(address(), checkpoint(laterRequest, 'advanced')).pipe(Effect.flip)),
     ).toBeInstanceOf(ClusterError.PersistenceError)
     expect(await Effect.runPromise(freshStorage().load(address(), laterRequest))).toEqual({
       checkpoint: Option.some(checkpoint()),
@@ -291,7 +305,7 @@ describe('D1 Cluster machine checkpoints', () => {
 // Official TestRunner is the local messaging host, not deployed Cluster acceptance.
 // D1 is real workerd storage. No handler internals or memory checkpoint service are substituted.
 const host = () => {
-  const machine = ClusterMachine.make('DevelopmentStorageTest', DevelopmentMachine, { version: '1' })
+  const machine = ClusterMachine.make('ClusterStorageTest', StorageTestMachine, { version: '1' })
   const dependencies = Layer.merge(storageLayer, TestRunner.layer)
   const runtime = ManagedRuntime.make(machine.toLayer().pipe(Layer.provideMerge(dependencies)))
   return {
@@ -300,7 +314,7 @@ const host = () => {
       runtime.runPromise(
         Effect.gen(function* () {
           const client = yield* machine.entity.client
-          return yield* client('development-run').send({ _tag: 'Done', context: {} })
+          return yield* client('storage-run').send({ _tag: 'Advance' })
         }),
       ),
   }
@@ -330,8 +344,8 @@ describe('official Cluster machine with D1 checkpoint storage', () => {
     try {
       expect(await recovered.send()).toEqual(new ClusterMachine.Accepted({}))
       const restored = await persisted()
-      expect(restored).toMatchObject({ machine_id: DevelopmentMachine.id, version: '1' })
-      expect(JSON.parse(restored!.snapshot_json)).toMatchObject({ active: [{ path: '' }, { path: 'verify' }] })
+      expect(restored).toMatchObject({ machine_id: StorageTestMachine.id, version: '1' })
+      expect(JSON.parse(restored!.snapshot_json)).toMatchObject({ active: [{ path: '' }, { path: 'advanced' }] })
       expect(await database.prepare('SELECT request_id FROM cluster_machine_requests').all()).toMatchObject({
         results: [{ request_id: restored!.request_id }],
       })
@@ -340,7 +354,7 @@ describe('official Cluster machine with D1 checkpoint storage', () => {
     }
   })
 
-  it('resumes DevelopmentMachine after host disposal and accepts final requests as no-ops', async () => {
+  it('resumes the data-only machine after host disposal and accepts final requests as no-ops', async () => {
     const first = host()
     try {
       expect(await first.send()).toEqual(new ClusterMachine.Accepted({}))
@@ -348,8 +362,8 @@ describe('official Cluster machine with D1 checkpoint storage', () => {
       await first.runtime.dispose()
     }
     const afterFirst = await persisted()
-    expect(afterFirst).toMatchObject({ machine_id: DevelopmentMachine.id, version: '1' })
-    expect(JSON.parse(afterFirst!.snapshot_json)).toMatchObject({ active: [{ path: '' }, { path: 'verify' }] })
+    expect(afterFirst).toMatchObject({ machine_id: StorageTestMachine.id, version: '1' })
+    expect(JSON.parse(afterFirst!.snapshot_json)).toMatchObject({ active: [{ path: '' }, { path: 'advanced' }] })
     const second = host()
     try {
       expect(await second.send()).toEqual(new ClusterMachine.Accepted({}))

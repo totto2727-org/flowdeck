@@ -13,24 +13,26 @@ The Container uses `HOME=/home/sandbox` and runs official `computerd`, not an em
 
 A node transition does not reset the workspace or conversation.
 New runs use runtime `pi-harness`.
-Legacy direct-SDK histories remain inspectable but cannot execute through the new harness.
+The current implementation supports only its native Machine snapshot format.
 Inspect an interrupted run before taking recovery action.
 
 ## Lifecycle renewal
 
 Use official `Lifecycle` from `agents/lifecycle`, installed with PiHarness, and its jobs API rather than a separate lease alarm implementation.
-The run Durable Object saves `active-run-id` before workflow execution and schedules the `workspace-lease` job before operation admission.
+The Pi node saves `active-run-id` while acquiring its sandbox capability and schedules the `workspace-lease` job before operation admission.
 Lifecycle startup and job execution read the canonical run status from the shared Store.
 
 | Committed run status and Container state | Renewal action                                                                                             |
 | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `completed`                              | Stop renewal. Explicit completion cancels the lease job without destroying the Container.                  |
+| `completed`                              | Stop renewal when Lifecycle next observes this committed status, without destroying the Container.         |
 | Any other status, Container running      | Set the native inactivity timeout to 21,600,000 ms and return a reschedule time of now plus 18,000,000 ms. |
 | Any other status, Container stopped      | End renewal without starting the Container.                                                                |
 | No saved run ID                          | End renewal.                                                                                               |
 
 The job renews the six-hour native timeout every five hours.
-A start or resume operation schedules renewal before admitting work.
+A Pi node schedules renewal when its invocation acquires the sandbox capability, before admitting work.
+The completion check does not cancel the lease before the terminal D1 commit is acknowledged.
+If that commit fails, the persisted nonterminal status continues to govern renewal and recovery.
 The initial timeout is set after the backend accepts the authenticated `computerd` WebSocket upgrade with HTTP 101.
 For an already running Container, Lifecycle `onStart` and the lease job renew the timeout.
 This is not a promise that every job runs before the inactivity deadline.

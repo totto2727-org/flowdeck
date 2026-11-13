@@ -6,13 +6,13 @@ exports[`demo definition > keeps the published definition SemVer(1.0.0) stable >
     "edges": [
       {
         "edgeId": "prepare-approval",
-        "label": "prepared",
+        "label": "done",
         "source": "prepare",
         "target": "approval",
       },
       {
         "edgeId": "approval-publish",
-        "label": "resume",
+        "label": "Resume",
         "source": "approval",
         "target": "publish",
       },
@@ -38,11 +38,6 @@ exports[`demo definition > keeps the published definition SemVer(1.0.0) stable >
     "schemaVersion": 1,
   },
   "snapshot": {
-    "_tag": "Ready",
-    "context": {
-      "prepared": "",
-      "result": "",
-    },
     "machine": {
       "_tag": "MachineSnapshot",
       "active": [
@@ -50,13 +45,12 @@ exports[`demo definition > keeps the published definition SemVer(1.0.0) stable >
           "path": "",
         },
         {
-          "path": "prepare",
+          "path": "Ready",
         },
       ],
       "version": 2,
     },
     "schemaVersion": 1,
-    "state": "prepare",
     "version": "1.0.0",
   },
 }
@@ -68,13 +62,13 @@ exports[`demo definition > keeps the published definition SemVer(2.0.0) stable >
     "edges": [
       {
         "edgeId": "prepare-approval",
-        "label": "prepared",
+        "label": "done",
         "source": "prepare",
         "target": "approval",
       },
       {
         "edgeId": "approval-publish",
-        "label": "resume",
+        "label": "Resume",
         "source": "approval",
         "target": "publish",
       },
@@ -100,11 +94,6 @@ exports[`demo definition > keeps the published definition SemVer(2.0.0) stable >
     "schemaVersion": 1,
   },
   "snapshot": {
-    "_tag": "Ready",
-    "context": {
-      "prepared": "",
-      "result": "",
-    },
     "machine": {
       "_tag": "MachineSnapshot",
       "active": [
@@ -112,13 +101,12 @@ exports[`demo definition > keeps the published definition SemVer(2.0.0) stable >
           "path": "",
         },
         {
-          "path": "prepare",
+          "path": "Ready",
         },
       ],
       "version": 2,
     },
     "schemaVersion": 1,
-    "state": "prepare",
     "version": "2.0.0",
   },
 }

@@ -1,10 +1,12 @@
-import { DateTime, Effect, Schema, SemVer } from 'effect'
+import { Machine } from '@typeonce/effect-machine'
+import { DateTime, Effect, Option, Schema, SemVer, String } from 'effect'
 import { describe, expect, it } from 'vite-plus/test'
 
-import type { Run } from '@/features/workflow/domain/model'
+import { JsonObject, type Run } from '@/features/workflow/domain/model'
 
 import { developmentDefinition } from './definition'
 import { restoreDevelopment } from './development'
+import { DevelopmentMachine, DevelopmentStates } from './development-machine'
 import { DevelopmentCreateRun } from './input'
 import { developmentVersion } from './input'
 
@@ -37,25 +39,16 @@ describe('development strict restore boundary', () => {
     result: 'done',
   }
 
-  it.each([{}, { runtime: 'pi' }, { runtime: null }, { runtime: false }])(
-    'rejects a malformed runtime in the current machine envelope',
+  it.each(['"runtime":"pi"', '"runtime":null', '"runtime":false', '"other":"pi-harness"'])(
+    'rejects malformed native runtime %s before accessing Pi',
     async (runtime) => {
       const prepared = await Effect.runPromise(developmentDefinition.prepare(input))
-      const snapshot = {
-        ...prepared.snapshot,
-        context: {
-          version: '1.0.0',
-          repository: input.repository,
-          task: input.task,
-          phase: { _tag: 'Ready' },
-          ...runtime,
-        },
-      }
+      const snapshot = Schema.decodeUnknownSync(JsonObject)(
+        JSON.parse(String.replace('"runtime":"pi-harness"', runtime)(JSON.stringify(prepared.snapshot))),
+      )
       await expect(
         Effect.runPromise(restoreDevelopment({ ...run, status: 'pending', snapshot })),
-      ).rejects.toMatchObject({
-        _tag: 'InvalidSnapshot',
-      })
+      ).rejects.toMatchObject({ _tag: 'InvalidSnapshot' })
     },
   )
 
@@ -93,17 +86,9 @@ describe('development definition', () => {
         ],
       },
       snapshot: {
-        _tag: 'Ready',
         schemaVersion: 1,
-        state: 'implement',
         version: '1.0.0',
-        context: {
-          version: '1.0.0',
-          runtime: 'pi-harness',
-          repository: input.repository,
-          task: input.task,
-          phase: { _tag: 'Ready' },
-        },
+        machine: { _tag: 'MachineSnapshot', version: 2 },
       },
     })
   })
@@ -112,7 +97,10 @@ describe('development definition', () => {
     'preserves the validated URL string %s',
     async (repository) => {
       const prepared = await Effect.runPromise(developmentDefinition.prepare({ ...input, repository }))
-      expect(prepared.snapshot).toMatchObject({ context: { repository } })
+      const state = await Effect.runPromise(Machine.decodeSnapshot(DevelopmentMachine, prepared.snapshot['machine']))
+      expect(Option.getOrThrow(DevelopmentStates.get(state, '')).repository.href).toBe(repository)
+      expect(DevelopmentStates.matches(state, 'implement.allocate')).toBe(true)
+      expect(prepared.snapshot).not.toHaveProperty('context')
     },
   )
 

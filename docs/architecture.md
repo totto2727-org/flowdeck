@@ -22,9 +22,9 @@ flowchart TB
   DevelopmentRun <--> DB
   DevelopmentRun --> Pi[Official PiHarness and pi-durable]
   Pi -->|official Computer Workspace tools| Container[computerd Container\nshared checkout]
-  V --> Foundation[Shared Machine planner and Effect driver]
+  V --> Foundation[Shared native Machine persistence host]
   DevelopmentRun --> Foundation
-  Foundation --> N[Workflow-owned Effect tasks]
+  Foundation --> N[Native Machine invokes]
 ```
 
 All Workers, the D1 database, and the workspace Container belong to the `flowdeck` Alchemy project.
@@ -45,18 +45,20 @@ Development binds local ports 4380 through 4384 to loopback.
 | Workflow integration    | Expose the catalog and run operations, persist new runs, and select fixed workflow bindings.     |
 | Workflow entry          | Resolve the run DO and forward typed operations.                                                 |
 | Run DO                  | Load committed state and invoke the pinned workflow implementation.                              |
-| Workflow implementation | Declare versioned machines, context schemas, tasks, and external-operation reconciliation.       |
-| Shared foundation       | Plan with the library, derive graphs, and commit task checkpoints and lifecycle events.          |
+| Workflow implementation | Declare versioned native states, invokes, routing, and external-operation reconciliation.        |
+| Shared foundation       | Derive graphs, restore native Machine execution, and commit checkpoints before ACK.              |
 | Shared DB               | Store workflow versions, immutable graphs, runs, snapshots, ordered events, and commit receipts. |
 
 Keep workflow registration and static bindings at the application composition boundary rather than introducing dynamic workflow discovery or dynamic service binding lookup.
-The shared foundation owns task driving and lifecycle persistence, while runtime resources and external-side-effect reconciliation belong to workflow-owned task adapters.
+The native Machine owns task progression and invoke execution.
+The shared persistence host owns canonical snapshot validation, D1 commits, ACK handling, and observation hooks.
+Workflow-owned invokes acquire runtime resources and reconcile external effects through an execution-scoped ResourceStore.
 Do not add a competing transition interpreter or shared artifact store.
 
 Worker entry points and Worker-specific features live under `src/workers/<worker>/`.
-Shared workflow schemas, projections, persistence, the native planner adapter, and the Effect task driver live under `src/features/workflow/`.
+Shared workflow schemas, graph projection, native execution persistence, and volatile ResourceStore live under `src/features/workflow/`.
 Reusable Alchemy D1 execution lives under `src/features/d1/`, without workflow errors, SQL statements, or Worker resource declarations.
-Opt-in official ClusterMachine checkpoint storage lives under `src/features/cluster/`; it does not replace the existing workflow driver or provide durable Cluster messaging.
+Opt-in official ClusterMachine checkpoint storage lives under `src/features/cluster/`; it is independent from ordinary Machine workflows and does not provide durable Cluster messaging.
 See [ClusterMachine D1 storage](cluster-machine-storage.md) for composition and transaction limits.
 The fixed workflow RPC protocol lives under `src/features/workflow/rpc/`; it is an application protocol, not a general-purpose RPC framework.
 
@@ -68,7 +70,7 @@ The fixed workflow RPC protocol lives under `src/features/workflow/rpc/`; it is 
 | `features/workflow/domain`   | Workflow values, identities, rejections, and graph projections                               | No persistence implementation or RPC error types.                            |
 | `features/workflow/services` | Store and workflow ports, D1 persistence, SQL, and application failure aggregation           | Storage conflict interpretation stays here, above the D1 capability.         |
 | `features/workflow/rpc`      | Wire codecs, RFC 9457 profile, response sanitization, and SDK-call admission                 | Uses workflow domain contracts, not D1 or concrete workflow implementations. |
-| `features/workflow`          | Shared Machine planner and Effect checkpoint driver                                          | Uses the Store port, not its D1 implementation.                              |
+| `features/workflow`          | Native Machine persistence host and volatile ResourceStore                                   | Uses the Store port, not its D1 implementation.                              |
 | `workers/<worker>`           | Resource bindings, complete runtime Layers, and Worker-owned behavior                        | Selects concrete implementations at each runtime root.                       |
 
 `WorkflowFailure` aggregates application failures in `services/failures.ts`; the domain error constructors do not import transport types.
@@ -125,8 +127,9 @@ XState and native Cloudflare Workflows are not the selected execution foundation
 
 The library's [planning and persistence contracts](https://github.com/typeonce-dev/effect-machine/blob/main/packages/effect-machine/README.md#persistence) distinguish logical state from a running machine process.
 Pure planning computes state changes without executing command effects.
-The application integrates that planning boundary with Effect task execution and shared D1 checkpoints rather than treating a process-local machine instance as durable state.
-See [Workflow graphs](workflow-graphs.md) for the implemented definition, driver, lifecycle-hook, and recovery contracts.
+The application uses the pure initial plan only for pending run preparation, then executes ordinary native Machine.start and Machine.resume with explicit D1 checkpoints.
+The library owns invoke execution and transitions, while D1 holds canonical serialized state rather than a process-local MachineRef.
+See [Workflow graphs](workflow-graphs.md) for native execution, persistence, lifecycle hooks, and recovery contracts.
 This integration does not establish exactly-once external side effects.
 
 ## Data and graph identity
@@ -168,7 +171,7 @@ Neither ordering path depends on lexical ID order or UUIDv7.
 | Commit receipt   | Commit ID, exact command, revision, first event sequence, event count.         |
 
 The machine definition supplies the single topology source used for execution and graph derivation.
-`src/features/workflow/machine.ts` uses the selected library's compiled state nodes and transition definitions to construct `GraphDefinition`.
+`src/features/workflow/graph.ts` uses the selected library's compiled state nodes and transition definitions to construct `GraphDefinition`.
 Workflow modules do not maintain a second visual edge list.
 The graph JSON records that derived contract for the run, not executable tasks or a complete machine runtime.
 
@@ -188,8 +191,9 @@ Other run lifecycle events do not carry those fields, and boundary decoders use 
 SQL nullable columns are a persistence detail that the D1 adapter converts at its boundary, not a domain state representation.
 Run and event timestamps are official `DateTime.Utc` values internally, with official JSON codecs and ISO formatting at persistence and transport boundaries.
 Snapshots and event payloads use the shared official `Schema.JsonObject`, which permits nested JSON but rejects arrays or scalars as the root and rejects non-JSON nested values.
-The shared driver validates and encodes the execution envelope and library logical snapshot.
-Each workflow supplies the context schema for its domain data and external-operation recovery phases.
+The persistence host validates and encodes the library logical snapshot and its workflow version.
+Workflow domain data and operation identities belong to native State schemas.
+Clients and other non-serializable values belong to a separate execution-scoped ResourceStore and never enter snapshots.
 The routing envelope leaves workflow-specific input unknown until the selected workflow validates it, rather than importing workflow domain knowledge into the common interface.
 
 ## Commit and acknowledgment
@@ -200,7 +204,7 @@ The routing envelope leaves workflow-specific input unknown until the selected w
 4. Reject a stale revision or a changed command that reuses a commit ID.
 5. Return an acknowledgment only after the batch succeeds and the receipt is read.
 
-The shared driver invokes registered lifecycle hooks after the D1 acknowledgment.
+The persistence host invokes registered lifecycle hooks after the D1 acknowledgment.
 Hooks are best-effort observation: a failure does not roll back state, and a crash can occur after commit but before hook delivery.
 No transactional hook outbox or replay guarantee is provided.
 Workflow progression and external-operation reconciliation must not depend on an observational hook.
@@ -223,20 +227,22 @@ Control forwards creation to the integration Worker.
 The integration Worker persists a new pending run, its version, and its graph before calling the selected workflow binding.
 A binding failure must leave the pending run available for explicit recovery.
 A DO call loads the last committed state instead of using a cached continuation.
-The shared checkpoint states are Ready, Running, Waiting, Completed, and Failed.
-The native machine snapshot and workflow context are decoded and checked against the run's pinned identity, version, graph, status, and task position.
-The selected library computes transitions, while the common Effect driver commits task intent before invoking its task.
-Tasks expose `execute(context)` and obtain invocation identity, operation, and checkpoint writes through the shared `TaskExecution` Effect service.
-The driver scopes that service to the current invocation's revision and checkpoint references, while stable dependencies remain captured at runtime construction.
-Checkpoint inputs are validated with the definition's context schema before persistence.
-A restored Running checkpoint reuses execution identity and does not emit a duplicate node start.
-Completed and Failed are terminal and cannot run again.
+The versioned envelope contains a single native snapshot, not a duplicate task position or context envelope.
+Workflow identity, version, graph, native state, and derived status must agree.
+Pending runs use ordinary Machine.start, while saved running or waiting checkpoints use Machine.resume.
+The native library owns entering the next state and starting its invoke.
+All workflow logic, including initialization, receipt checks, and completion, runs inside these invokes.
+Invokes use WorkflowCheckpoint to persist the current native intent before external side effects.
+The shared host does not choose or dispatch nodes.
+Native resume can restart an active invoke, so stable execution and command identities must be reconciled rather than blindly replayed.
+Completed and failed runs are terminal.
 
-The demo's start path executes preparation, then persists a wait at its approval task.
-Explicit resume completes that approval and drives publishing through the same shared lifecycle path.
-The Pi workflow uses the same driver for implement and verify, with external command/session phases inside its own typed context.
-Its task adapter returns an unchanged outcome while a polled turn remains running, without new checkpoints or events.
-See [Workflow graphs](workflow-graphs.md) for task results, lifecycle hooks, and the Pi recovery phase diagram.
+The demo reaches an inert approval state and waits for explicit Resume before native publishing.
+The Pi workflow uses nested native states for submission, awaiting, receipt polling, verification, and completion.
+A running receipt returns to the identical awaiting snapshot without a new revision, event, or submission.
+Volatile ResourceStore values are shared within a command Scope and reacquired after disposal and resume.
+The PiHarness DO remains responsible for its durable conversation and operations.
+See [Workflow graphs](workflow-graphs.md) for the complete execution and recovery sequence.
 
 ```mermaid
 sequenceDiagram

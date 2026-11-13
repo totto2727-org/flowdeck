@@ -1,14 +1,12 @@
-import { Schema } from 'effect'
+import { Machine } from '@typeonce/effect-machine'
+import { Array, Effect, Option, Schema, String } from 'effect'
 import { describe, expect, it } from 'vite-plus/test'
 
 import { DevelopmentSnapshot, DevelopmentSnapshotJson, initialDevelopmentSnapshot } from './development'
+import { DevelopmentMachine, DevelopmentStates } from './development-machine'
 import { developmentVersion, PublicRepository } from './input'
 import { CommandId, SessionId, TurnReceipt, TurnRequest } from './model'
-import { DevelopmentContext, DevelopmentContextJson, PiPhase } from './pi-task'
 
-const decodeNativeDevelopmentContext = Schema.decodeUnknownSync(DevelopmentContext)
-const encodeDevelopmentContext = Schema.encodeSync(DevelopmentContextJson)
-const decodeDevelopmentContext = Schema.decodeUnknownSync(DevelopmentContextJson)
 const encodeDevelopmentSnapshot = Schema.encodeSync(DevelopmentSnapshotJson)
 const decodeDevelopmentSnapshot = Schema.decodeUnknownSync(DevelopmentSnapshotJson)
 const initialSnapshot = initialDevelopmentSnapshot({
@@ -52,52 +50,62 @@ describe('development operation wire schemas', () => {
     expect(() => Schema.decodeUnknownSync(SessionId)('replacement-session')).toThrow()
   })
 
-  it.each(['Starting', 'PendingTurn', 'AwaitingTurn', 'Completing'] as const)(
-    'requires strict command identities in %s snapshots',
-    (_tag) => {
-      const phase = {
-        _tag,
-        sessionId: '1',
-        result: 'done',
-        commandId,
-      }
-      const context = { ...decodeDevelopmentContext(initialSnapshot.context), phase }
-      expect(Schema.is(PiPhase)(phase)).toBe(true)
-      expect(Schema.is(DevelopmentContext)(context)).toBe(true)
-      expect(Schema.is(PiPhase)({ ...phase, commandId: 'run:verify:1' })).toBe(false)
-      expect(Schema.is(DevelopmentContext)({ ...context, phase: { ...phase, commandId: 'run:verify:1' } })).toBe(false)
-      if (_tag !== 'Starting') {
-        expect(Schema.is(PiPhase)({ ...phase, sessionId: 'replacement-session' })).toBe(false)
-        expect(
-          Schema.is(DevelopmentContext)({ ...context, phase: { ...phase, sessionId: 'replacement-session' } }),
-        ).toBe(false)
-      }
-      const snapshot = {
-        ...initialSnapshot,
-        _tag: 'Running',
-        state: 'verify',
-        attempt: 1,
-        context: encodeDevelopmentContext(decodeNativeDevelopmentContext(context)),
-        executionId: 'execution_3d360c7a-4b1a-4df3-9633-861a220bf5b7',
-      }
-      expect(Schema.is(DevelopmentSnapshot)(snapshot)).toBe(true)
-      expect(Schema.is(DevelopmentSnapshot)({ ...snapshot, executionId: commandId })).toBe(false)
-    },
-  )
+  it.each([
+    'implement.intent',
+    'implement.awaiting',
+    'implement.polling',
+    'implement.accepted',
+    'verify.intent',
+    'verify.awaiting',
+    'verify.polling',
+    'verify.completing',
+  ])('validates command and execution identities in native %s checkpoints', async (path) => {
+    const initial = await Effect.runPromise(Machine.decodeSnapshot(DevelopmentMachine, initialSnapshot.machine))
+    const encoded = await Effect.runPromise(Machine.encodeSnapshot(DevelopmentMachine, initial))
+    const parent = String.startsWith('implement.')(path) ? 'implement' : 'verify'
+    const tag = Option.getOrThrow(Array.last(String.split('.')(path)))
+    const value = {
+      _tag: tag,
+      commandId,
+      executionId: 'execution_3d360c7a-4b1a-4df3-9633-861a220bf5b7',
+      attempt: 1,
+      ...(tag === 'accepted' || tag === 'completing' ? { result: 'done' } : {}),
+    }
+    const active = [...Array.filter(encoded.active, (entry) => entry.path === ''), { path: parent }, { path, value }]
+    const wire = { ...encoded, active }
+    const restored = await Effect.runPromise(Machine.decodeSnapshot(DevelopmentMachine, wire))
+    expect(await Effect.runPromise(Machine.encodeSnapshot(DevelopmentMachine, restored))).toMatchObject({ active })
+    await expect(
+      Effect.runPromise(
+        Machine.decodeSnapshot(DevelopmentMachine, {
+          ...wire,
+          active: [...Array.dropRight(active, 1), { path, value: { ...value, commandId: 'run:verify:1' } }],
+        }),
+      ),
+    ).rejects.toMatchObject({ _tag: 'MachineSchemaDecodeError' })
+    await expect(
+      Effect.runPromise(
+        Machine.decodeSnapshot(DevelopmentMachine, {
+          ...wire,
+          active: [...Array.dropRight(active, 1), { path, value: { ...value, executionId: commandId } }],
+        }),
+      ),
+    ).rejects.toMatchObject({ _tag: 'MachineSchemaDecodeError' })
+  })
 
-  it('round-trips native versions through the snapshot JSON boundary', () => {
-    const snapshot = initialSnapshot
-    const encoded = encodeDevelopmentSnapshot(snapshot)
-    expect(encoded).toMatchObject({
-      version: '1.0.0',
-      context: { version: '1.0.0', repository: 'https://github.com/example/project' },
-    })
-    expect(decodeDevelopmentSnapshot(encoded)).toEqual(snapshot)
-    const context = decodeDevelopmentContext(snapshot.context)
-    expect(context.version).toEqual(developmentVersion)
-    expect(context.repository).toBeInstanceOf(URL)
-    expect(encodeDevelopmentContext(context)).toEqual(snapshot.context)
+  it('round-trips native versions and repository values through both snapshot codecs', async () => {
+    const encoded = encodeDevelopmentSnapshot(initialSnapshot)
+    expect(encoded).toMatchObject({ version: '1.0.0', machine: { _tag: 'MachineSnapshot', version: 2 } })
+    expect(encoded).not.toHaveProperty('context')
+    const decoded = decodeDevelopmentSnapshot(encoded)
+    expect(decoded).toEqual(initialSnapshot)
     expect(Schema.is(DevelopmentSnapshot)(encoded)).toBe(false)
+    const state = await Effect.runPromise(Machine.decodeSnapshot(DevelopmentMachine, decoded.machine))
+    const root = Option.getOrThrow(DevelopmentStates.get(state, ''))
+    expect(root.version).toEqual(developmentVersion)
+    expect(root.repository).toBeInstanceOf(URL)
+    expect(root.repository.href).toBe('https://github.com/example/project')
+    expect(await Effect.runPromise(Machine.encodeSnapshot(DevelopmentMachine, state))).toEqual(decoded.machine)
   })
 
   it('keeps native repository URLs in the domain and uses the official wire codec', () => {

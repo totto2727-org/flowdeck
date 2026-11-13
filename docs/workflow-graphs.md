@@ -1,304 +1,294 @@
 # Workflow graphs
 
-This document explains how contributors define, execute, persist, and display workflows.
-It describes the implementation, not a proposed graph interpreter.
-See [architecture](architecture.md), [database workflow](database.md), and [RPC boundaries](rpc-boundaries.md) for the surrounding resource, storage, and transport contracts.
+This document explains workflow execution, persistence, and graph display.
+See [architecture](architecture.md), [database workflow](database.md), [RPC boundaries](rpc-boundaries.md), and [sandbox setup](development-sandbox.md) for the surrounding contracts.
 
-## Overview
+## Execution ownership
 
-**Flowdeck uses one state-machine definition for execution topology and its persisted visual graph.**
-The selected library is `@typeonce/effect-machine`.
-The shared [planner adapter](../src/features/workflow/machine.ts) derives `GraphDefinition` from the library's compiled topology and delegates transition planning to that library.
-The shared [Effect driver](../src/features/workflow/driver.ts) integrates task execution, checkpoint commits, lifecycle events, and observation hooks.
-Workflow modules supply versioned machine definitions, domain context schemas, and task effects.
-They do not maintain a second visual edge list or a workflow-specific copy of the common lifecycle driver.
-Here, a native machine is the library-owned model, not a Cloudflare Workflows resource.
+Flowdeck uses ordinary `Machine` from [`@typeonce/effect-machine`](https://github.com/typeonce-dev/effect-machine), version `0.46.0` with Effect `4.0.6`.
+This community package is not an Effect core module or Cloudflare Workflows.
+Use its [version-matched guide](https://effect-machine.typeonce.dev/agent-guide/) and installed API types.
 
-| Structure                 | Responsibility                                                                                          |
-| ------------------------- | ------------------------------------------------------------------------------------------------------- |
-| Native machine definition | Declare state topology, transitions, and annotations once.                                              |
-| Driver checkpoint         | Retain the native logical snapshot, current task position, lifecycle state, and encoded domain context. |
-| Workflow task adapter     | Perform Effect work and reconcile external operations using its own durable context.                    |
-| `GraphDefinition`         | Retain the derived visible graph associated with a run.                                                 |
-| `Shapes`                  | Combine that graph with committed events for display, without executing workflow work.                  |
+**The native Machine owns progression and invokes all workflow business effects.**
+Native event transitions, `invoke.onDone`, and branch resolvers select the next state.
+Entering that state starts its native invoke automatically.
+There is no task map, application transition interpreter, or recursive task execution loop.
+Both demo versions and the development workflow use this execution model.
 
-The neutral catalog/registration contract in [workflow-definition.ts](../src/features/workflow/services/workflow-definition.ts) is distinct from the executable driver `Definition`.
+In this installed version, `entry` and `exit` actions run synchronously and return `undefined`, not an asynchronous `Effect` or `Promise` to await.
+Use them for synchronous lifecycle actions and queued machine commands.
+Use `invoke` for asynchronous work whose completion drives a native `onDone` transition, including Pi resource acquisition, operation submission, receipt checks, and persistence checkpoints.
+Branch resolvers select the declared next state synchronously from that result.
+Do not start detached asynchronous work from an action and move its completion handling into an external executor.
 
-## Which Machine implementation is adopted?
+| Component                                                       | Responsibility                                                                                                         |
+| --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Versioned native Machine                                        | Define states, asynchronous effects, routing, waiting, and business failure.                                           |
+| [Persistence host](../src/features/workflow/managed-runtime.ts) | Load canonical D1 state, validate identity, open native execution, commit snapshots, and wait for ACK before replying. |
+| [ResourceStore](../src/features/workflow/resource-store.ts)     | Share typed volatile resources within one execution Scope.                                                             |
+| [Graph projection](../src/features/workflow/graph.ts)           | Derive visible nodes and edges from native introspection without running effects or resolvers.                         |
+| Store / D1                                                      | Atomically commit snapshots, ordered events, revision checks, and commit receipts.                                     |
+| PiHarness Durable Object                                        | Persist conversations and external operation receipts and manage Pi execution.                                         |
+| Frontend                                                        | Display the stored graph and committed events, without executing nodes.                                                |
 
-**Flowdeck selects the separately published [`@typeonce/effect-machine`](https://github.com/typeonce-dev/effect-machine) library, not a handwritten state-transition interpreter.**
-The installed package is `0.46.0`, with peer dependency `effect: ^4.0.0`.
-Effect core `4.0.6` does not itself export the earlier experimental Machine module.
-This is adoption of the community package, not an official Effect core Machine integration, an XState execution path, or native Cloudflare Workflows orchestration.
+`ClusterMachine` is not the workflow runtime.
+The installed ClusterMachine rejects process-local activities such as `invoke` with `UnsupportedProcessLocal`.
+The independent [Cluster storage adapter](cluster-machine-storage.md) remains available for supported data-only cluster machines.
+It is not a prerequisite for the workflows described here.
 
-The [official Agent Guide](https://effect-machine.typeonce.dev/agent-guide/) defines the Schema-first machine and Effect-service conventions used here.
-The version-matched guide bundled with `@typeonce/effect-machine@0.46.0`, its [package documentation](https://github.com/typeonce-dev/effect-machine/blob/main/packages/effect-machine/README.md), and [API source](https://github.com/typeonce-dev/effect-machine/blob/main/packages/effect-machine/src/Machine.ts) distinguish pure planning, logical snapshots, and the managed local runtime.
-Flowdeck uses `Machine.planInitial`, `Machine.plan`, `Machine.encodeSnapshot`, and `Machine.decodeSnapshot`.
-Planning computes logical transitions without executing command effects.
-`Machine.stateNodes` and `Machine.transitionDefinitions` expose declared topology without running transition resolvers to discover edges.
-Flowdeck integrates this planning boundary with D1 and Effect tasks rather than making a live `MachineRef` canonical.
-A logical snapshot does not preserve fibers, subscriptions, external resources, or historical executable code.
-The package is pre-1.0, so its capabilities do not automatically become supported capabilities of Flowdeck's adapter.
-
-## One definition, two projections
+## One native definition, two projections
 
 ```mermaid
 flowchart TB
-  Definition["Versioned native Machine definition"] --> Planner["Machine.planInitial / Machine.plan"]
-  Definition --> Topology["Machine.stateNodes / transitionDefinitions"]
-  Tasks["Workflow Effect tasks and context schema"] --> Driver["Shared Effect driver"]
-  Planner --> Driver
-  Driver <--> DB[("D1 checkpoints, events and receipts")]
-  Topology --> Graph["Immutable GraphDefinition"]
-  Graph --> DB
-  DB --> Projection["graphToShapes with revision-bounded events"]
-  Projection --> UI["Frontend graph and inspector"]
+  Definition[Versioned native Machine] --> Runtime[Machine.start / Machine.resume]
+  Definition --> Introspection[Machine.stateNodes / transitionDefinitions]
+  Runtime --> Invoke[Native state invokes and routing]
+  Invoke --> Checkpoint[WorkflowCheckpoint]
+  Checkpoint --> D1[(D1 snapshot, events, receipt)]
+  Runtime --> Boundary[Waiting or terminal state]
+  Boundary --> D1
+  Introspection --> Graph[Immutable GraphDefinition]
+  Graph --> D1
+  D1 --> Display[Revision-bounded frontend projection]
+  ResourceStore[Execution-scoped ResourceStore] --> Invoke
 ```
 
-The [adapter](../src/features/workflow/machine.ts) creates graph nodes from atomic state paths and their `title` and `description` annotations.
-The annotation description supplies the visible `task` or `checkpoint` kind.
-Edges come from declared transition branches whose destinations are visible tasks.
-Named branches enumerate possible destinations, and a synchronous library resolver selects among their bound constructors.
-The [adapter tests](../src/features/workflow/machine.test.ts) demonstrate conditional routing from task context while projecting both declared alternatives.
-Final machine states do not become visible task nodes.
-The library chooses the transition when the driver submits a `Done` event carrying encoded task context.
-Remaining `Match` expressions handle the shared lifecycle envelope or task-owned recovery phases, not a second next-node transition table.
-Neither the frontend nor `graphToShapes` executes transitions.
+Visible nodes have `title` and `description` annotations, with `description` equal to `task` or `checkpoint`.
+Nested implementation states project to their annotated business ancestor.
+Unannotated allocation states between visible nodes are traversed statically when projecting edges.
+Alternative native transitions between the same visible pair share one displayed edge with combined labels.
+Projection never evaluates guards, invokes, or branch resolvers.
+Unannotated terminal states do not appear as task nodes.
 
-The [graph transport schema](../src/features/workflow/domain/model.ts) remains deliberately small:
+The transport model remains `GraphDefinition { graphId, schemaVersion: 1, nodes, edges }`.
+Workflow SemVer selects executable behavior, graph identity selects immutable display data, and the library controls its encoded snapshot version.
+These versions are distinct.
+The application has not been deployed, so this implementation does not provide compatibility codecs or migration paths for earlier development snapshots.
+The two demo versions demonstrate executable version selection, not compatibility with the removed execution model.
+Persisting a workflow version does not archive executable code: that version's definition and codecs must remain deployed.
 
-| Contract          | Fields                                                  |
-| ----------------- | ------------------------------------------------------- |
-| `GraphDefinition` | `graphId`, literal `schemaVersion: 1`, `nodes`, `edges` |
-| `GraphNode`       | `nodeId`, `label`, `kind: 'task' \| 'checkpoint'`       |
-| `GraphEdge`       | `edgeId`, `source`, `target`, `label`                   |
+## Start and restoration
 
-Workflow, graph, node, and edge IDs use the caller-defined [identity schemas](../src/features/workflow/domain/identity.ts).
-The graph's `schemaVersion` describes its wire shape, the workflow `SemVer` selects its implementation, and the library controls its own encoded-snapshot format.
-These versions are not interchangeable.
-A node ID names a definition, while execution IDs and positive attempt numbers identify executions in lifecycle events.
-A `checkpoint` display kind does not suspend work by itself.
-Approval and waiting must be implemented by the corresponding task.
+Preparation validates input and uses the native pure initial plan to encode the pending snapshot.
+It does not execute business work.
+Run creation saves that snapshot, the selected version, and its graph before dispatching `start`.
 
-### Versioned definitions
+Each command reloads the canonical run from D1.
+A pending run executes through `Machine.start`.
+An existing running or waiting checkpoint restores through `Machine.resume` with the decoded native snapshot.
+There is no separate restore interpreter or duplicate application-owned node position.
+Workflow ID, version, graph ID, native snapshot, and derived run status must agree before execution begins.
+Terminal runs reject further execution.
 
-The demo's [version-1.ts](../src/workers/demo-workflow/features/version-1.ts) and [version-2.ts](../src/workers/demo-workflow/features/version-2.ts) declare separate native machines and executable definitions.
-Version `1.0.0` uses graph ID `demo-1_0_0-graph-1` and produces `draft:v1`.
-Version `2.0.0` uses graph ID `demo-2_0_0-graph-1` and produces `draft:v2:reviewed`.
-They share the `prepare` → `approval` → `publish` topology but use different labels and preparation effects.
-[demo.ts](../src/workers/demo-workflow/features/demo.ts) selects the implementation at the version boundary and constructs the shared driver for each retained version.
-The reusable [demo tasks](../src/workers/demo-workflow/features/node.ts) contain approval and publishing behavior, not lifecycle event batches or a transition interpreter.
+Native resume restores logical state, not fibers, suspended continuations, arbitrary resources, or an instruction offset inside an invoke.
+It can restart an active invoke.
+Therefore each workflow must make its external effects recoverable from persisted identities and authoritative receipts.
+Do not claim that native resume makes arbitrary effects exactly-once.
 
-The Pi workflow's [native declaration](../src/workers/development-workflow/features/development-machine.ts) defines `implement` → `verify` → final completion.
-[development.ts](../src/workers/development-workflow/features/development.ts) wraps that machine, exposes its derived graph, and constructs the shared driver with Pi-owned tasks.
-Its visible graph is `jcode-development-1_0_0-graph-1` for version `1.0.0`.
-Both visible nodes are tasks, although both can wait for external turn completion.
-Waiting is not restricted to nodes displayed as checkpoints.
+The request-scoped runtime runs until the workflow reaches an inert waiting or terminal state.
+After the boundary snapshot is acknowledged, the command Scope closes.
+An accepted Pi operation can continue in its PiHarness Durable Object after that Scope closes.
+A repeated `start` does not send a Resume event to a waiting machine.
+Explicit `resume` restores the machine and sends its declared `Resume` event.
+The workflow itself decides what that event means.
 
-## Driver and task contract
+## Durable State and volatile resources
 
-[`makeDefinition`](../src/features/workflow/driver.ts) captures the context codec and initial native plan once for a versioned definition.
-The definition combines workflow identity, version, the planner adapter, the context schema, and an Effect that constructs the task map.
-Preparation supplies the run-specific initial context to `initialMachineSnapshot(definition, context)`.
-`makeDriver` captures Store, task services, the lifecycle hook, and identity generators when the runtime service is built.
-Worker and Durable Object roots provide the complete stable runtime dependencies rather than reacquiring them inside each node operation.
+The persisted envelope contains only `schemaVersion`, workflow `version`, and the library-encoded `machine` snapshot.
+It does not duplicate the native node position or domain context.
+A native state can carry validated repository data, stable execution/command identities, and durable results.
+It must not contain a PiHarness instance, client, function, or other non-serializable runtime value.
 
-A task exposes `execute(context)` and obtains the invocation-scoped `TaskExecution` service with `yield* TaskExecution`.
-That service supplies the run ID, execution ID, operation (`start` or `resume`), and `checkpoint(nextContext)`.
-The driver provides it only around the current task invocation because its checkpoint capability closes over that invocation's revision and checkpoint references.
-Stable Store, task dependencies, and hooks remain captured when the driver is constructed.
-The service accepts checkpoint context as `unknown`, and the definition's captured context schema validates it before encoding or persistence.
-Invalid checkpoint context fails with `InvalidSnapshot` rather than committing a malformed checkpoint.
-The task returns one of these outcomes:
+`ResourceStore` is separate from the durable workflow `Store`.
+It uses typed Effect `Context.Key` values and lazy `getOrTryInit` effects, following the Rust workflow-resources design.
+Same-key callers share one successful initialization, including concurrent callers.
+Different keys initialize independently.
+Failed or interrupted acquisition is not cached, and resources acquired by that failed attempt are released immediately.
+Successful resources are released with their owning execution Scope.
+Use globally unique native Context key identities.
 
-| Outcome     | Driver behavior                                                                                                                |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `Done`      | Plan the library's `Done` transition, commit node success and the next task start or run completion, then drive the next task. |
-| `Wait`      | Commit waiting context and `run.waiting`, then return without retaining a suspended continuation.                              |
-| `Fail`      | Commit the explicit failure context, node failure, and run failure.                                                            |
-| `Unchanged` | Return without a checkpoint or event write, as used when a polled Pi turn is still running.                                    |
+Every command gets a new ResourceStore shared across all its native invokes.
+After disposal and resume, resources are acquired again as needed.
+The development workflow caches the capability to its DO-owned PiHarness, not the conversation or operation state.
+The native SDK descriptor can be installed at activation, but workflow-owned acquisition and use occur inside native invokes.
+This does not add per-node harness startup or multiple sessions to the current workflow.
 
-An Effect failure is not the same as an explicit `Fail` outcome.
-Infrastructure errors, including task checkpoint write failures, propagate rather than being translated into a committed business failure.
-Recovery then starts from the last committed checkpoint.
-Tasks still own the decision whether a particular external failure is retryable, terminal, or unsafe to resubmit.
+## Checkpoint and ACK boundary
 
-The shared checkpoint union is `Ready`, `Running`, `Waiting`, `Completed`, or `Failed`.
-It stores the workflow version, task position, library-encoded logical snapshot, and encoded domain context.
-Active and failed checkpoints also carry execution identity and attempt.
-`restoreMachineSnapshot` validates workflow identity, version, graph, status, context, and agreement between the native snapshot and task position before execution.
-Every `start` or `resume` call reloads canonical D1 state.
-Restoring `Running` reuses committed execution identity rather than emitting another node start.
-`Completed` and `Failed` reject further execution.
-This undeployed change replaces the earlier workflow-specific checkpoint envelopes without compatibility decoding.
-The demo's task-start intent is committed separately from the approval wait, so its waiting checkpoint has revision 3 and its completed checkpoint has revision 5.
-
-### Lifecycle commits and hooks
-
-The driver generates node and run lifecycle events rather than asking each task to construct event batches.
-A new task's running intent and `node.started` commit before the task body executes.
-A successful transition commits source success and the following task's start together.
-A task-local context checkpoint uses the same shared commit path even when it has no node event.
+An invoked effect requests persistence through `WorkflowCheckpoint` before a recoverability-sensitive external action.
+That capability reads the current native snapshot and writes it through the shared Store.
+It does not select the next state or execute another node.
+Native transitions continue after the invoke effect returns.
+A waiting or terminal boundary is also committed before the command replies.
+An unchanged native snapshot and status produce no new revision or lifecycle event.
 
 ```mermaid
 sequenceDiagram
-  participant Driver as Shared Effect driver
-  participant Store as Store / D1
-  participant Hook as LifecycleHook
-  participant Task as Workflow task
-  Driver->>Store: Commit running checkpoint and node.started
-  Store-->>Driver: Atomic batch ACK
-  Driver->>Hook: afterCommit(events, ack)
-  Driver->>Task: execute(context) with TaskExecution service
-  Task->>Driver: Done / Wait / Fail
-  Driver->>Store: Commit checkpoint and matching lifecycle events
-  Store-->>Driver: Atomic batch ACK
-  Driver->>Hook: afterCommit(events, ack)
+  actor User
+  participant API as Workflow API
+  participant Host as Persistence host
+  participant Machine as Ordinary Machine
+  participant Node as Invoked workflow effect
+  participant Resources as ResourceStore
+  participant Pi as PiHarness DO
+  participant D1 as Store / D1
+  User->>API: Create development run
+  API->>D1: Save pending native snapshot and graph
+  API->>Host: start(runId)
+  Host->>D1: Load and validate canonical run
+  Host->>Machine: Machine.start(definition, input)
+  Machine->>Node: Allocate stable operation identities
+  Machine->>Node: Enter submission invoke
+  Node->>Host: checkpoint(current native intent, events)
+  Host->>D1: Atomic batch snapshot + events + receipt
+  D1-->>Node: ACK via host
+  Node->>Resources: Acquire shared Pi capability
+  Node->>Pi: Ensure original session, reconcile command, submit if absent
+  Pi-->>Node: Accepted receipt
+  Node-->>Machine: Submission result
+  Machine->>Machine: Native transition to inert awaiting state
+  Machine-->>Host: Waiting boundary
+  Host->>D1: Commit awaiting snapshot and waiting event
+  D1-->>Host: ACK
+  Host-->>API: Success, close command Scope
+  API-->>User: Waiting run
+  Note over Pi: Durable Pi operation continues independently
+  User->>API: Resume run
+  API->>Host: resume(runId)
+  Host->>D1: Load saved native snapshot
+  Host->>Machine: Machine.resume(definition, snapshot)
+  Host->>Machine: Send declared Resume event
+  Machine->>Node: Enter receipt polling invoke
+  Node->>Resources: Acquire capability in fresh command Scope
+  Node->>Pi: Read exact saved command receipt
+  Pi-->>Node: Completed implementation receipt
+  Node-->>Machine: Completed implementation outcome
+  Machine->>Node: Enter implementation acceptance invoke
+  Node->>Host: checkpoint(accepted result, node.succeeded)
+  Host->>D1: Commit native accepted state and result
+  D1-->>Node: ACK via host
+  Node-->>Machine: Acceptance complete
+  Machine->>Node: Allocate verification identities through native edge
+  Machine->>Node: Enter verification submission invoke
+  Node->>Host: checkpoint(verification intent, node.started)
+  Host->>D1: Commit intent before external verification work
+  D1-->>Node: ACK via host
+  Node->>Resources: Get capability shared within this command
+  Node->>Pi: Ensure same session, reconcile command, submit if absent
+  Pi-->>Node: Accepted verification receipt
+  Node-->>Machine: Submission result
+  Machine->>Machine: Transition to verification awaiting state
+  Machine-->>Host: Waiting boundary
+  Host->>D1: Commit verification awaiting state
+  D1-->>Host: ACK
+  Host-->>API: Success, close command Scope
+  API-->>User: Verification waiting
+  Note over Pi: Verification continues in the same PiHarness DO
+  User->>API: Resume run after verification
+  API->>Host: resume(runId)
+  Host->>D1: Load saved verification snapshot
+  Host->>Machine: Machine.resume(definition, snapshot)
+  Host->>Machine: Send declared Resume event
+  Machine->>Node: Enter verification receipt polling invoke
+  Node->>Resources: Acquire capability in fresh command Scope
+  Node->>Pi: Read exact verification command receipt
+  Pi-->>Node: Completed verification receipt
+  Node-->>Machine: Completed verification outcome
+  Machine->>Node: Enter completion invoke
+  Node->>Host: checkpoint(completion intent and verification result)
+  Host->>D1: Commit native completing state
+  D1-->>Node: ACK via host
+  Node->>Pi: Check original session and no pending work
+  Pi-->>Node: Application completion check accepted
+  Node-->>Machine: Completion outcome
+  Machine->>Machine: Enter completed final state
+  Machine-->>Host: Terminal boundary
+  Host->>D1: Commit completed snapshot and final events
+  D1-->>Host: ACK
+  Host->>Resources: Close Scope and release acquired resources
+  Note over Resources,Pi: Releasing a capability does not delete the durable Harness or Container
+  Host-->>API: Success
+  API-->>User: Completed run and committed events
 ```
 
-`LifecycleHook.afterCommit` is a registered Effect service with a no-op default.
-It runs after the D1 acknowledgment, and a hook failure is logged without rolling back the canonical commit.
-It is best-effort observation, not a transactional participant or durable callback delivery mechanism.
-A crash after commit can occur before a hook runs, and this integration has no hook outbox or replay guarantee.
-Do not put indispensable workflow progression or irreversible business work in an observational hook.
+A checkpoint stores how to recover.
+The native Machine performs progression.
+Neither a lifecycle observation hook nor a notification is an execution engine.
 
-## Manual approval and explicit resume
+Store writes use one native D1 batch for the receipt, revision-checked run snapshot, and complete event batch.
+Exact duplicate commit commands return their original ACK.
+A revision conflict or changed duplicate is rejected.
+This transaction does not include a PiHarness DO operation.
+Recovery reconciles the stable command ID with that DO rather than promising a cross-service transaction.
 
-The demo approval task returns `Wait` for operation `start` and `Done` with `{ approved: true }` for operation `resume`.
-Its [actual task implementation](../src/workers/demo-workflow/features/node.ts) uses the shared outcome constructors:
+Persistence and infrastructure failures propagate without becoming a committed business failure.
+A business failure is an explicit native state selected by workflow logic.
+`LifecycleHook.afterCommit` observes successful commits only and is best effort.
+A failed hook is logged and cannot undo canonical state.
+There is no hook outbox or guaranteed callback replay.
 
-```ts
-const outcomes = taskResult<DemoContext>()
-export const approvalTask: Task<DemoContext> = {
-  execute: (context) =>
-    Effect.gen(function* () {
-      const control = yield* TaskExecution
-      return control.operation === 'resume'
-        ? outcomes.Done({ context, payload: { approved: true } })
-        : outcomes.Wait({ context })
-    }),
-}
-```
+## Workflow-specific behavior
 
-The driver persists the wait, including its execution identity, rather than keeping a fiber suspended.
-A repeated `start` leaves a waiting run alone.
-An explicit resume invokes the waiting task and records `run.resumed` when progress is committed.
-Publishing then executes through the same lifecycle driver as preparation.
-The demo bodies are pure, which makes interrupted task retry safe for this example.
+### Demo versions
 
-The current [executor contract](../src/features/workflow/services/workflow-definition.ts) accepts only `resume(runId)`.
-The demo has no separate approval decision payload, rejection path, approver record, or graph-declared approval policy.
-Its manual approval is the approval task's interpretation of explicit resume within the application's existing authorization boundary.
-A resume call is not a general event injection API, and no exactly-once delivery guarantee is implied.
+Versions `1.0.0` and `2.0.0` declare separate native machines.
+Both project `prepare` → `approval` → `publish`.
+Preparation produces `draft:v1` or `draft:v2:reviewed`, respectively.
+The approval state has no running invoke and waits for the explicit native Resume event.
+Publishing is then started automatically by its native edge.
+The demo's pure bodies can safely run again after a failed boundary commit.
+Resume has no separate approval payload, rejection policy, or approver record in the current public API.
 
-## Pi task phases and recovery
+### Pi development
 
-[pi-task.ts](../src/workers/development-workflow/features/pi-task.ts) owns external-operation reconciliation, while the common driver owns graph position and lifecycle persistence.
-The typed `DevelopmentContext` includes the fixed `pi-harness` runtime, repository, task, version, and a `PiPhase` union.
-The phases are `Ready`, `Starting`, `PendingTurn`, `AwaitingTurn`, `Completing`, and `TurnComplete`.
-These phases are domain context inside the common checkpoint, not another visible graph or a replacement common execution engine.
+The development machine owns initialization, submission, polling, implementation acceptance, verification, and completion invokes.
+Its nested native states preserve execution and command identities without a separate PiPhase dispatcher.
+Submission saves the intent before calling the sandbox.
+It checks an exact existing command receipt before submitting.
+Only authoritative absence while the intent remains unacknowledged permits submission with that same command ID.
 
-```mermaid
-flowchart LR
-  Ready["Ready"] -->|checkpoint command ID| Starting["Starting"]
-  Starting -->|checkpoint original session| Pending["PendingTurn"]
-  Pending -->|lookup exact command, submit only if absent| Awaiting["AwaitingTurn"]
-  Awaiting -->|running receipt: unchanged| Awaiting
-  Awaiting -->|implementation complete| TurnComplete["TurnComplete"]
-  TurnComplete -->|verification command checkpoint| Pending
-  Awaiting -->|verification complete, checkpoint intent| Completing["Completing"]
-  Completing -->|complete original session| Finished["Final task done"]
-```
+An awaiting state accepts Resume and polls the exact receipt.
+A still-running receipt returns to the same awaiting state without another submission, event, or revision.
+A missing acknowledged receipt fails closed instead of resubmitting.
+Completed implementation transitions through its acceptance checkpoint to verification in the same native runtime.
+Completed verification saves a completion intent before checking that the original session has no pending work.
+The sandbox completion operation is an application completion check, not a claim that PiHarness exposes a session-finalization API.
+Neither completion nor runtime Scope disposal deletes the Container.
 
-The task checkpoints a command ID before creating or reconnecting the session, and checkpoints session identity before submission.
-`PendingTurn` queries the exact command first.
-Only authoritative absence while that submission remains unacknowledged permits resubmission of the same command.
-An accepted turn produces `Wait` with `AwaitingTurn` context.
-Explicit resume polls the receipt, and a still-running receipt returns `Unchanged` without new events, revision changes, or another submission.
-An acknowledged turn whose receipt disappears fails closed instead of being automatically resubmitted.
+PiHarness owns conversation, operation, and Container recovery.
+D1 does not serialize those resources or recreate a missing workspace.
+See [retention](development-workflow-retention.md) for the independent lease policy.
+Retention callbacks do not choose or advance workflow nodes.
 
-Implementation completion returns `Done` with `TurnComplete` context, allowing the native machine to select `verify`.
-The verification task checkpoints a new command in the original session before submission.
-After verification finishes, it checkpoints `Completing` before asking the sandbox to complete that session.
-That intent supports retrying completion if its acknowledgment or the final D1 write fails.
-Session identity and receipt checks remain inside the Pi adapter, not the common driver.
-Completing a session does not destroy its Container or workspace.
+## Registration and frontend
 
-The official PiHarness owns durable conversation and operation state in Durable Object storage, while D1 owns workflow checkpoints and events.
-Reconstruction does not restore a lost workspace or manufacture a missing original session.
-See [sandbox setup and acceptance limits](development-sandbox.md) and [workspace retention](development-workflow-retention.md) for those external-runtime constraints.
-Retention jobs do not advance workflow nodes or replace explicit resume.
+Each workflow supplies a neutral catalog `summary` and `prepare(input)` returning its graph and encoded initial snapshot.
+[Registration](../src/workers/workflow/features/registration.ts) binds these definitions to fixed workflow service bindings.
+The integration service routes mechanically from that registry.
+Control uses only the integration Worker binding, and each workflow entry routes to its run Durable Object.
 
-## Registration, version persistence, and graph identity
+The frontend reads the graph saved with the run and events bounded by its current revision.
+It does not regenerate a historical run's graph from the current catalog.
+Event sequence determines displayed node state.
+A displayed traversed edge is inferred from source success and target start, not a separately persisted transition receipt.
+Selection and refresh do not execute workflow effects.
 
-Each registered workflow supplies a catalog `summary` and `prepare(input)` that validates workflow-specific input and returns its derived graph with an encoded initial checkpoint.
-The demo [definition](../src/workers/demo-workflow/features/definition.ts) and Pi [definition](../src/workers/development-workflow/features/definition.ts) implement that neutral contract independently.
-[registration.ts](../src/workers/workflow/features/registration.ts) combines installed definitions with static execution bindings.
-The [integration service](../src/workers/workflow/features/workflow.ts) performs registry lookup without workflow-specific execution branches.
-Control retains its single integration Worker binding, and each workflow entry resolves one logical run Durable Object by run ID.
+## Supported boundaries and evidence
 
-Preparation completes before run ID generation or persistence.
-Creation stores the requested version, graph reference, pending status, and initial checkpoint before calling `start`.
-A failed start call therefore leaves a pending run for explicit recovery.
-[D1Store](../src/features/workflow/services/d1-store.ts), [schema constraints](../schema/schema.hcl), and [identity and immutability triggers](../schema/triggers.hcl) retain the graph JSON and workflow-version association.
-Graph IDs are explicit identifiers, not content hashes.
-Identical reuse is allowed, but reusing a graph ID with different content is rejected.
-Change the graph ID and workflow version when the graph contract changes.
+This integration supports the current sequential workflows with one recoverable active leaf and inert command boundaries.
+It does not promise durable timers, parallel independent invokes, child-machine restoration, arbitrary event injection, or general external exactly-once execution.
+In particular, restoring a child Machine is not equivalent to restoring an instruction offset inside its invoke.
+Expand these contracts only with explicit persistence semantics and public-path tests.
 
-Checkpoint writes atomically persist the receipt, run state, snapshot, and ordered event batch before acknowledgment.
-Exact duplicate commit commands return their original acknowledgment, while changed duplicate commands and revision conflicts are rejected.
-These storage guarantees do not make arbitrary external task effects exactly-once.
-Persisting a version also does not archive its executable code.
-Existing runs still require the pinned implementation and compatible context and native snapshot codecs to remain deployed.
+| Maintained tests                                                                      | Observable contract                                                                                                          |
+| ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| [Native graph tests](../src/features/workflow/graph.test.ts)                          | Native automatic invoke progression matches displayed edges, including nested and hidden allocation states.                  |
+| [Persistence host tests](../src/features/workflow/managed-runtime.test.ts)            | Native start/resume selection, ACK ordering, unchanged polls, error identity, and post-ACK hooks.                            |
+| [ResourceStore tests](../src/features/workflow/resource-store.test.ts)                | Typed volatile sharing, concurrent acquisition, retry, immediate failed-attempt cleanup, and fresh-scope isolation.          |
+| [D1 and public workflow tests](../src/features/workflow/services/d1-store.test.ts)    | Actual D1 atomicity, cold restoration, both versions, HTTP routes, commit conflicts, and RPC failure recovery.               |
+| [Development tests](../src/workers/development-workflow/features/development.test.ts) | Actual D1 checkpoints with sandbox-boundary controls for receipt recovery, no duplicate submission, and workflow completion. |
+| [Cluster storage tests](../src/features/cluster/d1-storage.test.ts)                   | Independent data-only Cluster storage through official Entity.client and actual local D1.                                    |
 
-## Frontend graph projection
-
-The integration service reads the run's stored graph and events through the run revision, then invokes [graphToShapes](../src/features/workflow/domain/projection.ts).
-It does not regenerate an old run's graph from the current catalog.
-Projection uses durable event sequence order rather than wall-clock timestamp or delivery order.
-The latest applicable node event determines visual state, with `idle` as the default.
-Node positions follow graph array order in a single horizontal row, not a dependency-aware DAG layout.
-
-An edge is marked traversed when any source success and any target start exist in the event set.
-There is no persisted edge-traversal event, temporal pairing, or execution-pair matching in that inference.
-A traversal indicator can remain set while a later source attempt is active and is not proof of a particular transition.
-The [graph and inspector](../src/workers/frontend/features/graph.tsx) render committed state and event payloads.
-[Presentation helpers](../src/workers/frontend/features/presentation.ts) keep selection independent from execution state and support bounded keyboard navigation by definition order.
-Selection and refresh do not execute tasks.
-The [dashboard](../src/workers/frontend/features/dashboard.tsx) invokes the resume operation for waiting runs or explicit recovery of pending/running runs.
-
-## Authoring and limits
-
-1. Define the workflow's ID, supported versions, validated input, and catalog descriptors in its feature module.
-2. Declare native states, transitions, and annotations once, then derive the graph through `makeMachine`.
-3. Build a versioned `makeDefinition` with its context schema and tasks, and use `initialMachineSnapshot` when preparing a run.
-4. Implement `execute(context)` and obtain `TaskExecution` for invocation metadata and recoverable `checkpoint` writes, then return `Done`, `Wait`, `Fail`, or `Unchanged`.
-5. Construct the driver with the complete runtime Layer graph, expose the fixed start/resume binding, and register the definition at integration composition.
-6. Test topology projection, version pinning, lifecycle ordering, hooks, explicit resume, conflicts, and cold recovery with the task adapter's reconciliation policy.
-
-The current driver maintains one active task position and drives tasks sequentially.
-The adapter accepts only flat, data-only machines with explicit-target `Done` transitions.
-It rejects compound or parallel state nodes, autonomous transitions, targetless `none` or `update` branches, and duplicate source-target pairs, including differently named branches with the same destination.
-These restrictions prevent task skipping, non-advancing completion loops, and ambiguous graph edge identities.
-It also rejects native snapshots with more than one active leaf, startup or transition plans containing runtime commands, and task completion that selects no native transition.
-Managed activities and other event protocols are excluded by the adapter's public type signature.
-Do not infer support for general parallel execution, child-machine hosting, arbitrary managed commands, durable timers, or custom event injection from the upstream library's broader statechart features.
-Pure planning does not execute native machine command effects, and this adapter is not a replacement for the upstream managed runtime's full execution protocol.
-No hook outbox, generic external replay, automatic workspace-loss recovery, or exactly-once external effects are promised.
-
-## Evidence and regression tests
-
-These maintained tests provide the behavior checks associated with this design.
-Source inspection and test doubles do not establish real Container, provider, or deployment acceptance.
-
-| Evidence                                                                                        | Behavior covered                                                                                                                                                                                                                         |
-| ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [Native adapter tests](../src/features/workflow/machine.test.ts)                                | Declared conditional edges, library-selected branches after snapshot decode, malformed native paths, missing transitions, and rejection of duplicate edges, compound/parallel machines, autonomous transitions, and targetless branches. |
-| [Shared driver tests](../src/features/workflow/driver.test.ts)                                  | Start-before-task ACK ordering, invocation-scoped checkpoints and their validation, cold restoration, unchanged resume, propagated infrastructure errors, explicit business failure, and defective post-ACK hooks.                       |
-| [Demo task tests](../src/workers/demo-workflow/features/node.test.ts)                           | Explicit approval waiting/resume and version-specific publication output.                                                                                                                                                                |
-| [Demo definition tests](../src/workers/demo-workflow/features/definition.test.ts)               | Versioned graphs, initial checkpoints, strict input, and restore boundaries.                                                                                                                                                             |
-| [D1 store and recovery tests](../src/features/workflow/services/d1-store.test.ts)               | Immutable graphs, version persistence, atomic ACK, duplicate commands, conflicts, and cold restoration.                                                                                                                                  |
-| [Development definition tests](../src/workers/development-workflow/features/definition.test.ts) | Derived graph preparation, validated Pi context, and strict restore boundaries.                                                                                                                                                          |
-| [Development execution tests](../src/workers/development-workflow/features/development.test.ts) | Persist-before-submit, unchanged polling, same-session verification, receipt loss, and interrupted checkpoint recovery.                                                                                                                  |
-| [Projection tests](../src/features/workflow/domain/projection.test.ts)                          | Durable sequence order and traversal retained across later attempts.                                                                                                                                                                     |
-| [Presentation tests](../src/workers/frontend/features/presentation.test.ts)                     | Execution inspection, recovery actions, and keyboard navigation.                                                                                                                                                                         |
+Sandbox boundary controls do not establish deployed Pi inference or real Container acceptance.
+Local D1 and official local Cluster tests do not establish distributed runner transport or deployed storage behavior.
+Report those limits separately from the behavior exercised by each test.

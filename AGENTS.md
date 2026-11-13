@@ -76,7 +76,8 @@ Schema-parameterized factories must capture their codec when the factory is cons
 Use `Schema.DateTimeUtc` for internal timestamps and the official codecs for serialized ISO timestamps.
 Use the shared `JsonObject` schema for JSON snapshots and event payloads, not repeated unrestricted record schemas.
 Model each event kind with a discriminated union: node execution fields are required where applicable and absent otherwise.
-This application is unreleased: do not add backward-compatibility unions, legacy normalization, or fallback identity formats.
+This application is unreleased and has not been deployed: do not add backward-compatibility unions, legacy normalization, fallback identity formats, or migration paths for earlier development implementations.
+Keep the demo's explicit version-selection Example, but do not infer a broader compatibility requirement from it.
 Do not validate URLs with regular expressions.
 Use ordinary string operations for business constraints after parsing.
 Use a regular expression only when no suitable existing API or simple string operation fits, and document the specific reason beside it.
@@ -177,10 +178,15 @@ The official PiHarness owns durable conversation and operation state in its Dura
 Make recovery explicit and workflow-owned.
 Never promise generic replay or exactly-once external side effects.
 Use the shared Effect Machine foundation for JavaScript workflow execution and graph generation.
-Keep tasks, transitions, and version-specific metadata in each workflow definition; do not maintain a second visual edge list.
-Let Effect Machine compute transitions and guards, and let the shared Effect driver own checkpoint commits, lifecycle events, and registered hooks.
-Do not add a handwritten transition interpreter, artifact store, or competing in-memory source of durable state.
-Keep external task reconciliation, such as Pi command receipts, in the owning task adapter rather than in the common driver.
+Keep states, invokes, transitions, and version-specific metadata in each workflow definition; do not maintain a second visual edge list.
+Use ordinary Machine.start for pending runs and Machine.resume for saved native snapshots.
+Let the native Machine execute all business effects and automatically enter the next state's invoke.
+Keep only canonical D1 loading, codec and identity validation, checkpoint commits, ACK handling, and registered observation hooks in the shared persistence host.
+Do not add a task-map dispatcher, handwritten transition interpreter, artifact store, or competing in-memory source of durable state.
+Keep external operation reconciliation, such as Pi command receipts, inside Machine-owned invokes.
+Separate serializable native State from execution-scoped ResourceStore values such as clients and functions.
+Acquire volatile resources lazily with typed Context keys, share successful acquisition across that execution, and reacquire after native resume in a fresh execution Scope.
+Keep PiHarness conversation and operation persistence in its Durable Object, not in the Machine snapshot.
 Use `@typeonce/effect-machine` and its version-matched [agent guide](https://effect-machine.typeonce.dev/agent-guide/); this package is not an installed Effect core module.
 See [Workflow graphs](docs/workflow-graphs.md) for graph construction, execution, versioning, and recovery contracts.
 

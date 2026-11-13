@@ -142,17 +142,30 @@ export const makeDevelopmentSdk = Effect.gen(function* () {
   })
   const sandbox = DevelopmentSandbox.of({
     ensureSession: (runId) =>
-      io(() => harness.pi()).pipe(
-        Effect.andThen(
-          store
+      lock.withPermit(
+        Effect.gen(function* () {
+          // The machine-owned Pi node acquires its resource here. Activation only
+          // installs SDK descriptors, and cannot start a run or its workspace.
+          yield* io(() => lifecycle.start())
+          yield* state.storage.put('active-run-id', runId)
+          const renewAt = (yield* Clock.currentTimeMillis) + RENEW_AFTER_MS
+          yield* io(() => lifecycle.jobs.push({ id: LEASE_JOB, fn: LEASE_JOB, time: renewAt }))
+          yield* io(() => harness.pi())
+          const run = yield* store
             .getRun(runId)
             .pipe(
               Effect.mapError(
                 (cause) => new ExternalError({ operation: 'read development run', kind: 'storage', cause }),
               ),
-            ),
+            )
+          return session(run.status === 'completed' ? 'completed' : 'active')
+        }).pipe(
+          // The SDK adapter closes over its activation-owned native storage context.
+          Effect.provideContext(context),
+          Effect.mapError(
+            (cause) => new ExternalError({ operation: 'initialize Pi resource', kind: 'service', cause }),
+          ),
         ),
-        Effect.map((run) => session(run.status === 'completed' ? 'completed' : 'active')),
       ),
     submitTurn: (_runId, input) =>
       io(async (): Promise<TurnReceipt> => {
@@ -171,30 +184,18 @@ export const makeDevelopmentSdk = Effect.gen(function* () {
           : { commandId: decodeCommandId(result.operationId), status: 'failed', error: 'sdk_failure' }
       }),
     complete: (_runId) =>
-      io(async () => {
-        const pending = await harness.pending({ session: ROOT_SESSION })
-        if (pending.length !== 0) throw new Error('Pi session still has pending work')
-        return session('completed')
-      }),
+      lock.withPermit(
+        io(async () => {
+          const pending = await harness.pending({ session: ROOT_SESSION })
+          if (pending.length !== 0) throw new Error('Pi session still has pending work')
+          // Keep the lease until renew observes the committed terminal run.
+          // A failed final D1 ACK must leave the workspace recoverable.
+          return session('completed')
+        }),
+      ),
   })
   return {
     sandbox,
-    execute: <A, E, R>(runId: RunId, operation: Effect.Effect<A, E, R>) =>
-      Effect.promise(() => lifecycle.start()).pipe(
-        Effect.andThen(
-          lock.withPermit(
-            Effect.gen(function* () {
-              yield* state.storage.put('active-run-id', runId)
-              const renewAt = (yield* Clock.currentTimeMillis) + RENEW_AFTER_MS
-              yield* Effect.promise(() => lifecycle.jobs.push({ id: LEASE_JOB, fn: LEASE_JOB, time: renewAt }))
-              const result = yield* operation
-              const run = yield* store.getRun(runId)
-              if (run.status === 'completed') yield* Effect.promise(() => lifecycle.jobs.cancel(LEASE_JOB))
-              return result
-            }),
-          ),
-        ),
-      ),
     fetch: (request: Request) =>
       Effect.promise(async () => {
         const response = await host.backend.handleFetch(request)

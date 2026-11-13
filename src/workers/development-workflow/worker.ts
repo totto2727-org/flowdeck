@@ -63,7 +63,7 @@ const DevelopmentRunLive = DevelopmentRun.make(
       const respond = yield* makeRpcResponse.pipe(Effect.provideContext(context))
       const command = (operation: string, execute: typeof executor.start) => (input: RunId) =>
         decodeRunId(input).pipe(
-          Effect.flatMap((runId) => sdk.execute(runId, execute(runId))),
+          Effect.flatMap(execute),
           Effect.as(null),
           respond(operation),
           // Cloudflare invokes an exported handler outside the activation Effect.

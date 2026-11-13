@@ -4,8 +4,8 @@
 
 `D1ClusterMachineStorage` implements the official `ClusterMachine.Storage` service from `@typeonce/effect-machine/cluster`.
 It persists machine checkpoints and processed request IDs through the existing captured Alchemy D1 client and Reylo query runner.
-It is an opt-in integration capability, not a replacement for the current workflow driver.
-Existing workflow Workers, run Durable Objects, lifecycle events, and Pi task execution remain unchanged.
+It is an opt-in integration capability, independent from the ordinary Machine workflow runtime.
+Workflow Workers use native start/resume and invokes through the shared persistence host, not this Cluster adapter.
 
 Use this adapter with non-emitting machines and without an `enqueue` handler.
 It does not provide a durable Cluster mailbox, Sharding runtime, or atomic checkpoint-and-emission transaction.
@@ -71,7 +71,7 @@ The official adapter wraps request processing in `MessageStorage.withTransaction
 A separate D1 batch does not automatically join that transaction.
 This implementation guarantees checkpoint-and-receipt atomicity only, not atomicity with emitted messages or external side effects.
 A future durable D1 mailbox integration must give checkpoint writes and message insertion one actual transaction boundary before enabling emission guarantees.
-Migrating the existing workflow driver also requires an explicit design for its context, lifecycle events, task checkpoints, and recovery behavior.
+The application workflows instead use ordinary Machine invokes, explicit D1 checkpoints, and receipt reconciliation as described in [Workflow graphs](workflow-graphs.md).
 
 ## Verification
 
