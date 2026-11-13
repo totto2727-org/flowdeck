@@ -5,7 +5,7 @@
   "tsx": true,
   "tailwind": {
     "config": "",
-    "css": "src/workers/frontend/features/styles/app.css",
+    "css": "src/core/worker/frontend/feature/styles/app.css",
     "baseColor": "neutral",
     "cssVariables": true,
     "prefix": ""
@@ -13,11 +13,11 @@
   "iconLibrary": "lucide",
   "rtl": false,
   "aliases": {
-    "components": "@/workers/frontend/features/components",
-    "utils": "@/workers/frontend/features/lib/utils",
-    "ui": "@/workers/frontend/features/components/generated",
-    "lib": "@/workers/frontend/features/lib",
-    "hooks": "@/workers/frontend/features/hooks"
+    "components": "@/core/worker/frontend/feature/components",
+    "utils": "@/core/worker/frontend/feature/lib/utils",
+    "ui": "@/core/worker/frontend/feature/components/generated",
+    "lib": "@/core/worker/frontend/feature/lib",
+    "hooks": "@/core/worker/frontend/feature/hooks"
   },
   "menuColor": "default",
   "menuAccent": "subtle",

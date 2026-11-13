@@ -9,8 +9,8 @@ import { DurableObject } from 'cloudflare:workers'
 import { Context, Effect, Layer } from 'effect'
 import { HttpServerResponse } from 'effect/http'
 
-import { Store } from '@/features/workflow/services/store'
-import { makeDevelopmentSdk } from '@/workers/development-workflow/sdk-runtime'
+import { Store } from '@/core/feature/workflow/services/store'
+import { makePiSdk } from '@/core/worker/pi/sdk-runtime'
 
 const unexpected = Effect.die(new Error('Unexpected workflow persistence access'))
 const StoreLive = Layer.succeed(
@@ -35,7 +35,7 @@ export const entrypoint = Effect.gen(function* () {
       const environment = yield* WorkerEnvironment
       return Effect.gen(function* () {
         const state = yield* DurableObjectState
-        const sdk = yield* makeDevelopmentSdk.pipe(
+        const sdk = yield* makePiSdk.pipe(
           Effect.provide(StoreLive),
           Effect.provideService(WorkerEnvironment, environment),
         )

@@ -6,7 +6,7 @@ import { Miniflare } from 'miniflare'
 import { build } from 'vite-plus'
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vite-plus/test'
 
-import { Rfc9457ProblemDetails } from '@/features/workflow/rpc/problem'
+import { Rfc9457ProblemDetails } from '@/core/feature/workflow/rpc/problem'
 
 import type Parent from './fixtures/rpc-boundary-worker'
 

@@ -11,9 +11,9 @@ export default defineConfig({
   resolve: { tsconfigPaths: true },
   plugins: [
     reylo(),
-    effront({ application: './src/workers/frontend/features/entry.effront.tsx' }),
-    effrontAlchemy({ worker: './src/workers/frontend/worker.ts' }),
-    ...effrontTailwind({ stylesheet: './src/workers/frontend/features/styles/app.css' }),
+    effront({ application: './src/core/worker/frontend/feature/entry.effront.tsx' }),
+    effrontAlchemy({ worker: './src/core/worker/frontend/worker.ts' }),
+    ...effrontTailwind({ stylesheet: './src/core/worker/frontend/feature/styles/app.css' }),
   ],
   fmt: {
     arrowParens: 'always',

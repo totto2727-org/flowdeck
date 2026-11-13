@@ -8,7 +8,7 @@ import { Miniflare } from 'miniflare'
 import { build } from 'vite-plus'
 import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test'
 
-import { workspaceProxyBuild } from '@/workers/development-workflow/features/workspace-proxy-build'
+import { workspaceProxyBuild } from '@/core/worker/pi/feature/workspace-proxy-build'
 
 const caller = `export default { async fetch(request, env) {
   const stub = env.PROBE.getByName('test')
