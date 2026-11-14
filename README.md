@@ -99,13 +99,14 @@ Dependency installation keeps the frozen lockfile and repository release-age/bui
 
 ## Reference
 
-| Guide                                                         | Contents                                                                  |
-| ------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| [Pi development](docs/development-sandbox.md)                 | Task inputs, credentials, workspace setup, and acceptance limits.         |
-| [Workspace retention](docs/development-workflow-retention.md) | Workspace lifetime, costs, and recovery limits.                           |
-| [Workflow graphs](docs/workflow-graphs.md)                    | Graph definitions, execution, versioning, checkpoints, and recovery.      |
-| [RPC boundaries](docs/rpc-boundaries.md)                      | Error conversion, origin logging, Result codecs, and RFC 9457 details.    |
-| [ClusterMachine D1 storage](docs/cluster-machine-storage.md)  | Opt-in checkpoint storage, request deduplication, and transaction limits. |
+| Guide                                                         | Contents                                                                                   |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| [Pi development](docs/development-sandbox.md)                 | Task inputs, credentials, workspace setup, and acceptance limits.                          |
+| [Workspace retention](docs/development-workflow-retention.md) | Workspace lifetime, costs, and recovery limits.                                            |
+| [Common workflow nodes](docs/common-nodes.md)                 | PiHarness workspace backends, Workers AI text, resource lifetime, and verification limits. |
+| [Workflow graphs](docs/workflow-graphs.md)                    | Graph definitions, execution, versioning, checkpoints, and recovery.                       |
+| [RPC boundaries](docs/rpc-boundaries.md)                      | Error conversion, origin logging, Result codecs, and RFC 9457 details.                     |
+| [ClusterMachine D1 storage](docs/cluster-machine-storage.md)  | Opt-in checkpoint storage, request deduplication, and transaction limits.                  |
 
 ## Development
 
