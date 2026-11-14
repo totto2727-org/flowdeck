@@ -7,18 +7,6 @@ import { defineConfig } from 'vite-plus'
 
 const ignorePatterns = await generateIgnorePatterns(new URL('.', import.meta.url))
 
-// Keep the retained Rust implementation byte-for-byte unchanged until its separate removal PR.
-const retainedRustFormatting = [
-  '.agents/skills/develop-flowdeck-workflows/**',
-  'DESIGN.md',
-  'crates/graph-flow-jcode/docs/**',
-  'docs/architecture.ja.md',
-  'docs/history-sse-delta-plan.md',
-  'docs/plans/application-config.md',
-  'docs/plans/jcode-runtime-separation.md',
-  'src/app.css',
-]
-
 export default defineConfig({
   resolve: { tsconfigPaths: true },
   plugins: [
@@ -36,7 +24,7 @@ export default defineConfig({
     proseWrap: 'preserve',
     semi: false,
     singleQuote: true,
-    ignorePatterns: [...ignorePatterns, ...retainedRustFormatting],
+    ignorePatterns,
   },
   lint: {
     ignorePatterns,
