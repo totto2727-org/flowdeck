@@ -4,10 +4,10 @@ import { AssistantEntry, createRegistry, Harness, MemoryStorage, ToolTask } from
 import { Array } from 'effect'
 import { describe, expect, it, vi } from 'vite-plus/test'
 
-import { CONTAINER_BACKEND, createWorkspaceTools } from './workspace'
+import { CONTAINER_BACKEND, createWorkspaceTools, WORKER_SHELL_BACKEND } from './workspace'
 
 // Synthetic storage/runtime boundary: these checks do not start a Container or test persistence.
-const fixture = () =>
+const fixture = (backendId = CONTAINER_BACKEND) =>
   ({
     fs: {
       stat: vi.fn(async () => ({
@@ -35,7 +35,7 @@ const fixture = () =>
     },
     runtime: {
       backends: () => [
-        { id: CONTAINER_BACKEND, protocol: 'command' as const, callable: false, description: 'Runs shell commands.' },
+        { id: backendId, protocol: 'command' as const, callable: false, description: 'Runs shell commands.' },
       ],
       exec: vi.fn(async () => ({
         result: async () => ({ exitCode: 0, stdout: 'hello', stderr: '' }),
@@ -44,13 +44,20 @@ const fixture = () =>
   }) satisfies CreatePiToolsOptions['workspace']
 
 describe('Pi workspace tools', () => {
-  it.each([
-    { name: 'exec', arguments: { command: 'echo hello' }, fail: false },
-    { name: 'exec', arguments: { command: 'echo hello' }, fail: true },
-    { name: 'ls', arguments: { path: '/workspace' }, fail: false },
-    { name: 'read', arguments: { path: '/workspace/hello.txt' }, fail: false },
-  ])('commits Computer $name output to the durable model transcript (failure=$fail)', async (call) => {
-    const workspace = fixture()
+  it.each(
+    Array.flatMap([CONTAINER_BACKEND, WORKER_SHELL_BACKEND], (backendId) =>
+      Array.map(
+        [
+          { name: 'exec', arguments: { command: 'echo hello' }, fail: false },
+          { name: 'exec', arguments: { command: 'echo hello' }, fail: true },
+          { name: 'ls', arguments: { path: '/workspace' }, fail: false },
+          { name: 'read', arguments: { path: '/workspace/hello.txt' }, fail: false },
+        ],
+        (call) => ({ ...call, backendId }),
+      ),
+    ),
+  )('commits Computer $name output from $backendId to the durable model transcript (failure=$fail)', async (call) => {
+    const workspace = fixture(call.backendId)
     if (call.fail) workspace.runtime.exec.mockRejectedValue(new Error('container unavailable'))
     const context: Parameters<Harness['close']>[0] = {
       abortSignal: undefined,
@@ -58,12 +65,12 @@ describe('Pi workspace tools', () => {
       toString: () => '[workspace regression]',
     }
     const registry = createRegistry()
-    registry.install({ name: 'workspace', tools: createWorkspaceTools(workspace) })
+    registry.install({ name: 'workspace', tools: createWorkspaceTools(workspace, call.backendId) })
     const harness = await Harness.open(new MemoryStorage(), { models: createModels(), registry }, context)
     try {
       const root = await harness.root(context)
       const toolCall = { type: 'toolCall' as const, id: 'workspace-call', name: call.name, arguments: call.arguments }
-      const { execute } = createPiTools({ workspace, exec: { [CONTAINER_BACKEND]: {} } })
+      const { execute } = createPiTools({ workspace, exec: { [call.backendId]: {} } })
       const expected = await execute(toolCall)
       const task = await root.commit(async (tx) => {
         const assistant = await tx.appendEntry(AssistantEntry, root.id, {

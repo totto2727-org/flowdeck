@@ -2,18 +2,17 @@ import { getWorkspace, withWorkspace, type WorkspaceOptions } from '@cloudflare/
 import { ContainerBackend, withWorkspaceContainer } from '@cloudflare/computer/backends/container'
 import type { WebSocket as WorkerWebSocket } from '@cloudflare/workers-types'
 import { createRegistry, Harness } from '@earendil-works/pi-durable'
-import { PiHarness, ROOT_SESSION } from 'agents/harness/pi'
+import { PiHarness } from 'agents/harness/pi'
 import { Lifecycle, type LifecycleJobContext, type LifecycleJobOutcome } from 'agents/lifecycle'
 import { DurableObjectState, WorkerEnvironment } from 'alchemy/Cloudflare/Workers'
 import { DurableObject } from 'cloudflare:workers'
-import { Array, Clock, Effect, Schema, Semaphore } from 'effect'
+import { Clock, Effect, Schema } from 'effect'
 
-import { CommandId, SessionId, type Session, type TurnReceipt } from '@/core/feature/pi/model'
-import { PiSandbox } from '@/core/feature/pi/sandbox'
 import { ExternalError } from '@/core/feature/workflow/domain/errors'
 import { RunId } from '@/core/feature/workflow/domain/identity'
 import { Store } from '@/core/feature/workflow/services/store'
 
+import { makeHarnessSandbox } from './feature/harness-sandbox'
 import { makePiModels } from './feature/models'
 import { CONTAINER_BACKEND, createWorkspaceTools } from './feature/workspace'
 
@@ -22,8 +21,6 @@ const Environment = Schema.Struct({
   CLOUDFLARE_AI_GATEWAY_ID: Schema.String,
   CLOUDFLARE_AI_GATEWAY_API_KEY: Schema.String,
 })
-const decodeSessionId = Schema.decodeUnknownSync(SessionId)
-const decodeCommandId = Schema.decodeUnknownSync(CommandId)
 const decodeEnvironment = Schema.decodeUnknownEffect(Environment)
 const decodeRunId = Schema.decodeUnknownEffect(RunId)
 const LEASE_JOB = 'workspace-lease'
@@ -76,7 +73,6 @@ export const makePiSdk = Effect.gen(function* () {
   const store = yield* Store
   const env = yield* WorkerEnvironment.pipe(Effect.flatMap(decodeEnvironment), Effect.orDie)
   const context = yield* Effect.context<DurableObjectState | import('alchemy/RuntimeContext').RuntimeContext>()
-  const lock = yield* Semaphore.make(1)
 
   // Lifecycle's public constructor requires an actual native DurableObject host, and
   // withWorkspaceContainer reads that host's native ctx. Alchemy deliberately exposes
@@ -135,60 +131,18 @@ export const makePiSdk = Effect.gen(function* () {
       try: evaluate,
       catch: (cause) => new ExternalError({ operation: 'access Pi sandbox', cause, kind: 'service' }),
     })
-  const session = (status: Session['status']): Session => ({
-    sessionId: decodeSessionId(ROOT_SESSION),
-    model: model.id,
-    status,
-  })
-  const sandbox = PiSandbox.of({
-    ensureSession: (runId) =>
-      lock.withPermit(
-        Effect.gen(function* () {
-          // The machine-owned Pi node acquires its resource here. Activation only
-          // installs SDK descriptors, and cannot start a run or its workspace.
-          yield* io(() => lifecycle.start())
-          yield* state.storage.put('active-run-id', runId)
-          const renewAt = (yield* Clock.currentTimeMillis) + RENEW_AFTER_MS
-          yield* io(() => lifecycle.jobs.push({ id: LEASE_JOB, fn: LEASE_JOB, time: renewAt }))
-          yield* io(() => harness.pi())
-          const run = yield* store
-            .getRun(runId)
-            .pipe(Effect.mapError((cause) => new ExternalError({ operation: 'read Pi run', kind: 'storage', cause })))
-          return session(run.status === 'completed' ? 'completed' : 'active')
-        }).pipe(
-          // The SDK adapter closes over its activation-owned native storage context.
-          Effect.provideContext(context),
-          Effect.mapError(
-            (cause) => new ExternalError({ operation: 'initialize Pi resource', kind: 'service', cause }),
-          ),
-        ),
-      ),
-    submitTurn: (_runId, input) =>
-      io(async (): Promise<TurnReceipt> => {
-        const receipt = await harness.submit(input.prompt, { session: ROOT_SESSION, operationId: input.commandId })
-        return { commandId: decodeCommandId(receipt.operationId), status: 'running' }
+  const sandbox = yield* makeHarnessSandbox({
+    harness,
+    modelId: model.id,
+    initialize: (runId) =>
+      Effect.gen(function* () {
+        // The machine-owned Pi node acquires its resource here. Activation only
+        // installs SDK descriptors, and cannot start a run or its workspace.
+        yield* io(() => lifecycle.start())
+        yield* state.storage.put('active-run-id', runId)
+        const renewAt = (yield* Clock.currentTimeMillis) + RENEW_AFTER_MS
+        yield* io(() => lifecycle.jobs.push({ id: LEASE_JOB, fn: LEASE_JOB, time: renewAt }))
       }),
-    getTurn: (_runId, commandId) =>
-      io(async (): Promise<TurnReceipt | null> => {
-        const pending = await harness.pending({ session: ROOT_SESSION })
-        if (Array.some(pending, (operation) => operation.operationId === commandId))
-          return { commandId, status: 'running' }
-        const result = await harness.wait(commandId, { session: ROOT_SESSION })
-        if (result.reason === 'not_found') return null
-        return result.status === 'done'
-          ? { commandId: decodeCommandId(result.operationId), status: 'completed', text: result.text ?? '' }
-          : { commandId: decodeCommandId(result.operationId), status: 'failed', error: 'sdk_failure' }
-      }),
-    complete: (_runId) =>
-      lock.withPermit(
-        io(async () => {
-          const pending = await harness.pending({ session: ROOT_SESSION })
-          if (pending.length !== 0) throw new Error('Pi session still has pending work')
-          // Keep the lease until renew observes the committed terminal run.
-          // A failed final D1 ACK must leave the workspace recoverable.
-          return session('completed')
-        }),
-      ),
   })
   return {
     sandbox,

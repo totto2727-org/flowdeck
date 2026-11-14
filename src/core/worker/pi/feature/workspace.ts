@@ -3,16 +3,20 @@ import type { ToolExecutionResult, ToolRegistration } from '@earendil-works/pi-d
 import { Array, HashSet } from 'effect'
 
 export const CONTAINER_BACKEND = 'container'
+export const WORKER_SHELL_BACKEND = 'worker-shell'
 
 const replaySafe = HashSet.make('read', 'ls', 'find', 'grep', 'write', 'delete')
 
 // Pi-durable owns the loop; this boundary pairs Computer's declarations with its dispatcher.
-export const createWorkspaceTools = (workspace: CreatePiToolsOptions['workspace']): ToolRegistration[] => {
+export const createWorkspaceTools = (
+  workspace: CreatePiToolsOptions['workspace'],
+  backendId = CONTAINER_BACKEND,
+): ToolRegistration[] => {
   const { tools, execute } = createPiTools({
     workspace,
     shell: {
-      defaultBackend: CONTAINER_BACKEND,
-      backends: { [CONTAINER_BACKEND]: {} },
+      defaultBackend: backendId,
+      backends: { [backendId]: {} },
     },
   })
 
