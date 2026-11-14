@@ -1,0 +1,59 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme inline {
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-heading: var(--font-sans);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--foreground);
+  --color-muted: var(--secondary);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--border);
+  --color-ring: var(--primary);
+  --color-destructive: #b62e39;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.75rem;
+  --radius-4xl: 2rem;
+}
+
+:root {
+  color-scheme: dark;
+  --background: #101714;
+  --foreground: #e0ece5;
+  --card: #18221c;
+  --primary: #74d5a6;
+  --primary-foreground: #10271b;
+  --secondary: #24362b;
+  --muted-foreground: #a1b6a8;
+  --border: #35483b;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --background: #f7f9f8;
+  --foreground: #23322e;
+  --card: #fff;
+  --primary: #18795e;
+  --primary-foreground: #fff;
+  --secondary: #edf3ef;
+  --muted-foreground: #65736d;
+  --border: #e0e8e3;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}

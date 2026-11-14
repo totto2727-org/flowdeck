@@ -1,97 +1,294 @@
 # Flowdeck
 
-## Repository structure
+## Scope and layout
 
-```text
-src/                         Rust application, workflow engine integration, web routes, and browser assets
-src/workflows/               Code-defined workflow registry, definitions, and shared tasks
-crates/graph-flow-jcode/     Optional graph-flow node backed by the jcode SDK
-tests/                       Rust integration tests for workflow execution and lifecycle events
-docs/                        Architecture, design plans, and end-user images
-.agents/skills/              Repository-specific Codex workflow guidance
-Cargo.toml                   Rust package metadata, dependencies, and lint policy
-rust-toolchain.toml          Rust 1.95 toolchain, rustfmt, Clippy, and rust-src
-package.nix                  Installable Rust binary package
-topcoat.nix                  Reproducible Topcoat CLI 0.5 package
-flake.nix                    Nix package, overlay, and development shell
-Justfile                     Canonical development task entry points
-.github/workflows/           CI and FlakeHub publication workflows
-```
+This file serves contributors and maintainers.
+The ownership map and workflow addition rules are in [architecture](docs/architecture.md) and the [workflow addition checklist](docs/add-workflow.md).
+Flowdeck is one private Vite+ application and one Alchemy project.
+The application uses Effect 4, Effront, shadcn/ui, Cloudflare Workers, Durable Objects, and Reylo SQL queries with a shared D1 database.
 
-## Development commands
+- `src/core/worker/frontend/`: Frontend entry, Access implementations, and frontend-only features.
+- `src/core/worker/frontend/feature/`: Effront pages, ServerFns, dashboard, graph, and shadcn components.
+- `src/core/worker/control/`: Control entry and HTTP routes, with one static binding to the integration Worker.
+- `src/bridge/workflow/bridge/worker.ts`: Workflow integration entry point.
+- `src/bridge/workflow/`: Catalog, run commands, and fixed per-workflow bindings.
+- `src/user-land/workflow/demo/`: Workflow entry, run Durable Object, and demo-only execution features.
+- `src/user-land/workflow/development/`: development machine, prompts, checkpoints, and Worker assembly with shared Pi resources.
+- `sandbox/`: workspace image with the official `computerd` runtime.
+- `src/core/feature/pi/model.ts`: shared Pi command, session, and turn receipt schemas.
+- `src/core/feature/pi/sandbox.ts`: workflow-neutral `PiSandbox` capability.
+- `src/core/worker/frontend/definition.ts`, `src/core/worker/control/definition.ts`, and `src/bridge/workflow/core/definition.ts`: lightweight core Worker identities.
+- `src/user-land/workflow/development/definition.ts`: the lightweight `DevelopmentWorkflow` resource identity.
+- `src/user-land/workflow/development/worker.ts`: Effect Worker and Durable Object construction, including their complete runtime Layers.
+- `src/core/worker/pi/sdk-runtime.ts`: native `makePiSdk` adapter inside the Effect Durable Object.
+- `src/core/worker/pi/sdk-service.ts`: runtime-safe `PiSdk` service identity.
+- `src/core/worker/pi/run.ts` and `container.ts`: reusable `PiRun` and `PiContainer` identities.
+- `src/core/worker/pi/feature/workspace-proxy-build.ts`: the build hook retaining the SDK's required `WorkspaceProxy` export in Alchemy's generated entry.
+- `src/user-land/composition.ts`: final selection of the complete development or production application Layer.
+- `src/user-land/application.ts`: the complete Worker implementation graph and its fixed development and production dependencies.
+- `src/core/worker/frontend/runtime-composition.ts`: fixed frontend runtime capture assembly, separate from deployment resource provisioning.
+- `src/core/worker/frontend/assembly.ts`: native request binding decoding and typed Access audience injection.
+- `src/core/worker/database.ts`: the shared D1 resource declaration.
+- `src/core/feature/d1/`: reusable Alchemy execution and Reylo adaptation, independent from workflow policy and Worker resources.
+- `src/core/feature/cluster/`: official ClusterMachine checkpoint storage, codecs, and typed SQL, independent from workflow policy and Worker resources.
+- `src/core/feature/workflow/`: shared workflow values, graph projection, Machine execution, typed SQL persistence, and the `Workflows` service contract.
+- `src/core/feature/workflow/rpc/`: the application-specific workflow wire protocol, RFC 9457 profile, and sanitized RPC boundaries.
+- `src/core/feature/workflow/services/failures.ts`: aggregate application failures; domain constructors must not depend on transport types.
+- `schema/`: Atlas Pro schema definitions, including tables, constraints, indexes, and triggers.
+- `src/core/feature/workflow/services/queries/`: one Reylo-typed SQL statement per file.
+- `migrations/`: maintained D1 schema migrations.
+- `alchemy.ts` and `alchemy.run.ts`: all application resources in one project.
+- `vite.config.ts`: canonical development and validation tasks.
+- `src/user-land/resources.ts`: installed deployment resources, re-exported by `alchemy.ts`.
+- `src/share/feature/`: cross-layer identity utilities and operation logging.
+- `tests/integration/`: cross-layer D1 workflow, operation logging, and demo projection tests.
+- `tmp/`: ignored experiment output and temporary review evidence.
 
-### Execution rules
+Core must not import user-land, including tests, type-only imports, dynamic imports, and re-exports.
+Share must not import core, user-land, or bridge.
+User-land may import core and share.
+Core accesses installed workflow functionality only through the neutral Workflow bridge contract.
+Adding a workflow must not require a core edit.
+The bridge's `core` side remains workflow-neutral, its `user-land` side owns registration and fixed bindings, and its `bridge` side assembles both.
 
-- Run every command from the repository root.
-- Enter the pinned environment with `nix develop` or allow `.envrc` with `direnv allow`.
-- Use the `Justfile` tasks as the canonical command interface.
-- Use `just prebuild` to run `topcoat asset bundle`; `build` and `run` depend on it automatically.
-- `package.nix` invokes the pinned Topcoat CLI directly when bundling release assets; Just remains the local development interface.
-- Keep FlakeHub publication changes scoped to `.github/workflows/flakehub-publish-rolling.yml` and the root flake.
+## Commands
 
-### Standard tasks
+Run commands from this repository root with Vite+.
+Install the official Vite+ CLI locally with `curl -fsSL https://vite.plus | bash` before using these commands.
+Let Vite+ resolve Node.js and the package manager from the target project's configuration.
+Do not manage Vite+, Node.js, pnpm, Bun, or Deno with Nix.
+Do not install Deno directly in the Flowdeck image or assume that Vite+ manages Deno.
+The root Nix development shell supplies only non-JavaScript tools, currently `nixfmt`.
+Use `vp env install` to resolve Node.js from `engines.node` and the package manager from `packageManager` in `package.json`.
+Use `vp env current` to inspect resolution and `vp env use --unset` to clear stale session overrides.
+Use `vp install --frozen-lockfile` to install the locked dependencies.
+Use `vp run dev` for the local Alchemy application, `vp run check` for format and typed lint, `vp run test` for tests, and `vp run ci` for the complete configured checks.
+Declare every task as an object with `command`; use an empty command and `dependsOn` for `check` and `fix` aggregators.
+Keep task caching enabled by default and document any necessary exception.
+Keep schema input and development-database settings in `atlas.hcl`, not in task command arguments.
+Authenticate Atlas Pro locally with `atlas login` for migration generation.
+Use the standard Alchemy Cloudflare credentials when required.
+`alchemy.run.ts` selects `localState()` for local development and the official Cloudflare state backend for remote deployment through `ALCHEMY_DEV` at the entry point, separate from workflow data in D1.
+A backend configuration change does not migrate existing local infrastructure state.
+Before a first remote operation, confirm the account, state-store availability, and any required state migration; do not bootstrap or deploy without authorization.
+Set `CLOUDFLARE_AI_GATEWAY_ID` to an explicit existing Gateway ID, not a default or automatically created Gateway.
+Pi inference runs in the run Durable Object through the official pi-ai Gateway provider, not a Container proxy or native AI binding.
+Stop on missing authentication or permissions instead of trying to bypass them.
+The local development server must bind to loopback.
+Do not deploy, change DNS, or change Access policies without operator authorization.
 
-- `just fix` — Format Rust code and apply Clippy fixes.
-- `just check` — Check Rust formatting and lints.
-- `just prebuild` — Bundle Topcoat browser assets.
-- `just build` — Bundle assets and build the application with Cargo.
-- `just test` — Run Rust integration tests.
-- `just ci` — Run the complete local CI-equivalent suite.
-- `just run` — Bundle assets and start the loopback-only server.
+## Effect-first implementation
 
-## Architecture
+Write Effect programs, not imperative TypeScript with Effect wrappers.
+Use `@/` for imports from parent directories within `src/`, including test imports; keep same-directory imports relative.
+Use Effect Array, String, Record, Match, Schema, Clock, and collection APIs instead of equivalent standard-library APIs.
+Use `Schema.isUUID(4)`, `Schema.URLFromString`, and `Schema.SemVerFromString` instead of custom identity, URL, or version parsers.
+Keep ideal domain values independent from their serialized representation.
+Use official codecs at persistence and transport boundaries, including `Schema.SemVer` internally and its JSON/string codecs at those boundaries.
+Construct fixed schemas, decoders, encoders, and HTTP schema adapters once at module scope.
+Schema-parameterized factories must capture their codec when the factory is constructed, not when each value is processed.
+Use `Schema.DateTimeUtc` for internal timestamps and the official codecs for serialized ISO timestamps.
+Use the shared `JsonObject` schema for JSON snapshots and event payloads, not repeated unrestricted record schemas.
+Model each event kind with a discriminated union: node execution fields are required where applicable and absent otherwise.
+This application is unreleased and has not been deployed: do not add backward-compatibility unions, legacy normalization, fallback identity formats, or migration paths for earlier development implementations.
+Keep the demo's explicit version-selection Example, but do not infer a broader compatibility requirement from it.
+Do not validate URLs with regular expressions.
+Use ordinary string operations for business constraints after parsing.
+Use a regular expression only when no suitable existing API or simple string operation fits, and document the specific reason beside it.
+Represent state differences with tagged unions, not optional properties.
+An optional property may represent genuinely optional metadata, but its presence must not select a system state or execution path.
+Use a simple `if` when it is clearer, but do not introduce `for` loops or `switch` statements.
+Name non-obvious numeric constants at module scope in the owning file instead of embedding magic numbers in calculations.
+Create a separate constants file only when multiple files share the values.
+Use Effect HttpClient for HTTP clients and Effect HTTP for API routing and responses.
+Use native Request, Response, Promise, and Cloudflare binding interfaces only in the smallest adapters required by the runtime or a typed library.
+Document each unavoidable interoperability boundary.
+Compose dependencies with Context services and Layers at entry points.
+Build a complete production or test Layer graph per Worker or Durable Object runtime, and acquire stable dependencies when constructing each service.
+Do not provide dependencies again inside individual service operations.
+Any unavoidable lower-level provide must explain the runtime constraint and why composition at the entry point cannot replace it.
+Prefer Alchemy's Effect APIs over direct Cloudflare platform calls.
+Use `raw` only at a necessary interoperability boundary, with a detailed explanation of the missing Effect API, the native consumer, and the scope of native access.
+Do not use `raw` to recreate execution behavior already supplied by Alchemy or Effect.
+Prefer the established Effect, Effront, and Effect HTTP extension points over custom function wrappers or argument-based dependency injection.
+Define HTTP interception, error translation, and failure logging as registered Middleware.
+Log failures once at each service's outer operation boundary, retaining the original cause and stack in that service's logs rather than logging again in storage adapters.
+Treat RPC as an external API boundary: validate requests and return only Schema-encoded JSON text.
+Use the official `Schema.Result` JSON codec for RPC replies and `Result.isSuccess` or `Result.isFailure` to inspect decoded values, not direct `_tag` comparisons.
+Log the original failure with a unique error ID before sending an RFC 9457 problem, and create a new local error at the caller with that validated problem as its required cause.
+Do not revive child exceptions or propagate their stacks and internal causes across RPC.
+See [RPC boundaries](docs/rpc-boundaries.md).
 
-### Workflow definitions
+| Error contract                                                                                                                              | Enforcement                                                                                                                                 |
+| ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Domain `Conflict` has only a message. `StorageConflict` requires an operation and cause. Do not add an optional cause to merge these cases. | Constructor type assertions in `src/core/feature/workflow/domain/errors.test.ts`, checked by `check:tsc`; D1 and RPC/HTTP regression tests. |
+| RPC replies contain JSON only. Child diagnostics stay in child logs, correlated by the problem's `instance`.                                | JSON-only RPC service signatures and `rpcResponse` type assertions; codec, HTTP, and real native Worker RPC boundary tests.                 |
 
-- `src/workflows.rs` is the shared registry imported by the application and web layers.
-- Each workflow owns its definition below `src/workflows/<workflow>/definition.rs`.
-- Run arguments become the initial graph-flow context before the first task executes.
-- Manual and cron-triggered runs use the same workflow service and trace model.
+Keep workflow effects independent from deployment configuration.
+Select infrastructure-specific implementations only when injecting dependencies at the final composition boundary.
+Select the complete `DevelopmentLayer` or `ProductionLayer`, not individual feature Layers, at the deployment entry.
+Keep native runtime capture in a separate fixed composition so it does not initialize sibling Workers or redeclare Access resources.
+Decode environment bindings in assembly adapters and inject typed values into authorization logic.
+Do not branch on development flags, deployment stages, or infrastructure phases inside feature logic or request authorization.
+Keep Worker-specific features with their Worker, reusable capabilities under `src/core/feature/`, and cross-layer utilities under `src/share/feature/`.
+Keep reusable D1 execution free of workflow error translation, SQL files, and application resource imports.
+Keep ClusterMachine storage dependent only on the shared D1 capability, not workflow policy or Worker resources.
+Its D1 batch covers checkpoints and request receipts, not MessageStorage emissions; see [ClusterMachine D1 storage](docs/cluster-machine-storage.md).
+Keep workflow domain modules independent from services and transport; aggregate cross-boundary failures at the application service boundary.
+The compiler-backed tests in `tests/feature-boundaries.test.ts` enforce these import boundaries.
+Use explicitly named modules instead of `index.ts` by default.
+Use Atlas Pro HCL for SQLite tables, constraints, indexes, and triggers, with generated SQL migrations consumed by Alchemy.
+Keep Atlas-generated migrations unchanged by default.
+Correct the HCL source and regenerate instead of patching SQL.
+This application is undeployed: keep one generated initial migration rather than compatibility migrations.
+After deployment, keep applied migrations immutable and generate new migrations for schema changes.
+Use Reylo Content Mapper SQL imports for typed queries, not handwritten table interfaces or a query builder.
+Keep schema analysis local: Reylo reads `schema/schema.hcl` directly through the fork's HCL schema source, without Atlas preparation or database files.
+Reylo parses native HCL directly through the maintained HashiCorp source port and analyzes a static SQLite schema in the published upstream native engine child process.
+Do not add Atlas subprocesses, Go runtime calls, or file-backed databases to SQL import analysis.
+Atlas is reserved for migration generation, HCL formatting, and definition validation.
+Use Atlas CLI tasks only for migration creation and validation with `--dev-url "sqlite://dev?mode=memory"`, never `schema apply` or a file-backed development database.
+Use `vp run check` for complete TypeScript 7.1 Content Mapper checking plus Vite+ format and type-aware lint.
+The `check:tsc` task is temporary: Vite+ 1.4.0 cannot load this project's SQL Content Mappers.
+Remove that task, its dependency, and the `typeCheck: false` opt-out when `vp check` supports them.
+Use `fix` for Atlas HCL formatting and `check` for definition validation with an in-memory development database.
+Keep existing `check` and `test` task names; do not add automatic migration checksum or schema drift validation.
+Use the published `@totto2727/reylo` and `@totto2727/reylo-sqlite` packages at matching versions.
+Do not replace registry dependencies with package links, Reylo patches, or fork checkout/build steps in CI.
+Use `@totto2727/reylo/effect` with an Alchemy-backed `QueryExecutor` Layer composed at each runtime root.
+Capture `makeQueryRunner` when constructing the query service, not when executing each operation.
+Keep receipt, state, and event writes in one native D1 batch using Reylo's public Effect `prepare` contract.
+Prepare and bind statements before calling the batch Effect.
+Its `PreparedStatement[]` input and the real-D1 test `executes already prepared statements without preparing inside batch` enforce this boundary.
+Use Alchemy's Effect-native D1 executor for reads and atomic batches; do not extract its raw binding and recreate Promise-to-Effect execution wrappers.
+Do not add a custom SQL compiler or batch-binding patch; see [database workflow](docs/database.md).
 
-### Execution state
+## Workflow invariants
 
-- Workflow definitions, active runs, bounded terminal history, scheduler state, and traces are process-local and in memory.
-- A process-wide semaphore bounds concurrent drivers, while terminal snapshots use fixed-capacity ring retention.
-- Each observable task returns control after one graph-flow step so the current node and edge can be retained.
-- Node and edge traces expose state, start and finish timestamps, duration, output or error, and route selection.
+Keep one Worker per workflow and one logical Durable Object ID per run.
+Use the additional `Workflow` integration Worker as Control's only workflow service binding.
+Keep catalog, initial run persistence, and per-workflow routing in that Worker, not in Control.
+Treat each workflow as an independent application module.
+Keep workflow IDs, supported versions, input schemas, initial snapshots, and graphs in that workflow's own feature files.
+Define different workflow versions separately and select them at the version boundary rather than branching inside a shared graph or behavior definition.
+Share processing only where the version behavior is identical.
+The shared `WorkflowDefinition` and `WorkflowExecutor` interfaces contain no individual workflow knowledge.
+Compose workflow-provided definitions and static bindings in `src/bridge/workflow/user-land/feature/registration.ts` and its sibling `environment.ts` and `workflow-binding.ts`.
+The integration service and frontend consume that registry and its catalog mechanically, without workflow-specific branches.
+Workflow versions are official `SemVer` values internally and strings only at explicit persistence and transport codecs.
+Use static service bindings only.
+Keep the workflow entry point a thin router to a Durable Object stub.
+Store the selected implementation version and immutable graph reference when a run is created.
+Keep node definition identity separate from execution identity and retry attempt.
+Use `UserDefinedId` for caller-defined identifiers and `makePrefixedUUIDv4(prefix)` for app-owned random identifier schemas from `src/share/feature/identity/id.ts`.
+Infer each ID type from its Schema, without brands or duplicate handwritten types.
+`makePrefixedUUIDv4(prefix)` returns `{ schema, make }`; define each named Schema and Crypto-backed factory in the feature that owns the identifier.
+Do not add a central ID-kind registry or a `randomId(kind)` dispatcher.
+Use timestamps and indexed sequence columns for ordering, not UUIDv7 or time embedded in an ID.
+Keep framework-owned session, operation, and resource identity contracts distinct from application-generated IDs.
+Persist state and events atomically with revision checks, and acknowledge only after commit.
+Treat committed shared-DB workflow state as canonical, not DO memory or pending promises.
+The official PiHarness owns durable conversation and operation state in its Durable Object storage.
+Make recovery explicit and workflow-owned.
+Never promise generic replay or exactly-once external side effects.
+Use the shared Effect Machine foundation for JavaScript workflow execution and graph generation.
+Keep states, invokes, transitions, and version-specific metadata in each workflow definition; do not maintain a second visual edge list.
+Use ordinary Machine.start for pending runs and Machine.resume for saved native snapshots.
+Let the native Machine execute all business effects and automatically enter the next state's invoke.
+Keep only canonical D1 loading, codec and identity validation, checkpoint commits, ACK handling, and registered observation hooks in the shared persistence host.
+Do not add a task-map dispatcher, handwritten transition interpreter, artifact store, or competing in-memory source of durable state.
+Keep external operation reconciliation, such as Pi command receipts, inside Machine-owned invokes.
+Separate serializable native State from execution-scoped ResourceStore values such as clients and functions.
+Acquire volatile resources lazily with typed Context keys, share successful acquisition across that execution, and reacquire after native resume in a fresh execution Scope.
+Keep PiHarness conversation and operation persistence in its Durable Object, not in the Machine snapshot.
+Use `@typeonce/effect-machine` and its version-matched [agent guide](https://effect-machine.typeonce.dev/agent-guide/); this package is not an installed Effect core module.
+See [Workflow graphs](docs/workflow-graphs.md) for graph construction, execution, versioning, and recovery contracts.
 
-### Web surface
+## Frontend and infrastructure
 
-- Topcoat serves the dashboard and JSON API on `127.0.0.1:3000`.
-- Rust components render topology, history, and trace fragments; Datastar actions and SSE patches preserve accessible node and edge selection without application-specific JavaScript.
-- Only the topology and history regions own horizontal overflow at narrow viewport widths.
+Use Effront and the shadcn Base UI components referenced in `SHADCN.md`.
+Use Tailwind utilities and components for application styling.
+Keep `src/core/worker/frontend/feature/styles/app.css` limited to Tailwind imports and shadcn theme tokens and base configuration.
+Do not add application-specific selectors or global component styles there.
+Do not write application-specific raw CSS when Tailwind utilities or normal components can express it.
+For a structurally unavoidable exception, document its purpose, why standard alternatives cannot satisfy the requirement, why the chosen solution is appropriate, and its exact scope beside the implementation.
+An undocumented exception is not permitted; documenting one makes it reviewable, not automatically approved.
+Keep canonical data on the server and client state limited to selections, drafts, and operation feedback.
+Preserve independent active, traversed, and selected graph states with pointer and keyboard access.
+Use `flowdeck.totto2727.dev` as the public frontend domain.
+Keep Control API and workflow Workers private, with public `workers.dev` endpoints and previews disabled.
+Declare Cloudflare Access with the public frontend in the same Alchemy project.
+Reference the existing Pulumi-managed `allowSaml` policy through `FLOWDECK_ACCESS_POLICY_ID`; do not create duplicate policies, groups, or email allowlists.
+Production access must fail closed without that reusable policy reference.
+Use fixed development environment values and the official `dev.access` simulation, never an internal development-mode authorization branch.
+Keep authentication error responses in Effect HTTP middleware, not Worker resource definitions.
+Local development does not modify Cloudflare resources.
 
-### Packaging and automation
+## Pi development integration
 
-- `package.nix` builds the Cargo binary from `Cargo.lock` through `rustPlatform.buildRustPackage`.
-- `topcoat.nix` builds Topcoat CLI 0.5.0 from its crates.io release for development and application asset bundling.
-- `package.nix` invokes the release-profile Topcoat asset bundler after compiling and installs the resulting bundle beside the application binary.
-- `flake.nix` exposes the application and Topcoat CLI packages, the default overlay, and a development shell containing rustup, Just, and Topcoat CLI.
-- `.github/workflows/ci.yml` enters the flake environment and runs `just ci` for pull requests and pushes to `main`.
-- `.github/workflows/flakehub-publish-rolling.yml` publishes the root flake as a public rolling release after pushes to `main`.
+Use the official `PiHarness` from `agents/harness/pi` with `@earendil-works/pi-durable` `Harness` in the run Durable Object.
+The harness owns durable conversation and operation execution; D1 owns workflow checkpoints and events.
+Use `@cloudflare/computer` Workspace with `ContainerBackend` and install `createPiTools` declarations and dispatch through the official pi-durable registry.
+Do not embed the Pi SDK, a custom HTTP runner, or an inference proxy in the Container.
+The Container runs official `computerd` and repository tools, not the agent loop.
+Preserve one session and checkout per run, with explicit workflow resume.
+Use workflow ID `jcode-development` and infrastructure resource name `JcodeSandbox`; neither is a random identity.
+Use **Pi development** for the frontend label.
+Runs use runtime `pi-harness`; do not accept legacy direct-SDK histories.
+Use official `ROOT_SESSION = '1'`, scoped by the run Durable Object, not a global session ID.
 
-## Development tools
+Keep the fixed model `custom-opencode-go/deepseek-v4.1-flash` in the Durable Object's official pi-ai provider configuration.
+Use `cloudflareAIGatewayAuth` and `withOpenCodeSessionHeader` rather than a custom transport.
+Keep `Config.Redacted('CLOUDFLARE_AI_GATEWAY_API_KEY')` as a native Worker `secret_text` binding, used only by the run Durable Object.
+Provider keys remain in Gateway stored BYOK.
+Do not pass inference credentials to Workspace tools, Container environment, images, build arguments, or task prompts.
 
-- **Rust and Cargo**: Build and test the server and workflow engine integration.
-- **rustfmt and Clippy**: Enforce Rust formatting and lint policy.
-- **Topcoat**: Render and serve the local dashboard and bundle browser assets.
-- **graph-flow**: Execute the code-defined workflow graphs.
-- **Nix flakes**: Pin the development environment and build the installable Rust package.
-- **Just**: Provide the canonical local task interface used by CI.
-- **direnv**: Load the default flake development shell from `.envrc`.
-- **GitHub Actions and FlakeHub**: Validate the repository and publish rolling flake releases.
+Keep all image stages in `sandbox/Dockerfile`, with `ubuntu:26.04` as the operating-system base.
+Use stage `nix` for Nix installation, `sandbox` for Home Manager provisioning, and final stage `workspace` for FUSE prerequisites and the official computerd binary.
+Copy `/usr/local/bin/computerd` from `ghcr.io/cloudflare/computer-computerd-linux-x64:0.5.1`; do not copy the provisioned root filesystem into the official scratch image.
+Keep the standalone flake and custom package definitions under `sandbox/nix/`, without monorepo flake inputs or local sibling dependencies.
+Do not restore a monorepo overlay dependency.
+Use `build:nix` and `build:sandbox` to build the corresponding targets from this Dockerfile with `sandbox/` as the context.
+For the x64 workspace, use `DOCKER_DEFAULT_PLATFORM=linux/amd64` when building images or starting local Alchemy development.
+The final workspace build includes both provisioning stages; it does not require separately built or published Flowdeck base images.
+Keep the generic base tasks architecture-neutral.
+Keep Vite+ task caching disabled for `build:nix` and `build:sandbox`, while retaining Docker's layer cache.
+These tasks produce Docker daemon images, not cache-restorable repository files.
+See [sandbox image maintenance](sandbox/README.md) for provenance, build targets, and validation limits.
+Keep Alchemy's workspace context at `sandbox`, not the repository root.
+Set optional `FLOWDECK_WORKSPACE_IMAGE` only to a prepared official-computerd-compatible image at resource composition.
+Otherwise build the workspace Dockerfile, with `FLOWDECK_PI_DOCKERFILE` available as a Dockerfile override.
+There is no `WORKSPACE_IMAGE` Dockerfile base argument.
+A prepared image must contain the official runtime, shell, and FUSE prerequisites; this is not support for an arbitrary untouched image.
+Install official Vite+ in the final workspace stage as `sandbox`, with `VP_HOME=/home/sandbox/.vite-plus` and `VP_NODE_MANAGER=yes`.
+Keep its `bin` directory on `PATH`; the workspace supplies global `vp`.
+Do not bake fixed project Node.js or package-manager versions into the image.
+Use the target project's `vp env` configuration to resolve them, and preserve its declared package manager and lockfile.
+Use `nix develop` or a minimal temporary `nix shell` only for required non-JavaScript tools.
+Nix's internal Bun build dependency for the existing oo and Monid packages is separate from user-facing Bun management.
+Run computerd and repository tools as `sandbox`, with `HOME=/home/sandbox` and checkout `/workspace/project` through Computer Workspace.
+Do not modify the original monorepo images for Flowdeck-specific requirements.
+The original generic image's lightweight tool inventory remains tracked in [monorepo #384](https://github.com/totto2727-org/monorepo/issues/384).
 
-## Package-specific rules
+Read [sandbox setup and acceptance limits](docs/development-sandbox.md) before changing this integration and [workspace retention](docs/development-workflow-retention.md) before changing lifetime behavior.
+Use official Lifecycle jobs to renew the six-hour native inactivity timeout every five hours without advancing workflow nodes or restarting stopped Containers.
+A real PiHarness run completed both implementation and explicit-resume verification in the same Container and root session.
+Before the official Vite+ provisioning change, independent temporary-Nix checks passed five tests, format/type/lint checks, direct build, and five built public-export cases.
+Normal cached target CI still fails with `spawn EINVAL`, and Pi used prohibited `--no-cache` flags, so full policy-compliant acceptance remains incomplete.
+Do not transfer direct-SDK results, operation completion, or cache-disabled checks into a claim of normal target CI success.
+Track [credential isolation #10](https://github.com/totto2727-org/flowdeck/issues/10), [workspace-loss recovery #11](https://github.com/totto2727-org/flowdeck/issues/11), [local Alchemy startup #12](https://github.com/totto2727-org/flowdeck/issues/12), [native AI binding validation #13](https://github.com/totto2727-org/flowdeck/issues/13), and [dependency provisioning and cached tasks #14](https://github.com/totto2727-org/flowdeck/issues/14) as concerns requiring assessment under this architecture, not as evidence of its acceptance.
+Native AI binding validation is separate from the current pi-ai HTTPS Gateway provider.
+Keep the frontend build concern separate as well.
 
-- Use English for repository-recorded artifacts, including source code, configuration, documentation, and commit messages.
-- Use Japanese for human-facing collaboration and handoff text.
-- Keep the server bound to `127.0.0.1`; this project is local-only.
-- Define workflows directly in Rust. Do not add a browser workflow editor without an explicit requirement.
-- Keep run history and workflow state in memory until persistence is explicitly requested.
-- Preserve workflow-owned input defaults and validate run input at the HTTP boundary.
-- Preserve active, traversed, and selected graph states independently and keep trace details accessible by pointer and keyboard.
-- Do not add Rig, OpenCode, or Codex integration until workflow execution requires them.
-- Use [`develop-flowdeck-workflows`](./.agents/skills/develop-flowdeck-workflows/SKILL.md) when creating, changing, or diagnosing a code-defined workflow contract.
-- Keep `README.md` user-facing, keep this file developer-facing, and preserve `CLAUDE.md` as the relative alias to this file.
+## Validation and artifacts
 
-_This AGENTS.md was generated from the [share-artifact skill](https://raw.githubusercontent.com/totto2727-org/agent/refs/heads/main/plugins/totto2727-coding/skills/share-artifact/SKILL.md) and [AGENTS template](https://raw.githubusercontent.com/totto2727-org/agent/refs/heads/main/plugins/totto2727-coding/skills/share-artifact/agents/template.md)._
+Keep CI JavaScript setup in the shared `setup-typescript` action, which delegates to `setup-vp`.
+Do not add separate `setup-node`, Nix setup or evaluation, or forced JavaScript version inputs to Flowdeck CI.
+Follow the workspace coding and test skills.
+Apply every skill in the workspace's DietrichGebert/ponytail skill set when reviewing changes, and record inapplicable checks with a reason.
+Use observable tests for version pinning, commit/ACK ordering, conflicts, duplicate events, graph projection, and recovery after runtime replacement.
+Keep maintained tests and design documentation in Git.
+Keep one-off reports, external skill checkouts, screenshots, and experiment output under ignored `tmp/`.
+Keep code, repository documents, and commit messages in English.
+Use Japanese for collaboration and final handoff.
+Preserve `CLAUDE.md` as the relative alias to this file.

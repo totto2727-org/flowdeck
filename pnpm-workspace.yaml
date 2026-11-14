@@ -1,0 +1,33 @@
+packages:
+  - .
+
+# Official Vite+ bundled toolchain: https://viteplus.dev/guide/migrate
+overrides:
+  vite@*: npm:@voidzero-dev/vite-plus-core@1.4.0
+  vitest@*: 5.0.5
+
+minimumReleaseAge: 1440
+minimumReleaseAgeStrict: true
+# TODO: Remove these user-approved release-age exceptions after 2026-11-09T16:46:00Z.
+minimumReleaseAgeExclude:
+  - '@totto2727/reylo@0.7.1'
+  - '@totto2727/reylo-sqlite@0.7.1'
+  # TODO: Remove these approved exact-version exceptions after 2026-11-10T12:45:19.626Z.
+  # Latest registry publication: @effront/core@0.4.1, 2026-11-09T12:45:19.626Z.
+  - '@effront/alchemy@0.4.1'
+  - '@effront/core@0.4.1'
+  - '@effront/tailwind@0.4.1'
+  - '@effront/vite@0.4.1'
+
+# Only the native build tools required by Cloudflare's local runtime are trusted.
+allowBuilds:
+  '@google/genai': false
+  protobufjs: false
+  esbuild: true
+  workerd: true
+  core-js-pure: false
+  '@mongodb-js/zstd': false
+  node-liblzma: false
+
+patchedDependencies:
+  alchemy@2.0.0-beta.83: patches/alchemy@2.0.0-beta.83.patch

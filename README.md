@@ -1,82 +1,126 @@
 # Flowdeck
 
-A local workflow cockpit for running, scheduling, and inspecting code-defined workflows. Flowdeck helps you launch runs, follow their progress, explore workflow topology, review recent history, and inspect results from a local web interface.
+Flowdeck runs code-defined workflows and displays their graphs, state, and events.
+It is an experimental Cloudflare application.
 
 ## Usage
 
-![Flowdeck showing a completed sample workflow, its topology, and execution history](./docs/images/flowdeck-workflow.png)
+Open <http://127.0.0.1:4380> after [setup](#setup).
 
-Start Flowdeck through one of the setup options, then open <http://127.0.0.1:3000/>. Choose a bundled sample, enter its run arguments, and select **Run workflow**. Follow the highlighted route as the run progresses, then select a step or transition with a pointer, Enter, or Space to inspect its status, timing, output, and errors.
+1. Select **Release checkpoint**, choose a version, and select **Start run**.
+2. Select a graph node to inspect its state and events.
+3. Select **Resume run** at manual approval to continue execution.
+4. Refresh the page to read the saved run history.
 
-The bundled workflows demonstrate the interface only. Application developers define concrete workflows in Rust and rebuild Flowdeck to register them. Flowdeck is local and non-persistent, so run history remains available only while the application is running.
+For agent-assisted coding tasks, see [Pi development setup and limits](docs/development-sandbox.md).
 
 ## Key features
 
-- Run code-defined workflows from a local web interface.
-- Use a workflow-specific input form to enter and validate each run's arguments.
-- Define recurring schedules and their skip-or-overlap policy in Rust for runs that would start while an earlier run is still active.
-- Automatically laid out SVG topology with external self-loop routing and active, traversed, selected, and execution-count states.
-- Per-execution node and edge traces with timestamps, elapsed time, state, output, errors, and exact `StepId` history.
-- Review recent runs and keep selected history filters in bookmarkable URLs.
-- Navigate workflow details with a pointer or keyboard.
-- Add optional coding-agent steps, with jcode as one example.
-
-## All Code
-
-Flowdeck follows an **All Code** approach. Workflow structure, schedules, inputs, validation, and execution rules are explicit Rust code. Define the workflow you need, rebuild Flowdeck, and review every change through normal version control.
-
-Flowdeck deliberately provides no low-code or no-code workflow layer, visual workflow editor, or configuration DSL. Runtime values such as provider settings and credentials remain external inputs, but they do not define the workflow. With modern AI-assisted development, low-code and no-code representations offer no meaningful advantage in either version control or implementation cost, so Flowdeck keeps workflow definitions in Rust to maximize extensibility, compiler-checked correctness, and runtime performance.
+- Versioned workflows with immutable run graphs.
+- Shared Effect Machine transitions and Effect tasks, with execution and visual graphs derived from one definition.
+- Saved checkpoints, explicit resume, and recovery.
+- Graph navigation and inspection of state and ordered events.
+- A Pi development workflow for implementation and verification in one workspace.
 
 ## Prerequisites
 
-- **Nix**: Install Nix with flakes enabled on `aarch64-darwin`, `aarch64-linux`, or `x86_64-linux` to run or install the packaged application.
+| Requirement                                       | Purpose                                                            |
+| ------------------------------------------------- | ------------------------------------------------------------------ |
+| [Official Vite+ CLI](https://viteplus.dev/guide/) | Resolve Node.js and the package manager from project settings.     |
+| Alchemy Cloudflare credentials                    | Access the intended Cloudflare account.                            |
+| Alchemy Cloudflare state store                    | Store remote deployment state; local development uses local state. |
+| `FLOWDECK_ACCESS_POLICY_ID` for remote deployment | Reference the existing Pulumi-managed SAML Access policy.          |
+| Published Reylo packages from the lockfile        | Analyze SQL imports against the HCL schema.                        |
+
+Pi tasks also require Docker and configured inference access.
+See the [Pi prerequisites](docs/development-sandbox.md) before starting a task.
 
 ## Setup
 
-### Run without installing
+Clone the repository and enter its directory:
 
-```bash
-nix run github:totto2727-org/flowdeck
+```sh
+git clone https://github.com/totto2727-org/flowdeck.git
+cd flowdeck
+vp env install
+vp install --frozen-lockfile
 ```
 
-### Install
+Complete the [local setup](docs/database.md#local-analysis-and-checks), then start the application:
 
-```bash
-nix profile add github:totto2727-org/flowdeck
+```sh
+vp run dev
 ```
 
-### Nix flake
+> [!IMPORTANT]
+> Remote deployment can create or update Alchemy's Cloudflare state store.
+> Confirm the target account and authorize any required state-store setup before deploying.
+> Changing the backend does not transfer existing local infrastructure state.
 
-```nix
-{
-  inputs.flowdeck.url = "github:totto2727-org/flowdeck";
+Remote deployment attaches the existing `allowSaml` policy from [Pulumi's Cloudflare definitions](https://github.com/totto2727-org/monorepo/blob/main/infra/cloudflare/src/access-policy.ts).
+Set `FLOWDECK_ACCESS_POLICY_ID` to that policy's deployed ID, not the SAML group or identity-provider ID.
+Alchemy owns the Flowdeck Access application, not the shared policy or group.
+The deployment composition selects one complete `DevelopmentLayer` or `ProductionLayer` from `src/user-land/application.ts`.
+Both Layers assemble the same Worker implementation graph, with fixed dependencies for their environment.
+The Effront runtime uses a separate fixed capture assembly so it does not provision sibling Workers or recreate the Access application.
+Request assembly decodes the native audience binding and injects a typed expected audience into the same authorization logic in every environment.
+Local development supplies a fixed audience and identity through Alchemy's `dev.access` without an authorization bypass.
 
-  outputs = { flowdeck, ... }: {
-    packages = flowdeck.packages;
-  };
-}
-```
+## Automatic production deployment
 
-## Optional coding-agent setup
+[Deploy production](.github/workflows/deploy.yml) is separate from [CI](.github/workflows/ci.yml).
+It runs only after successful push CI on `main` in this repository and checks out that run's exact `head_sha`.
+Pull request CI does not deploy, and there are no preview deployments.
+The workflow must be present on the default branch before `workflow_run` can trigger it.
+Production deployments share one non-cancelling concurrency group; GitHub can replace older pending runs, so this is not a FIFO release queue.
 
-Only workflows that use the optional jcode integration need this setup. Install the revision validated by Flowdeck:
+Configure these settings in the GitHub `production` environment before enabling deployment:
 
-```bash
-cargo install --git https://github.com/1jehuang/jcode --rev a63dbc4546895ecb4d1be1a285d98e6e13fb1b74 --locked jcode
-```
+| Kind     | Name                            | Purpose                                                                                                                                           |
+| -------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Variable | `CLOUDFLARE_ACCOUNT_ID`         | Intended Cloudflare account.                                                                                                                      |
+| Variable | `CLOUDFLARE_AI_GATEWAY_ID`      | Explicit existing AI Gateway with configured stored BYOK.                                                                                         |
+| Variable | `FLOWDECK_ACCESS_POLICY_ID`     | Existing Pulumi-managed `allowSaml` policy ID.                                                                                                    |
+| Secret   | `CLOUDFLARE_API_TOKEN`          | Alchemy provisioning access for the application's Workers, D1, Containers/images, Access application/domain, and official Cloudflare state store. |
+| Secret   | `CLOUDFLARE_AI_GATEWAY_API_KEY` | Gateway authentication, deployed as the development workflow Worker's secret binding.                                                             |
 
-Set `JCODE_BIN` to the installed executable, then follow the [GlossShift configuration guide](https://github.com/totto2727-org/glossshift/blob/66fad64044a49e22879fb5eceed0e9b19457fca3/README.md#configuration) to place `config.toml` and `credentials.toml` under `$XDG_CONFIG_HOME/glossshift` or `~/.config/glossshift`.
+Credentials are supplied only to the deploy step, not dependency installation or CI.
+Use environment protection rules to control production authorization.
+Before the first approved run, confirm the account, official Cloudflare state-store availability, any required migration from local state, and sufficient token permissions.
+The existing `alchemy.run.ts` selects the official remote backend; the workflow does not replace it or migrate state.
+Alchemy's `--yes` authorizes the application update and any required state-store setup, so do not enable the workflow before operator approval.
 
-## API
+The hosted Linux runner must provide Docker with Buildx and sufficient disk and time for the full `sandbox/Dockerfile` build.
+Alchemy builds the `sandbox` context for `linux/amd64`, including its Nix/Home Manager provisioning and official computerd runtime, then publishes the Container image.
+No separate base-image publication, host Nix setup, registry login step, or inference credential build argument is required.
+The workflow intentionally does not select a prepared-image or Dockerfile override.
+The shared monorepo `deploy-alchemy` action is not used because it evaluates a root Nix shell and expects a `{ url }` stack output, whereas Flowdeck uses the Reylo SQL loader and returns `{ frontend }`.
+Dependency installation keeps the frozen lockfile and repository release-age/build-script safeguards.
 
-Flowdeck currently exposes its supported interface through the local web application. It does not publish a stable external API.
+## Reference
+
+| Guide                                                         | Contents                                                                                   |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| [Pi development](docs/development-sandbox.md)                 | Task inputs, credentials, workspace setup, and acceptance limits.                          |
+| [Workspace retention](docs/development-workflow-retention.md) | Workspace lifetime, costs, and recovery limits.                                            |
+| [Common workflow nodes](docs/common-nodes.md)                 | PiHarness workspace backends, Workers AI text, resource lifetime, and verification limits. |
+| [Workflow graphs](docs/workflow-graphs.md)                    | Graph definitions, execution, versioning, checkpoints, and recovery.                       |
+| [RPC boundaries](docs/rpc-boundaries.md)                      | Error conversion, origin logging, Result codecs, and RFC 9457 details.                     |
+| [ClusterMachine D1 storage](docs/cluster-machine-storage.md)  | Opt-in checkpoint storage, request deduplication, and transaction limits.                  |
 
 ## Development
 
-For repository structure and development commands, see [AGENTS.md](./AGENTS.md).
+For repository maintenance, commands, and implementation rules, see [AGENTS.md](AGENTS.md).
+See [architecture](docs/architecture.md) for ownership boundaries and [Add a workflow](docs/add-workflow.md) for the edit checklist.
+Adding a workflow changes user-land and the bridge's user-land registration, not core.
+`alchemy.ts` only re-exports the deployment resource list from `src/user-land/resources.ts`.
+
+### Retained Rust implementation
+
+The original Rust workspace, source files, tests, build inputs, and Nix packages remain unchanged while their removal is reviewed in a separate pull request.
+The ownership layout above applies to the TypeScript application, not the retained Rust source tree.
+Use the retained `Cargo.toml` and `Justfile` for Rust commands, and Vite+ for the Cloudflare application.
 
 ## License
 
-MIT
-
-_This README was generated from the [share-artifact skill](https://raw.githubusercontent.com/totto2727-org/agent/refs/heads/main/plugins/totto2727-coding/skills/share-artifact/SKILL.md) and [README template](https://raw.githubusercontent.com/totto2727-org/agent/refs/heads/main/plugins/totto2727-coding/skills/share-artifact/readme/template.md)._
+[MIT](LICENSE).
