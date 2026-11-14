@@ -115,6 +115,12 @@ See [architecture](docs/architecture.md) for ownership boundaries and [Add a wor
 Adding a workflow changes user-land and the bridge's user-land registration, not core.
 `alchemy.ts` only re-exports the deployment resource list from `src/user-land/resources.ts`.
 
+### Retained Rust implementation
+
+The original Rust workspace, source files, tests, build inputs, and Nix packages remain unchanged while their removal is reviewed in a separate pull request.
+The ownership layout above applies to the TypeScript application, not the retained Rust source tree.
+Use the retained `Cargo.toml` and `Justfile` for Rust commands, and Vite+ for the Cloudflare application.
+
 ## License
 
 [MIT](LICENSE).
