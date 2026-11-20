@@ -2,6 +2,7 @@ import { effrontAlchemy } from '@effront/alchemy/cloudflare/vite'
 import { effrontTailwind } from '@effront/tailwind'
 import { effront } from '@effront/vite'
 import { generateIgnorePatterns } from '@totto2727/gitignore-patterns'
+import oxlintPreset from '@totto2727/oxlint/preset'
 import reylo from '@totto2727/reylo/vite'
 import { defineConfig } from 'vite-plus'
 
@@ -40,6 +41,26 @@ export default defineConfig({
   },
   lint: {
     ignorePatterns,
+    jsPlugins: oxlintPreset.jsPlugins ?? [],
+    // Keep Vite+'s native baseline and do not conflate null with undefined at storage and SDK boundaries.
+    rules: {
+      'rules/force-array-empty': 'error',
+      'rules/force-iterable-empty': 'error',
+      'rules/force-predicate': 'error',
+      'rules/force-string-empty': 'error',
+      'rules/no-bigint-literals': 'error',
+      'rules/no-eslint-disable-comments': 'error',
+      'rules/no-instanceof-error': 'error',
+      'rules/no-js-date': 'error',
+      'rules/no-jsx-script-tag': 'error',
+      'rules/no-opaque-instance-fields': 'error',
+      'rules/no-option-tag-comparison': 'error',
+      'rules/no-raw-hono-create-middleware': 'error',
+      'rules/no-redundant-alias': 'error',
+      'rules/no-string-style': 'error',
+      'rules/no-type-predicate': 'error',
+      'rules/require-disable-reason': 'error',
+    },
     // Temporary: Vite+ 1.4.0's checker cannot load SQL Content Mappers (TS2307).
     // Remove this opt-out and check:tsc when vp check supports them.
     options: { typeAware: true, typeCheck: false },

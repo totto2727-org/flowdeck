@@ -72,7 +72,11 @@ describe('development operation wire schemas', () => {
       attempt: 1,
       ...(tag === 'accepted' || tag === 'completing' ? { result: 'done' } : {}),
     }
-    const active = [...Array.filter(encoded.active, (entry) => entry.path === ''), { path: parent }, { path, value }]
+    const active = [
+      ...Array.filter(encoded.active, (entry) => String.isEmpty(entry.path)),
+      { path: parent },
+      { path, value },
+    ]
     const wire = { ...encoded, active }
     const restored = await Effect.runPromise(Machine.decodeSnapshot(DevelopmentMachine, wire))
     expect(await Effect.runPromise(Machine.encodeSnapshot(DevelopmentMachine, restored))).toMatchObject({ active })

@@ -28,8 +28,7 @@ export const nodeEvents = (events: ReadonlyArray<RunEvent>, nodeId: NodeId) =>
 export const latestExecution = (events: ReadonlyArray<RunEvent>) =>
   Array.findLast(
     orderedEvents(events),
-    (event): event is Extract<RunEvent, { type: 'node.started' | 'node.succeeded' | 'node.failed' }> =>
-      event.type === 'node.started' || event.type === 'node.succeeded' || event.type === 'node.failed',
+    (event) => event.type === 'node.started' || event.type === 'node.succeeded' || event.type === 'node.failed',
   )
 
 export const runRecoveryAction = (status: RunStatus) =>

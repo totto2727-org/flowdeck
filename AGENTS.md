@@ -149,6 +149,9 @@ Do not add Atlas subprocesses, Go runtime calls, or file-backed databases to SQL
 Atlas is reserved for migration generation, HCL formatting, and definition validation.
 Use Atlas CLI tasks only for migration creation and validation with `--dev-url "sqlite://dev?mode=memory"`, never `schema apply` or a file-backed development database.
 Use `vp run check` for complete TypeScript 7.1 Content Mapper checking plus Vite+ format and type-aware lint.
+`vite.config.ts` loads selected `@totto2727/oxlint` rules while preserving the Vite+ native lint defaults.
+Use Effect predicates and collection helpers in application code. Give a specific reason for any inline lint exception at a runtime boundary.
+Do not enable the complete preset without checking its import rules, runtime interpreters, and synchronous codecs against the existing architecture.
 The `check:tsc` task is temporary: Vite+ 1.4.0 cannot load this project's SQL Content Mappers.
 Remove that task, its dependency, and the `typeCheck: false` opt-out when `vp check` supports them.
 Use `fix` for Atlas HCL formatting and `check` for definition validation with an in-memory development database.

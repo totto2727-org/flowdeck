@@ -1,5 +1,5 @@
 import type { WorkerExecutionContextAccess } from 'alchemy/Cloudflare/Workers'
-import { Context, Data, Effect } from 'effect'
+import { Context, Data, Effect, Predicate } from 'effect'
 
 export class ExpectedAccessAudience extends Context.Service<ExpectedAccessAudience, { readonly aud: string }>()(
   'flowdeck/ExpectedAccessAudience',
@@ -17,7 +17,7 @@ export const authorizeAccess = <R>(
 ) =>
   Effect.gen(function* () {
     const access = yield* admission
-    if (access === undefined) {
+    if (Predicate.isUndefined(access)) {
       return yield* new AccessDenied({ status: 401, message: 'Cloudflare Access authentication is required.' })
     }
     if (access.aud !== expected.aud) {

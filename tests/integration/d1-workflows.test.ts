@@ -5,7 +5,7 @@ import { defineQuery } from '@totto2727/reylo'
 import { QueryDecodeError, QueryExecutor } from '@totto2727/reylo/effect'
 import type { PreparedStatement } from 'alchemy/Cloudflare/D1'
 import { makeRpcStub } from 'alchemy/Cloudflare/Workers'
-import { Array, Crypto, DateTime, Effect, Exit, Layer, Schema, SemVer } from 'effect'
+import { Array, Crypto, DateTime, Effect, Exit, Layer, Predicate, Schema, SemVer } from 'effect'
 import { HttpRouter } from 'effect/http'
 import { TestCrypto } from 'effect/testing'
 import { Miniflare } from 'miniflare'
@@ -160,7 +160,7 @@ const api = (registry?: ReadonlyArray<RegisteredWorkflow>) =>
         Layer.effect(Workflows, makeWorkflows).pipe(
           Layer.provide(
             Layer.mergeAll(
-              registry === undefined
+              Predicate.isUndefined(registry)
                 ? Layer.effect(WorkflowRegistry, makeWorkflowRegistry).pipe(
                     Layer.provide(Layer.mergeAll(testBinding(), unavailableDevelopmentBinding)),
                   )

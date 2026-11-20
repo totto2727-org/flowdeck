@@ -22,9 +22,8 @@ import {
 import { DevelopmentMachine, DevelopmentStates, type DevelopmentNativeState } from './development-machine'
 import { developmentVersion, type DevelopmentCreateRun, type DevelopmentWorkflowVersion } from './input'
 
-export const DevelopmentSnapshot = ManagedSnapshot
-export type DevelopmentSnapshot = typeof DevelopmentSnapshot.Type
-export const DevelopmentSnapshotJson = Schema.toCodecJson(DevelopmentSnapshot)
+export { ManagedSnapshot as DevelopmentSnapshot } from '@/core/feature/workflow/managed-runtime'
+export const DevelopmentSnapshotJson = Schema.toCodecJson(ManagedSnapshot)
 const decodeObject = Schema.decodeUnknownSync(JsonObject)
 const decodeNative = (encoded: JsonObject) =>
   Machine.decodeSnapshot(DevelopmentMachine, encoded).pipe(
@@ -72,7 +71,7 @@ const boundaryEvents = (state: DevelopmentNativeState): ReadonlyArray<EventDraft
   return []
 }
 
-export const initialDevelopmentSnapshot = (input: DevelopmentCreateRun): DevelopmentSnapshot => {
+export const initialDevelopmentSnapshot = (input: DevelopmentCreateRun): ManagedSnapshot => {
   const initial = Effect.runSync(Machine.planInitial(DevelopmentMachine, input))
   return { schemaVersion: 1, version: developmentVersion, machine: Effect.runSync(encodeNative(initial.state)) }
 }

@@ -1,6 +1,6 @@
 import { AI } from 'alchemy/Cloudflare/Workers'
 import type { RuntimeContext } from 'alchemy/RuntimeContext'
-import { Context, Effect, Layer, Schema } from 'effect'
+import { Context, Effect, Layer, Predicate, Schema } from 'effect'
 
 /** Explicitly supported native text models share prompt input and nonstream text output. */
 export const WorkersAiTextModel = Schema.Literals([
@@ -33,7 +33,7 @@ export const makeWorkersAiText = Effect.gen(function* () {
     // This is only SDK context closure, not a second binding or inference executor.
     const output = yield* client.run(model, { ...input, stream: false }).pipe(Effect.provideContext(context))
     const text = yield* decodeTextOutput(output)
-    return typeof text === 'string' ? text : text.response
+    return Predicate.isString(text) ? text : text.response
   })
 
   return { generate }

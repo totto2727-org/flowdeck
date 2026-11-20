@@ -1,4 +1,4 @@
-import { Array, HashMap, Match, Number, Option, Order } from 'effect'
+import { Array, HashMap, Match, Number, Option, Order, Predicate } from 'effect'
 
 import type { NodeId } from './identity'
 import type { GraphDefinition, NodeVisualState, RunEvent, Shapes } from './model'
@@ -24,7 +24,7 @@ export const projectEvents = (events: ReadonlyArray<RunEvent>) =>
         Match.when('run.waiting', () => 'waiting' as const),
         Match.orElse(() => undefined),
       )
-      return visual === undefined ? states : HashMap.set(states, event.nodeId, visual)
+      return Predicate.isUndefined(visual) ? states : HashMap.set(states, event.nodeId, visual)
     },
   )
 

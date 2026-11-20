@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url'
 import * as NodeServices from '@effect/platform-node/NodeServices'
 import { virtualEntryPlugin } from 'alchemy/Bundle'
 import { makeEffectVirtualEntry } from 'alchemy/Cloudflare/Workers/Sources/Rolldown'
-import { Array, Context, Effect, Schedule } from 'effect'
+import { Array, Context, Effect, Option, Schedule } from 'effect'
 import { Miniflare } from 'miniflare'
 import { build } from 'vite-plus'
 import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test'
@@ -64,7 +64,7 @@ describe('Alchemy Effect DO and official native SDK raw boundary', () => {
     if (!output || !('output' in output)) throw new Error('Expected bundled SDK fixture')
     const chunks = Array.filter(output.output, (entry) => entry.type === 'chunk')
     const chunk = Array.findFirst(chunks, (entry) => entry.isEntry)
-    if (chunk._tag === 'None') throw new Error('Expected SDK fixture entry chunk')
+    if (Option.isNone(chunk)) throw new Error('Expected SDK fixture entry chunk')
     expect(chunk.value.exports).toEqual(expect.arrayContaining(['SdkBoundary', 'WorkspaceProxy', 'default']))
     miniflare = new Miniflare({
       workers: [

@@ -2,7 +2,7 @@ import { readD1Migrations } from '@cloudflare/vitest-plugin'
 import type { D1Database } from '@cloudflare/workers-types'
 import { BrowserCrypto } from '@effect/platform-browser'
 import { Machine } from '@typeonce/effect-machine'
-import { Array, Crypto, DateTime, Effect, Layer, Option, Schema, SemVer } from 'effect'
+import { Array, Crypto, DateTime, Effect, Layer, Option, Predicate, Schema, SemVer } from 'effect'
 import { HttpRouter } from 'effect/http'
 import { TestCrypto } from 'effect/testing'
 import { Miniflare } from 'miniflare'
@@ -291,7 +291,7 @@ describe('development workflow with canonical D1 checkpoints', () => {
           status,
           snapshot: {
             _tag,
-            ...(runtime === undefined ? {} : { runtime }),
+            ...(Predicate.isUndefined(runtime) ? {} : { runtime }),
             schemaVersion: 1,
             version: '1.0.0',
             repository: input.repository.href,

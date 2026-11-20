@@ -1,7 +1,7 @@
 import { globSync, readFileSync } from 'node:fs'
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 
-import { Array, String } from 'effect'
+import { Array, Predicate, String } from 'effect'
 import { isStringLiteralLikeNode } from 'typescript/ast'
 import { API } from 'typescript/sync'
 import { describe, expect, it } from 'vite-plus/test'
@@ -30,7 +30,7 @@ const parseDependencies = (compiler: API, file: string, text: string) => {
   return Array.flatMap(lease.sourceFile.imports, (node) => {
     if (!isStringLiteralLikeNode(node)) return []
     const target = localTarget(file, node.text)
-    return target === undefined ? [] : [{ file, target }]
+    return Predicate.isUndefined(target) ? [] : [{ file, target }]
   })
 }
 const dependencies = (() => {

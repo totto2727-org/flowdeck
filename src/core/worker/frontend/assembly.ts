@@ -39,6 +39,7 @@ export interface ControlBinding {
 }
 const ControlEnvironment = Schema.Struct({
   CONTROL: Schema.declare(
+    // oxlint-disable-next-line rules/no-type-predicate -- The native Fetcher keeps its prototype and receiver. Validate the method without copying the binding into a struct.
     (input): input is ControlBinding =>
       Predicate.isObject(input) && Predicate.hasProperty(input, 'fetch') && Predicate.isFunction(input.fetch),
   ),

@@ -1,4 +1,4 @@
-import { Effect, Schema } from 'effect'
+import { Effect, Predicate, Schema } from 'effect'
 
 import { ExternalError } from '@/core/feature/workflow/domain/errors'
 import { EventId, GraphId, RunId } from '@/core/feature/workflow/domain/identity'
@@ -62,7 +62,7 @@ export const decodeEventRow = Effect.fn('D1Store.decodeEventRow')(function* (
   const payload = yield* decodeObject(yield* fromJson(row.payload_json))
   // SQL NULL represents absence only at this storage boundary, never in the domain event.
   const execution =
-    row.node_id === null && row.execution_id === null && row.attempt === null
+    Predicate.isNull(row.node_id) && Predicate.isNull(row.execution_id) && Predicate.isNull(row.attempt)
       ? {}
       : { nodeId: row.node_id, executionId: row.execution_id, attempt: row.attempt }
   return yield* decodeEvent({

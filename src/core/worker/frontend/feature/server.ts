@@ -1,6 +1,6 @@
 'use server'
 
-import { Array, Effect, Schema } from 'effect'
+import { Array, Effect, Predicate, Schema } from 'effect'
 
 import { RunId } from '@/core/feature/workflow/domain/identity'
 import { CreateRun } from '@/core/feature/workflow/domain/model'
@@ -36,11 +36,11 @@ export const loadDashboard = EFFRONT.ServerFn.make({
       Effect.gen(function* () {
         const api = yield* ControlApi
         const [workflows, runs] = yield* Effect.all([api.workflows, api.runs], { concurrency: 2 })
-        const detail = selected === null ? null : yield* api.detail(selected)
+        const detail = Predicate.isNull(selected) ? null : yield* api.detail(selected)
         return {
           workflows: Array.map(workflows.workflows, (workflow) => presentWorkflow(workflow)),
           runs: Array.map(runs.runs, (run) => presentRun(run)),
-          selected: detail === null ? null : presentDetail(detail),
+          selected: Predicate.isNull(detail) ? null : presentDetail(detail),
         } satisfies DashboardData
       }),
     ),

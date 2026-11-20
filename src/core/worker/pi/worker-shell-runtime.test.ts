@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url'
 
-import { Array } from 'effect'
+import { Array, Option } from 'effect'
 import { Miniflare } from 'miniflare'
 import { build } from 'vite-plus'
 import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test'
@@ -25,7 +25,7 @@ describe('official DO-only Pi workspace', () => {
     if (!output || !('output' in output)) throw new Error('Expected Worker-shell fixture bundle')
     const chunks = Array.filter(output.output, (entry) => entry.type === 'chunk')
     const main = Array.findFirst(chunks, (entry) => entry.isEntry)
-    if (main._tag === 'None') throw new Error('Expected Worker-shell fixture entry')
+    if (Option.isNone(main)) throw new Error('Expected Worker-shell fixture entry')
     miniflare = new Miniflare({
       modules: Array.map(
         Array.prepend(

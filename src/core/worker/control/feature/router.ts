@@ -151,4 +151,3 @@ export const ApiRoutes = HttpRouter.use((router) =>
     ),
   ]),
 ).pipe(Layer.provide(ApiErrors.combine(ServerMutations).layer))
-export const routesLayer = ApiRoutes

@@ -1,7 +1,7 @@
 import { createPiTools, type CreatePiToolsOptions } from '@cloudflare/computer/tools/pi-ai'
 import { createModels } from '@earendil-works/pi-ai'
 import { AssistantEntry, createRegistry, Harness, MemoryStorage, ToolTask } from '@earendil-works/pi-durable'
-import { Array } from 'effect'
+import { Array, Option } from 'effect'
 import { describe, expect, it, vi } from 'vite-plus/test'
 
 import { CONTAINER_BACKEND, createWorkspaceTools, WORKER_SHELL_BACKEND } from './workspace'
@@ -156,7 +156,7 @@ describe('Pi workspace tools', () => {
       _tag: 'Some',
       value: { description: expect.stringContaining('Runs shell commands.') },
     })
-    if (exec._tag === 'Some') {
+    if (Option.isSome(exec)) {
       expect(exec.value.parameters).toHaveProperty('properties.command')
       expect(exec.value.parameters).not.toHaveProperty('properties.backend')
       expect(exec.value.parameters).not.toHaveProperty('properties.input')

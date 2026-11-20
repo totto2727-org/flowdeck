@@ -2,7 +2,7 @@ import { getWorkspace, withWorkspace, type WorkspaceOptions } from '@cloudflare/
 import { ShellWorker, WorkerShellBackend } from '@cloudflare/computer/backends/worker-shell'
 import { DurableObjectState } from 'alchemy/Cloudflare/Workers'
 import { DurableObject } from 'cloudflare:workers'
-import { Effect } from 'effect'
+import { Effect, Predicate } from 'effect'
 
 import { WORKER_SHELL_BACKEND } from './workspace'
 
@@ -44,7 +44,7 @@ export const makeWorkerShellWorkspace = Effect.gen(function* () {
                     fs: stub.fs,
                     git: stub.git,
                     artifacts: stub.artifacts,
-                    ...(assets === undefined ? {} : { assets }),
+                    ...(Predicate.isUndefined(assets) ? {} : { assets }),
                     [Symbol.dispose]: () => stub[Symbol.dispose](),
                   }
                 },

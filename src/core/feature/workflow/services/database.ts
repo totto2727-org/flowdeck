@@ -1,9 +1,9 @@
-import { Effect, String } from 'effect'
+import { Effect, Predicate, String } from 'effect'
 
 import { ExternalError, StorageConflict } from '@/core/feature/workflow/domain/errors'
 
 const databaseFailure = (operation: string, cause: unknown) => {
-  const message = cause instanceof Error ? cause.message : 'Database operation failed'
+  const message = Predicate.isError(cause) ? cause.message : 'Database operation failed'
   return String.includes('flowdeck_')(message) || String.includes('UNIQUE constraint')(message)
     ? new StorageConflict({ message, operation, cause })
     : new ExternalError({ operation, cause, kind: 'storage' })

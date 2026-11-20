@@ -22,6 +22,7 @@ const layout = EFFRONT.Layout.make({
           <meta name='viewport' content='width=device-width,initial-scale=1' />
           <meta name='description' content='Flowdeck workflow execution, graphs, committed state and events.' />
           <meta name='theme-color' content='#101714' suppressHydrationWarning />
+          {/* oxlint-disable-next-line rules/no-jsx-script-tag -- Run the static theme bootstrap before first paint, not after React hydration. */}
           <script dangerouslySetInnerHTML={{ __html: themeBootstrap }} />
           <title>Overview · Flowdeck</title>
         </head>

@@ -11,11 +11,10 @@ import { demoStatus } from './node'
 import { decodeDemoVersion1, demoVersion1Definition, encodeDemoVersion1, initialDemoVersion1 } from './version-1'
 import { decodeDemoVersion2, demoVersion2Definition, encodeDemoVersion2, initialDemoVersion2 } from './version-2'
 
-export const DemoSnapshot = ManagedSnapshot
-export type DemoSnapshot = typeof DemoSnapshot.Type
+export { ManagedSnapshot as DemoSnapshot } from '@/core/feature/workflow/managed-runtime'
 const decodeVersion = Schema.decodeUnknownEffect(DemoWorkflowVersion)
-const decodeSnapshot = Schema.decodeUnknownEffect(Schema.toCodecJson(DemoSnapshot))
-export const encodeDemoSnapshot = (snapshot: DemoSnapshot) => Effect.succeed(encodeManagedSnapshot(snapshot))
+const decodeSnapshot = Schema.decodeUnknownEffect(Schema.toCodecJson(ManagedSnapshot))
+export const encodeDemoSnapshot = (snapshot: ManagedSnapshot) => Effect.succeed(encodeManagedSnapshot(snapshot))
 export const demoWorkflow: WorkflowSummary = {
   workflowId: 'demo',
   name: 'Release checkpoint',
@@ -35,7 +34,7 @@ const demoImplementation = (version: DemoWorkflowVersion) =>
     Match.orElseAbsurd,
   )
 export const demoGraph = (version: DemoWorkflowVersion): GraphDefinition => demoImplementation(version).graph
-export const initialSnapshot = (version: DemoWorkflowVersion): DemoSnapshot => ({
+export const initialSnapshot = (version: DemoWorkflowVersion): ManagedSnapshot => ({
   schemaVersion: 1,
   version,
   machine: SemVer.equals(version, demoVersion1)

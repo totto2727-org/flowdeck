@@ -1,6 +1,6 @@
 import { BrowserCrypto } from '@effect/platform-browser'
 import { WorkerEntrypoint } from 'cloudflare:workers'
-import { Cause, Effect, Logger, Option, References, Schema } from 'effect'
+import { Cause, Effect, Logger, Option, Predicate, References, Schema } from 'effect'
 
 import { ExternalError, NotFound } from '@/core/feature/workflow/domain/errors'
 import { rpcResponse, rpcResult } from '@/core/feature/workflow/rpc/boundary'
@@ -17,8 +17,8 @@ const logger = Logger.make((entry) => {
     operation: String(annotations['operation']),
     errorId: String(annotations['errorId']),
     renderedCause: Cause.pretty(entry.cause),
-    localStack: error instanceof Error ? (error.stack ?? '') : '',
-    originalStack: error instanceof ExternalError && error.cause instanceof Error ? (error.cause.stack ?? '') : '',
+    localStack: Predicate.isError(error) ? (error.stack ?? '') : '',
+    originalStack: error instanceof ExternalError && Predicate.isError(error.cause) ? (error.cause.stack ?? '') : '',
     remoteError: error instanceof RemoteWorkerError,
     externalError: error instanceof ExternalError,
     priorProblem: error instanceof RemoteWorkerError ? error.cause : null,
@@ -34,7 +34,7 @@ const respond = <E>(operation: string, effect: Effect.Effect<Schema.Json, E>) =>
 const originalError = () => {
   const error = new Error('PRIVATE_RPC_DATABASE_PASSWORD')
   error.stack = 'Error: PRIVATE_RPC_DATABASE_PASSWORD\n    at childOnlyPrivateFrame (private-storage.ts:91:7)'
-  error.cause = { cycle: error, nonJsonValue: 123n }
+  error.cause = { cycle: error, nonJsonValue: BigInt(123) }
   return error
 }
 
