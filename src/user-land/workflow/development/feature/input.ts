@@ -10,9 +10,9 @@ export const PublicRepository = Schema.URL.check(
       !String.includes('#')(url.href) &&
       url.protocol === 'https:' &&
       url.hostname === 'github.com' &&
-      url.port === '' &&
-      url.username === '' &&
-      url.password === '' &&
+      String.isEmpty(url.port) &&
+      String.isEmpty(url.username) &&
+      String.isEmpty(url.password) &&
       segments.length === 3 &&
       Array.every(Array.drop(segments, 1), (segment) => String.isNonEmpty(segment) && !String.includes('%')(segment))
     )

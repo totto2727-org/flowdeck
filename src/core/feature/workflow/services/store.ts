@@ -11,8 +11,7 @@ import {
 } from '@/core/feature/workflow/domain/model'
 
 export type StoreFailure = ExternalError | NotFound | Conflict | StorageConflict
-export const PendingEvent = PendingRunEvent
-export type PendingEvent = typeof PendingEvent.Type
+export { PendingRunEvent as PendingEvent } from '@/core/feature/workflow/domain/model'
 export type EventRange = Data.TaggedEnum<{
   All: {}
   ThroughRevision: { readonly revision: number }
@@ -24,7 +23,7 @@ export const CommitCommand = Schema.Struct({
   expectedRevision: Run.fields.revision,
   status: Run.fields.status,
   snapshot: Run.fields.snapshot,
-  events: Schema.Array(PendingEvent),
+  events: Schema.Array(PendingRunEvent),
   updatedAt: Schema.DateTimeUtc,
 })
 export type CommitCommand = typeof CommitCommand.Type

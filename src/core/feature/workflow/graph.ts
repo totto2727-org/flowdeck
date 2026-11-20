@@ -1,5 +1,5 @@
 import type { Machine } from '@typeonce/effect-machine'
-import { Array, HashSet, Option, Schema, String } from 'effect'
+import { Array, HashSet, Option, Predicate, Schema, String } from 'effect'
 
 import { InvalidSnapshot } from '@/core/feature/workflow/domain/errors'
 import { GraphDefinition } from '@/core/feature/workflow/domain/model'
@@ -21,7 +21,8 @@ export const projectMachineGraph = (options: {
       onSome: (annotation) => [{ nodeId: node.path, label: annotation.title, kind: annotation.description }],
     }),
   )
-  if (visible.length === 0) throw new InvalidSnapshot({ message: 'A workflow graph needs annotated business nodes' })
+  if (Array.isArrayEmpty(visible))
+    throw new InvalidSnapshot({ message: 'A workflow graph needs annotated business nodes' })
   const owner = (path: string) =>
     Array.findLast(visible, (node) => path === node.nodeId || String.startsWith(`${node.nodeId}.`)(path))
   // Allocation-only states can sit between visible nodes. Follow their static
@@ -39,14 +40,14 @@ export const projectMachineGraph = (options: {
         Array.filter(options.transitions, (transition) => transition.source === path),
         (transition: Machine.Machine.TransitionDefinition) =>
           Array.flatMap(transition.branches, (branch) =>
-            branch.target === undefined ? [] : destinations(branch.target, seen),
+            Predicate.isUndefined(branch.target) ? [] : destinations(branch.target, seen),
           ),
       ),
     )
   }
   const candidates = Array.flatMap(options.transitions, (transition) =>
     Array.flatMap(transition.branches, (branch) => {
-      if (branch.target === undefined) return []
+      if (Predicate.isUndefined(branch.target)) return []
       const source = owner(transition.source)
       if (Option.isNone(source)) return []
       const label =

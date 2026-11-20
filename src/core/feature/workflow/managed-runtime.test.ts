@@ -468,7 +468,9 @@ describe('request-scoped managed native runtime', () => {
 
   it('fails a later checkpoint before its external submission without committing business failure', async () => {
     const harness = makeHarness(true)
-    harness.beforeCommit((command) => (command.events.length === 0 ? Effect.fail(unavailable) : Effect.void))
+    harness.beforeCommit((command) =>
+      Array.isReadonlyArrayEmpty(command.events) ? Effect.fail(unavailable) : Effect.void,
+    )
     const executor = await Effect.runPromise(harness.executor())
     const result = await Effect.runPromise(executor.start(runId).pipe(Effect.exit))
     expect(Exit.isFailure(result)).toBe(true)

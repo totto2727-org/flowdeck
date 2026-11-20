@@ -1,4 +1,4 @@
-import { Context, Data, Effect, Schema } from 'effect'
+import { Context, Data, Effect, Predicate, Schema } from 'effect'
 
 import { makeExecutionIdGenerator, ExecutionId } from '@/core/feature/workflow/domain/identity'
 import { WorkflowCheckpoint, type EventDraft } from '@/core/feature/workflow/managed-runtime'
@@ -100,7 +100,7 @@ export const makePiNodeEffects = Effect.gen(function* () {
         const provider = yield* capability
         // Explicit Resume is read-only while the Harness operation is running.
         const receipt = yield* provider.getTurn(checkpoint.runId, execution.commandId)
-        return receipt === null
+        return Predicate.isNull(receipt)
           ? outcome.Failed({ message: 'A submitted turn is missing. It will not be resubmitted automatically.' })
           : receiptOutcome(receipt, execution.commandId)
       }).pipe(Effect.catch(checkpoint.fail))

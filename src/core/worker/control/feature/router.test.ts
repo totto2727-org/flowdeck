@@ -2,7 +2,7 @@ import { ok } from 'node:assert/strict'
 
 import { makeRpcStub } from 'alchemy/Cloudflare/Workers'
 import { RpcCallError } from 'alchemy/Rpc'
-import { Crypto, Effect, Layer, Schema, DateTime } from 'effect'
+import { Crypto, Effect, Layer, Predicate, Schema, DateTime } from 'effect'
 import { HttpRouter } from 'effect/http'
 import { describe, expect, it, vi } from 'vite-plus/test'
 
@@ -184,7 +184,9 @@ describe('Control aggregate Workflow service boundary', () => {
       const response = await handler.handler(
         new Request(
           `http://localhost${path}`,
-          body === undefined ? { method } : { method: 'POST', headers: { 'content-type': 'application/json' }, body },
+          Predicate.isUndefined(body)
+            ? { method }
+            : { method: 'POST', headers: { 'content-type': 'application/json' }, body },
         ),
       )
       expect(response.status).toBe(502)
@@ -260,7 +262,9 @@ describe('Control aggregate Workflow service boundary', () => {
       const response = await handler.handler(
         new Request(
           `http://localhost${path}`,
-          body === undefined ? { method } : { method: 'POST', headers: { 'content-type': 'application/json' }, body },
+          Predicate.isUndefined(body)
+            ? { method }
+            : { method: 'POST', headers: { 'content-type': 'application/json' }, body },
         ),
       )
       expect(response.status).toBe(502)
@@ -283,7 +287,7 @@ describe('Control aggregate Workflow service boundary', () => {
         new Request(`http://localhost${path}`, {
           method: 'POST',
           headers: { origin: 'https://evil.example', 'content-type': 'text/plain' },
-          ...(body === undefined ? {} : { body }),
+          ...(Predicate.isUndefined(body) ? {} : { body }),
         }),
       )
       expect(response.status).toBe(403)

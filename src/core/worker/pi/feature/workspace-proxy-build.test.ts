@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url'
 
-import { Array } from 'effect'
+import { Array, Option } from 'effect'
 import { build } from 'vite-plus'
 import { describe, expect, it } from 'vite-plus/test'
 
@@ -39,7 +39,7 @@ describe('workspaceProxyBuild scope', () => {
       const output = Array.isArray(result) ? result[0] : result
       if (!output || !('output' in output)) throw new Error('Expected fixture output')
       const entry = Array.findFirst(output.output, (chunk) => chunk.type === 'chunk' && chunk.isEntry)
-      if (entry._tag === 'None' || entry.value.type !== 'chunk') throw new Error('Expected fixture entry')
+      if (Option.isNone(entry) || entry.value.type !== 'chunk') throw new Error('Expected fixture entry')
       expect(entry.value.exports).toEqual(['value'])
       expect(entry.value.code).not.toContain('WorkspaceProxy')
     },

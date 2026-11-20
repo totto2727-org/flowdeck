@@ -6,7 +6,7 @@ import { PiHarness } from 'agents/harness/pi'
 import { Lifecycle, type LifecycleJobContext, type LifecycleJobOutcome } from 'agents/lifecycle'
 import { DurableObjectState, WorkerEnvironment } from 'alchemy/Cloudflare/Workers'
 import { DurableObject } from 'cloudflare:workers'
-import { Clock, Effect, Schema } from 'effect'
+import { Clock, Effect, Predicate, Schema } from 'effect'
 
 import { ExternalError } from '@/core/feature/workflow/domain/errors'
 import { RunId } from '@/core/feature/workflow/domain/identity'
@@ -92,7 +92,7 @@ export const makePiSdk = Effect.gen(function* () {
       Effect.runPromise(
         Effect.gen(function* () {
           const active = yield* state.storage.get<unknown>('active-run-id')
-          if (active === undefined) return undefined
+          if (Predicate.isUndefined(active)) return undefined
           const runId = yield* decodeRunId(active)
           const run = yield* store.getRun(runId)
           const container = host.getWorkspaceContainer()
@@ -103,7 +103,7 @@ export const makePiSdk = Effect.gen(function* () {
       ),
     async () => {
       const next = await host.renew()
-      if (typeof next === 'object' && next !== null) {
+      if (Predicate.isObject(next)) {
         await lifecycle.jobs.push({ id: LEASE_JOB, fn: LEASE_JOB, time: next.rescheduleAt })
       }
     },

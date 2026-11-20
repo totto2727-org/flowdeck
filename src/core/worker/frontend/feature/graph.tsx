@@ -1,6 +1,6 @@
 'use client'
 
-import { Array, Option } from 'effect'
+import { Array, Option, Predicate } from 'effect'
 import { useRef, type KeyboardEvent } from 'react'
 
 import type { NodeId } from '@/core/feature/workflow/domain/identity'
@@ -31,7 +31,7 @@ export function RunGraph({
   const ids = Array.map(detail.shapes.nodes, (node) => node.nodeId)
   const navigate = (event: KeyboardEvent<HTMLButtonElement>, nodeId: NodeId) => {
     const next = nextNode(ids, nodeId, event.key)
-    if (next === undefined) return
+    if (Predicate.isUndefined(next)) return
     event.preventDefault()
     onSelect(next)
     buttons.current[next]?.focus()

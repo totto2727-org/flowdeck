@@ -1,6 +1,6 @@
 'use client'
 
-import { Array, Effect, Option, Record } from 'effect'
+import { Array, Effect, Option, Predicate, Record } from 'effect'
 import { Activity, ArrowRight, Box, Check, ChevronRight, GitBranch, Layers, Play, RefreshCw } from 'lucide-react'
 import { Fragment, useState, useSyncExternalStore, useTransition } from 'react'
 
@@ -55,7 +55,7 @@ function Events({
             className='accent-primary'
             type='checkbox'
             checked={nodeOnly}
-            disabled={selectedNode === null}
+            disabled={Predicate.isNull(selectedNode)}
             onChange={(event) => setNodeOnly(event.target.checked)}
           />
           Selected node only
@@ -150,7 +150,7 @@ function SelectedRun({
             Graph <code>{shortId(detail.run.graphId)}</code>
           </span>
         </div>
-        {recoveryAction !== null && (
+        {Predicate.isNotNull(recoveryAction) && (
           <div className='flex items-center justify-between gap-4 border-y border-[#f3ebcc] bg-[#fffbed] px-5 py-[15px] dark:border-[#78652f] dark:bg-[#372f1c] dark:text-[#eed383] max-[1100px]:flex-col max-[1100px]:items-start [&_strong]:text-[12px] [&_strong]:font-semibold [&_strong]:text-[#7c6221] dark:[&_strong]:text-[#eed383] [&_p]:mt-[3px] [&_p]:max-w-[360px] [&_p]:text-[11px] [&_p]:text-[#9b854c] dark:[&_p]:text-[#eed383] [&_button]:shrink-0 [&_button]:text-[11px]'>
             <div>
               <strong>
@@ -520,7 +520,7 @@ export function Dashboard({ initial }: { readonly initial: DashboardData }) {
           </div>
           <section
             className={`mb-[27px] flex justify-between gap-5 rounded-[10px] border border-border bg-card p-[23px] max-[1100px]:items-start max-[620px]:mb-5 max-[620px]:flex-col max-[620px]:gap-[17px] max-[620px]:p-5 ${workflow && Array.length(workflow.inputs) > 0 ? 'flex-wrap items-start' : 'items-center'} [&>div]:flex [&>div]:items-center [&>div]:gap-[15px] max-[1100px]:[&>div]:gap-2.5 [&_label]:mr-[3px] [&_label]:text-[11px] [&_label]:text-[#75847a] dark:[&_label]:text-muted-foreground [&_h2]:mb-[3px] [&_button]:h-[33px] [&_button]:px-3.5 [&_button]:text-[12px] [&_input]:w-full [&_input]:min-w-0 [&_input]:rounded-md [&_input]:border [&_input]:border-border [&_input]:bg-card [&_input]:px-2.5 [&_input]:py-2 [&_input]:text-[12px] [&_textarea]:min-h-28 [&_textarea]:w-full [&_textarea]:min-w-0 [&_textarea]:resize-y [&_textarea]:rounded-md [&_textarea]:border [&_textarea]:border-border [&_textarea]:bg-card [&_textarea]:px-2.5 [&_textarea]:py-2 [&_textarea]:text-[12px]`}
-            data-has-inputs={workflow !== undefined && Array.length(workflow.inputs) > 0}
+            data-has-inputs={Predicate.isNotUndefined(workflow) && Array.isReadonlyArrayNonEmpty(workflow.inputs)}
             aria-labelledby='launch-heading'
           >
             <div>

@@ -76,7 +76,7 @@ export const makeHarnessSandbox = (options: {
         lock.withPermit(
           io(async () => {
             const pending = await options.harness.pending({ session: ROOT_SESSION })
-            if (pending.length !== 0) throw new Error('Pi session still has pending work')
+            if (Array.isReadonlyArrayNonEmpty(pending)) throw new Error('Pi session still has pending work')
             // Completion is only an acknowledgement. Durable storage and any
             // backend retention remain owned by the run and its native lifecycle.
             return session('completed')

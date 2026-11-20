@@ -1,6 +1,6 @@
 import { runInNewContext } from 'node:vm'
 
-import { Effect } from 'effect'
+import { Effect, Predicate } from 'effect'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
@@ -9,7 +9,7 @@ import { browserTheme, selectTheme, serverTheme, subscribeTheme, themeBootstrap,
 import { ThemeToggle } from './theme-toggle'
 
 function browser(stored: string | null = null, storageDenied = false) {
-  const values = new Map<string, string>(stored === null ? [] : [[themeStorageKey, stored]])
+  const values = new Map<string, string>(Predicate.isNull(stored) ? [] : [[themeStorageKey, stored]])
   const classes = new Set(['dark'])
   const meta = {
     content: '#101714',

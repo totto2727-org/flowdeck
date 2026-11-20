@@ -6,7 +6,7 @@ import { DurableObjectState } from 'alchemy/Cloudflare/Workers/DurableObjectStat
 import { WorkerEnvironment } from 'alchemy/Cloudflare/Workers/WorkerRuntime'
 import { makeWorkerRuntimeContext } from 'alchemy/Cloudflare/Workers/WorkerRuntimeContext'
 import { DurableObject } from 'cloudflare:workers'
-import { Context, Effect, Layer } from 'effect'
+import { Clock, Context, Effect, Layer } from 'effect'
 import { HttpServerResponse } from 'effect/http'
 
 import { Store } from '@/core/feature/workflow/services/store'
@@ -70,9 +70,12 @@ export const entrypoint = Effect.gen(function* () {
               return { status: response.status, text: await response.text() }
             }),
           schedule: () =>
-            Effect.promise(async () => {
-              await sdk.lifecycle.start()
-              await sdk.lifecycle.jobs.push({ id: 'test-alarm', fn: 'unknown-test-job', time: Date.now() - 1 })
+            Effect.gen(function* () {
+              yield* Effect.promise(() => sdk.lifecycle.start())
+              const now = yield* Clock.currentTimeMillis
+              yield* Effect.promise(() =>
+                sdk.lifecycle.jobs.push({ id: 'test-alarm', fn: 'unknown-test-job', time: now - 1 }),
+              )
               return { queued: sdk.lifecycle.jobs.list().length }
             }),
           fetch: Effect.gen(function* () {

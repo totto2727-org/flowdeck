@@ -99,6 +99,7 @@ export const PendingRunEvent = Schema.Union([
   Schema.Struct({ ...EventFields, ...NodeEventFields, type: Schema.Literal('node.succeeded') }),
   Schema.Struct({ ...EventFields, ...NodeEventFields, type: Schema.Literal('node.failed') }),
 ])
+export type PendingRunEvent = typeof PendingRunEvent.Type
 export const RunEvent = PendingRunEvent.mapMembers(
   Tuple.map(Schema.fieldsAssign({ runId: RunId, sequence: PositiveInt })),
 )
