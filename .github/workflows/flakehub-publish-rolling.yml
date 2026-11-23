@@ -16,5 +16,5 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - uses: totto2727-org/monorepo/.github/actions/setup-nix@d8377d2a88897926fcc90c4f9eba3f90816fd56c
-      - uses: totto2727-org/monorepo/.github/actions/publish-flakehub@d8377d2a88897926fcc90c4f9eba3f90816fd56c
+      - uses: totto2727-org/monorepo/.github/actions/setup-nix@97acf73cf618834a65fb1b82e09185a32e59caf9
+      - uses: totto2727-org/monorepo/.github/actions/publish-flakehub@97acf73cf618834a65fb1b82e09185a32e59caf9
