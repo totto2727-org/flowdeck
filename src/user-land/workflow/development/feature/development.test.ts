@@ -40,7 +40,7 @@ import {
   resumeDevelopmentRun,
   startDevelopmentRun,
 } from './development.ts'
-import { DevelopmentCreateRun, developmentVersion } from './input.ts'
+import { developmentVersion } from './input.ts'
 
 const decodeJsonObject = Schema.decodeUnknownSync(JsonObject)
 
@@ -688,50 +688,4 @@ describe('development workflow with canonical D1 checkpoints', () => {
       expect(submissions).toStrictEqual([])
     }),
   )
-})
-
-describe('development CreateRun trust boundary', () => {
-  test('decodes wire SemVer and URL into ideal domain input', () => {
-    expect(
-      Schema.decodeUnknownSync(Schema.toCodecJson(DevelopmentCreateRun))({
-        ...input,
-        repository: input.repository.href,
-        version: '1.0.0',
-      }),
-    ).toStrictEqual(input)
-  })
-
-  test.each([
-    'http://github.com/example/project',
-    'https://gitlab.com/example/project',
-    'https://github.com.evil.test/example/project',
-    'https://user:secret@github.com/example/project',
-    'https://github.com/example/project?token=secret',
-    'https://github.com/example/project/tree/main',
-  ])('rejects unsafe repository URL %s', (repository) => {
-    expect(() =>
-      Schema.decodeUnknownSync(Schema.toCodecJson(DevelopmentCreateRun))({ ...input, version: '1.0.0', repository }),
-    ).toThrow()
-  })
-
-  test.each(['', '   ', 'x'.repeat(16_001)])('rejects empty or oversized task', (task) => {
-    expect(() =>
-      Schema.decodeUnknownSync(Schema.toCodecJson(DevelopmentCreateRun))({
-        ...input,
-        repository: input.repository.href,
-        version: '1.0.0',
-        task,
-      }),
-    ).toThrow()
-  })
-
-  test.each(['v1', 'v2', '1.0.1', '2.0.0'])('rejects unsupported version %s', (version) => {
-    expect(() =>
-      Schema.decodeUnknownSync(Schema.toCodecJson(DevelopmentCreateRun))({
-        ...input,
-        repository: input.repository.href,
-        version,
-      }),
-    ).toThrow()
-  })
 })

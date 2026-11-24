@@ -167,3 +167,41 @@ live.each([
     expect(yield* Effect.flip(prepare)).toBeInstanceOf(Schema.SchemaError)
   }),
 )
+
+const decodeWireCreate = Schema.decodeEffect(Schema.toCodecJson(DevelopmentCreateRun))
+const wireInput = { ...input, version: '1.0.0' }
+
+live('decodes wire SemVer and URL into domain input', () =>
+  Effect.gen(function* () {
+    const decoded = yield* decodeWireCreate(wireInput)
+    expect(decoded).toStrictEqual({ ...input, repository: new URL(input.repository) })
+  }),
+)
+
+live.each([
+  'http://github.com/example/project',
+  'https://gitlab.com/example/project',
+  'https://github.com.evil.test/example/project',
+  'https://user:secret@github.com/example/project',
+  'https://github.com/example/project?token=secret',
+  'https://github.com/example/project/tree/main',
+])('rejects unsafe repository URL %s at the wire boundary', (repository) =>
+  Effect.gen(function* () {
+    const decode = decodeWireCreate({ ...wireInput, repository })
+    expect(yield* Effect.flip(decode)).toBeInstanceOf(Schema.SchemaError)
+  }),
+)
+
+live.each(['', '   ', 'x'.repeat(16_001)])('rejects empty or oversized task in wire input', (task) =>
+  Effect.gen(function* () {
+    const decode = decodeWireCreate({ ...wireInput, task })
+    expect(yield* Effect.flip(decode)).toBeInstanceOf(Schema.SchemaError)
+  }),
+)
+
+live.each(['v1', 'v2', '1.0.1', '2.0.0'])('rejects unsupported wire version %s', (version) =>
+  Effect.gen(function* () {
+    const decode = decodeWireCreate({ ...wireInput, version })
+    expect(yield* Effect.flip(decode)).toBeInstanceOf(Schema.SchemaError)
+  }),
+)
