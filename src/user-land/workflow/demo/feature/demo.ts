@@ -8,8 +8,8 @@ import { Store } from '@/core/feature/workflow/services/store'
 
 import { DemoWorkflowVersion, demoVersion1, demoVersion2 } from './input.ts'
 import { demoStatus } from './node.ts'
-import { decodeDemoVersion1, demoVersion1Definition, encodeDemoVersion1, initialDemoVersion1 } from './version-1.ts'
-import { decodeDemoVersion2, demoVersion2Definition, encodeDemoVersion2, initialDemoVersion2 } from './version-2.ts'
+import { decodeDemoVersion1, demoVersion1Definition, initialDemoVersion1 } from './version-1.ts'
+import { decodeDemoVersion2, demoVersion2Definition, initialDemoVersion2 } from './version-2.ts'
 
 export { ManagedSnapshot as DemoSnapshot } from '@/core/feature/workflow/managed-runtime'
 const decodeVersion = Schema.decodeUnknownEffect(DemoWorkflowVersion)
@@ -34,13 +34,12 @@ const demoImplementation = (version: DemoWorkflowVersion) =>
     Match.orElseAbsurd,
   )
 export const demoGraph = (version: DemoWorkflowVersion): GraphDefinition => demoImplementation(version).graph
-export const initialSnapshot = (version: DemoWorkflowVersion): ManagedSnapshot => ({
-  schemaVersion: 1,
-  version,
-  machine: SemVer.equals(version, demoVersion1)
-    ? Effect.runSync(encodeDemoVersion1(initialDemoVersion1))
-    : Effect.runSync(encodeDemoVersion2(initialDemoVersion2)),
-})
+export const initialSnapshot = (version: DemoWorkflowVersion): Effect.Effect<ManagedSnapshot> =>
+  Effect.map(SemVer.equals(version, demoVersion1) ? initialDemoVersion1 : initialDemoVersion2, (machine) => ({
+    schemaVersion: 1,
+    version,
+    machine,
+  }))
 
 /** Decode-only validation never opens a native runtime or acquires Crypto. */
 export const restoreDemo = (run: Run) =>

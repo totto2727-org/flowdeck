@@ -77,10 +77,12 @@ const boundaryEvents = (state: DevelopmentNativeState): Readonly<EventDraft[]> =
   return []
 }
 
-export const initialDevelopmentSnapshot = (input: DevelopmentCreateRun): ManagedSnapshot => {
-  const initial = Effect.runSync(Machine.planInitial(DevelopmentMachine, input))
-  return { schemaVersion: 1, version: developmentVersion, machine: Effect.runSync(encodeNative(initial.state)) }
-}
+export const initialDevelopmentSnapshot = (input: DevelopmentCreateRun): Effect.Effect<ManagedSnapshot> =>
+  Machine.planInitial(DevelopmentMachine, input).pipe(
+    Effect.flatMap((initial) => encodeNative(initial.state)),
+    Effect.map((machine) => ({ schemaVersion: 1 as const, version: developmentVersion, machine })),
+    Effect.orDie,
+  )
 const restoration = {
   workflowId: 'jcode-development',
   version: developmentVersion,

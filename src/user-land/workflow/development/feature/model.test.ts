@@ -16,7 +16,7 @@ const decodeSessionId = Schema.decodeUnknownSync(SessionId)
 
 const encodeDevelopmentSnapshot = Schema.encodeSync(DevelopmentSnapshotJson)
 const decodeDevelopmentSnapshot = Schema.decodeUnknownSync(DevelopmentSnapshotJson)
-const initialSnapshot = initialDevelopmentSnapshot({
+const initialCheckpoint = initialDevelopmentSnapshot({
   workflowId: 'jcode-development',
   version: developmentVersion,
   repository: new URL('https://github.com/example/project'),
@@ -68,7 +68,8 @@ describe('development operation wire schemas', () => {
     'verify.completing',
   ])('validates command and execution identities in native %s checkpoints', (path) =>
     Effect.gen(function* () {
-      const initial = yield* Machine.decodeSnapshot(DevelopmentMachine, initialSnapshot.machine)
+      const { machine } = yield* initialCheckpoint
+      const initial = yield* Machine.decodeSnapshot(DevelopmentMachine, machine)
       const encoded = yield* Machine.encodeSnapshot(DevelopmentMachine, initial)
       const parent = String.startsWith('implement.')(path) ? 'implement' : 'verify'
       const tag = Option.getOrThrow(Array.last(String.split('.')(path)))
@@ -110,6 +111,7 @@ describe('development operation wire schemas', () => {
 
   live('round-trips native versions and repository values through both snapshot codecs', () =>
     Effect.gen(function* () {
+      const initialSnapshot = yield* initialCheckpoint
       const encoded = encodeDevelopmentSnapshot(initialSnapshot)
       expect(encoded).toMatchObject({ machine: { _tag: 'MachineSnapshot', version: 2 }, version: '1.0.0' })
       expect(encoded).not.toHaveProperty('context')

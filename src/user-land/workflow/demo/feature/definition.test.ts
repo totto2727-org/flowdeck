@@ -15,17 +15,23 @@ const decodeDemoCreateRun = Schema.decodeUnknownEffect(DemoCreateRun)
 const snapshotCodec = Schema.toCodecJson(DemoSnapshot)
 
 const decodeSnapshotCodec = Schema.decodeUnknownEffect(snapshotCodec)
-const fixture = (version: typeof demoVersion1): Run => ({
-  runId: 'run_00000000-0000-4000-8000-000000000001',
-  workflowId: 'demo',
-  workflowVersion: version,
-  graphId: demoGraph(version).graphId,
-  status: 'pending',
-  revision: 0,
-  snapshot: Effect.runSync(encodeDemoSnapshot(initialSnapshot(version))),
-  createdAt: DateTime.makeUnsafe('2026-10-31T00:00:00.000Z'),
-  updatedAt: DateTime.makeUnsafe('2026-10-31T00:00:00.000Z'),
-})
+const fixture = (version: typeof demoVersion1): Effect.Effect<Run> =>
+  Effect.gen(function* () {
+    const initial = yield* initialSnapshot(version)
+    const snapshot = yield* encodeDemoSnapshot(initial)
+    const timestamp = DateTime.makeUnsafe('2026-10-31T00:00:00.000Z')
+    return {
+      runId: 'run_00000000-0000-4000-8000-000000000001',
+      workflowId: 'demo',
+      workflowVersion: version,
+      graphId: demoGraph(version).graphId,
+      status: 'pending',
+      revision: 0,
+      snapshot,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    }
+  })
 
 describe('demo definition', () => {
   live.each([demoVersion1, demoVersion2])('keeps the published definition %s stable', (version) =>
@@ -51,21 +57,29 @@ describe('demo definition', () => {
         expect(prepared.graph.graphId).toBe(
           SemVer.equals(version, demoVersion1) ? 'demo-1_0_0-graph-1' : 'demo-2_0_0-graph-1',
         )
-        expect(yield* restoreDemo(fixture(version))).toStrictEqual(initialSnapshot(version))
+        const run = yield* fixture(version)
+        const initial = yield* initialSnapshot(version)
+        expect(yield* restoreDemo(run)).toStrictEqual(initial)
       }),
   )
-  test.each(['v1', 'v2'])('rejects legacy snapshot version %s', async (version) => {
-    await expect(Effect.runPromise(decodeSnapshotCodec({ _tag: 'Ready', schemaVersion: 1, version }))).rejects.toThrow()
-  })
-  test.each([
+  live.each(['v1', 'v2'])('rejects legacy snapshot version %s', (version) =>
+    Effect.gen(function* () {
+      const failure = yield* Effect.flip(decodeSnapshotCodec({ _tag: 'Ready', schemaVersion: 1, version }))
+      expect(failure).toBeInstanceOf(Schema.SchemaError)
+    }),
+  )
+  live.each([
     { workflowId: 'other' },
     { graphId: 'other-graph' },
     { workflowVersion: demoVersion2 },
     { status: 'running' },
     { snapshot: { schemaVersion: 1, version: '1.0.0', machine: {} } },
-  ] as const)('rejects inconsistent persisted identity or native state %j', async (change) => {
-    await expect(Effect.runPromise(restoreDemo({ ...fixture(demoVersion1), ...change }))).rejects.toThrow()
-  })
+  ] as const)('rejects inconsistent persisted identity or native state %j', (change) =>
+    Effect.gen(function* () {
+      const run = yield* fixture(demoVersion1)
+      expect(yield* Effect.flip(restoreDemo({ ...run, ...change }))).toMatchObject({ _tag: 'InvalidSnapshot' })
+    }),
+  )
   test('requires native execution identities to use the owned execution schema', () => {
     const prepare = Schema.decodeUnknownSync(DemoData.cases.prepare)
     expect(
@@ -76,7 +90,7 @@ describe('demo definition', () => {
     })
     expect(() => prepare({ _tag: 'prepare', prepareExecutionId: 'run:prepare:1' })).toThrow()
   })
-  test.each([
+  live.each([
     {
       path: 'prepare',
       status: 'running',
@@ -105,35 +119,40 @@ describe('demo definition', () => {
     },
   ] as const)(
     'restores $path native execution identity without Crypto and rejects malformed identity',
-    async ({ path, status, value }) => {
-      const snapshot = {
-        schemaVersion: 1,
-        version: '1.0.0',
-        machine: { _tag: 'MachineSnapshot', version: 2, active: [{ path: '' }, { path, value }] },
-      }
-      const run = { ...fixture(demoVersion1), status, snapshot }
-      await expect(Effect.runPromise(restoreDemo(run))).resolves.toStrictEqual({ ...snapshot, version: demoVersion1 })
-      const corrupted = {
-        ...snapshot,
-        machine: {
-          ...snapshot.machine,
-          active: [{ path: '' }, { path, value: { ...value, prepareExecutionId: 'checkpoint' } }],
-        },
-      }
-      await expect(Effect.runPromise(restoreDemo({ ...run, snapshot: corrupted }))).rejects.toThrow()
-    },
+    ({ path, status, value }) =>
+      Effect.gen(function* () {
+        const snapshot = {
+          schemaVersion: 1,
+          version: '1.0.0',
+          machine: { _tag: 'MachineSnapshot', version: 2, active: [{ path: '' }, { path, value }] },
+        }
+        const seed = yield* fixture(demoVersion1)
+        const run = { ...seed, status, snapshot }
+        expect(yield* restoreDemo(run)).toStrictEqual({ ...snapshot, version: demoVersion1 })
+        const corrupted = {
+          ...snapshot,
+          machine: {
+            ...snapshot.machine,
+            active: [{ path: '' }, { path, value: { ...value, prepareExecutionId: 'checkpoint' } }],
+          },
+        }
+        expect(yield* Effect.flip(restoreDemo({ ...run, snapshot: corrupted }))).toMatchObject({
+          _tag: 'InvalidSnapshot',
+        })
+      }),
   )
-  test.each([
+  live.each([
     { workflowId: 'demo', version: 'v1' },
     { workflowId: 'demo', version: 'v2' },
     { workflowId: 'demo', version: SemVer.make({ major: 3, minor: 0, patch: 0 }) },
     { workflowId: 'demo', version: demoVersion1, task: 'unexpected' },
     { workflowId: 'other', version: demoVersion1 },
-  ])('rejects unsupported or excess input %j', async (input) => {
-    await expect(
-      Effect.runPromise(
-        decodeDemoCreateRun(input, { onExcessProperty: 'error' }).pipe(Effect.flatMap(demoDefinition.prepare)),
-      ),
-    ).rejects.toThrow()
-  })
+  ])('rejects unsupported or excess input %j', (input) =>
+    Effect.gen(function* () {
+      const prepared = decodeDemoCreateRun(input, { onExcessProperty: 'error' }).pipe(
+        Effect.flatMap(demoDefinition.prepare),
+      )
+      expect(yield* Effect.flip(prepared)).toBeInstanceOf(Schema.SchemaError)
+    }),
+  )
 })

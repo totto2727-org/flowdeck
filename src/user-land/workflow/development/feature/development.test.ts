@@ -50,19 +50,24 @@ const input = {
   task: 'Add a greeting and test it.',
 } as const
 const timestamp = DateTime.makeUnsafe('2026-10-17T12:00:00.000Z')
-const initialRun: Run = {
-  runId: 'run_00000000-0000-4000-8000-000000000002',
-  workflowId: input.workflowId,
-  workflowVersion: developmentVersion,
-  graphId: developmentGraph.graphId,
-  status: 'pending',
-  revision: 0,
-  snapshot: Schema.decodeUnknownSync(JsonObject)(
-    Schema.encodeSync(DevelopmentSnapshotJson)(initialDevelopmentSnapshot(input)),
-  ),
-  createdAt: timestamp,
-  updatedAt: timestamp,
-}
+const initialCheckpoint = initialDevelopmentSnapshot(input)
+const encodeSnapshot = Schema.encodeEffect(DevelopmentSnapshotJson)
+const makeInitialRun: Effect.Effect<Run, Schema.SchemaError> = Effect.gen(function* () {
+  const checkpoint = yield* initialCheckpoint
+  const snapshot = yield* encodeSnapshot(checkpoint)
+  return {
+    runId: 'run_00000000-0000-4000-8000-000000000002',
+    workflowId: input.workflowId,
+    workflowVersion: developmentVersion,
+    graphId: developmentGraph.graphId,
+    status: 'pending',
+    revision: 0,
+    snapshot: decodeJsonObject(snapshot),
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  }
+})
+let initialRun: Run
 const decodeSnapshot = Schema.decodeUnknownSync(DevelopmentSnapshotJson)
 const nativeOf = (snapshot: unknown) =>
   Effect.runSync(Machine.decodeSnapshot(DevelopmentMachine, decodeSnapshot(snapshot).machine))
@@ -113,8 +118,14 @@ beforeEach(async () => {
     Layer.provide(NativeD1Client),
     Layer.provide(Layer.succeed(D1Binding, database)),
   )
-  store = freshStore()
-  await Effect.runPromise(store.create(initialRun, developmentGraph, 'Pi development'))
+  // oxlint-disable-next-line rules/no-effect-runtime-run -- Vitest's native setup owns the D1 database and its initial record.
+  await Effect.runPromise(
+    Effect.gen(function* () {
+      store = yield* Store.pipe(Effect.provide(storeLayer))
+      initialRun = yield* makeInitialRun
+      yield* store.create(initialRun, developmentGraph, 'Pi development')
+    }),
+  )
   receipts = {}
   submissions = []
   completeCalls = []

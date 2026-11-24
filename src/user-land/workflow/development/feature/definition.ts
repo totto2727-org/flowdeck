@@ -30,7 +30,7 @@ export const developmentDefinition: WorkflowDefinition = {
       Effect.flatMap((validated) =>
         Effect.gen(function* () {
           const graph = developmentGraphFor(validated.version)
-          const initial = initialDevelopmentSnapshot(validated)
+          const initial = yield* initialDevelopmentSnapshot(validated)
           const encoded = yield* encodeSnapshot(initial).pipe(Effect.orDie)
           const snapshot = yield* Effect.fromResult(decodeJsonObject(encoded)).pipe(Effect.orDie)
           return { graph, snapshot }

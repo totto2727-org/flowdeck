@@ -6,7 +6,7 @@ import { defineQuery } from '@totto2727/reylo'
 import { QueryDecodeError, QueryExecutor } from '@totto2727/reylo/effect'
 import type { PreparedStatement } from 'alchemy/Cloudflare/D1'
 import { makeRpcStub } from 'alchemy/Cloudflare/Workers'
-import { Array, Crypto, Data, DateTime, Effect, Exit, Fiber, Layer, Predicate, Result, Schema, SemVer } from 'effect'
+import { Array, Crypto, Data, DateTime, Effect, Exit, Fiber, Layer, Predicate, Schema, SemVer } from 'effect'
 import { HttpRouter } from 'effect/http'
 import { TestCrypto } from 'effect/testing'
 import { Miniflare } from 'miniflare'
@@ -36,8 +36,8 @@ import { Workflows } from '@/core/feature/workflow/services/workflows'
 import { ApiRoutes } from '@/core/worker/control/feature/router'
 import { demoDefinition } from '@/user-land/workflow/demo/feature/definition'
 import {
-  DemoSnapshot,
   demoGraph,
+  encodeDemoSnapshot,
   initialSnapshot,
   makeDemoExecutor,
   resumeRun,
@@ -47,28 +47,24 @@ import {
 const version1 = SemVer.parseUnsafe('1.0.0')
 const version2 = SemVer.parseUnsafe('2.0.0')
 const now = DateTime.makeUnsafe('2026-10-17T12:00:00.000Z')
-const encodeDemo = Schema.encodeResult(Schema.toCodecJson(DemoSnapshot))
-const isJsonObject = Schema.is(Schema.JsonObject)
 // oxlint-disable-next-line rules/prefer-non-unknown-decode -- The native HTTP response body has no trusted shape.
 const decodeHttpRunDetail = Schema.decodeUnknownEffect(Schema.toCodecJson(RunDetail))
-const snapshotJson = (snapshot: DemoSnapshot): Schema.JsonObject => {
-  const encoded = Result.getOrThrow(encodeDemo(snapshot))
-  if (!isJsonObject(encoded)) {
-    throw new TypeError('The encoded demo fixture must be a JSON object')
-  }
-  return encoded
-}
-const newRun = (runId: string, version: WorkflowVersion = version1): Run => ({
-  runId,
-  workflowId: 'demo',
-  workflowVersion: version,
-  graphId: demoGraph(version).graphId,
-  status: 'pending',
-  revision: 0,
-  snapshot: snapshotJson(initialSnapshot(version)),
-  createdAt: now,
-  updatedAt: now,
-})
+const newRun = (runId: string, version: WorkflowVersion = version1): Effect.Effect<Run> =>
+  Effect.gen(function* () {
+    const initial = yield* initialSnapshot(version)
+    const snapshot = yield* encodeDemoSnapshot(initial)
+    return {
+      runId,
+      workflowId: 'demo',
+      workflowVersion: version,
+      graphId: demoGraph(version).graphId,
+      status: 'pending',
+      revision: 0,
+      snapshot,
+      createdAt: now,
+      updatedAt: now,
+    }
+  })
 const command = (overrides: Partial<CommitCommand> = {}): CommitCommand => ({
   commitId: 'commit_00000000-0000-4000-8000-000000000001',
   runId: 'run_00000000-0000-4000-8000-000000000001',
@@ -143,7 +139,10 @@ const seedEffect = (
   runId = 'run_00000000-0000-4000-8000-000000000001',
   version: WorkflowVersion = version1,
 ): ReturnType<StoreService['create']> =>
-  store.create(newRun(runId, version), demoGraph(version), demoDefinition.summary.name)
+  Effect.gen(function* () {
+    const run = yield* newRun(runId, version)
+    return yield* store.create(run, demoGraph(version), demoDefinition.summary.name)
+  })
 
 /*
  * A Layer substitutes only the static binding boundary. Its worker implementation
@@ -330,7 +329,7 @@ describe('D1 persisted run store', () => {
       const queries = yield* freshQueries()
       const layer = D1StoreLive.pipe(Layer.provide(Layer.succeed(DatabaseQueries, queries)))
       const supplied = yield* Store.pipe(Effect.provide(layer))
-      const initial = newRun(command().runId)
+      const initial = yield* newRun(command().runId)
       const graph = demoGraph(version1)
       yield* supplied.create(initial, graph, demoDefinition.summary.name)
       const detail = yield* supplied.getRun(initial.runId)
@@ -425,7 +424,7 @@ describe('D1 persisted run store', () => {
         ),
       )
       const otherRunId = 'run_00000000-0000-4000-8000-000000000002'
-      yield* otherStore.create(newRun(otherRunId), demoGraph(version1), demoDefinition.summary.name)
+      yield* otherStore.create(yield* newRun(otherRunId), demoGraph(version1), demoDefinition.summary.name)
       expect(yield* store.listRuns).toStrictEqual([])
       yield* seedEffect()
       expect(yield* store.listRuns).toMatchObject([{ runId: command().runId }])
@@ -453,7 +452,7 @@ describe('D1 persisted run store', () => {
         ),
       )
       const exit = yield* isolatedExit(
-        interrupted.create(newRun(command().runId), demoGraph(version1), demoDefinition.summary.name),
+        interrupted.create(yield* newRun(command().runId), demoGraph(version1), demoDefinition.summary.name),
       )
       expect(Exit.hasInterrupts(exit)).toBe(true)
       expect(yield* store.listRuns).toStrictEqual([])
@@ -512,7 +511,7 @@ describe('D1 persisted run store', () => {
       expect(
         yield* Effect.flip(
           store.create(
-            { ...newRun('run_00000000-0000-4000-8000-000000000001'), ...identity },
+            { ...(yield* newRun('run_00000000-0000-4000-8000-000000000001')), ...identity },
             demoGraph(version1),
             demoDefinition.summary.name,
           ),
@@ -622,11 +621,11 @@ describe('D1 persisted run store', () => {
   live('orders random run IDs by explicit creation time rather than ID value', () =>
     Effect.gen(function* () {
       const older = {
-        ...newRun('run_ffffffff-ffff-4fff-8fff-ffffffffffff'),
+        ...(yield* newRun('run_ffffffff-ffff-4fff-8fff-ffffffffffff')),
         createdAt: DateTime.makeUnsafe('2026-01-01T00:00:00.000Z'),
       }
       const newer = {
-        ...newRun('run_00000000-0000-4000-8000-000000000000'),
+        ...(yield* newRun('run_00000000-0000-4000-8000-000000000000')),
         createdAt: DateTime.makeUnsafe('2026-01-02T00:00:00.000Z'),
       }
       yield* store.create(newer, demoGraph(version1), demoDefinition.summary.name)
@@ -649,7 +648,7 @@ describe('D1 persisted run store', () => {
         ),
       ).toMatchObject({ _tag: 'Conflict' })
       expect(yield* store.getRun('run_00000000-0000-4000-8000-000000000001')).toStrictEqual(
-        newRun('run_00000000-0000-4000-8000-000000000001'),
+        yield* newRun('run_00000000-0000-4000-8000-000000000001'),
       )
       expect(yield* store.getEvents('run_00000000-0000-4000-8000-000000000001', EventRange.All())).toStrictEqual([])
       expect(yield* store.commit(command())).toStrictEqual({
@@ -667,10 +666,10 @@ describe('D1 persisted run store', () => {
       yield* seedEffect()
       const restored = yield* freshStore
       expect(yield* restored.getRun('run_00000000-0000-4000-8000-000000000001')).toStrictEqual(
-        newRun('run_00000000-0000-4000-8000-000000000001'),
+        yield* newRun('run_00000000-0000-4000-8000-000000000001'),
       )
       expect(yield* restored.getGraph(demoGraph(version1).graphId)).toStrictEqual(demoGraph(version1))
-      expect(yield* restored.listRuns).toStrictEqual([newRun('run_00000000-0000-4000-8000-000000000001')])
+      expect(yield* restored.listRuns).toStrictEqual([yield* newRun('run_00000000-0000-4000-8000-000000000001')])
     }),
   )
 
@@ -843,7 +842,7 @@ describe('D1 persisted run store', () => {
       expect(
         yield* Effect.flip(
           store.create(
-            newRun('run_00000000-0000-4000-8000-000000000002'),
+            yield* newRun('run_00000000-0000-4000-8000-000000000002'),
             { ...demoGraph(version1), nodes: [] },
             demoDefinition.summary.name,
           ),
@@ -1096,7 +1095,10 @@ describe('demo cold restoration', () => {
 describe('interrupted workflow recovery', () => {
   live('rejects an unregistered persisted workflow before dispatch without changing its checkpoint', () =>
     Effect.gen(function* () {
-      const unsupported = { ...newRun('run_00000000-0000-4000-8000-000000000004'), workflowId: 'unregistered-workflow' }
+      const unsupported = {
+        ...(yield* newRun('run_00000000-0000-4000-8000-000000000004')),
+        workflowId: 'unregistered-workflow',
+      }
       yield* store.create(unsupported, demoGraph(version1), 'Unregistered workflow')
       const resume = vi.fn(() => Effect.die('Unregistered workflows must not dispatch'))
       const binding = { start: resume, resume }

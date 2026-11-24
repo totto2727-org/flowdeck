@@ -88,7 +88,10 @@ export const encodeDemoVersion2 = (state: Machine.Snapshot<typeof demoVersion2St
     Effect.flatMap(decodeJson),
     Effect.mapError(invalidDemoSnapshot),
   )
-export const initialDemoVersion2 = Effect.runSync(Machine.planInitial(demoVersion2Machine)).state
+export const initialDemoVersion2: Effect.Effect<JsonObject> = Machine.planInitial(demoVersion2Machine).pipe(
+  Effect.flatMap((initial) => encodeDemoVersion2(initial.state)),
+  Effect.orDie,
+)
 export const demoVersion2Definition = {
   workflowId: 'demo',
   version: demoVersion2,

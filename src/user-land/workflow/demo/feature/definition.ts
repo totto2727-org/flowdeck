@@ -13,9 +13,10 @@ export const demoDefinition: WorkflowDefinition = {
   summary: demoWorkflow,
   prepare: (input) =>
     decodeInput(input, { onExcessProperty: 'error' }).pipe(
-      Effect.flatMap((validated) =>
-        encodeDemoSnapshot(initialSnapshot(validated.version)).pipe(
-          Effect.map((snapshot) => ({ graph: demoGraph(validated.version), snapshot })),
+      Effect.flatMap(({ version }) =>
+        initialSnapshot(version).pipe(
+          Effect.flatMap(encodeDemoSnapshot),
+          Effect.map((snapshot) => ({ graph: demoGraph(version), snapshot })),
         ),
       ),
     ),
