@@ -3,11 +3,11 @@ import type { RuntimeContext } from 'alchemy/RuntimeContext'
 import { Context, Effect, Layer, Predicate, Schema } from 'effect'
 
 /** Explicitly supported native text models share prompt input and nonstream text output. */
-export const WorkersAiTextModel = Schema.Literals([
+export const WorkersAiTextModelSchema = Schema.Literals([
   '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
   '@cf/meta/llama-3.1-8b-instruct-fp8',
 ])
-export type WorkersAiTextModel = typeof WorkersAiTextModel.Type
+export type WorkersAiTextModel = typeof WorkersAiTextModelSchema.Type
 
 export const workersAiTextModel = '@cf/meta/llama-3.3-70b-instruct-fp8-fast'
 
@@ -17,6 +17,7 @@ type NativeInput = AiModels[typeof workersAiTextModel]['inputs'] &
 export type WorkersAiTextInput = Omit<Extract<NativeInput, { prompt: string }>, 'stream'>
 
 const TextOutput = Schema.Union([Schema.String, Schema.Struct({ response: Schema.String })])
+// oxlint-disable-next-line rules/prefer-non-unknown-decode -- The native inference binding can return async receipts or tool results in place of text.
 const decodeTextOutput = Schema.decodeUnknownEffect(TextOutput)
 
 /** Acquire this once at the runtime root, with Alchemy's official AIBinding Layer. */
