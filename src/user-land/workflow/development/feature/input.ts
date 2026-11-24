@@ -34,10 +34,11 @@ export const developmentVersion = SemVer.make({ major: 1, minor: 0, patch: 0 })
 export const DevelopmentWorkflowVersion = Schema.SemVer.check(
   Schema.makeFilter((version) => SemVer.Equivalence(version, developmentVersion)),
 )
+// oxlint-disable-next-line eslint/no-redeclare -- Preserve both the workflow input schema and its public type.
 export const DevelopmentCreateRun = Schema.Struct({
-  workflowId: Schema.Literal('jcode-development'),
-  version: DevelopmentWorkflowVersion,
   repository: PublicRepository,
   task: DevelopmentTask,
+  version: DevelopmentWorkflowVersion,
+  workflowId: Schema.Literal('jcode-development'),
 })
 export type DevelopmentCreateRun = typeof DevelopmentCreateRun.Type
