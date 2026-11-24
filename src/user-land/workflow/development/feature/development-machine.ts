@@ -47,7 +47,7 @@ const pi = {
       const effects = yield* PiNodeEffects
       yield* checkpoint.checkpoint([
         ...(input.nodeId === 'implement' ? [{ type: 'run.started', payload: {} } satisfies EventDraft] : []),
-        piNodeEvent(input.nodeId, input.execution, 'node.started'),
+        piNodeEvent({ execution: input.execution, nodeId: input.nodeId, type: 'node.started' }),
       ])
       return yield* effects.submit(input)
     }),
@@ -56,7 +56,14 @@ const pi = {
   accept: (result: PiResult) =>
     Effect.gen(function* () {
       const checkpoint = yield* WorkflowCheckpoint
-      yield* checkpoint.checkpoint([piNodeEvent('implement', result, 'node.succeeded', { output: result.result })])
+      yield* checkpoint.checkpoint([
+        piNodeEvent({
+          execution: result,
+          nodeId: 'implement',
+          payload: { output: result.result },
+          type: 'node.succeeded',
+        }),
+      ])
     }),
   complete: (result: Parameters<typeof PiNodeEffects.Service.complete>[0]) =>
     Effect.flatMap(PiNodeEffects, (effects) => effects.complete(result)),

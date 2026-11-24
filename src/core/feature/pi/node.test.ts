@@ -49,7 +49,9 @@ describe('shared Pi node effects', () => {
   )
 
   test('preserves caller-owned node identity in event drafts', () => {
-    expect(piNodeEvent('review-release', execution, 'node.succeeded', { output: 'ready' })).toStrictEqual({
+    expect(
+      piNodeEvent({ execution, nodeId: 'review-release', payload: { output: 'ready' }, type: 'node.succeeded' }),
+    ).toStrictEqual({
       type: 'node.succeeded',
       nodeId: 'review-release',
       executionId: execution.executionId,

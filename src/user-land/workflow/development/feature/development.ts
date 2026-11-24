@@ -56,14 +56,24 @@ const terminalEvents = (state: DevelopmentNativeState): Readonly<EventDraft[]> =
   const completed = DevelopmentStates.get(state, 'completed')
   if (Option.isSome(completed)) {
     return [
-      piNodeEvent('verify', completed.value, 'node.succeeded', { output: completed.value.result }),
+      piNodeEvent({
+        execution: completed.value,
+        nodeId: 'verify',
+        payload: { output: completed.value.result },
+        type: 'node.succeeded',
+      }),
       { payload: {}, type: 'run.completed' },
     ]
   }
   const failed = DevelopmentStates.get(state, 'failed')
   if (Option.isSome(failed)) {
     return [
-      piNodeEvent(failed.value.nodeId, failed.value, 'node.failed', { message: failed.value.message }),
+      piNodeEvent({
+        execution: failed.value,
+        nodeId: failed.value.nodeId,
+        payload: { message: failed.value.message },
+        type: 'node.failed',
+      }),
       { payload: {}, type: 'run.failed' },
     ]
   }
@@ -73,11 +83,11 @@ const terminalEvents = (state: DevelopmentNativeState): Readonly<EventDraft[]> =
 const boundaryEvents = (state: DevelopmentNativeState): Readonly<EventDraft[]> => {
   const implementing = DevelopmentStates.get(state, 'implement.awaiting')
   if (Option.isSome(implementing)) {
-    return [piNodeEvent('implement', implementing.value, 'run.waiting')]
+    return [piNodeEvent({ execution: implementing.value, nodeId: 'implement', type: 'run.waiting' })]
   }
   const verifying = DevelopmentStates.get(state, 'verify.awaiting')
   if (Option.isSome(verifying)) {
-    return [piNodeEvent('verify', verifying.value, 'run.waiting')]
+    return [piNodeEvent({ execution: verifying.value, nodeId: 'verify', type: 'run.waiting' })]
   }
   return terminalEvents(state)
 }
