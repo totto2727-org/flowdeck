@@ -9,6 +9,7 @@ import type { GraphDefinition, Run, RunStatus, WorkflowSummary } from '@/core/fe
 import { projectMachineGraph } from '@/core/feature/workflow/graph'
 import { ManagedSnapshot, makeManagedExecutor, restoreManagedSnapshot } from '@/core/feature/workflow/managed-runtime'
 import type { EventDraft } from '@/core/feature/workflow/managed-runtime'
+import type { WorkflowFailure } from '@/core/feature/workflow/services/failures'
 
 import { DevelopmentMachine, DevelopmentStates } from './development-machine.ts'
 import type { DevelopmentNativeState } from './development-machine.ts'
@@ -17,14 +18,15 @@ import type { DevelopmentCreateRun, DevelopmentWorkflowVersion } from './input.t
 
 export { ManagedSnapshot as DevelopmentSnapshot } from '@/core/feature/workflow/managed-runtime'
 export const DevelopmentSnapshotJson = Schema.toCodecJson(ManagedSnapshot)
-const decodeObject = Schema.decodeUnknownSync(JsonObject)
-const decodeNative = (encoded: JsonObject) =>
+// oxlint-disable-next-line rules/prefer-non-unknown-decode -- The native machine encoder produces an unchecked wire object.
+const decodeObject = Schema.decodeUnknownEffect(JsonObject)
+const decodeNative = (encoded: JsonObject): Effect.Effect<DevelopmentNativeState, InvalidSnapshot> =>
   Machine.decodeSnapshot(DevelopmentMachine, encoded).pipe(
     Effect.mapError(() => new InvalidSnapshot({ message: 'Invalid development native machine checkpoint' })),
   )
-const encodeNative = (state: DevelopmentNativeState) =>
+const encodeNative = (state: DevelopmentNativeState): Effect.Effect<JsonObject, InvalidSnapshot> =>
   Machine.encodeSnapshot(DevelopmentMachine, state).pipe(
-    Effect.map(decodeObject),
+    Effect.flatMap(decodeObject),
     Effect.mapError(() => new InvalidSnapshot({ message: 'Invalid development native machine state' })),
   )
 
@@ -51,6 +53,24 @@ export const developmentStatus = (state: DevelopmentNativeState): RunStatus => {
   }
   return 'running'
 }
+const terminalEvents = (state: DevelopmentNativeState): Readonly<EventDraft[]> => {
+  const completed = DevelopmentStates.get(state, 'completed')
+  if (Option.isSome(completed)) {
+    return [
+      piNodeEvent('verify', completed.value, 'node.succeeded', { output: completed.value.result }),
+      { payload: {}, type: 'run.completed' },
+    ]
+  }
+  const failed = DevelopmentStates.get(state, 'failed')
+  if (Option.isSome(failed)) {
+    return [
+      piNodeEvent(failed.value.nodeId, failed.value, 'node.failed', { message: failed.value.message }),
+      { payload: {}, type: 'run.failed' },
+    ]
+  }
+  return []
+}
+
 const boundaryEvents = (state: DevelopmentNativeState): Readonly<EventDraft[]> => {
   const implementing = DevelopmentStates.get(state, 'implement.awaiting')
   if (Option.isSome(implementing)) {
@@ -60,101 +80,92 @@ const boundaryEvents = (state: DevelopmentNativeState): Readonly<EventDraft[]> =
   if (Option.isSome(verifying)) {
     return [piNodeEvent('verify', verifying.value, 'run.waiting')]
   }
-  const completed = DevelopmentStates.get(state, 'completed')
-  if (Option.isSome(completed)) {
-    return [
-      piNodeEvent('verify', completed.value, 'node.succeeded', { output: completed.value.result }),
-      { type: 'run.completed', payload: {} },
-    ]
-  }
-  const failed = DevelopmentStates.get(state, 'failed')
-  if (Option.isSome(failed)) {
-    return [
-      piNodeEvent(failed.value.nodeId, failed.value, 'node.failed', { message: failed.value.message }),
-      { type: 'run.failed', payload: {} },
-    ]
-  }
-  return []
+  return terminalEvents(state)
 }
 
 export const initialDevelopmentSnapshot = (input: DevelopmentCreateRun): Effect.Effect<ManagedSnapshot> =>
   Machine.planInitial(DevelopmentMachine, input).pipe(
     Effect.flatMap((initial) => encodeNative(initial.state)),
-    Effect.map((machine) => ({ schemaVersion: 1 as const, version: developmentVersion, machine })),
+    Effect.map((machine): ManagedSnapshot => ({ machine, schemaVersion: 1, version: developmentVersion })),
     Effect.orDie,
   )
 const restoration = {
-  workflowId: 'jcode-development',
-  version: developmentVersion,
-  graph: developmentGraph,
   decode: decodeNative,
+  graph: developmentGraph,
   status: developmentStatus,
+  version: developmentVersion,
+  workflowId: 'jcode-development',
 }
-export const restoreDevelopment = (run: Run) => restoreManagedSnapshot(restoration, run)
+export const restoreDevelopment = (run: Run): Effect.Effect<DevelopmentNativeState, WorkflowFailure> =>
+  restoreManagedSnapshot(restoration, run)
 
 /** Stable provider and Crypto dependencies are captured once. The managed host
  * owns the execution Scope and supplies one volatile ResourceStore per command. */
 const program = Effect.gen(function* () {
   const pi = yield* makePiNodeEffects
   return {
+    boundaryEvents,
     decode: decodeNative,
     encode: encodeNative,
-    start: (state: DevelopmentNativeState) =>
-      Effect.gen(function* () {
-        const input = Option.getOrThrow(DevelopmentStates.get(state, ''))
-        return yield* Machine.start(DevelopmentMachine, {
-          workflowId: 'jcode-development',
-          version: input.version,
-          repository: input.repository,
-          task: input.task,
-        }).pipe(Effect.provideService(PiNodeEffects, pi))
-      }),
-    resume: (state: DevelopmentNativeState) =>
-      Machine.resume(DevelopmentMachine, state).pipe(Effect.provideService(PiNodeEffects, pi)),
     isReplyBoundary: (state: DevelopmentNativeState) => {
       const status = developmentStatus(state)
       return status === 'waiting' || status === 'completed' || status === 'failed'
     },
-    status: developmentStatus,
-    boundaryEvents,
     mapError: () => new InvalidSnapshot({ message: 'Development machine execution failed' }),
+    resume: (state: DevelopmentNativeState) =>
+      Machine.resume(DevelopmentMachine, state).pipe(Effect.provideService(PiNodeEffects, pi)),
+    start: (state: DevelopmentNativeState) =>
+      Effect.gen(function* () {
+        const input = Option.getOrThrow(DevelopmentStates.get(state, ''))
+        return yield* Machine.start(DevelopmentMachine, {
+          repository: input.repository,
+          task: input.task,
+          version: input.version,
+          workflowId: 'jcode-development',
+        }).pipe(Effect.provideService(PiNodeEffects, pi))
+      }),
+    status: developmentStatus,
   }
 })
 export const makeDevelopmentExecutor = makeManagedExecutor({
-  workflowId: 'jcode-development',
-  version: developmentVersion,
   graph: developmentGraph,
   program,
+  version: developmentVersion,
+  workflowId: 'jcode-development',
 })
 export class DevelopmentExecutor extends Context.Service<
   DevelopmentExecutor,
   Effect.Success<typeof makeDevelopmentExecutor>
 >()('flowdeck/DevelopmentExecutor') {}
-export const startDevelopmentRun = (runId: RunId) =>
+type DevelopmentRequirements = Effect.Services<typeof makeDevelopmentExecutor>
+
+export const startDevelopmentRun = (runId: RunId): Effect.Effect<undefined, WorkflowFailure, DevelopmentRequirements> =>
   Effect.flatMap(makeDevelopmentExecutor, (executor) => executor.start(runId))
-export const resumeDevelopmentRun = (runId: RunId) =>
+export const resumeDevelopmentRun = (
+  runId: RunId,
+): Effect.Effect<undefined, WorkflowFailure, DevelopmentRequirements> =>
   Effect.flatMap(makeDevelopmentExecutor, (executor) => executor.resume(runId))
 
 export const developmentWorkflow: WorkflowSummary = {
-  workflowId: 'jcode-development',
-  name: 'Pi development',
-  versions: [developmentVersion],
   inputs: [
     {
-      name: 'repository',
-      label: 'Public GitHub repository',
       kind: 'text',
-      required: true,
-      placeholder: 'https://github.com/owner/repository',
+      label: 'Public GitHub repository',
       maxLength: 256,
+      name: 'repository',
+      placeholder: 'https://github.com/owner/repository',
+      required: true,
     },
     {
-      name: 'task',
-      label: 'Development task',
       kind: 'textarea',
-      required: true,
-      placeholder: 'Describe the change to implement and verify.',
+      label: 'Development task',
       maxLength: 16_000,
+      name: 'task',
+      placeholder: 'Describe the change to implement and verify.',
+      required: true,
     },
   ],
+  name: 'Pi development',
+  versions: [developmentVersion],
+  workflowId: 'jcode-development',
 }

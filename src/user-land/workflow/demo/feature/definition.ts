@@ -7,10 +7,10 @@ import { DemoCreateRun } from './input.ts'
 
 export { DemoCreateRun, DemoWorkflowVersion } from './input.ts'
 
+// oxlint-disable-next-line rules/prefer-non-unknown-decode -- Routing knows the envelope but has not validated the demo's literal workflow ID and allowed fields.
 const decodeInput = Schema.decodeUnknownEffect(DemoCreateRun)
 
 export const demoDefinition: WorkflowDefinition = {
-  summary: demoWorkflow,
   prepare: (input) =>
     decodeInput(input, { onExcessProperty: 'error' }).pipe(
       Effect.flatMap(({ version }) =>
@@ -20,4 +20,5 @@ export const demoDefinition: WorkflowDefinition = {
         ),
       ),
     ),
+  summary: demoWorkflow,
 }

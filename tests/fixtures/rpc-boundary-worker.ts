@@ -26,7 +26,7 @@ const logger = Logger.make((entry) => {
 })
 
 const respond = <E>(operation: string, effect: Effect.Effect<Schema.Json, E>): Promise<string> =>
-  // WorkerEntrypoint is the native Promise boundary. All business failures become JSON text before RPC serialization.
+  // oxlint-disable-next-line rules/no-effect-runtime-run -- WorkerEntrypoint requires a native Promise and serializes the typed RPC outcome as JSON text.
   Effect.runPromise(
     effect.pipe(rpcResponse(operation), Effect.provide(BrowserCrypto.layer), Effect.provide(Logger.layer([logger]))),
   )

@@ -19,12 +19,12 @@ const PreparationInput = Schema.Struct({
   repository: Schema.toCodecJson(DevelopmentCreateRun.fields.repository),
 })
 
+// oxlint-disable-next-line rules/prefer-non-unknown-decode -- Routing has not typed the workflow's repository URL and task fields.
 const decodePreparationInput = Schema.decodeUnknownEffect(PreparationInput)
 const encodeSnapshot = Schema.encodeEffect(DevelopmentSnapshotJson)
 const decodeJsonObject = Schema.decodeUnknownResult(JsonObject)
 
 export const developmentDefinition: WorkflowDefinition = {
-  summary: developmentWorkflow,
   prepare: (input) =>
     decodePreparationInput(input, { onExcessProperty: 'error' }).pipe(
       Effect.flatMap((validated) =>
@@ -37,4 +37,5 @@ export const developmentDefinition: WorkflowDefinition = {
         }),
       ),
     ),
+  summary: developmentWorkflow,
 }

@@ -93,6 +93,7 @@ export const makePiSdk = Effect.gen(function* () {
     state.raw as unknown as ConstructorParameters<typeof DurableObject>[0],
     env,
     () =>
+      // oxlint-disable-next-line rules/no-effect-runtime-run -- The native SDK calls Promise callbacks with no Effect runtime and reuses the captured activation context.
       Effect.runPromise(
         Effect.gen(function* () {
           const active = yield* state.storage.get<unknown>('active-run-id')
