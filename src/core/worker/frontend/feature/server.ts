@@ -18,7 +18,7 @@ export interface DashboardData {
 }
 export type Result<A> = Readonly<{ ok: true; value: A }> | Readonly<{ ok: false; message: string }>
 
-const result = <A, R>(effect: Effect.Effect<A, ControlError, R>) =>
+const result = <A, R>(effect: Effect.Effect<A, ControlError, R>): Effect.Effect<Result<A>, never, R> =>
   effect.pipe(
     Effect.map((value): Result<A> => ({ ok: true, value })),
     Effect.catchTag('ControlError', (error) => Effect.succeed<Result<A>>({ ok: false, message: error.message })),

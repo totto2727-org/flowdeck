@@ -25,7 +25,7 @@ export const subscribeTheme = (notify: () => void) => {
   return () => window.removeEventListener(themeChangeEvent, notify)
 }
 
-export const selectTheme = (theme: Theme) =>
+export const selectTheme = (theme: Theme): Effect.Effect<void> =>
   Effect.gen(function* () {
     yield* Effect.sync(() => {
       document.documentElement.dataset['theme'] = theme

@@ -57,7 +57,10 @@ const makeHarness = (multipleCheckpoints = false) => {
   })
   const events = Machine.eventsFromSchemas(ResumeEvent)
   const node = (nodeId: string) => ({ nodeId, executionId, attempt: 1 })
-  const effect = (name: string, drafts: Readonly<EventDraft[]>) =>
+  const effect = (
+    name: string,
+    drafts: Readonly<EventDraft[]>,
+  ): Effect.Effect<void, never, WorkflowCheckpoint | ResourceStore> =>
     Effect.gen(function* () {
       const checkpoint = yield* WorkflowCheckpoint
       expect(checkpoint.runId).toBe(runId)

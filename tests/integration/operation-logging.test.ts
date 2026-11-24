@@ -71,7 +71,7 @@ describe('operation failure logging', () => {
       ok(Exit.isFailure(parent))
       const local = Option.getOrThrow(Cause.findErrorOption(parent.cause))
       ok(local instanceof RemoteWorkerError)
-      const unavailable = () => Effect.fail(local)
+      const unavailable = (): Effect.Effect<never, RemoteWorkerError> => Effect.fail(local)
       const workflows: Workflows['Service'] = {
         listWorkflows: unavailable,
         listRuns: unavailable,
@@ -109,7 +109,8 @@ describe('operation failure logging', () => {
     async (failure) => {
       const original = new Error('private database failure')
       const error = new ExternalError({ operation: 'list runs', kind: 'storage', cause: original })
-      const unavailable = () => (failure === 'typed failure' ? Effect.fail(error) : Effect.die(error))
+      const unavailable = (): Effect.Effect<never, ExternalError> =>
+        failure === 'typed failure' ? Effect.fail(error) : Effect.die(error)
       const workflows: Workflows['Service'] = {
         listWorkflows: unavailable,
         listRuns: unavailable,

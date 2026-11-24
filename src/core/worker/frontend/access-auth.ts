@@ -16,7 +16,7 @@ export class AccessDenied extends Data.TaggedError('AccessDenied')<
 export const authorizeAccess = <R>(
   expected: ExpectedAccessAudience['Service'],
   admission: Effect.Effect<Pick<WorkerExecutionContextAccess, 'aud'> | undefined, never, R>,
-) =>
+): Effect.Effect<undefined, AccessDenied, R> =>
   Effect.gen(function* () {
     const access = yield* admission
     if (Predicate.isUndefined(access)) {

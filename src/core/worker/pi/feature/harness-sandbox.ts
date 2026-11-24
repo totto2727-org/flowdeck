@@ -34,7 +34,7 @@ export const makeHarnessSandbox = (
     const store = yield* Store
     const context = yield* Effect.context<SandboxRequirements>()
     const lock = yield* Semaphore.make(1)
-    const io = <A>(evaluate: () => Promise<A>) =>
+    const io = <A>(evaluate: () => Promise<A>): Effect.Effect<A, ExternalError> =>
       Effect.tryPromise({
         catch: sandboxError,
         try: evaluate,

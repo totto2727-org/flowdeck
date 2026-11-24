@@ -163,7 +163,7 @@ describe('native SDK RPC client boundary', () => {
       expect(local.cause).not.toBe(origin)
       expect(Cause.pretty(Cause.fail(local))).not.toContain('PRIVATE_ORIGIN')
 
-      const unused = () => Effect.die('Unused regression operation')
+      const unused = (): Effect.Effect<never> => Effect.die('Unused regression operation')
       const workflows: Workflows['Service'] = {
         listRuns,
         listWorkflows: unused,

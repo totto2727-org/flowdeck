@@ -15,9 +15,13 @@ export class ResourceStore extends Context.Service<ResourceStore, ResourceStoreS
     let resources: Context.Context<never> = Context.empty()
     const locks = MutableHashMap.empty<string, Semaphore.Semaphore>()
 
-    const get = <I, A>(key: Context.Key<I, A>) => Effect.sync(() => Context.getOption(resources, key))
+    const get = <I, A>(key: Context.Key<I, A>): Effect.Effect<Option.Option<A>> =>
+      Effect.sync(() => Context.getOption(resources, key))
 
-    const getOrTryInit = <I, A, E, R>(key: Context.Key<I, A>, initialize: Effect.Effect<A, E, R>) =>
+    const getOrTryInit = <I, A, E, R>(
+      key: Context.Key<I, A>,
+      initialize: Effect.Effect<A, E, R>,
+    ): Effect.Effect<A, E, Exclude<R, Scope.Scope>> =>
       Effect.suspend(() => {
         // Allocate the per-key lock synchronously before any initializer can suspend.
         const lock = Option.getOrElse(MutableHashMap.get(locks, key.key), () => {

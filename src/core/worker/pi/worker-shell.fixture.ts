@@ -81,7 +81,7 @@ export const DevelopmentRun = makeDurableObjectBridge(DurableObject, {
 })('DevelopmentRun')
 
 export default {
-  fetch(request: globalThis.Request, env: { PROBE: DurableObjectNamespace }) {
+  fetch(request: globalThis.Request, env: { PROBE: DurableObjectNamespace }): Promise<Response> {
     return env.PROBE.get(env.PROBE.idFromName('workspace')).fetch(request)
   },
 }

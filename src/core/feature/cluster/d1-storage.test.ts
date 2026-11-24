@@ -27,7 +27,7 @@ const StorageTestMachine = Machine.make({
   },
 })
 
-const address = (group = 'group', shard = 1, type = 'machine', id = 'run') =>
+const address = (group = 'group', shard = 1, type = 'machine', id = 'run'): EntityAddress.EntityAddress =>
   EntityAddress.make({
     shardId: ShardId.make(group, shard),
     entityType: EntityType.make(type),

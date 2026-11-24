@@ -8,7 +8,7 @@ import { accessAudienceFromEnvironment } from '@/core/worker/frontend/assembly'
 
 import { applicationMode } from './composition.ts'
 
-const selectedApplication = (values: Record<string, string>) =>
+const selectedApplication = (values: Record<string, string>): Promise<'development' | 'production'> =>
   Effect.runPromise(
     applicationMode.pipe(Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown(values))),
   )

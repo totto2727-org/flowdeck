@@ -32,7 +32,7 @@ const crypto = Crypto.make({
 const api = (workflows: Workflows['Service']) =>
   HttpRouter.toWebHandler(ApiRoutes.pipe(HttpRouter.provideRequest(Layer.succeed(Workflows, workflows))))
 
-const unavailable = () =>
+const unavailable = (): Effect.Effect<never, ExternalError> =>
   Effect.fail(
     new ExternalError({
       operation: 'call workflow worker',

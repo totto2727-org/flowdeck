@@ -12,7 +12,7 @@ import { WorkflowRegistry } from '@/core/feature/workflow/services/workflow-defi
 import type { Workflows } from '@/core/feature/workflow/services/workflows'
 
 // Alchemy's typed stub shape omits transport failures from its declared domain error channel.
-const bindingFailure = (error: WorkflowFailure | RpcCallError | RpcDecodeError) =>
+const bindingFailure = (error: WorkflowFailure | RpcCallError | RpcDecodeError): WorkflowFailure =>
   error._tag === 'RpcCallError' || error._tag === 'RpcDecodeError'
     ? new ExternalError({ operation: 'call workflow worker', kind: 'service', cause: error })
     : error

@@ -33,19 +33,19 @@ const decodePersistedRun = storedDecoder(Schema.toCodecJson(Run))
 const decodeObject = storedDecoder(JsonObject)
 const decodeEvent = storedDecoder(Schema.toCodecJson(RunEvent))
 
-export const json = (value: Schema.Json) =>
+export const json = (value: Schema.Json): Effect.Effect<string, ExternalError> =>
   encodeJson(value).pipe(
     Effect.mapError((cause) => new ExternalError({ operation: 'encode persisted data', cause, kind: 'storage' })),
   )
-export const fromJson = (value: string) =>
+export const fromJson = (value: string): Effect.Effect<Schema.Json, ExternalError> =>
   decodeJson(value).pipe(
     Effect.mapError((cause) => new ExternalError({ operation: 'decode persisted JSON', cause, kind: 'storage' })),
   )
-export const encodeVersion = (version: Run['workflowVersion']) =>
+export const encodeVersion = (version: Run['workflowVersion']): Effect.Effect<string, ExternalError> =>
   encodeSemVer(version).pipe(
     Effect.mapError((cause) => new ExternalError({ operation: 'encode workflow version', cause, kind: 'storage' })),
   )
-export const encodeCommand = (command: CommitCommand) =>
+export const encodeCommand = (command: CommitCommand): Effect.Effect<Schema.Json, ExternalError> =>
   encodeCommitCommand(command).pipe(
     Effect.mapError((cause) => new ExternalError({ operation: 'encode commit command', cause, kind: 'storage' })),
   )

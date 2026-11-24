@@ -84,7 +84,7 @@ const failedOf = (snapshot: unknown) => Option.getOrThrow(DevelopmentStates.get(
 let miniflare: Miniflare
 let store: StoreService
 let storeLayer: Layer.Layer<Store>
-const freshStore = () => Effect.runSync(Store.pipe(Effect.provide(storeLayer)))
+const freshStore = (): StoreService => Effect.runSync(Store.pipe(Effect.provide(storeLayer)))
 let receipts: Record<string, TurnReceipt>
 let submissions: Readonly<Readonly<{ runId: string; input: TurnRequest }>[]>
 let session: Session
@@ -150,7 +150,10 @@ beforeEach(async () => {
 afterEach(async () => {
   await miniflare.dispose()
 })
-const execute = <A, E>(effect: Effect.Effect<A, E, Store | PiSandbox | Crypto.Crypto>, suppliedStore = freshStore()) =>
+const execute = <A, E>(
+  effect: Effect.Effect<A, E, Store | PiSandbox | Crypto.Crypto>,
+  suppliedStore = freshStore(),
+): Promise<A> =>
   Effect.runPromise(
     effect.pipe(
       Effect.provideService(Store, suppliedStore),
@@ -166,8 +169,9 @@ const finishTurn = (node: 'implement' | 'verify') => {
   const commandId = submissions[node === 'implement' ? 0 : 1]!.input.commandId
   receipts = { ...receipts, [commandId]: { commandId, status: 'completed', text: `${node} result` } }
 }
-const offline = () => Effect.fail(new ExternalError({ kind: 'service', operation: 'test binding', cause: 'offline' }))
-const rejectCommit = () =>
+const offline = (): Effect.Effect<never, ExternalError> =>
+  Effect.fail(new ExternalError({ kind: 'service', operation: 'test binding', cause: 'offline' }))
+const rejectCommit = (): Effect.Effect<never, ExternalError> =>
   Effect.fail(new ExternalError({ kind: 'storage', operation: 'test checkpoint failure', cause: 'unavailable' }))
 
 /*
@@ -210,7 +214,7 @@ describe('development workflow with canonical D1 checkpoints', () => {
   })
 
   test('routes create and read-only Resume through the static development binding', async () => {
-    const provide = <A, E>(effect: Effect.Effect<A, E, Store | PiSandbox | Crypto.Crypto>) =>
+    const provide = <A, E>(effect: Effect.Effect<A, E, Store | PiSandbox | Crypto.Crypto>): Effect.Effect<A, E> =>
       effect.pipe(
         Effect.provideService(Store, freshStore()),
         Effect.provideService(PiSandbox, sandbox),

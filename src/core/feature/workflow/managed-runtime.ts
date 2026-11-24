@@ -101,7 +101,10 @@ export interface ManagedRestoration<State> {
   readonly status: (state: State) => RunStatus
 }
 
-export const restoreManagedSnapshot = <State>(definition: ManagedRestoration<State>, run: Run) =>
+export const restoreManagedSnapshot = <State>(
+  definition: ManagedRestoration<State>,
+  run: Run,
+): Effect.Effect<State, WorkflowFailure> =>
   Effect.gen(function* () {
     const snapshot = yield* decodeSnapshot(run.snapshot).pipe(
       Effect.mapError(() => new InvalidSnapshot({ message: 'Invalid managed machine snapshot' })),
@@ -150,9 +153,9 @@ export const makeManagedExecutor = <State, NativeError, Output, Requirements>(
       decode: program.decode,
       status: program.status,
     }
-    const restore = (run: Run) => restoreManagedSnapshot(restoration, run)
+    const restore = (run: Run): Effect.Effect<State, WorkflowFailure> => restoreManagedSnapshot(restoration, run)
 
-    const execute = (runId: RunId, operation: 'start' | 'resume') =>
+    const execute = (runId: RunId, operation: 'start' | 'resume'): Effect.Effect<undefined, WorkflowFailure> =>
       Effect.scoped(
         Effect.gen(function* () {
           const canonical = yield* store.getRun(runId)
@@ -257,7 +260,7 @@ export const makeManagedExecutor = <State, NativeError, Output, Requirements>(
         ),
       )
 
-    const command = (runId: RunId, operation: 'start' | 'resume') =>
+    const command = (runId: RunId, operation: 'start' | 'resume'): Effect.Effect<undefined, WorkflowFailure> =>
       Effect.suspend(() => {
         const lock = Option.getOrElse(MutableHashMap.get(locks, runId), () => {
           const created = Semaphore.makeUnsafe(1)

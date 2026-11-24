@@ -36,7 +36,7 @@ let miniflare: Miniflare
 
 // Miniflare exposes native RPC at runtime but types getWorker as a Fetcher only.
 // Derive the RPC surface from the bundled fixture instead of inventing a second contract.
-const entrypoint = async (name: string) =>
+const entrypoint = async (name: string): Promise<Pick<Fetcher<Parent, never>, 'start' | 'logs'>> =>
   (await miniflare.getWorker(name)) as unknown as Pick<Service<Parent>, 'start' | 'logs'>
 
 beforeAll(async () => {

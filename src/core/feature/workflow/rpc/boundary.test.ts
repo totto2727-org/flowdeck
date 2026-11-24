@@ -36,11 +36,11 @@ const capture = <A, E>(effect: Effect.Effect<A, E, Crypto.Crypto>) => {
   )
   return { entries, exit }
 }
-const success = <A, E>(exit: Exit.Exit<A, E>) => {
+const success = <A, E>(exit: Exit.Exit<A, E>): A => {
   ok(Exit.isSuccess(exit))
   return exit.value
 }
-const failure = <A, E>(exit: Exit.Exit<A, E>) => {
+const failure = <A, E>(exit: Exit.Exit<A, E>): E => {
   ok(Exit.isFailure(exit))
   return Option.getOrThrow(Cause.findErrorOption(exit.cause))
 }

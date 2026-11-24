@@ -31,7 +31,7 @@ export const latestExecution = (events: Readonly<RunEvent[]>) =>
     (event) => event.type === 'node.started' || event.type === 'node.succeeded' || event.type === 'node.failed',
   )
 
-export const runRecoveryAction = (status: RunStatus) =>
+export const runRecoveryAction = (status: RunStatus): 'resume' | 'recover' | null =>
   Match.value(status).pipe(
     Match.when('waiting', () => 'resume' as const),
     Match.when('pending', () => 'recover' as const),

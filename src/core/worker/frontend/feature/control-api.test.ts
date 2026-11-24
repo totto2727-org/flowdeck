@@ -6,7 +6,7 @@ import { describe, expect, vi } from 'vite-plus/test'
 import { ControlError, makeControlApi } from './control-api.ts'
 
 /** Transport fixtures exercise the real Effect client and schema boundary, not dashboard data. */
-const clientReturning = (body: unknown, status = 200) =>
+const clientReturning = (body: unknown, status = 200): HttpClient.HttpClient =>
   HttpClient.make((request) => Effect.succeed(HttpClientResponse.fromWeb(request, Response.json(body, { status }))))
 
 const run = {

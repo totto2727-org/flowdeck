@@ -87,6 +87,7 @@ export const demoBoundaryEvents = (state: DemoNativeState): Readonly<EventDraft[
   }
   return []
 }
-export const demoRuntimeError = (cause: unknown) =>
+export const demoRuntimeError = (cause: unknown): ExternalError =>
   new ExternalError({ kind: 'service', operation: 'demo native machine', cause })
-export const invalidDemoSnapshot = () => new InvalidSnapshot({ message: 'Invalid native demo machine snapshot' })
+export const invalidDemoSnapshot = (): InvalidSnapshot =>
+  new InvalidSnapshot({ message: 'Invalid native demo machine snapshot' })

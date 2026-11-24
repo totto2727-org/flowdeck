@@ -8,7 +8,9 @@ const NODE_SIZE = { width: 224, height: 100 }
 const NODE_HORIZONTAL_STEP = 280
 
 /** Event order is durable sequence order, independent of wall-clock timestamps. */
-export const projectEvents = (events: Readonly<RunEvent[]>) =>
+export const projectEvents = (
+  events: Readonly<RunEvent[]>,
+): HashMap.HashMap<string, 'failed' | 'running' | 'waiting' | 'idle' | 'succeeded'> =>
   Array.reduce(
     Array.sort(
       events,
@@ -33,7 +35,8 @@ export const projectEvents = (events: Readonly<RunEvent[]>) =>
 /** Layout is a pure graph projection. Selection belongs exclusively to the UI. */
 export const graphToShapes = (graph: GraphDefinition, events: Readonly<RunEvent[]> = []): Shapes => {
   const states = projectEvents(events)
-  const state = (nodeId: NodeId) => HashMap.get(states, nodeId).pipe(Option.getOrElse(() => 'idle' as const))
+  const state = (nodeId: NodeId): 'failed' | 'running' | 'waiting' | 'idle' | 'succeeded' =>
+    HashMap.get(states, nodeId).pipe(Option.getOrElse(() => 'idle' as const))
   return {
     nodes: Array.map(graph.nodes, (node, index) => ({
       id: node.nodeId,

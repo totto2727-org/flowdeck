@@ -10,7 +10,7 @@ import insertRequestQuery from './queries/insert-request.sql'
 import loadQuery from './queries/load.sql'
 import upsertCheckpointQuery from './queries/upsert-checkpoint.sql'
 
-const persist = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+const persist = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, ClusterError.PersistenceError, R> =>
   effect.pipe(
     Effect.mapError((cause) => new ClusterError.PersistenceError({ cause })),
     Effect.catchDefect((cause) => Effect.fail(new ClusterError.PersistenceError({ cause }))),

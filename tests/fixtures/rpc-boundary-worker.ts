@@ -31,7 +31,7 @@ const respond = <E>(operation: string, effect: Effect.Effect<Schema.Json, E>): P
     effect.pipe(rpcResponse(operation), Effect.provide(BrowserCrypto.layer), Effect.provide(Logger.layer([logger]))),
   )
 
-const originalError = () => {
+const originalError = (): Error => {
   const error = new Error('PRIVATE_RPC_DATABASE_PASSWORD')
   error.stack = 'Error: PRIVATE_RPC_DATABASE_PASSWORD\n    at childOnlyPrivateFrame (private-storage.ts:91:7)'
   error.cause = { cycle: error, nonJsonValue: BigInt(123) }

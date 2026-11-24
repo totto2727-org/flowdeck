@@ -29,7 +29,11 @@ const decodeRunParams = Schema.decodeUnknownEffect(Schema.Struct({ runId: RunId 
 const createRunBody = HttpServerRequest.schemaBodyJson(Schema.toCodecJson(CreateRun), {
   onExcessProperty: 'error',
 })
-const errorResponse = (status: number, error: string, message: string) =>
+const errorResponse = (
+  status: number,
+  error: string,
+  message: string,
+): Effect.Effect<HttpServerResponse.HttpServerResponse, HttpBody.HttpBodyError> =>
   respondApiError({ error, message }, { status })
 
 const ApiErrors = HttpRouter.middleware<{ handles: ApiFailure }>()((handler) =>

@@ -93,7 +93,7 @@ let miniflare: Miniflare
 let database: D1Database
 let store: StoreService
 let storeLayer: Layer.Layer<Store>
-const freshStore = () => Effect.runSync(Store.pipe(Effect.provide(storeLayer)))
+const freshStore = (): StoreService => Effect.runSync(Store.pipe(Effect.provide(storeLayer)))
 const freshQueries = (): Effect.Effect<Effect.Success<typeof makeDatabaseQueries>> =>
   DatabaseQueries.pipe(
     Effect.provide(
@@ -130,7 +130,7 @@ beforeEach(async () => {
 afterEach(async () => {
   await miniflare.dispose()
 })
-const run = <A, E>(effect: Effect.Effect<A, E, Store | Crypto.Crypto>) =>
+const run = <A, E>(effect: Effect.Effect<A, E, Store | Crypto.Crypto>): Promise<A> =>
   Effect.runPromise(effect.pipe(Effect.provideService(Store, store), Effect.provide(BrowserCrypto.layer)))
 const seed = (runId = 'run_00000000-0000-4000-8000-000000000001', version: WorkflowVersion = version1) =>
   Effect.runPromise(store.create(newRun(runId, version), demoGraph(version), demoDefinition.summary.name))
@@ -139,7 +139,7 @@ const seed = (runId = 'run_00000000-0000-4000-8000-000000000001', version: Workf
  * A Layer substitutes only the static binding boundary. Its worker implementation
  * is the same exported workflow used by the actual Durable Object adapter.
  */
-const testBinding = () =>
+const testBinding = (): Layer.Layer<WorkflowBinding> =>
   Layer.succeed(WorkflowBinding, {
     start: (runId) =>
       startRun(runId).pipe(Effect.provideService(Store, freshStore()), Effect.provide(BrowserCrypto.layer)),

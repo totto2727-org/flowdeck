@@ -14,7 +14,7 @@ class Configuration extends Context.Service<Configuration, Readonly<{ name: stri
 
 const resource = { read: () => 'native reference' }
 
-const run = <A, E>(effect: Effect.Effect<A, E, import('effect/Scope').Scope>) =>
+const run = <A, E>(effect: Effect.Effect<A, E, import('effect/Scope').Scope>): Promise<A> =>
   Effect.runPromise(Effect.scoped(effect))
 
 describe('ResourceStore', () => {
