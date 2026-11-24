@@ -6,10 +6,10 @@ import { InvalidSnapshot } from '@/core/feature/workflow/domain/errors'
 import { JsonObject } from '@/core/feature/workflow/domain/model'
 import type { Run } from '@/core/feature/workflow/domain/model'
 import type { CommitCommand } from '@/core/feature/workflow/services/store'
-import { restoreDevelopment } from '@/user-land/workflow/development/feature/development'
+import { developmentGraph, restoreDevelopment } from '@/user-land/workflow/development/feature/development'
 
 import { openDevelopmentFixture } from './development-d1.fixture.ts'
-import { decodeSnapshot, developmentInput, developmentTime } from './development-snapshot.fixture.ts'
+import { decodeSnapshot, developmentInput, developmentTime, matches, rootOf } from './development-snapshot.fixture.ts'
 
 type Fixture = Effect.Success<typeof openDevelopmentFixture>
 type LegacyInput = Readonly<{
@@ -173,5 +173,20 @@ live.each([
     const stored = { ...fixture.initial, ...changed }
     expect(yield* Effect.flip(restoreDevelopment(stored))).toBeInstanceOf(InvalidSnapshot)
     expect(fixture.pi.read().submissions).toStrictEqual([])
+  }).pipe(Effect.scoped),
+)
+
+live('persists native inputs, pinned version and immutable graph before starting', () =>
+  Effect.gen(function* () {
+    const { current, initial, store } = yield* openDevelopmentFixture
+    expect(yield* current).toStrictEqual(initial)
+    expect(yield* rootOf(initial.snapshot)).toMatchObject({
+      repository: developmentInput.repository,
+      runtime: 'pi-harness',
+      task: developmentInput.task,
+    })
+    expect(yield* store.getGraph(initial.graphId)).toStrictEqual(developmentGraph)
+    expect(yield* matches(initial.snapshot, 'implement.allocate')).toBe(true)
+    expect(initial.snapshot).not.toHaveProperty('context')
   }).pipe(Effect.scoped),
 )
