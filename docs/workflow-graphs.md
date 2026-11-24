@@ -292,6 +292,7 @@ Expand these contracts only with explicit persistence semantics and public-path 
 | [D1 storage validation](../tests/integration/d1-store-validation.test.ts)              | Run identities, persisted versions, and SQL-to-Effect values.                                                                |
 | [Workflow restoration tests](../tests/integration/d1-workflow-restoration.test.ts)     | Restoration of both demo versions and recovery after RPC failure.                                                            |
 | [Workflow HTTP tests](../tests/integration/d1-workflow-http.test.ts)                   | Public workflow routes, request validation, and persisted run details.                                                       |
+| [Workflow registry tests](../tests/integration/d1-workflow-registry.test.ts)           | Workflow-specific inputs, stored details, and registered execution bindings.                                                 |
 | [Development tests](../src/user-land/workflow/development/feature/development.test.ts) | Actual D1 checkpoints with sandbox-boundary controls for receipt recovery, no duplicate submission, and workflow completion. |
 | [Cluster storage tests](../src/core/feature/cluster/d1-storage.test.ts)                | Independent data-only Cluster storage through official Entity.client and actual local D1.                                    |
 
