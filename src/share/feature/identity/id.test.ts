@@ -6,12 +6,14 @@ import { describe, expect, test } from 'vite-plus/test'
 
 import { makePrefixedUUIDv4, UserDefinedId } from './id.ts'
 
+const decodeUserDefinedId = Schema.decodeUnknownSync(UserDefinedId)
+
 const uuid = '3d360c7a-4b1a-4df3-9633-861a220bf5b7'
 const prefixes = ['run', 'execution', 'event', 'commit', 'command', 'repository']
 
 describe('user-defined identities', () => {
   test.each(['demo', 'release-checkpoint', 'Review_42', 'a'.repeat(128)])('accepts safe ID %s', (id) => {
-    expect(Schema.decodeUnknownSync(UserDefinedId)(id)).toBe(id)
+    expect(decodeUserDefinedId(id)).toBe(id)
   })
 
   test.each([
@@ -36,7 +38,7 @@ describe('user-defined identities', () => {
     'a'.repeat(129),
   ])('rejects unsafe ID %s without silently changing its identity', (id) => {
     expect(Schema.is(UserDefinedId)(id)).toBe(false)
-    expect(() => Schema.decodeUnknownSync(UserDefinedId)(id)).toThrow()
+    expect(() => decodeUserDefinedId(id)).toThrow()
     expect(() => Schema.encodeSync(UserDefinedId)(id)).toThrow()
   })
 })

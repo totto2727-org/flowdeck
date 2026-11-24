@@ -53,11 +53,11 @@ describe('executable native Machine graph', () => {
       })
       expect(execute).not.toHaveBeenCalled()
       expect(graph.nodes).toStrictEqual([
-        { nodeId: 'implement', label: 'Implement task', kind: 'task' },
-        { nodeId: 'verify', label: 'Verify task', kind: 'task' },
+        { kind: 'task', label: 'Implement task', nodeId: 'implement' },
+        { kind: 'task', label: 'Verify task', nodeId: 'verify' },
       ])
       expect(graph.edges).toStrictEqual([
-        { edgeId: 'implement-verify', source: 'implement', target: 'verify', label: 'implementation complete' },
+        { edgeId: 'implement-verify', label: 'implementation complete', source: 'implement', target: 'verify' },
       ])
       yield* Effect.scoped(
         Effect.gen(function* () {
@@ -102,7 +102,7 @@ describe('executable native Machine graph', () => {
           nodes: Machine.stateNodes(native),
           transitions: Machine.transitionDefinitions(native),
         }).edges,
-      ).toStrictEqual([{ edgeId: 'approval-publish', source: 'approval', target: 'publish', label: 'Resume' }])
+      ).toStrictEqual([{ edgeId: 'approval-publish', label: 'Resume', source: 'approval', target: 'publish' }])
       expect(allocate).not.toHaveBeenCalled()
       yield* Effect.scoped(
         Effect.gen(function* () {
@@ -138,7 +138,7 @@ describe('executable native Machine graph', () => {
       transitions: Machine.transitionDefinitions(native),
     })
     expect(graph.edges).toStrictEqual([
-      { edgeId: 'approval-publish', source: 'approval', target: 'publish', label: 'Resume, Approve' },
+      { edgeId: 'approval-publish', label: 'Resume, Approve', source: 'approval', target: 'publish' },
     ])
   })
 })

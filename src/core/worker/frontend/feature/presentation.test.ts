@@ -84,7 +84,7 @@ describe('workflow presentation', () => {
   })
 
   test('derives graph bounds from common shapes without workflow-specific coordinates', () => {
-    expect(graphSize({ nodes: [], edges: [] })).toStrictEqual({ width: 560, height: 220 })
+    expect(graphSize({ nodes: [], edges: [] })).toStrictEqual({ height: 220, width: 560 })
     expect(
       graphSize({
         nodes: [
@@ -101,7 +101,7 @@ describe('workflow presentation', () => {
         ],
         edges: [],
       }),
-    ).toStrictEqual({ width: 1120, height: 530 })
+    ).toStrictEqual({ height: 530, width: 1120 })
   })
 
   test('formats identifiers and event names with Effect String', () => {

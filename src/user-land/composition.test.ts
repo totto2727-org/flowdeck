@@ -25,10 +25,10 @@ describe('final application composition', () => {
   test('injects fixed local settings without bypassing the common authorization', async () => {
     const security = await Effect.runPromise(FrontendSecurity.pipe(Effect.provide(LocalSecurity)))
     expect(security.dev).toStrictEqual({
+      access: developmentAccess,
       host: '127.0.0.1',
       port: 4380,
       strictPort: true,
-      access: developmentAccess,
     })
     const expected = await Effect.runPromise(accessAudienceFromEnvironment(security.env))
     expect(expected).toStrictEqual({ aud: developmentAccess.aud })

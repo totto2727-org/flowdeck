@@ -85,7 +85,7 @@ describe('native demo execution', () => {
             const data = Option.getOrThrow(states.get(boundary.state, 'approval'))
             expect(data.prepared).toBe(draft)
             expect(checkpoints).toStrictEqual([
-              { type: 'run.started', payload: {} },
+              { payload: {}, type: 'run.started' },
               {
                 type: 'node.started',
                 nodeId: 'prepare',
@@ -131,7 +131,7 @@ describe('native demo execution', () => {
             const result = Option.getOrThrow(states.get(completed.state, 'completed'))
             expect(result).toMatchObject({ ...waiting.data, _tag: 'completed', result: `published:${draft}` })
             expect(checkpoints).toStrictEqual([
-              { type: 'run.started', payload: {} },
+              { payload: {}, type: 'run.started' },
               {
                 type: 'node.started',
                 nodeId: 'prepare',
@@ -162,7 +162,7 @@ describe('native demo execution', () => {
                 attempt: 1,
                 payload: { output: `published:${draft}` },
               },
-              { type: 'run.completed', payload: {} },
+              { payload: {}, type: 'run.completed' },
             ])
           }),
         )

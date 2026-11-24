@@ -23,13 +23,15 @@ import {
 } from './contract.ts'
 import { RemoteWorkerError } from './problem.ts'
 
+const decodeRpcRunsResponse = Schema.decodeUnknownSync(RpcRunsResponse)
+
 const response = <A extends Schema.Json>(value: A) =>
   Effect.runSync(Effect.succeed(value).pipe(rpcResponse('child.test'), Effect.provide(BrowserCrypto.layer)))
 
 describe('workflow RPC value contracts', () => {
   live('classifies invalid server-produced domain values as internal errors rather than bad requests', () =>
     Effect.gen(function* () {
-      const valid = Schema.decodeUnknownSync(RpcRunsResponse)({
+      const valid = decodeRpcRunsResponse({
         runs: [
           {
             runId: 'run_00000000-0000-4000-8000-000000000001',
@@ -52,7 +54,7 @@ describe('workflow RPC value contracts', () => {
       )
       const failure = yield* rpcValue('Workflow.listRuns', RpcRunsResponse)(reply).pipe(Effect.flip)
       expect(failure).toBeInstanceOf(RemoteWorkerError)
-      expect(failure).toMatchObject({ cause: { title: 'internal', status: 500 } })
+      expect(failure).toMatchObject({ cause: { status: 500, title: 'internal' } })
     }),
   )
 
@@ -89,9 +91,9 @@ describe('workflow RPC value contracts', () => {
       )(response({ private: 'private peer data' })).pipe(Effect.flip)
       expect(result).toMatchObject({
         _tag: 'ExternalError',
+        cause: { message: 'RPC response does not match the expected value schema' },
         kind: 'service',
         operation: 'Workflow.listWorkflows',
-        cause: { message: 'RPC response does not match the expected value schema' },
       })
       expect(String(result.cause)).not.toContain('private peer data')
     }),
@@ -154,9 +156,9 @@ describe('native SDK RPC client boundary', () => {
       const local = await Effect.runPromise(listRuns().pipe(Effect.flip))
       expect(local).toBeInstanceOf(ExternalError)
       expect(local).toMatchObject({
-        operation: 'Workflow.listRuns',
-        kind: 'service',
         cause: { message: 'RPC service call failed' },
+        kind: 'service',
+        operation: 'Workflow.listRuns',
       })
       expect(local.cause).toBeInstanceOf(Error)
       expect(local.cause).not.toBe(origin)
@@ -207,8 +209,8 @@ describe('native SDK RPC client boundary', () => {
         .pipe(rpcCall('Workflow.listRuns'), Effect.flatMap(rpcValue('Workflow.listRuns', RpcRunsResponse)), Effect.flip)
       expect(local).toBeInstanceOf(RemoteWorkerError)
       expect(local).toMatchObject({
-        operation: 'Workflow.listRuns',
         cause: { title: 'conflict', status: 409 },
+        operation: 'Workflow.listRuns',
       })
       expect(Cause.pretty(Cause.fail(local))).not.toContain('private conflict')
     }),

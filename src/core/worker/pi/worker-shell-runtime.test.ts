@@ -59,14 +59,14 @@ describe('official DO-only Pi workspace', () => {
   }
 
   test('initializes the real PiHarness without Container or Gateway provisioning', async () => {
-    await expect(read('/sdk')).resolves.toStrictEqual({ jobs: 0, fetchStatus: 404 })
-    await expect(read('/sdk')).resolves.toStrictEqual({ jobs: 0, fetchStatus: 404 })
+    await expect(read('/sdk')).resolves.toStrictEqual({ fetchStatus: 404, jobs: 0 })
+    await expect(read('/sdk')).resolves.toStrictEqual({ fetchStatus: 404, jobs: 0 })
   })
 
   test('reaches durable files through the outer Alchemy PiRun bridge after the previous Scope closes', async () => {
     await expect(read('/write')).resolves.toStrictEqual({ written: true })
     await expect(read('/read')).resolves.toStrictEqual({ text: 'durable workspace' })
-    await expect(read('/exec')).resolves.toMatchObject({ exitCode: 0, stdout: 'durable workspace', stderr: '' })
+    await expect(read('/exec')).resolves.toMatchObject({ exitCode: 0, stderr: '', stdout: 'durable workspace' })
     await expect(read('/read')).resolves.toStrictEqual({ text: 'durable workspace' })
   })
 

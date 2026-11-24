@@ -217,7 +217,7 @@ describe('D1 persisted run store', () => {
       const error = yield* execute('read one value', Effect.fail(queryError)).pipe(Effect.flip)
       expect(error).toBeInstanceOf(ExternalError)
       expect(error.cause).toBe(queryError.cause)
-      expect(error).toMatchObject({ operation: 'read one value', kind: 'storage' })
+      expect(error).toMatchObject({ kind: 'storage', operation: 'read one value' })
       expect(error.cause).toMatchObject({ message: expect.stringContaining('Expected exactly one row, got 2') })
     }),
   )
@@ -335,7 +335,7 @@ describe('D1 persisted run store', () => {
       workflows: expect.arrayContaining([expect.objectContaining({ workflowId: 'demo' })]),
     })
     const created = await Effect.runPromise(workflows.createRun({ workflowId: 'demo', version: version1 }))
-    expect(created.run).toMatchObject({ status: 'waiting', revision: 2 })
+    expect(created.run).toMatchObject({ revision: 2, status: 'waiting' })
     await expect(Effect.runPromise(workflows.getRunDetail(created.run.runId))).resolves.toStrictEqual(created)
     await expect(Effect.runPromise(workflows.listRuns())).resolves.toStrictEqual({ runs: [created.run] })
     const resumed = await Effect.runPromise(workflows.resumeRun(created.run.runId))
@@ -597,10 +597,10 @@ describe('D1 persisted run store', () => {
     ).toStrictEqual([])
     await expect(Effect.runPromise(store.commit(command()))).resolves.toStrictEqual({
       commitId: 'commit_00000000-0000-4000-8000-000000000001',
-      runId: 'run_00000000-0000-4000-8000-000000000001',
-      revision: 1,
-      firstSequence: 1,
       eventCount: 1,
+      firstSequence: 1,
+      revision: 1,
+      runId: 'run_00000000-0000-4000-8000-000000000001',
     })
   })
 
@@ -622,10 +622,10 @@ describe('D1 persisted run store', () => {
     await seed()
     await expect(Effect.runPromise(store.commit(command()))).resolves.toStrictEqual({
       commitId: 'commit_00000000-0000-4000-8000-000000000001',
-      runId: 'run_00000000-0000-4000-8000-000000000001',
-      revision: 1,
-      firstSequence: 1,
       eventCount: 1,
+      firstSequence: 1,
+      revision: 1,
+      runId: 'run_00000000-0000-4000-8000-000000000001',
     })
     await expect(Effect.runPromise(store.getRun('run_00000000-0000-4000-8000-000000000001'))).resolves.toMatchObject({
       revision: 1,
@@ -750,8 +750,8 @@ describe('D1 persisted run store', () => {
     ).rejects.toMatchObject({ _tag: 'StorageConflict' })
     await expect(Effect.runPromise(store.commit(terminal))).resolves.toStrictEqual(ack)
     await expect(Effect.runPromise(store.getRun('run_00000000-0000-4000-8000-000000000001'))).resolves.toMatchObject({
-      status: 'completed',
       revision: 1,
+      status: 'completed',
     })
   })
 
@@ -874,7 +874,7 @@ describe('demo cold restoration', () => {
     )
     await expect(Effect.runPromise(executor.start(runId))).rejects.toBeDefined()
     expect(afterCommit).not.toHaveBeenCalled()
-    await expect(Effect.runPromise(persisted.getRun(runId))).resolves.toMatchObject({ status: 'pending', revision: 0 })
+    await expect(Effect.runPromise(persisted.getRun(runId))).resolves.toMatchObject({ revision: 0, status: 'pending' })
     await expect(Effect.runPromise(persisted.getEvents(runId, EventRange.All()))).resolves.toStrictEqual([])
   })
 
@@ -895,13 +895,13 @@ describe('demo cold restoration', () => {
       )
       await Effect.runPromise(executor.start(runId))
       await expect(Effect.runPromise(freshStore().getRun(runId))).resolves.toMatchObject({
-        status: 'waiting',
         revision: 2,
+        status: 'waiting',
       })
       await Effect.runPromise(executor.resume(runId))
       await expect(Effect.runPromise(freshStore().getRun(runId))).resolves.toMatchObject({
-        status: 'completed',
         revision: 4,
+        status: 'completed',
       })
       await expect(Effect.runPromise(store.getEvents(runId, { _tag: 'All' }))).resolves.toHaveLength(10)
     },
@@ -1013,13 +1013,13 @@ describe('demo cold restoration', () => {
     }
     await expect(run(startRun(command().runId))).rejects.toMatchObject({ _tag: 'ExternalError' })
     const checkpoint = await Effect.runPromise(persisted.getRun(command().runId))
-    expect(checkpoint).toMatchObject({ status: 'running', revision: 1 })
+    expect(checkpoint).toMatchObject({ revision: 1, status: 'running' })
     await expect(Effect.runPromise(persisted.getEvents(command().runId, EventRange.All()))).resolves.toHaveLength(2)
     store = freshStore()
     await run(resumeRun('run_00000000-0000-4000-8000-000000000001'))
     await expect(Effect.runPromise(store.getRun('run_00000000-0000-4000-8000-000000000001'))).resolves.toMatchObject({
-      status: 'waiting',
       revision: 2,
+      status: 'waiting',
     })
     expect(
       Array.filter(
@@ -1088,8 +1088,8 @@ describe('interrupted workflow recovery', () => {
     ).rejects.toMatchObject({ _tag: 'ExternalError', kind: 'storage' })
     await expect(Effect.runPromise(store.getRun('run_00000000-0000-4000-8000-000000000001'))).resolves.toMatchObject({
       revision: 3,
-      status: 'running',
       snapshot: { machine: { active: [{ path: '' }, { path: 'publish', value: { prepared: 'draft:v1' } }] } },
+      status: 'running',
     })
     store = freshStore()
     await run(resumeRun('run_00000000-0000-4000-8000-000000000001'))
@@ -1099,8 +1099,8 @@ describe('interrupted workflow recovery', () => {
       Array.filter(events, (event) => event.type === 'node.succeeded' && event.nodeId === 'approval'),
     ).toHaveLength(1)
     await expect(Effect.runPromise(store.getRun('run_00000000-0000-4000-8000-000000000001'))).resolves.toMatchObject({
-      status: 'completed',
       revision: 4,
+      status: 'completed',
     })
     await expect(run(startRun('run_00000000-0000-4000-8000-000000000001'))).rejects.toMatchObject({
       _tag: 'InvalidOperation',
@@ -1132,11 +1132,11 @@ describe('interrupted workflow recovery', () => {
     const runs = await Effect.runPromise(store.listRuns)
     expect(runs).toHaveLength(1)
     const pending = Array.getUnsafe(runs, 0)
-    expect(pending).toMatchObject({ status: 'pending', revision: 0 })
+    expect(pending).toMatchObject({ revision: 0, status: 'pending' })
     await run(resumeRun(pending.runId))
     await expect(Effect.runPromise(store.getRun(pending.runId))).resolves.toMatchObject({
-      status: 'waiting',
       revision: 2,
+      status: 'waiting',
     })
   })
 
@@ -1354,7 +1354,7 @@ describe('Effect HTTP API', () => {
       expect(workflows.status).toBe(200)
       await expect(workflows.json()).resolves.toStrictEqual({
         workflows: [
-          { workflowId: 'demo', name: 'Release checkpoint', versions: ['1.0.0', '2.0.0'], inputs: [] },
+          { inputs: [], name: 'Release checkpoint', versions: ['1.0.0', '2.0.0'], workflowId: 'demo' },
           expect.objectContaining({
             workflowId: 'jcode-development',
             name: 'Pi development',
@@ -1421,8 +1421,8 @@ describe('Effect HTTP API', () => {
         expect(detail.status).toBe(200)
         await expect(detail.json()).resolves.toMatchObject({
           run: { status: 'waiting' },
-          state: { revision: 2 },
           shapes: { nodes: [{ state: 'succeeded' }, { state: 'waiting' }, { state: 'idle' }] },
+          state: { revision: 2 },
         })
         const listed = await handler.handler(new Request('http://localhost/api/runs'))
         expect(listed.status).toBe(200)

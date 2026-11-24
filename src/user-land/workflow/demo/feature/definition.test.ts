@@ -8,7 +8,11 @@ import { demoGraph, DemoSnapshot, encodeDemoSnapshot, initialSnapshot, restoreDe
 import { DemoCreateRun, demoVersion1, demoVersion2 } from './input.ts'
 import { DemoData } from './node.ts'
 
+const decodeDemoCreateRun = Schema.decodeUnknownEffect(DemoCreateRun)
+
 const snapshotCodec = Schema.toCodecJson(DemoSnapshot)
+
+const decodeSnapshotCodec = Schema.decodeUnknownEffect(snapshotCodec)
 const fixture = (version: typeof demoVersion1): Run => ({
   runId: 'run_00000000-0000-4000-8000-000000000001',
   workflowId: 'demo',
@@ -35,7 +39,7 @@ describe('demo definition', () => {
         snapshot: {
           schemaVersion: 1,
           version: SemVer.format(version),
-          machine: { _tag: 'MachineSnapshot', version: 2, active: [{ path: '' }, { path: 'Ready' }] },
+          machine: { _tag: 'MachineSnapshot', active: [{ path: '' }, { path: 'Ready' }], version: 2 },
         },
       })
       expect(Schema.is(GraphDefinition)(prepared.graph)).toBe(true)
@@ -46,9 +50,7 @@ describe('demo definition', () => {
     },
   )
   test.each(['v1', 'v2'])('rejects legacy snapshot version %s', async (version) => {
-    await expect(
-      Effect.runPromise(Schema.decodeUnknownEffect(snapshotCodec)({ _tag: 'Ready', schemaVersion: 1, version })),
-    ).rejects.toThrow()
+    await expect(Effect.runPromise(decodeSnapshotCodec({ _tag: 'Ready', schemaVersion: 1, version }))).rejects.toThrow()
   })
   test.each([
     { workflowId: 'other' },
@@ -125,9 +127,7 @@ describe('demo definition', () => {
   ])('rejects unsupported or excess input %j', async (input) => {
     await expect(
       Effect.runPromise(
-        Schema.decodeUnknownEffect(DemoCreateRun)(input, { onExcessProperty: 'error' }).pipe(
-          Effect.flatMap(demoDefinition.prepare),
-        ),
+        decodeDemoCreateRun(input, { onExcessProperty: 'error' }).pipe(Effect.flatMap(demoDefinition.prepare)),
       ),
     ).rejects.toThrow()
   })

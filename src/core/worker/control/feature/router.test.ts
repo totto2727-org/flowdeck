@@ -21,6 +21,9 @@ import { Workflows } from '@/core/feature/workflow/services/workflows'
 
 import { ApiRoutes } from './router.ts'
 
+const decodeRpcCreateRun = Schema.decodeUnknownSync(RpcCreateRun)
+const decodeRpcWorkflowsResponse = Schema.decodeUnknownSync(RpcWorkflowsResponse)
+
 const crypto = Crypto.make({
   randomBytes: (size) => globalThis.crypto.getRandomValues(new Uint8Array(size)),
   digest: (_algorithm, bytes) => Effect.succeed(bytes),
@@ -109,11 +112,11 @@ describe('Control aggregate Workflow service boundary', () => {
     } as const
     const encoded = Schema.encodeSync(RpcRunDetail)(detail)
     expect(encoded).toMatchObject({
-      run: { workflowVersion: '1.0.0', createdAt: '2026-10-31T00:00:00.000Z', updatedAt: '2026-10-31T00:00:00.000Z' },
       events: [
         { type: 'run.started', createdAt: '2026-10-31T00:00:00.000Z' },
         { type: 'node.started', nodeId: 'prepare', attempt: 1 },
       ],
+      run: { workflowVersion: '1.0.0', createdAt: '2026-10-31T00:00:00.000Z', updatedAt: '2026-10-31T00:00:00.000Z' },
     })
     expect(
       Schema.decodeUnknownSync(RpcRunDetail, { onExcessProperty: 'error' })(structuredClone(encoded)),
@@ -128,8 +131,8 @@ describe('Control aggregate Workflow service boundary', () => {
   test('round trips create input SemVer through native RPC-compatible values', () => {
     const input = { workflowId: 'demo', version: Schema.decodeUnknownSync(Schema.SemVerFromString)('1.2.3') }
     const encodedInput = Schema.encodeSync(RpcCreateRun)(input)
-    expect(encodedInput).toStrictEqual({ workflowId: 'demo', version: '1.2.3' })
-    expect(Schema.decodeUnknownSync(RpcCreateRun)(structuredClone(encodedInput))).toStrictEqual(input)
+    expect(encodedInput).toStrictEqual({ version: '1.2.3', workflowId: 'demo' })
+    expect(decodeRpcCreateRun(structuredClone(encodedInput))).toStrictEqual(input)
   })
 
   test('round trips catalog SemVer through native RPC-compatible values', () => {
@@ -137,9 +140,9 @@ describe('Control aggregate Workflow service boundary', () => {
     const catalog = { workflows: [{ workflowId: 'demo', name: 'Demo', versions: [version], inputs: [] }] }
     const encodedCatalog = Schema.encodeSync(RpcWorkflowsResponse)(catalog)
     expect(encodedCatalog).toStrictEqual({
-      workflows: [{ workflowId: 'demo', name: 'Demo', versions: ['1.2.3'], inputs: [] }],
+      workflows: [{ inputs: [], name: 'Demo', versions: ['1.2.3'], workflowId: 'demo' }],
     })
-    expect(Schema.decodeUnknownSync(RpcWorkflowsResponse)(structuredClone(encodedCatalog))).toStrictEqual(catalog)
+    expect(decodeRpcWorkflowsResponse(structuredClone(encodedCatalog))).toStrictEqual(catalog)
   })
   test.each([
     '00000000-0000-4000-8000-000000000001',

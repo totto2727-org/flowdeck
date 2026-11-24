@@ -8,6 +8,11 @@ import { DevelopmentMachine, DevelopmentStates } from './development-machine.ts'
 import { DevelopmentSnapshot, DevelopmentSnapshotJson, initialDevelopmentSnapshot } from './development.ts'
 import { developmentVersion, PublicRepository } from './input.ts'
 
+const decodeCommandId = Schema.decodeUnknownSync(CommandId)
+const decodeTurnRequest = Schema.decodeUnknownSync(TurnRequest)
+const decodeTurnReceipt = Schema.decodeUnknownSync(TurnReceipt)
+const decodeSessionId = Schema.decodeUnknownSync(SessionId)
+
 const encodeDevelopmentSnapshot = Schema.encodeSync(DevelopmentSnapshotJson)
 const decodeDevelopmentSnapshot = Schema.decodeUnknownSync(DevelopmentSnapshotJson)
 const initialSnapshot = initialDevelopmentSnapshot({
@@ -25,8 +30,8 @@ describe('development operation wire schemas', () => {
   })
 
   test('accepts prefixed UUIDv4 operation identities through the standard Schema check', () => {
-    expect(Schema.decodeUnknownSync(CommandId)(commandId)).toBe(commandId)
-    expect(Schema.decodeUnknownSync(TurnRequest)({ commandId, prompt: 'Verify the change.' })).toStrictEqual({
+    expect(decodeCommandId(commandId)).toBe(commandId)
+    expect(decodeTurnRequest({ commandId, prompt: 'Verify the change.' })).toStrictEqual({
       commandId,
       prompt: 'Verify the change.',
     })
@@ -38,17 +43,17 @@ describe('development operation wire schemas', () => {
     '3d360c7a-4b1a-4df3-9633-861a220bf5b7',
     'command_3d360c7a-4b1a-1df3-9633-861a220bf5b7',
   ])('rejects non-v4 new operation identity %s', (invalid) => {
-    expect(() => Schema.decodeUnknownSync(CommandId)(invalid)).toThrow()
+    expect(() => decodeCommandId(invalid)).toThrow()
   })
 
   test('rejects receipts from legacy operation histories', () => {
     const receipt = { commandId: 'old-run:verify:1', status: 'completed', text: 'done' }
-    expect(() => Schema.decodeUnknownSync(TurnReceipt)(receipt)).toThrow()
+    expect(() => decodeTurnReceipt(receipt)).toThrow()
   })
 
   test('accepts only the official root session identity', () => {
-    expect(Schema.decodeUnknownSync(SessionId)('1')).toBe('1')
-    expect(() => Schema.decodeUnknownSync(SessionId)('replacement-session')).toThrow()
+    expect(decodeSessionId('1')).toBe('1')
+    expect(() => decodeSessionId('replacement-session')).toThrow()
   })
 
   test.each([
@@ -102,7 +107,7 @@ describe('development operation wire schemas', () => {
 
   test('round-trips native versions and repository values through both snapshot codecs', async () => {
     const encoded = encodeDevelopmentSnapshot(initialSnapshot)
-    expect(encoded).toMatchObject({ version: '1.0.0', machine: { _tag: 'MachineSnapshot', version: 2 } })
+    expect(encoded).toMatchObject({ machine: { _tag: 'MachineSnapshot', version: 2 }, version: '1.0.0' })
     expect(encoded).not.toHaveProperty('context')
     const decoded = decodeDevelopmentSnapshot(encoded)
     expect(decoded).toStrictEqual(initialSnapshot)

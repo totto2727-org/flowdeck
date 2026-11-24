@@ -10,6 +10,9 @@ import { restoreDevelopment } from './development.ts'
 import { DevelopmentCreateRun } from './input.ts'
 import { developmentVersion } from './input.ts'
 
+const decodeJsonObject = Schema.decodeUnknownSync(JsonObject)
+const decodeDevelopmentCreateRun = Schema.decodeUnknownSync(DevelopmentCreateRun)
+
 const input = {
   workflowId: 'jcode-development',
   version: developmentVersion,
@@ -43,7 +46,7 @@ describe('development strict restore boundary', () => {
     'rejects malformed native runtime %s before accessing Pi',
     async (runtime) => {
       const prepared = await Effect.runPromise(developmentDefinition.prepare(input))
-      const snapshot = Schema.decodeUnknownSync(JsonObject)(
+      const snapshot = decodeJsonObject(
         JSON.parse(String.replace('"runtime":"pi-harness"', runtime)(JSON.stringify(prepared.snapshot))),
       )
       await expect(
@@ -75,20 +78,20 @@ describe('development definition', () => {
   test('prepares the workflow-owned graph and PiHarness snapshot', async () => {
     await expect(Effect.runPromise(developmentDefinition.prepare(input))).resolves.toMatchObject({
       graph: {
+        edges: [
+          { edgeId: 'implement-verify', source: 'implement', target: 'verify', label: 'implementation complete' },
+        ],
         graphId: 'jcode-development-1_0_0-graph-1',
-        schemaVersion: 1,
         nodes: [
           { nodeId: 'implement', label: 'Implement task', kind: 'task' },
           { nodeId: 'verify', label: 'Verify and fix', kind: 'task' },
         ],
-        edges: [
-          { edgeId: 'implement-verify', source: 'implement', target: 'verify', label: 'implementation complete' },
-        ],
+        schemaVersion: 1,
       },
       snapshot: {
+        machine: { _tag: 'MachineSnapshot', version: 2 },
         schemaVersion: 1,
         version: '1.0.0',
-        machine: { _tag: 'MachineSnapshot', version: 2 },
       },
     })
   })
@@ -120,7 +123,7 @@ describe('development definition', () => {
   })
 
   test('rejects a string version at the domain boundary', () => {
-    expect(() => Schema.decodeUnknownSync(DevelopmentCreateRun)({ ...input, version: '1.0.0' })).toThrow()
+    expect(() => decodeDevelopmentCreateRun({ ...input, version: '1.0.0' })).toThrow()
   })
 
   test.each([

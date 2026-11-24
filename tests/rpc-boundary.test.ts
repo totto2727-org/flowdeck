@@ -108,23 +108,23 @@ describe('native Worker RPC JSON boundary', () => {
       expect(reply.failure).toStrictEqual({
         ...(scenario === 'not-found'
           ? {
-              type: 'https://github.com/totto2727-org/flowdeck/blob/main/docs/rpc-boundaries.md#not-found',
-              title: 'not-found',
-              status: 404,
               detail: 'The requested resource was not found.',
+              status: 404,
+              title: 'not-found',
+              type: 'https://github.com/totto2727-org/flowdeck/blob/main/docs/rpc-boundaries.md#not-found',
             }
           : scenario === 'failure'
             ? {
-                type: 'https://github.com/totto2727-org/flowdeck/blob/main/docs/rpc-boundaries.md#storage',
-                title: 'storage',
-                status: 500,
                 detail: 'A persistence operation failed.',
+                status: 500,
+                title: 'storage',
+                type: 'https://github.com/totto2727-org/flowdeck/blob/main/docs/rpc-boundaries.md#storage',
               }
             : {
-                type: 'https://github.com/totto2727-org/flowdeck/blob/main/docs/rpc-boundaries.md#internal',
-                title: 'internal',
-                status: 500,
                 detail: 'The operation could not be completed.',
+                status: 500,
+                title: 'internal',
+                type: 'https://github.com/totto2727-org/flowdeck/blob/main/docs/rpc-boundaries.md#internal',
               }),
         instance: expect.any(String),
       })

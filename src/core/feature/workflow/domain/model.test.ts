@@ -3,6 +3,10 @@ import { describe, expect, test } from 'vite-plus/test'
 
 import { CreateRun, GraphDefinition, NodeShape, Run, RunEvent, RunState, WorkflowVersion } from './model.ts'
 
+const decodeNodeShape = Schema.decodeUnknownSync(NodeShape)
+const decodeRunState = Schema.decodeUnknownSync(RunState)
+const decodeGraphDefinition = Schema.decodeUnknownSync(GraphDefinition)
+
 const uuid = '00000000-0000-4000-8000-000000000003'
 const uuid7 = '01890f2e-7b55-7cc1-8c5a-000000000001'
 const run = {
@@ -110,7 +114,7 @@ describe('workflow-neutral wire schemas', () => {
       state: 'idle',
     }
     const geometry = { position: { x: 48, y: 72 }, size: { width: 224, height: 100 } }
-    const decodeShape = Schema.decodeUnknownSync(NodeShape)
+    const decodeShape = decodeNodeShape
     expect(decodeShape({ ...identity, ...geometry })).toStrictEqual({ ...identity, ...geometry })
     expect(() => decodeShape({ ...identity, x: 48, y: 72, width: 224, height: 100 })).toThrow()
     expect(() => decodeShape({ ...identity, position: { x: 48 }, size: geometry.size })).toThrow()
@@ -130,14 +134,14 @@ describe('workflow-neutral wire schemas', () => {
     { nested: Infinity },
   ])('rejects non-object or non-JSON snapshot %j', (snapshot) => {
     expect(() => decodeRun({ ...run, snapshot })).toThrow()
-    expect(() => Schema.decodeUnknownSync(RunState)({ ...state, snapshot })).toThrow()
+    expect(() => decodeRunState({ ...state, snapshot })).toThrow()
     expect(() => decodeEvent({ ...event, payload: snapshot })).toThrow()
   })
 
   test('accepts recursive JSON objects for snapshots and payloads', () => {
     const snapshot = { nested: { values: [null, true, 42, 'value', { state: 'waiting' }] } }
     expect(decodeRun({ ...run, snapshot }).snapshot).toStrictEqual(snapshot)
-    expect(Schema.decodeUnknownSync(RunState)({ ...state, snapshot }).snapshot).toStrictEqual(snapshot)
+    expect(decodeRunState({ ...state, snapshot }).snapshot).toStrictEqual(snapshot)
     expect(decodeEvent({ ...event, payload: snapshot }).payload).toStrictEqual(snapshot)
   })
 
@@ -178,16 +182,16 @@ describe('workflow-neutral wire schemas', () => {
       createdAt: DateTime.makeUnsafe(run.createdAt),
       updatedAt: DateTime.makeUnsafe(run.updatedAt),
     })
-    expect(Schema.decodeUnknownSync(RunState)(state)).toStrictEqual(state)
+    expect(decodeRunState(state)).toStrictEqual(state)
     expect(decodeEvent(event)).toStrictEqual({ ...event, createdAt: DateTime.makeUnsafe(event.createdAt) })
-    expect(Schema.decodeUnknownSync(GraphDefinition)(graph)).toStrictEqual(graph)
+    expect(decodeGraphDefinition(graph)).toStrictEqual(graph)
     expect(() => decodeEvent({ ...event, nodeId: null, executionId: null, attempt: null })).toThrow()
   })
 
   test.each(['demo-1_0_0-graph-1', 'jcode-development-1_0_0-graph-1', 'Graph_123'])(
     'accepts named graph ID %s',
     (graphId) => {
-      expect(Schema.decodeUnknownSync(GraphDefinition)({ ...graph, graphId }).graphId).toBe(graphId)
+      expect(decodeGraphDefinition({ ...graph, graphId }).graphId).toBe(graphId)
       expect(decodeRun({ ...run, graphId }).graphId).toBe(graphId)
     },
   )
@@ -196,7 +200,7 @@ describe('workflow-neutral wire schemas', () => {
     'rejects invalid run ID %s across run, state and event boundaries',
     (runId) => {
       expect(() => decodeRun({ ...run, runId })).toThrow()
-      expect(() => Schema.decodeUnknownSync(RunState)({ ...state, runId })).toThrow()
+      expect(() => decodeRunState({ ...state, runId })).toThrow()
       expect(() => decodeEvent({ ...event, runId })).toThrow()
     },
   )
@@ -210,15 +214,11 @@ describe('workflow-neutral wire schemas', () => {
 
   test.each(unsafeIds)('rejects invalid named identity %s in every graph position', (id) => {
     expect(() => decodeRun({ ...run, graphId: id })).toThrow()
-    expect(() => Schema.decodeUnknownSync(GraphDefinition)({ ...graph, graphId: id })).toThrow()
+    expect(() => decodeGraphDefinition({ ...graph, graphId: id })).toThrow()
     expect(() => decodeEvent({ ...event, nodeId: id })).toThrow()
-    expect(() =>
-      Schema.decodeUnknownSync(GraphDefinition)({ ...graph, nodes: [{ ...graph.nodes[0], nodeId: id }] }),
-    ).toThrow()
+    expect(() => decodeGraphDefinition({ ...graph, nodes: [{ ...graph.nodes[0], nodeId: id }] })).toThrow()
     Array.forEach(['edgeId', 'source', 'target'] as const, (field) => {
-      expect(() =>
-        Schema.decodeUnknownSync(GraphDefinition)({ ...graph, edges: [{ ...graph.edges[0], [field]: id }] }),
-      ).toThrow()
+      expect(() => decodeGraphDefinition({ ...graph, edges: [{ ...graph.edges[0], [field]: id }] })).toThrow()
     })
   })
 })

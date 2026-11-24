@@ -123,7 +123,7 @@ describe('frontend request composition', () => {
         .pipe(Effect.result)
       expect(result).toMatchObject({ _tag: 'Failure', failure: { _tag: 'ControlError' } })
       expect(seen).toStrictEqual([
-        { method: 'POST', url: 'https://control.internal/api/runs', body: { workflowId: 'demo', version: '1.0.0' } },
+        { body: { workflowId: 'demo', version: '1.0.0' }, method: 'POST', url: 'https://control.internal/api/runs' },
       ])
     }),
   )

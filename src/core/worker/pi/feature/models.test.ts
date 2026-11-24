@@ -40,7 +40,7 @@ describe('development models', () => {
       )
 
       expect(result.stopReason).toBe('stop')
-      expect(result.content).toStrictEqual([{ type: 'text', text: 'ok' }])
+      expect(result.content).toStrictEqual([{ text: 'ok', type: 'text' }])
       expect(fetch).toHaveBeenCalledOnce()
       const call = fetch.mock.calls[0]!
       const request = new Request(call[0], call[1])
@@ -50,9 +50,9 @@ describe('development models', () => {
       expect(request.headers.has('x-api-key')).toBe(false)
       expect(request.headers.get('x-opencode-session')).toBe('0199ef75-0000-7000-8000-000000000001')
       await expect(request.json()).resolves.toMatchObject({
+        messages: [{ role: 'user', content: 'Hello' }],
         model: 'custom-opencode-go/deepseek-v4.1-flash',
         stream: true,
-        messages: [{ role: 'user', content: 'Hello' }],
       })
     },
   )

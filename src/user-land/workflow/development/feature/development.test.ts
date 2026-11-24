@@ -38,6 +38,8 @@ import {
 } from './development.ts'
 import { DevelopmentCreateRun, developmentVersion } from './input.ts'
 
+const decodeJsonObject = Schema.decodeUnknownSync(JsonObject)
+
 const input = {
   workflowId: 'jcode-development',
   version: developmentVersion,
@@ -194,7 +196,7 @@ describe('development workflow with canonical D1 checkpoints', () => {
     const before = await current()
     const encoded = Schema.encodeSync(Schema.toCodecJson(JsonObject))(decodeSnapshot(before.snapshot).machine)
     // The native wire is rewritten only at the trust boundary to simulate corrupt storage.
-    const corrupted = Schema.decodeUnknownSync(JsonObject)(
+    const corrupted = decodeJsonObject(
       JSON.parse(JSON.stringify(encoded).replaceAll(submissions[0]!.input.commandId, commandId)),
     )
     await expect(
@@ -241,9 +243,9 @@ describe('development workflow with canonical D1 checkpoints', () => {
       expect(response.status).toBe(201)
       const detail = Schema.decodeUnknownSync(Schema.toCodecJson(RunDetail))(await response.json())
       expect(detail.run).toMatchObject({
+        status: 'waiting',
         workflowId: 'jcode-development',
         workflowVersion: developmentVersion,
-        status: 'waiting',
       })
       expect(rootOf(detail.run.snapshot)).toMatchObject({
         runtime: 'pi-harness',
