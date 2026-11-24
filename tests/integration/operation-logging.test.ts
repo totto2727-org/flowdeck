@@ -16,7 +16,7 @@ const crypto = Crypto.make({
   digest: (_algorithm, bytes) => Effect.succeed(bytes),
 })
 const capture = <A, E>(effect: Effect.Effect<A, E, HttpServerRequest.HttpServerRequest | Crypto.Crypto>) => {
-  const entries: Array<Logger.Options<unknown> & { readonly annotations: Readonly<Record<string, unknown>> }> = []
+  const entries: Array<Logger.Options<unknown> & Readonly<{ annotations: Readonly<Record<string, unknown>> }>> = []
   const logger = Logger.make((entry) =>
     entries.push({ ...entry, annotations: entry.fiber.getRef(References.CurrentLogAnnotations) }),
   )

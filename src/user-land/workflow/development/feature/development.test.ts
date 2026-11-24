@@ -82,10 +82,10 @@ let store: StoreService
 let storeLayer: Layer.Layer<Store>
 const freshStore = () => Effect.runSync(Store.pipe(Effect.provide(storeLayer)))
 let receipts: Record<string, TurnReceipt>
-let submissions: ReadonlyArray<{ readonly runId: string; readonly input: TurnRequest }>
+let submissions: Readonly<Readonly<{ runId: string; input: TurnRequest }>[]>
 let session: Session
 let ensureCalls: number
-let completeCalls: ReadonlyArray<string>
+let completeCalls: Readonly<string[]>
 let sandbox: PiSandbox['Service']
 beforeEach(async () => {
   miniflare = new Miniflare({
@@ -324,7 +324,7 @@ describe('development workflow with canonical D1 checkpoints', () => {
   })
 
   test('commits stable command and execution identity before external initialization and submission', async () => {
-    let commitIds: ReadonlyArray<string> = []
+    let commitIds: Readonly<string[]> = []
     const ensure = sandbox.ensureSession
     sandbox = {
       ...sandbox,

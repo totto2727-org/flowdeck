@@ -17,11 +17,11 @@ import {
 } from './view-model.ts'
 
 export interface DashboardData {
-  readonly workflows: ReadonlyArray<WorkflowSummary>
-  readonly runs: ReadonlyArray<Run>
+  readonly workflows: Readonly<WorkflowSummary[]>
+  readonly runs: Readonly<Run[]>
   readonly selected: RunDetail | null
 }
-export type Result<A> = { readonly ok: true; readonly value: A } | { readonly ok: false; readonly message: string }
+export type Result<A> = Readonly<{ ok: true; value: A }> | Readonly<{ ok: false; message: string }>
 
 const result = <A, R>(effect: Effect.Effect<A, ControlError, R>) =>
   effect.pipe(

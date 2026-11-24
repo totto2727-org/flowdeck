@@ -24,8 +24,8 @@ export const PiResult = Schema.Struct({ ...PiExecutionFields, result: Schema.Str
 export type PiResult = typeof PiResult.Type
 export type PiOutcome = Data.TaggedEnum<{
   Waiting: {}
-  Completed: { readonly result: string }
-  Failed: { readonly message: string }
+  Completed: Readonly<{ result: string }>
+  Failed: Readonly<{ message: string }>
 }>
 const outcome = Data.taggedEnum<PiOutcome>()
 
@@ -74,7 +74,7 @@ export const makePiNodeEffects = Effect.gen(function* () {
     }).pipe(Effect.catch(checkpoint.fail))
   })
 
-  const submit = (input: { readonly execution: PiExecution; readonly prompt: string }) =>
+  const submit = (input: Readonly<{ execution: PiExecution; prompt: string }>) =>
     Effect.gen(function* () {
       const checkpoint = yield* WorkflowCheckpoint
       return yield* Effect.gen(function* () {

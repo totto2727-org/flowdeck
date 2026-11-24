@@ -10,11 +10,13 @@ const decodeGraph = Schema.decodeUnknownSync(GraphDefinition)
 
 /** Collapse implementation-only states into their annotated business ancestor.
  * Native introspection remains the only source of nodes and outgoing edges. */
-export const projectMachineGraph = (options: {
-  readonly graphId: string
-  readonly nodes: ReadonlyArray<Machine.Machine.StateNode>
-  readonly transitions: ReadonlyArray<Machine.Machine.TransitionDefinition>
-}): GraphDefinition => {
+export const projectMachineGraph = (
+  options: Readonly<{
+    graphId: string
+    nodes: Readonly<Machine.Machine.StateNode[]>
+    transitions: Readonly<Machine.Machine.TransitionDefinition[]>
+  }>,
+): GraphDefinition => {
   const visible = Array.flatMap(options.nodes, (node) =>
     Option.match(decodeMetadata(node.annotations), {
       onNone: () => [],
@@ -28,7 +30,7 @@ export const projectMachineGraph = (options: {
     Array.findLast(visible, (node) => path === node.nodeId || String.startsWith(`${node.nodeId}.`)(path))
   // Allocation-only states can sit between visible nodes. Follow their static
   // native edges without evaluating guards, resolvers, or invoked work.
-  const destinations = (path: string, visited: HashSet.HashSet<string>): ReadonlyArray<string> => {
+  const destinations = (path: string, visited: HashSet.HashSet<string>): Readonly<string[]> => {
     const visibleOwner = owner(path)
     if (Option.isSome(visibleOwner)) {
       return [visibleOwner.value.nodeId]

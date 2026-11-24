@@ -21,11 +21,11 @@ export function RunGraph({
   detail,
   selectedNode,
   onSelect,
-}: {
-  readonly detail: RunDetail
-  readonly selectedNode: NodeId | null
-  readonly onSelect: (nodeId: NodeId) => void
-}) {
+}: Readonly<{
+  detail: RunDetail
+  selectedNode: NodeId | null
+  onSelect: (nodeId: NodeId) => void
+}>) {
   const buttons = useRef<Record<string, HTMLButtonElement | null>>({})
   const size = graphSize(detail.shapes)
   const ids = Array.map(detail.shapes.nodes, (node) => node.nodeId)
@@ -133,7 +133,7 @@ export function RunGraph({
   )
 }
 
-export function NodeInspector({ detail, nodeId }: { readonly detail: RunDetail; readonly nodeId: NodeId | null }) {
+export function NodeInspector({ detail, nodeId }: Readonly<{ detail: RunDetail; nodeId: NodeId | null }>) {
   const node = Option.getOrUndefined(Array.findFirst(detail.shapes.nodes, (item) => item.nodeId === nodeId))
   if (!node) {
     return (

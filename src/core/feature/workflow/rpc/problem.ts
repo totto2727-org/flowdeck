@@ -32,7 +32,9 @@ export const Rfc9457ProblemDetails = Schema.Union([
 export type Rfc9457ProblemDetails = typeof Rfc9457ProblemDetails.Type
 
 /** A new local error, never a revived remote exception or remote stack. */
-export class RemoteWorkerError extends Data.TaggedError('RemoteWorkerError')<{
-  readonly operation: string
-  readonly cause: Rfc9457ProblemDetails
-}> {}
+export class RemoteWorkerError extends Data.TaggedError('RemoteWorkerError')<
+  Readonly<{
+    operation: string
+    cause: Rfc9457ProblemDetails
+  }>
+> {}

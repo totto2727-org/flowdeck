@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import { Array } from 'effect'
 
 test('development task inputs are usable without starting an agent', async ({ page }, info) => {
-  let pageErrors: ReadonlyArray<string> = []
+  let pageErrors: Readonly<string[]> = []
   page.on('pageerror', (error) => {
     pageErrors = Array.append(pageErrors, error.message)
   })
@@ -48,7 +48,7 @@ test('development task inputs are usable without starting an agent', async ({ pa
 // Playwright's Page API is the browser automation boundary, not an application HTTP client.
 Array.map(['1.0.0', '2.0.0'] as const, (version) => {
   test(`${version} persists its checkpoint and resumes through the real Worker bindings`, async ({ page }, info) => {
-    let pageErrors: ReadonlyArray<string> = []
+    let pageErrors: Readonly<string[]> = []
     page.on('pageerror', (error) => {
       pageErrors = Array.append(pageErrors, error.message)
     })

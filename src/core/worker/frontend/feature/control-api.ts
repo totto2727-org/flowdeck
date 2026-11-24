@@ -6,9 +6,11 @@ import { CreateRun, RunDetail, RunsResponse, WorkflowsResponse } from '@/core/fe
 
 const encodeCreateRun = Schema.encodeSync(Schema.toCodecJson(CreateRun))
 
-export class ControlError extends Data.TaggedError('ControlError')<{
-  readonly message: string
-}> {}
+export class ControlError extends Data.TaggedError('ControlError')<
+  Readonly<{
+    message: string
+  }>
+> {}
 
 const makeRequest = <A, E>(decodeResponse: (response: HttpClientResponse.HttpClientResponse) => Effect.Effect<A, E>) =>
   Effect.map(
@@ -33,13 +35,13 @@ const makeRunDetailRequest = makeRequest(decodeRunDetail)
 /** The only data capability exposed to Effront. Transport is supplied by the Worker. */
 export class ControlApi extends Context.Service<
   ControlApi,
-  {
-    readonly workflows: Effect.Effect<typeof WorkflowsResponse.Type, ControlError>
-    readonly runs: Effect.Effect<typeof RunsResponse.Type, ControlError>
-    readonly detail: (runId: RunId) => Effect.Effect<RunDetail, ControlError>
-    readonly start: (input: CreateRun) => Effect.Effect<RunDetail, ControlError>
-    readonly resume: (runId: RunId) => Effect.Effect<RunDetail, ControlError>
-  }
+  Readonly<{
+    workflows: Effect.Effect<typeof WorkflowsResponse.Type, ControlError>
+    runs: Effect.Effect<typeof RunsResponse.Type, ControlError>
+    detail: (runId: RunId) => Effect.Effect<RunDetail, ControlError>
+    start: (input: CreateRun) => Effect.Effect<RunDetail, ControlError>
+    resume: (runId: RunId) => Effect.Effect<RunDetail, ControlError>
+  }>
 >()('flowdeck/web/ControlApi') {}
 
 export const makeControlApi = Effect.gen(function* () {

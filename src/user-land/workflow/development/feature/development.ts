@@ -58,7 +58,7 @@ export const developmentStatus = (state: DevelopmentNativeState): RunStatus => {
   }
   return 'running'
 }
-const boundaryEvents = (state: DevelopmentNativeState): ReadonlyArray<EventDraft> => {
+const boundaryEvents = (state: DevelopmentNativeState): Readonly<EventDraft[]> => {
   const implementing = DevelopmentStates.get(state, 'implement.awaiting')
   if (Option.isSome(implementing)) {
     return [piNodeEvent('implement', implementing.value, 'run.waiting')]

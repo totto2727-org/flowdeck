@@ -38,11 +38,11 @@ export const resumeEvent: ResumeEvent = ResumeEvent.make({})
 /** Command-local persistence capability. Storage errors fail the host, not a business invoke outcome. */
 export class WorkflowCheckpoint extends Context.Service<
   WorkflowCheckpoint,
-  {
-    readonly runId: RunId
-    readonly checkpoint: (drafts: ReadonlyArray<EventDraft>) => Effect.Effect<void>
-    readonly fail: (error: WorkflowFailure) => Effect.Effect<never>
-  }
+  Readonly<{
+    runId: RunId
+    checkpoint: (drafts: Readonly<EventDraft[]>) => Effect.Effect<void>
+    fail: (error: WorkflowFailure) => Effect.Effect<never>
+  }>
 >()('flowdeck/WorkflowCheckpoint') {}
 
 export const ManagedSnapshot = Schema.Struct({
@@ -81,7 +81,7 @@ export interface ManagedProgram<State, NativeError, Output> {
   >
   readonly isReplyBoundary: (state: State) => boolean
   readonly status: (state: State) => RunStatus
-  readonly boundaryEvents: (state: State) => ReadonlyArray<EventDraft>
+  readonly boundaryEvents: (state: State) => Readonly<EventDraft[]>
   readonly mapError: (error: NativeError | Machine.StoppedError | Cause.NoSuchElementError) => WorkflowFailure
 }
 
@@ -162,10 +162,10 @@ export const makeManagedExecutor = <State, NativeError, Output, Requirements>(
           }
           const current = yield* Ref.make(canonical)
           const storageFailure = yield* Deferred.make<never, WorkflowFailure>()
-          type Checkpoint = (drafts: ReadonlyArray<EventDraft>) => Effect.Effect<void, WorkflowFailure>
+          type Checkpoint = (drafts: Readonly<EventDraft[]>) => Effect.Effect<void, WorkflowFailure>
           const refReady = yield* Deferred.make<Checkpoint>()
 
-          const persist = (next: State, drafts: ReadonlyArray<EventDraft>) =>
+          const persist = (next: State, drafts: Readonly<EventDraft[]>) =>
             Effect.gen(function* () {
               const run = yield* Ref.get(current)
               const encoded = encodeManagedSnapshot({
@@ -179,7 +179,7 @@ export const makeManagedExecutor = <State, NativeError, Output, Requirements>(
                 return
               }
               const updatedAt = yield* DateTime.now
-              const resumed: ReadonlyArray<EventDraft> =
+              const resumed: Readonly<EventDraft[]> =
                 run.status === 'waiting' ? [{ type: 'run.resumed', payload: {} }] : []
               const events = yield* Effect.forEach(Array.appendAll(resumed, drafts), (draft) =>
                 eventId().pipe(Effect.map((id) => ({ ...draft, eventId: id, createdAt: updatedAt }))),

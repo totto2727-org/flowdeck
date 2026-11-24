@@ -11,5 +11,5 @@ export const makeWorkflowRegistry = Effect.gen(function* () {
   return [
     { ...demoDefinition, binding: yield* WorkflowBinding },
     { ...developmentDefinition, binding: yield* DevelopmentWorkflowBinding },
-  ] satisfies ReadonlyArray<RegisteredWorkflow>
+  ] satisfies Readonly<RegisteredWorkflow[]>
 })

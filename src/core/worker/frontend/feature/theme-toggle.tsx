@@ -7,7 +7,7 @@ import { useSyncExternalStore } from 'react'
 import { Button } from './components/generated/button.tsx'
 import { browserTheme, selectTheme, serverTheme, subscribeTheme } from './theme.ts'
 
-export function ThemeToggle({ disabled }: { readonly disabled: boolean }) {
+export function ThemeToggle({ disabled }: Readonly<{ disabled: boolean }>) {
   const theme = useSyncExternalStore(subscribeTheme, browserTheme, serverTheme)
   return (
     <Button

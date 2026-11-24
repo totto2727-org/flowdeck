@@ -25,7 +25,7 @@ const executionId = 'execution_00000000-0000-4000-8000-000000000001'
 const unavailable = new ExternalError({ kind: 'storage', operation: 'test commit', cause: 'offline' })
 const graph: GraphDefinition = { graphId: 'managed-test-1', schemaVersion: 1, nodes: [], edges: [] }
 
-class NativeResource extends Context.Service<NativeResource, { readonly call: () => void }>()('test/NativeResource') {}
+class NativeResource extends Context.Service<NativeResource, Readonly<{ call: () => void }>>()('test/NativeResource') {}
 
 const makeHarness = (multipleCheckpoints = false) => {
   const external = vi.fn()
@@ -54,7 +54,7 @@ const makeHarness = (multipleCheckpoints = false) => {
   })
   const events = Machine.eventsFromSchemas(ResumeEvent)
   const node = (nodeId: string) => ({ nodeId, executionId, attempt: 1 })
-  const effect = (name: string, drafts: ReadonlyArray<EventDraft>) =>
+  const effect = (name: string, drafts: Readonly<EventDraft[]>) =>
     Effect.gen(function* () {
       const checkpoint = yield* WorkflowCheckpoint
       expect(checkpoint.runId).toBe(runId)
@@ -170,7 +170,7 @@ const makeHarness = (multipleCheckpoints = false) => {
     isReplyBoundary: (state: State) =>
       states.matches(state, 'Waiting') || states.matches(state, 'Final') || states.matches(state, 'Failed'),
     status,
-    boundaryEvents: (state: State): ReadonlyArray<EventDraft> =>
+    boundaryEvents: (state: State): Readonly<EventDraft[]> =>
       states.matches(state, 'Failed')
         ? [
             { type: 'node.failed', ...node('A'), payload: { reason: 'invalid' } },
@@ -200,7 +200,7 @@ const makeHarness = (multipleCheckpoints = false) => {
     createdAt: DateTime.makeUnsafe('2026-11-01T00:00:00Z'),
     updatedAt: DateTime.makeUnsafe('2026-11-01T00:00:00Z'),
   }
-  let commits: ReadonlyArray<CommitCommand> = []
+  let commits: Readonly<CommitCommand[]> = []
   let beforeCommit: (command: CommitCommand) => Effect.Effect<void, StoreFailure> = () => Effect.void
   const store: StoreService = {
     create: () => Effect.void,
@@ -391,7 +391,7 @@ describe('request-scoped managed native runtime', () => {
     const harness = makeHarness()
     const original = harness.current()
     const executor = await Effect.runPromise(harness.executor())
-    const invalidRuns: ReadonlyArray<Run> = [
+    const invalidRuns: Readonly<Run[]> = [
       { ...original, graphId: 'different' },
       { ...original, workflowVersion: decodeVersion('2.0.0') },
       { ...original, status: 'waiting' satisfies RunStatus },

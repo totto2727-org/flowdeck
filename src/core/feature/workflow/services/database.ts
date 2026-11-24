@@ -9,7 +9,7 @@ const databaseFailure = (operation: string, cause: unknown) => {
     : new ExternalError({ operation, cause, kind: 'storage' })
 }
 
-export const execute = <A, E extends { readonly cause: unknown }, R>(
+export const execute = <A, E extends Readonly<{ cause: unknown }>, R>(
   operation: string,
   effect: Effect.Effect<A, E, R>,
 ) =>

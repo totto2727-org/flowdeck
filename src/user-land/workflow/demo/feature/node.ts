@@ -19,7 +19,7 @@ export const DemoData = Schema.TaggedUnion({
   publish: publishing,
   completed: { ...publishing, result: Schema.String },
 })
-export const demoStates = (labels: { readonly prepare: string; readonly publish: string }) =>
+export const demoStates = (labels: Readonly<{ prepare: string; publish: string }>) =>
   Machine.state({
     states: {
       Ready: {},
@@ -68,7 +68,7 @@ export const demoStatus = (state: DemoNativeState): RunStatus =>
         : 'running'
 export const demoBoundary = (state: DemoNativeState) =>
   states.matches(state, 'approval') || states.matches(state, 'completed')
-export const demoBoundaryEvents = (state: DemoNativeState): ReadonlyArray<EventDraft> => {
+export const demoBoundaryEvents = (state: DemoNativeState): Readonly<EventDraft[]> => {
   if (states.matches(state, 'approval')) {
     const data = Option.getOrThrow(states.get(state, 'approval'))
     return [

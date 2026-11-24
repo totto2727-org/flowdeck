@@ -8,7 +8,7 @@ const NODE_SIZE = { width: 224, height: 100 }
 const NODE_HORIZONTAL_STEP = 280
 
 /** Event order is durable sequence order, independent of wall-clock timestamps. */
-export const projectEvents = (events: ReadonlyArray<RunEvent>) =>
+export const projectEvents = (events: Readonly<RunEvent[]>) =>
   Array.reduce(
     Array.sort(
       events,
@@ -31,7 +31,7 @@ export const projectEvents = (events: ReadonlyArray<RunEvent>) =>
   )
 
 /** Layout is a pure graph projection. Selection belongs exclusively to the UI. */
-export const graphToShapes = (graph: GraphDefinition, events: ReadonlyArray<RunEvent> = []): Shapes => {
+export const graphToShapes = (graph: GraphDefinition, events: Readonly<RunEvent[]> = []): Shapes => {
   const states = projectEvents(events)
   const state = (nodeId: NodeId) => HashMap.get(states, nodeId).pipe(Option.getOrElse(() => 'idle' as const))
   return {

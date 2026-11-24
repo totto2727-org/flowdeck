@@ -10,19 +10,19 @@ export interface WorkflowDefinition {
   readonly summary: WorkflowSummary
   readonly prepare: (
     input: CreateRun,
-  ) => Effect.Effect<{ readonly graph: GraphDefinition; readonly snapshot: JsonObject }, Schema.SchemaError>
+  ) => Effect.Effect<Readonly<{ graph: GraphDefinition; snapshot: JsonObject }>, Schema.SchemaError>
 }
 
 /** Static execution binding supplied by the application's composition root. */
-export type WorkflowExecutor = {
-  readonly start: (runId: RunId) => Effect.Effect<void, WorkflowFailure>
-  readonly resume: (runId: RunId) => Effect.Effect<void, WorkflowFailure>
-}
+export type WorkflowExecutor = Readonly<{
+  start: (runId: RunId) => Effect.Effect<void, WorkflowFailure>
+  resume: (runId: RunId) => Effect.Effect<void, WorkflowFailure>
+}>
 
 export interface RegisteredWorkflow extends WorkflowDefinition {
   readonly binding: WorkflowExecutor
 }
 
-export class WorkflowRegistry extends Context.Service<WorkflowRegistry, ReadonlyArray<RegisteredWorkflow>>()(
+export class WorkflowRegistry extends Context.Service<WorkflowRegistry, Readonly<RegisteredWorkflow[]>>()(
   'flowdeck/WorkflowRegistry',
 ) {}

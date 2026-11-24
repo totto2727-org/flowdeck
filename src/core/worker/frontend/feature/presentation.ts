@@ -15,17 +15,17 @@ export const renderJson = Schema.encodeSync(Schema.fromJsonString(Schema.Json, {
 
 export const eventLabel = (type: string) => String.replaceAll('.', ' ')(type)
 export const shortId = (id: string) => String.takeRight(id, shortIdLength)
-export const orderedEvents = (events: ReadonlyArray<RunEvent>) =>
+export const orderedEvents = (events: Readonly<RunEvent[]>) =>
   Array.sort(
     events,
     Order.mapInput(Order.Number, (event: RunEvent) => event.sequence),
   )
 
 /** Selection is presentation state. It never changes the persisted node projection. */
-export const nodeEvents = (events: ReadonlyArray<RunEvent>, nodeId: NodeId) =>
+export const nodeEvents = (events: Readonly<RunEvent[]>, nodeId: NodeId) =>
   orderedEvents(Array.filter(events, (event) => 'nodeId' in event && event.nodeId === nodeId))
 
-export const latestExecution = (events: ReadonlyArray<RunEvent>) =>
+export const latestExecution = (events: Readonly<RunEvent[]>) =>
   Array.findLast(
     orderedEvents(events),
     (event) => event.type === 'node.started' || event.type === 'node.succeeded' || event.type === 'node.failed',
@@ -46,7 +46,7 @@ export const graphSize = (shapes: Shapes) =>
   }))
 
 /** Arrow navigation follows graph definition order, not execution status. */
-export const nextNode = (ids: ReadonlyArray<NodeId>, current: NodeId, key: string): NodeId | undefined => {
+export const nextNode = (ids: Readonly<NodeId[]>, current: NodeId, key: string): NodeId | undefined => {
   const index = Option.getOrElse(
     Array.findFirstIndex(ids, (id) => id === current),
     () => 0,

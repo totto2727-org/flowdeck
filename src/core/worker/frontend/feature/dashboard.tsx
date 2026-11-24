@@ -15,7 +15,7 @@ import { loadDashboard, resumeRun, selectRun, startRun, type DashboardData, type
 import { ThemeToggle } from './theme-toggle.tsx'
 import type { RunDetail, RunEvent } from './view-model.ts'
 
-function Status({ value }: { readonly value: string }) {
+function Status({ value }: Readonly<{ value: string }>) {
   return (
     <Badge
       variant='outline'
@@ -31,10 +31,10 @@ function Status({ value }: { readonly value: string }) {
 function Events({
   events,
   selectedNode,
-}: {
-  readonly events: ReadonlyArray<RunEvent>
-  readonly selectedNode: NodeId | null
-}) {
+}: Readonly<{
+  events: Readonly<RunEvent[]>
+  selectedNode: NodeId | null
+}>) {
   const [nodeOnly, setNodeOnly] = useState(false)
   const visible = orderedEvents(
     nodeOnly && selectedNode
@@ -112,11 +112,11 @@ function SelectedRun({
   detail,
   pending,
   onResume,
-}: {
-  readonly detail: RunDetail
-  readonly pending: boolean
-  readonly onResume: () => void
-}) {
+}: Readonly<{
+  detail: RunDetail
+  pending: boolean
+  onResume: () => void
+}>) {
   const [node, setNode] = useState<NodeId | null>(null)
   const [view, setView] = useState<'events' | 'state'>('events')
   const recoveryAction = runRecoveryAction(detail.run.status)
@@ -265,7 +265,7 @@ const subscribeHydration = () => () => undefined
 const hydratedSnapshot = () => true
 const serverSnapshot = () => false
 
-export function Dashboard({ initial }: { readonly initial: DashboardData }) {
+export function Dashboard({ initial }: Readonly<{ initial: DashboardData }>) {
   const hydrated = useSyncExternalStore(subscribeHydration, hydratedSnapshot, serverSnapshot)
   const [data, setData] = useState(initial)
   const firstWorkflow = Option.getOrUndefined(Array.head(initial.workflows))

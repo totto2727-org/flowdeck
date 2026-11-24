@@ -25,7 +25,7 @@ describe('native demo execution', () => {
       const prepareExecutionId = 'execution_00000000-0000-4000-8000-000000000001'
       const approvalExecutionId = 'execution_00000000-0000-4000-8000-000000000002'
       const publishExecutionId = 'execution_00000000-0000-4000-8000-000000000003'
-      let events: ReadonlyArray<EventDraft> = []
+      let events: Readonly<EventDraft[]> = []
       const checkpoint: typeof WorkflowCheckpoint.Service = {
         runId: 'run_00000000-0000-4000-8000-000000000001',
         fail: Effect.die,
@@ -68,7 +68,7 @@ describe('native demo execution', () => {
   test.each(implementations)(
     'waits for approval and preserves execution identities after runtime replacement: $draft',
     async ({ native, states, draft }) => {
-      let checkpoints: ReadonlyArray<EventDraft> = []
+      let checkpoints: Readonly<EventDraft[]> = []
       const checkpoint: typeof WorkflowCheckpoint.Service = {
         runId: 'run_00000000-0000-4000-8000-000000000001',
         fail: Effect.die,

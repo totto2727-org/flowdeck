@@ -13,13 +13,15 @@ const decodeSessionId = Schema.decodeUnknownSync(SessionId)
 const decodeCommandId = Schema.decodeUnknownSync(CommandId)
 
 /** Native PiHarness operations share one receipt contract regardless of the Workspace backend. */
-export const makeHarnessSandbox = (options: {
-  readonly harness: PiHarness
-  readonly modelId: string
-  readonly initialize: (
-    runId: RunId,
-  ) => Effect.Effect<void, unknown, DurableObjectState | import('alchemy/RuntimeContext').RuntimeContext>
-}) =>
+export const makeHarnessSandbox = (
+  options: Readonly<{
+    harness: PiHarness
+    modelId: string
+    initialize: (
+      runId: RunId,
+    ) => Effect.Effect<void, unknown, DurableObjectState | import('alchemy/RuntimeContext').RuntimeContext>
+  }>,
+) =>
   Effect.gen(function* () {
     const store = yield* Store
     const context = yield* Effect.context<DurableObjectState | import('alchemy/RuntimeContext').RuntimeContext>()

@@ -3,11 +3,13 @@ import { describe, expect, expectTypeOf, test } from 'vite-plus/test'
 
 import { ResourceStore } from './resource-store.ts'
 
-class NativeResource extends Context.Service<NativeResource, { readonly read: () => string }>()(
+class NativeResource extends Context.Service<NativeResource, Readonly<{ read: () => string }>>()(
   'test/NativeResource',
 ) {}
-class OtherResource extends Context.Service<OtherResource, { readonly read: () => string }>()('test/OtherResource') {}
-class Configuration extends Context.Service<Configuration, { readonly name: string }>()('test/ResourceConfiguration') {}
+class OtherResource extends Context.Service<OtherResource, Readonly<{ read: () => string }>>()('test/OtherResource') {}
+class Configuration extends Context.Service<Configuration, Readonly<{ name: string }>>()(
+  'test/ResourceConfiguration',
+) {}
 
 const resource = { read: () => 'native reference' }
 
@@ -108,7 +110,7 @@ describe('ResourceStore', () => {
   test('releases a failed attempt before retry and retains the successful resource until runtime closure', async () => {
     const releases = await Effect.runPromise(
       Effect.gen(function* () {
-        const finalized = yield* Ref.make<ReadonlyArray<string>>([])
+        const finalized = yield* Ref.make<Readonly<string[]>>([])
         yield* Effect.scoped(
           Effect.gen(function* () {
             const store = yield* ResourceStore.make
@@ -134,7 +136,7 @@ describe('ResourceStore', () => {
   test('releases an interrupted attempt before retry and retains the successful resource until runtime closure', async () => {
     const releases = await Effect.runPromise(
       Effect.gen(function* () {
-        const finalized = yield* Ref.make<ReadonlyArray<string>>([])
+        const finalized = yield* Ref.make<Readonly<string[]>>([])
         yield* Effect.scoped(
           Effect.gen(function* () {
             const store = yield* ResourceStore.make
@@ -203,9 +205,9 @@ describe('ResourceStore', () => {
       const store = yield* ResourceStore
       const initialize = Effect.map(Configuration, ({ name }) => ({ read: () => name }))
       const initialized = store.getOrTryInit(NativeResource, initialize)
-      expectTypeOf(initialized).toEqualTypeOf<Effect.Effect<{ readonly read: () => string }, never, Configuration>>()
+      expectTypeOf(initialized).toEqualTypeOf<Effect.Effect<Readonly<{ read: () => string }>, never, Configuration>>()
       expectTypeOf(store.get(NativeResource)).toEqualTypeOf<
-        Effect.Effect<Option.Option<{ readonly read: () => string }>>
+        Effect.Effect<Option.Option<Readonly<{ read: () => string }>>>
       >()
       return (yield* initialized).read()
     }).pipe(Effect.provide(ResourceStore.layer), Effect.provideService(Configuration, { name: 'configured' }))

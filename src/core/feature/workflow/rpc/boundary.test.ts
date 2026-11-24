@@ -20,7 +20,7 @@ const crypto = Crypto.make({
   digest: (_algorithm, bytes) => Effect.succeed(bytes),
 })
 const capture = <A, E>(effect: Effect.Effect<A, E, Crypto.Crypto>) => {
-  const entries: Array<Logger.Options<unknown> & { readonly annotations: Readonly<Record<string, unknown>> }> = []
+  const entries: Array<Logger.Options<unknown> & Readonly<{ annotations: Readonly<Record<string, unknown>> }>> = []
   const exit = Effect.runSyncExit(
     effect.pipe(
       Effect.provideService(Crypto.Crypto, crypto),
@@ -83,10 +83,12 @@ describe('JSON RPC boundary', () => {
   })
 
   test('requires a validated problem cause and disallows non-JSON success types', () => {
-    expectTypeOf<ConstructorParameters<typeof RemoteWorkerError>[0]>().toEqualTypeOf<{
-      readonly operation: string
-      readonly cause: Rfc9457ProblemDetails
-    }>()
+    expectTypeOf<ConstructorParameters<typeof RemoteWorkerError>[0]>().toEqualTypeOf<
+      Readonly<{
+        operation: string
+        cause: Rfc9457ProblemDetails
+      }>
+    >()
     const invalidCalls = () => {
       // @ts-expect-error Error is not JSON.
       rpcResponse('invalid')(Effect.succeed(new Error('private')))

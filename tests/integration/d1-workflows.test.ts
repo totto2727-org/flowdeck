@@ -153,7 +153,7 @@ const unavailableDevelopmentBinding = Layer.succeed(DevelopmentWorkflowBinding, 
       }),
     ),
 })
-const api = (registry?: ReadonlyArray<RegisteredWorkflow>) =>
+const api = (registry?: Readonly<RegisteredWorkflow[]>) =>
   HttpRouter.toWebHandler(
     ApiRoutes.pipe(
       HttpRouter.provideRequest(
@@ -805,12 +805,14 @@ describe('demo cold restoration', () => {
   test('observes lifecycle hooks only after the matching snapshot and complete event batch are readable in D1', async () => {
     const runId = command().runId
     await seed(runId)
-    let observations: ReadonlyArray<{
-      revision: number
-      persisted: Run
-      eventIds: ReadonlyArray<string>
-      storedEventIds: ReadonlyArray<string>
-    }> = []
+    let observations: Readonly<
+      {
+        revision: number
+        persisted: Run
+        eventIds: Readonly<string[]>
+        storedEventIds: Readonly<string[]>
+      }[]
+    > = []
     const executor = Effect.runSync(
       makeDemoExecutor.pipe(
         Effect.provide(
@@ -906,7 +908,7 @@ describe('demo cold restoration', () => {
   test('generates prefixed UUIDv4 execution, event and commit identities and ACKs an exact duplicate commit', async () => {
     await seed()
     const persisted = store
-    let commits: ReadonlyArray<CommitCommand> = []
+    let commits: Readonly<CommitCommand[]> = []
     store = {
       ...persisted,
       commit: (input) => {

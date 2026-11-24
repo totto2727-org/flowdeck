@@ -16,18 +16,18 @@ export const encodeWorkflowsResponse = flow(Schema.encodeEffect(RpcWorkflowsResp
 export const encodeRunsResponse = flow(Schema.encodeEffect(RpcRunsResponse), Effect.orDie)
 export const encodeRunDetail = flow(Schema.encodeEffect(RpcRunDetail), Effect.orDie)
 
-export type WireWorkflowService<R = never> = {
-  readonly listWorkflows: () => Effect.Effect<string, never, R>
-  readonly listRuns: () => Effect.Effect<string, never, R>
-  readonly getRunDetail: (runId: RunId) => Effect.Effect<string, never, R>
-  readonly createRun: (input: typeof RpcCreateRun.Encoded) => Effect.Effect<string, never, R>
-  readonly resumeRun: (runId: RunId) => Effect.Effect<string, never, R>
-}
+export type WireWorkflowService<R = never> = Readonly<{
+  listWorkflows: () => Effect.Effect<string, never, R>
+  listRuns: () => Effect.Effect<string, never, R>
+  getRunDetail: (runId: RunId) => Effect.Effect<string, never, R>
+  createRun: (input: typeof RpcCreateRun.Encoded) => Effect.Effect<string, never, R>
+  resumeRun: (runId: RunId) => Effect.Effect<string, never, R>
+}>
 
-export type WireWorkflowExecutor<R = never> = {
-  readonly start: (runId: RunId) => Effect.Effect<string, never, R>
-  readonly resume: (runId: RunId) => Effect.Effect<string, never, R>
-}
+export type WireWorkflowExecutor<R = never> = Readonly<{
+  start: (runId: RunId) => Effect.Effect<string, never, R>
+  resume: (runId: RunId) => Effect.Effect<string, never, R>
+}>
 
 /**
  * Apply only to the native Alchemy RPC call, before decoding its application reply.

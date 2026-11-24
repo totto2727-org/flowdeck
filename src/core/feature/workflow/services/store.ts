@@ -14,7 +14,7 @@ export type StoreFailure = ExternalError | NotFound | Conflict | StorageConflict
 export { PendingRunEvent as PendingEvent } from '@/core/feature/workflow/domain/model'
 export type EventRange = Data.TaggedEnum<{
   All: {}
-  ThroughRevision: { readonly revision: number }
+  ThroughRevision: Readonly<{ revision: number }>
 }>
 export const EventRange = Data.taggedEnum<EventRange>()
 export const CommitCommand = Schema.Struct({
@@ -37,10 +37,10 @@ export const CommitAck = Schema.Struct({
 export type CommitAck = typeof CommitAck.Type
 export interface StoreService {
   readonly create: (run: Run, graph: GraphDefinition, workflowName: string) => Effect.Effect<void, StoreFailure>
-  readonly listRuns: Effect.Effect<ReadonlyArray<Run>, StoreFailure>
+  readonly listRuns: Effect.Effect<Readonly<Run[]>, StoreFailure>
   readonly getRun: (runId: RunId) => Effect.Effect<Run, StoreFailure>
   readonly getGraph: (graphId: GraphId) => Effect.Effect<GraphDefinition, StoreFailure>
-  readonly getEvents: (runId: RunId, range: EventRange) => Effect.Effect<ReadonlyArray<RunEvent>, StoreFailure>
+  readonly getEvents: (runId: RunId, range: EventRange) => Effect.Effect<Readonly<RunEvent[]>, StoreFailure>
   /** ACK exists only after D1 atomically commits the snapshot and complete event batch. */
   readonly commit: (command: CommitCommand) => Effect.Effect<CommitAck, StoreFailure>
 }

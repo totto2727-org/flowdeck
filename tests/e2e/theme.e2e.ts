@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import { Array } from 'effect'
 
 test('defaults to dark even with a light OS preference and persists explicit theme choices', async ({ page }, info) => {
-  let pageErrors: ReadonlyArray<string> = []
+  let pageErrors: Readonly<string[]> = []
   page.on('pageerror', (error) => {
     pageErrors = Array.append(pageErrors, error.message)
   })
@@ -34,7 +34,7 @@ test('defaults to dark even with a light OS preference and persists explicit the
 })
 
 test('saved light preference is applied without hydration errors', async ({ page }) => {
-  let pageErrors: ReadonlyArray<string> = []
+  let pageErrors: Readonly<string[]> = []
   page.on('pageerror', (error) => {
     pageErrors = Array.append(pageErrors, error.message)
   })
@@ -47,7 +47,7 @@ test('saved light preference is applied without hydration errors', async ({ page
 })
 
 test('blocked browser storage does not prevent theme switching', async ({ page }) => {
-  let pageErrors: ReadonlyArray<string> = []
+  let pageErrors: Readonly<string[]> = []
   page.on('pageerror', (error) => {
     pageErrors = Array.append(pageErrors, error.message)
   })
