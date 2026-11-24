@@ -1,21 +1,17 @@
 import { readD1Migrations } from '@cloudflare/vitest-plugin'
-import type { D1Database } from '@cloudflare/workers-types'
 import { BrowserCrypto } from '@effect/platform-browser'
 import { live } from '@effect/vitest'
 import { defineQuery } from '@totto2727/reylo'
 import { QueryDecodeError, QueryExecutor } from '@totto2727/reylo/effect'
 import type { PreparedStatement } from 'alchemy/Cloudflare/D1'
 import { makeRpcStub } from 'alchemy/Cloudflare/Workers'
-import type { Crypto } from 'effect'
-import { Array, Data, DateTime, Effect, Exit, Fiber, Layer, Predicate, Schema, SemVer } from 'effect'
-import { HttpRouter } from 'effect/http'
+import { Array, Data, DateTime, Effect, Exit, Fiber, Layer, Schema, SemVer } from 'effect'
 import { TestCrypto } from 'effect/testing'
-import { Miniflare } from 'miniflare'
-import { afterEach, beforeEach, describe, expect, expectTypeOf, test, vi } from 'vite-plus/test'
+import { describe, expect, expectTypeOf, vi } from 'vite-plus/test'
 
 import { createRun, makeWorkflows, resumeRun as resumeWorkflowRun } from '@/bridge/workflow/core/feature/workflow'
 import { makeWorkflowRegistry } from '@/bridge/workflow/user-land/feature/registration'
-import { DevelopmentWorkflowBinding, WorkflowBinding } from '@/bridge/workflow/user-land/feature/workflow-binding'
+import { WorkflowBinding } from '@/bridge/workflow/user-land/feature/workflow-binding'
 import { makeD1Batch } from '@/core/feature/d1/batch'
 import { D1Client } from '@/core/feature/d1/client'
 import { D1Binding, NativeD1Client } from '@/core/feature/d1/native'
@@ -23,160 +19,33 @@ import { AlchemyQueryExecutorLive } from '@/core/feature/d1/reylo'
 import { ExternalError } from '@/core/feature/workflow/domain/errors'
 import { CommitId, EventId, ExecutionId, RunId } from '@/core/feature/workflow/domain/identity'
 import { RunDetail, RunsResponse } from '@/core/feature/workflow/domain/model'
-import type { Run, WorkflowVersion } from '@/core/feature/workflow/domain/model'
+import type { Run } from '@/core/feature/workflow/domain/model'
 import { LifecycleHook } from '@/core/feature/workflow/lifecycle'
 import { D1StoreLive } from '@/core/feature/workflow/services/d1-store'
 import { execute } from '@/core/feature/workflow/services/database'
 import { DatabaseQueries, DatabaseQueriesLive } from '@/core/feature/workflow/services/database-queries'
-import type { makeDatabaseQueries } from '@/core/feature/workflow/services/database-queries'
 import { EventRange, Store } from '@/core/feature/workflow/services/store'
 import type { CommitCommand, StoreService } from '@/core/feature/workflow/services/store'
 import { WorkflowRegistry } from '@/core/feature/workflow/services/workflow-definition'
-import type { RegisteredWorkflow } from '@/core/feature/workflow/services/workflow-definition'
 import { Workflows } from '@/core/feature/workflow/services/workflows'
-import { ApiRoutes } from '@/core/worker/control/feature/router'
 import { demoDefinition } from '@/user-land/workflow/demo/feature/definition'
-import {
-  demoGraph,
-  encodeDemoSnapshot,
-  initialSnapshot,
-  makeDemoExecutor,
-  resumeRun,
-  startRun,
-} from '@/user-land/workflow/demo/feature/demo'
+import { demoGraph, makeDemoExecutor, resumeRun, startRun } from '@/user-land/workflow/demo/feature/demo'
 
-const version1 = SemVer.parseUnsafe('1.0.0')
-const version2 = SemVer.parseUnsafe('2.0.0')
-const now = DateTime.makeUnsafe('2026-10-17T12:00:00.000Z')
+import {
+  command,
+  d1Fixture,
+  newRun,
+  now,
+  unavailableDevelopmentBinding,
+  version1,
+  version2,
+} from './d1-workflows.fixture.ts'
+
 // oxlint-disable-next-line rules/prefer-non-unknown-decode -- The native HTTP response body has no trusted shape.
 const decodeHttpRunDetail = Schema.decodeUnknownEffect(Schema.toCodecJson(RunDetail))
-const newRun = (runId: string, version: WorkflowVersion = version1): Effect.Effect<Run> =>
-  Effect.gen(function* () {
-    const initial = yield* initialSnapshot(version)
-    const snapshot = yield* encodeDemoSnapshot(initial)
-    return {
-      runId,
-      workflowId: 'demo',
-      workflowVersion: version,
-      graphId: demoGraph(version).graphId,
-      status: 'pending',
-      revision: 0,
-      snapshot,
-      createdAt: now,
-      updatedAt: now,
-    }
-  })
-const command = (overrides: Partial<CommitCommand> = {}): CommitCommand => ({
-  commitId: 'commit_00000000-0000-4000-8000-000000000001',
-  runId: 'run_00000000-0000-4000-8000-000000000001',
-  expectedRevision: 0,
-  status: 'running',
-  snapshot: { checkpoint: 'running-store-write' },
-  events: [
-    {
-      eventId: 'event_00000000-0000-4000-8000-000000000001',
-      type: 'node.started',
-      nodeId: 'prepare',
-      executionId: 'execution_00000000-0000-4000-8000-000000000001',
-      attempt: 1,
-      payload: {},
-      createdAt: now,
-    },
-  ],
-  updatedAt: now,
-  ...overrides,
-})
-
-// Real local workerd D1, not a memory store or an imitation of SQL transactions.
-let miniflare: Miniflare
-let database: D1Database
-let store: StoreService
-let storeLayer: Layer.Layer<Store>
-const freshStore = Effect.suspend(() => Store.pipe(Effect.provide(storeLayer)))
-const freshQueries = (): Effect.Effect<Effect.Success<typeof makeDatabaseQueries>> =>
-  DatabaseQueries.pipe(
-    Effect.provide(
-      DatabaseQueriesLive.pipe(
-        Layer.provide(AlchemyQueryExecutorLive),
-        Layer.provide(NativeD1Client),
-        Layer.provide(Layer.succeed(D1Binding, database)),
-      ),
-    ),
-  )
-beforeEach(async () => {
-  miniflare = new Miniflare({
-    modules: true,
-    script: 'export default {}',
-    compatibilityDate: '2026-07-30',
-    d1Databases: { DB: 'flowdeck-test', OTHER: 'flowdeck-other-test' },
-  })
-  database = await miniflare.getD1Database('DB')
-  const migrations = await readD1Migrations('migrations')
-  await database.batch(
-    Array.map(
-      Array.flatMap(migrations, (migration) => migration.queries),
-      (query) => database.prepare(query),
-    ),
-  )
-  storeLayer = D1StoreLive.pipe(
-    Layer.provide(DatabaseQueriesLive),
-    Layer.provide(AlchemyQueryExecutorLive),
-    Layer.provide(NativeD1Client),
-    Layer.provide(Layer.succeed(D1Binding, database)),
-  )
-  // oxlint-disable-next-line rules/no-effect-runtime-run -- Vitest's native setup hook owns one database layer per test.
-  store = Effect.runSync(freshStore)
-})
-afterEach(async () => {
-  await miniflare.dispose()
-})
 const isolatedExit = Effect.fn(function* <A, E>(effect: Effect.Effect<A, E>) {
   const fiber = yield* Effect.forkScoped(effect)
   return yield* Fiber.await(fiber)
-})
-const provideTestServices = <A, E>(effect: Effect.Effect<A, E, Store | Crypto.Crypto>): Effect.Effect<A, E> =>
-  effect.pipe(Effect.provideService(Store, store), Effect.provide(BrowserCrypto.layer))
-const seedEffect = (
-  runId = 'run_00000000-0000-4000-8000-000000000001',
-  version: WorkflowVersion = version1,
-): ReturnType<StoreService['create']> =>
-  Effect.gen(function* () {
-    const run = yield* newRun(runId, version)
-    return yield* store.create(run, demoGraph(version), demoDefinition.summary.name)
-  })
-
-/*
- * A Layer substitutes only the static binding boundary. Its worker implementation
- * is the same exported workflow used by the actual Durable Object adapter.
- */
-const testBinding = (): Layer.Layer<WorkflowBinding> =>
-  Layer.succeed(WorkflowBinding, {
-    start: (runId) =>
-      Effect.flatMap(freshStore, (persisted) =>
-        startRun(runId).pipe(Effect.provideService(Store, persisted), Effect.provide(BrowserCrypto.layer)),
-      ),
-    resume: (runId) =>
-      Effect.flatMap(freshStore, (persisted) =>
-        resumeRun(runId).pipe(Effect.provideService(Store, persisted), Effect.provide(BrowserCrypto.layer)),
-      ),
-  })
-const unavailableDevelopmentBinding = Layer.succeed(DevelopmentWorkflowBinding, {
-  start: () =>
-    Effect.fail(
-      new ExternalError({
-        kind: 'service',
-        operation: 'test binding',
-        cause: 'Development workflow not selected by this fixture',
-      }),
-    ),
-  resume: () =>
-    Effect.fail(
-      new ExternalError({
-        kind: 'service',
-        operation: 'test binding',
-        cause: 'Development workflow not selected by this fixture',
-      }),
-    ),
 })
 class DisconnectedWorkflow extends Data.TaggedError('DisconnectedWorkflow')<{ message: string }> {}
 
@@ -193,30 +62,10 @@ const disconnectedRegistry = Effect.fn(function* (method: 'start' | 'resume') {
   )
 })
 
-const api = (registry?: Readonly<RegisteredWorkflow[]>) =>
-  HttpRouter.toWebHandler(
-    ApiRoutes.pipe(
-      HttpRouter.provideRequest(
-        Layer.effect(Workflows, makeWorkflows).pipe(
-          Layer.provide(
-            Layer.mergeAll(
-              Predicate.isUndefined(registry)
-                ? Layer.effect(WorkflowRegistry, makeWorkflowRegistry).pipe(
-                    Layer.provide(Layer.mergeAll(testBinding(), unavailableDevelopmentBinding)),
-                  )
-                : Layer.succeed(WorkflowRegistry, registry),
-              Layer.succeed(Store, store),
-              TestCrypto.layer('flowdeck-api').pipe(Layer.provide(BrowserCrypto.layer)),
-            ),
-          ),
-        ),
-      ),
-    ),
-  )
-
 describe('d1 persisted run store', () => {
   live('uses the published Reylo decoder and captured Alchemy executor despite a conflicting caller context', () =>
     Effect.gen(function* () {
+      const fixture = yield* d1Fixture
       const lookup = defineQuery<{ active: boolean }, { active: boolean; document: { name: string } }, 'one', 'sqlite'>(
         {
           cardinality: 'one',
@@ -230,7 +79,7 @@ describe('d1 persisted run store', () => {
           sql: `SELECT :active AS active, '{"name":"Flowdeck"}' AS document`,
         },
       )
-      const queries = yield* freshQueries()
+      const queries = yield* fixture.freshQueries()
       const result = queries.run(lookup, { active: true })
       expectTypeOf<Effect.Services<typeof result>>().toEqualTypeOf<never>()
       const unexpected = vi.fn(() => Effect.die('The caller executor must not be used'))
@@ -246,6 +95,7 @@ describe('d1 persisted run store', () => {
 
   live('maps a published Reylo cardinality failure to a storage failure without losing its original cause', () =>
     Effect.gen(function* () {
+      const fixture = yield* d1Fixture
       const query = defineQuery<{}, { value: number }, 'one', 'sqlite'>({
         dialect: 'sqlite',
         sql: 'SELECT 1 AS value UNION ALL SELECT 2 AS value',
@@ -253,7 +103,7 @@ describe('d1 persisted run store', () => {
         columns: [['value', 'int']],
         cardinality: 'one',
       })
-      const queries = yield* freshQueries()
+      const queries = yield* fixture.freshQueries()
       const result = queries.run(query)
       const queryError = yield* result.pipe(Effect.flip)
       expect(queryError).toBeInstanceOf(QueryDecodeError)
@@ -267,6 +117,7 @@ describe('d1 persisted run store', () => {
 
   live('retains a preparation failure before constructing or executing an atomic write batch', () =>
     Effect.gen(function* () {
+      const fixture = yield* d1Fixture
       const query = defineQuery<{ value: number }, never, 'none', 'sqlite'>({
         cardinality: 'none',
         columns: [],
@@ -281,14 +132,14 @@ describe('d1 persisted run store', () => {
           throw cause
         },
       }
-      const queries = yield* freshQueries()
+      const queries = yield* fixture.freshQueries()
       const error = yield* queries.prepare(query, input).pipe(Effect.flip)
       expect(error).toBeInstanceOf(ExternalError)
       expect(error.cause).toBe(cause)
-      const runs = yield* store.listRuns
+      const runs = yield* fixture.store.listRuns
       expect(runs).toStrictEqual([])
       const count = yield* Effect.promise(async () =>
-        database.prepare('SELECT count(*) AS count FROM workflows').first(),
+        fixture.database.prepare('SELECT count(*) AS count FROM workflows').first(),
       )
       expect(count).toStrictEqual({ count: 0 })
     }),
@@ -296,7 +147,8 @@ describe('d1 persisted run store', () => {
 
   live('preserves read interruption through the Alchemy executor and published query runner', () =>
     Effect.gen(function* () {
-      const clientLayer = NativeD1Client.pipe(Layer.provide(Layer.succeed(D1Binding, database)))
+      const fixture = yield* d1Fixture
+      const clientLayer = NativeD1Client.pipe(Layer.provide(Layer.succeed(D1Binding, fixture.database)))
       const client = yield* D1Client.pipe(Effect.provide(clientLayer))
       const statement = client.prepare('SELECT 1 AS value')
       const bind = vi.spyOn(statement, 'bind').mockReturnValue(statement)
@@ -328,8 +180,9 @@ describe('d1 persisted run store', () => {
 
   live('captures an externally composed query service without requiring a database at Store construction', () =>
     Effect.gen(function* () {
+      const fixture = yield* d1Fixture
       expectTypeOf(D1StoreLive).toEqualTypeOf<Layer.Layer<Store, never, DatabaseQueries>>()
-      const queries = yield* freshQueries()
+      const queries = yield* fixture.freshQueries()
       const layer = D1StoreLive.pipe(Layer.provide(Layer.succeed(DatabaseQueries, queries)))
       const supplied = yield* Store.pipe(Effect.provide(layer))
       const initial = yield* newRun(command().runId)
@@ -348,14 +201,15 @@ describe('d1 persisted run store', () => {
 
   live('captures workflow service dependencies once and runs every operation without a caller context', () =>
     Effect.gen(function* () {
+      const fixture = yield* d1Fixture
       const workflows = yield* Workflows.pipe(
         Effect.provide(
           Layer.effect(Workflows, makeWorkflows).pipe(
             Layer.provide(
               Layer.mergeAll(
-                Layer.succeed(Store, store),
+                Layer.succeed(Store, fixture.store),
                 Layer.effect(WorkflowRegistry, makeWorkflowRegistry).pipe(
-                  Layer.provide(Layer.mergeAll(testBinding(), unavailableDevelopmentBinding)),
+                  Layer.provide(Layer.mergeAll(fixture.testBinding, unavailableDevelopmentBinding)),
                 ),
                 TestCrypto.layer('captured-workflow-service').pipe(Layer.provide(BrowserCrypto.layer)),
               ),
@@ -383,9 +237,10 @@ describe('d1 persisted run store', () => {
 
   live('executes already prepared statements without preparing inside batch', () =>
     Effect.gen(function* () {
+      const fixture = yield* d1Fixture
       expectTypeOf<Parameters<Effect.Success<typeof makeD1Batch>>[0]>().toEqualTypeOf<PreparedStatement[]>()
       const client = yield* D1Client.pipe(
-        Effect.provide(NativeD1Client.pipe(Layer.provide(Layer.succeed(D1Binding, database)))),
+        Effect.provide(NativeD1Client.pipe(Layer.provide(Layer.succeed(D1Binding, fixture.database)))),
       )
       const prepared = client
         .prepare('INSERT INTO workflows (workflow_id, name) VALUES (?, ?)')
@@ -398,7 +253,7 @@ describe('d1 persisted run store', () => {
       expect(prepare).not.toHaveBeenCalled()
       yield* Effect.promise(async () =>
         expect(
-          database.prepare('SELECT name FROM workflows WHERE workflow_id = ?').bind('prepared').first(),
+          fixture.database.prepare('SELECT name FROM workflows WHERE workflow_id = ?').bind('prepared').first(),
         ).resolves.toStrictEqual({ name: 'Prepared' }),
       )
     }),
@@ -406,7 +261,8 @@ describe('d1 persisted run store', () => {
 
   live('keeps each store bound to its own Layer-provided database', () =>
     Effect.gen(function* () {
-      const otherDatabase = yield* Effect.promise(async () => miniflare.getD1Database('OTHER'))
+      const fixture = yield* d1Fixture
+      const otherDatabase = yield* Effect.promise(async () => fixture.miniflare.getD1Database('OTHER'))
       const migrations = yield* Effect.promise(async () => readD1Migrations('migrations'))
       yield* Effect.promise(async () =>
         otherDatabase.batch(
@@ -428,17 +284,18 @@ describe('d1 persisted run store', () => {
       )
       const otherRunId = 'run_00000000-0000-4000-8000-000000000002'
       yield* otherStore.create(yield* newRun(otherRunId), demoGraph(version1), demoDefinition.summary.name)
-      expect(yield* store.listRuns).toStrictEqual([])
-      yield* seedEffect()
-      expect(yield* store.listRuns).toMatchObject([{ runId: command().runId }])
+      expect(yield* fixture.store.listRuns).toStrictEqual([])
+      yield* fixture.seedEffect()
+      expect(yield* fixture.store.listRuns).toMatchObject([{ runId: command().runId }])
       expect(yield* otherStore.listRuns).toMatchObject([{ runId: otherRunId }])
     }),
   )
 
   live('preserves executor interruption without converting it into a storage failure', () =>
     Effect.gen(function* () {
+      const fixture = yield* d1Fixture
       const client = yield* D1Client.pipe(
-        Effect.provide(NativeD1Client.pipe(Layer.provide(Layer.succeed(D1Binding, database)))),
+        Effect.provide(NativeD1Client.pipe(Layer.provide(Layer.succeed(D1Binding, fixture.database)))),
       )
       const interrupted = yield* Store.pipe(
         Effect.provide(
@@ -458,19 +315,20 @@ describe('d1 persisted run store', () => {
         interrupted.create(yield* newRun(command().runId), demoGraph(version1), demoDefinition.summary.name),
       )
       expect(Exit.hasInterrupts(exit)).toBe(true)
-      expect(yield* store.listRuns).toStrictEqual([])
+      expect(yield* fixture.store.listRuns).toStrictEqual([])
     }),
   )
 
   live('uses Alchemy executors without evaluating the raw client binding', () =>
     Effect.gen(function* () {
+      const fixture = yield* d1Fixture
       const client = yield* D1Client.pipe(
-        Effect.provide(NativeD1Client.pipe(Layer.provide(Layer.succeed(D1Binding, database)))),
+        Effect.provide(NativeD1Client.pipe(Layer.provide(Layer.succeed(D1Binding, fixture.database)))),
       )
       const raw = vi.fn(() => {
         throw new Error('Raw access is forbidden')
       })
-      store = yield* Store.pipe(
+      fixture.store = yield* Store.pipe(
         Effect.provide(
           D1StoreLive.pipe(
             Layer.provide(DatabaseQueriesLive),
@@ -484,21 +342,22 @@ describe('d1 persisted run store', () => {
           ),
         ),
       )
-      yield* seedEffect()
-      expect(yield* store.listRuns).toHaveLength(1)
-      expect(yield* store.getGraph(demoGraph(version1).graphId)).toStrictEqual(demoGraph(version1))
-      expect(yield* store.commit(command())).toMatchObject({ revision: 1 })
-      expect(yield* store.getRun(command().runId)).toMatchObject({ revision: 1 })
-      expect(yield* store.getEvents(command().runId, EventRange.All())).toHaveLength(1)
+      yield* fixture.seedEffect()
+      expect(yield* fixture.store.listRuns).toHaveLength(1)
+      expect(yield* fixture.store.getGraph(demoGraph(version1).graphId)).toStrictEqual(demoGraph(version1))
+      expect(yield* fixture.store.commit(command())).toMatchObject({ revision: 1 })
+      expect(yield* fixture.store.getRun(command().runId)).toMatchObject({ revision: 1 })
+      expect(yield* fixture.store.getEvents(command().runId, EventRange.All())).toHaveLength(1)
       expect(raw).not.toHaveBeenCalled()
     }),
   )
 
   live('retains the original D1 constraint failure and stack for upstream logging', () =>
     Effect.gen(function* () {
-      yield* seedEffect()
-      yield* store.commit(command())
-      const error = yield* store.commit(command({ snapshot: { changed: true } })).pipe(Effect.flip)
+      const fixture = yield* d1Fixture
+      yield* fixture.seedEffect()
+      yield* fixture.store.commit(command())
+      const error = yield* fixture.store.commit(command({ snapshot: { changed: true } })).pipe(Effect.flip)
       expect(error).toMatchObject({ _tag: 'StorageConflict', cause: { message: expect.stringContaining('flowdeck_') } })
       expect(error).toHaveProperty('cause', expect.any(Error))
       expect(error).toHaveProperty('cause.stack', expect.any(String))
@@ -511,30 +370,32 @@ describe('d1 persisted run store', () => {
     { graphId: 'demo:1.0.0:graph:1' },
   ])('rejects invalid run identity before writing: %j', (identity) =>
     Effect.gen(function* () {
+      const fixture = yield* d1Fixture
       expect(
         yield* Effect.flip(
-          store.create(
+          fixture.store.create(
             { ...(yield* newRun('run_00000000-0000-4000-8000-000000000001')), ...identity },
             demoGraph(version1),
             demoDefinition.summary.name,
           ),
         ),
       ).toMatchObject({ _tag: 'ExternalError', kind: 'storage' })
-      expect(yield* store.listRuns).toStrictEqual([])
+      expect(yield* fixture.store.listRuns).toStrictEqual([])
     }),
   )
 
   live('persists a version string but returns a real SemVer domain value', () =>
     Effect.gen(function* () {
-      yield* seedEffect()
+      const fixture = yield* d1Fixture
+      yield* fixture.seedEffect()
       const row = yield* Effect.promise(async () =>
-        database
+        fixture.database
           .prepare('SELECT workflow_version FROM runs WHERE run_id = ?')
           .bind('run_00000000-0000-4000-8000-000000000001')
           .first<{ workflow_version: string }>(),
       )
       expect(row?.workflow_version).toBe('1.0.0')
-      const restored = yield* (yield* freshStore).getRun('run_00000000-0000-4000-8000-000000000001')
+      const restored = yield* (yield* fixture.freshStore).getRun('run_00000000-0000-4000-8000-000000000001')
       expect(SemVer.isSemVer(restored.workflowVersion)).toBe(true)
       expect(SemVer.equals(restored.workflowVersion, version1)).toBe(true)
     }),
@@ -542,16 +403,20 @@ describe('d1 persisted run store', () => {
 
   live('persists timestamp strings and nullable SQL node identity but restores DateTime and event variants', () =>
     Effect.gen(function* () {
-      yield* seedEffect()
+      const fixture = yield* d1Fixture
+      yield* fixture.seedEffect()
       const eventId = 'event_00000000-0000-4000-8000-000000000002'
       const runEvent = { eventId, type: 'run.started', payload: {}, createdAt: now } as const
-      yield* store.commit(command({ events: [runEvent, ...command().events] }))
+      yield* fixture.store.commit(command({ events: [runEvent, ...command().events] }))
       const row = yield* Effect.promise(async () =>
-        database.prepare('SELECT created_at, updated_at FROM runs WHERE run_id = ?').bind(command().runId).first(),
+        fixture.database
+          .prepare('SELECT created_at, updated_at FROM runs WHERE run_id = ?')
+          .bind(command().runId)
+          .first(),
       )
       expect(row).toStrictEqual({ created_at: DateTime.formatIso(now), updated_at: DateTime.formatIso(now) })
       const physical = yield* Effect.promise(async () =>
-        database
+        fixture.database
           .prepare('SELECT node_id, execution_id, attempt, created_at FROM run_events WHERE event_id = ?')
           .bind(eventId)
           .first(),
@@ -562,7 +427,7 @@ describe('d1 persisted run store', () => {
         attempt: null,
         created_at: DateTime.formatIso(now),
       })
-      const restored = yield* freshStore
+      const restored = yield* fixture.freshStore
       expect(yield* restored.getRun(command().runId)).toMatchObject({
         createdAt: now,
         updatedAt: now,
@@ -576,22 +441,23 @@ describe('d1 persisted run store', () => {
 
   live('rejects an obsolete persisted version instead of normalizing it', () =>
     Effect.gen(function* () {
-      yield* seedEffect()
+      const fixture = yield* d1Fixture
+      yield* fixture.seedEffect()
       // Corrupt only this isolated database to exercise the read boundary beyond immutable-write guards.
-      yield* Effect.promise(async () => database.prepare('DROP TRIGGER run_identity_immutable').run())
+      yield* Effect.promise(async () => fixture.database.prepare('DROP TRIGGER run_identity_immutable').run())
       yield* Effect.promise(async () =>
-        database
+        fixture.database
           .prepare('INSERT INTO workflow_versions (workflow_id, version, graph_id) VALUES (?, ?, ?)')
           .bind('demo', 'v1', demoGraph(version1).graphId)
           .run(),
       )
       yield* Effect.promise(async () =>
-        database
+        fixture.database
           .prepare('UPDATE runs SET workflow_version = ? WHERE run_id = ?')
           .bind('v1', 'run_00000000-0000-4000-8000-000000000001')
           .run(),
       )
-      expect(yield* Effect.flip(store.getRun('run_00000000-0000-4000-8000-000000000001'))).toMatchObject({
+      expect(yield* Effect.flip(fixture.store.getRun('run_00000000-0000-4000-8000-000000000001'))).toMatchObject({
         _tag: 'ExternalError',
         kind: 'storage',
       })
@@ -610,19 +476,21 @@ describe('d1 persisted run store', () => {
     },
   ])('rejects invalid commit identities atomically: %j', (identity) =>
     Effect.gen(function* () {
-      yield* seedEffect()
-      const before = yield* store.getRun('run_00000000-0000-4000-8000-000000000001')
-      expect(yield* Effect.flip(store.commit(command(identity)))).toMatchObject({
+      const fixture = yield* d1Fixture
+      yield* fixture.seedEffect()
+      const before = yield* fixture.store.getRun('run_00000000-0000-4000-8000-000000000001')
+      expect(yield* Effect.flip(fixture.store.commit(command(identity)))).toMatchObject({
         _tag: 'ExternalError',
         kind: 'storage',
       })
-      expect(yield* store.getRun(before.runId)).toStrictEqual(before)
-      expect(yield* store.getEvents(before.runId, EventRange.All())).toStrictEqual([])
+      expect(yield* fixture.store.getRun(before.runId)).toStrictEqual(before)
+      expect(yield* fixture.store.getEvents(before.runId, EventRange.All())).toStrictEqual([])
     }),
   )
 
   live('orders random run IDs by explicit creation time rather than ID value', () =>
     Effect.gen(function* () {
+      const fixture = yield* d1Fixture
       const older = {
         ...(yield* newRun('run_ffffffff-ffff-4fff-8fff-ffffffffffff')),
         createdAt: DateTime.makeUnsafe('2026-01-01T00:00:00.000Z'),
@@ -631,30 +499,33 @@ describe('d1 persisted run store', () => {
         ...(yield* newRun('run_00000000-0000-4000-8000-000000000000')),
         createdAt: DateTime.makeUnsafe('2026-01-02T00:00:00.000Z'),
       }
-      yield* store.create(newer, demoGraph(version1), demoDefinition.summary.name)
-      yield* store.create(older, demoGraph(version1), demoDefinition.summary.name)
-      expect(Array.map(yield* store.listRuns, (run) => run.runId)).toStrictEqual([newer.runId, older.runId])
+      yield* fixture.store.create(newer, demoGraph(version1), demoDefinition.summary.name)
+      yield* fixture.store.create(older, demoGraph(version1), demoDefinition.summary.name)
+      expect(Array.map(yield* fixture.store.listRuns, (run) => run.runId)).toStrictEqual([newer.runId, older.runId])
     }),
   )
 
   live('rejects duplicate event IDs inside a new commit without changing receipts, state or events', () =>
     Effect.gen(function* () {
-      yield* seedEffect()
+      const fixture = yield* d1Fixture
+      yield* fixture.seedEffect()
       const firstEvent = Array.getUnsafe(command().events, 0)
       expect(
         yield* Effect.flip(
-          store.commit(
+          fixture.store.commit(
             command({
               events: [firstEvent, { ...firstEvent, payload: { changed: true } }],
             }),
           ),
         ),
       ).toMatchObject({ _tag: 'Conflict' })
-      expect(yield* store.getRun('run_00000000-0000-4000-8000-000000000001')).toStrictEqual(
+      expect(yield* fixture.store.getRun('run_00000000-0000-4000-8000-000000000001')).toStrictEqual(
         yield* newRun('run_00000000-0000-4000-8000-000000000001'),
       )
-      expect(yield* store.getEvents('run_00000000-0000-4000-8000-000000000001', EventRange.All())).toStrictEqual([])
-      expect(yield* store.commit(command())).toStrictEqual({
+      expect(
+        yield* fixture.store.getEvents('run_00000000-0000-4000-8000-000000000001', EventRange.All()),
+      ).toStrictEqual([])
+      expect(yield* fixture.store.commit(command())).toStrictEqual({
         commitId: 'commit_00000000-0000-4000-8000-000000000001',
         eventCount: 1,
         firstSequence: 1,
@@ -666,8 +537,9 @@ describe('d1 persisted run store', () => {
 
   live('persists run identity, graph and initial snapshot across store reconstruction', () =>
     Effect.gen(function* () {
-      yield* seedEffect()
-      const restored = yield* freshStore
+      const fixture = yield* d1Fixture
+      yield* fixture.seedEffect()
+      const restored = yield* fixture.freshStore
       expect(yield* restored.getRun('run_00000000-0000-4000-8000-000000000001')).toStrictEqual(
         yield* newRun('run_00000000-0000-4000-8000-000000000001'),
       )
@@ -678,20 +550,23 @@ describe('d1 persisted run store', () => {
 
   live('atomically commits snapshot revision and sequenced execution events before ACK', () =>
     Effect.gen(function* () {
-      yield* seedEffect()
-      expect(yield* store.commit(command())).toStrictEqual({
+      const fixture = yield* d1Fixture
+      yield* fixture.seedEffect()
+      expect(yield* fixture.store.commit(command())).toStrictEqual({
         commitId: 'commit_00000000-0000-4000-8000-000000000001',
         eventCount: 1,
         firstSequence: 1,
         revision: 1,
         runId: 'run_00000000-0000-4000-8000-000000000001',
       })
-      expect(yield* store.getRun('run_00000000-0000-4000-8000-000000000001')).toMatchObject({
+      expect(yield* fixture.store.getRun('run_00000000-0000-4000-8000-000000000001')).toMatchObject({
         revision: 1,
         snapshot: command().snapshot,
         status: 'running',
       })
-      expect(yield* store.getEvents('run_00000000-0000-4000-8000-000000000001', EventRange.All())).toStrictEqual([
+      expect(
+        yield* fixture.store.getEvents('run_00000000-0000-4000-8000-000000000001', EventRange.All()),
+      ).toStrictEqual([
         { ...Array.getUnsafe(command().events, 0), runId: 'run_00000000-0000-4000-8000-000000000001', sequence: 1 },
       ])
     }),
@@ -699,21 +574,25 @@ describe('d1 persisted run store', () => {
 
   live('returns the original ACK for exact duplicate deliveries without advancing revision', () =>
     Effect.gen(function* () {
-      yield* seedEffect()
-      const first = yield* store.commit(command())
-      expect(yield* store.commit(command())).toStrictEqual(first)
-      expect(yield* store.getRun('run_00000000-0000-4000-8000-000000000001')).toMatchObject({
+      const fixture = yield* d1Fixture
+      yield* fixture.seedEffect()
+      const first = yield* fixture.store.commit(command())
+      expect(yield* fixture.store.commit(command())).toStrictEqual(first)
+      expect(yield* fixture.store.getRun('run_00000000-0000-4000-8000-000000000001')).toMatchObject({
         revision: 1,
       })
-      expect(yield* store.getEvents('run_00000000-0000-4000-8000-000000000001', EventRange.All())).toHaveLength(1)
+      expect(yield* fixture.store.getEvents('run_00000000-0000-4000-8000-000000000001', EventRange.All())).toHaveLength(
+        1,
+      )
     }),
   )
 
   live('returns an old duplicate ACK after later commits without replaying its snapshot', () =>
     Effect.gen(function* () {
-      yield* seedEffect()
-      const first = yield* store.commit(command())
-      yield* store.commit(
+      const fixture = yield* d1Fixture
+      yield* fixture.seedEffect()
+      const first = yield* fixture.store.commit(command())
+      yield* fixture.store.commit(
         command({
           commitId: 'commit_00000000-0000-4000-8000-000000000002',
           expectedRevision: 1,
@@ -722,8 +601,8 @@ describe('d1 persisted run store', () => {
           events: [],
         }),
       )
-      expect(yield* store.commit(command())).toStrictEqual(first)
-      expect(yield* store.getRun('run_00000000-0000-4000-8000-000000000001')).toMatchObject({
+      expect(yield* fixture.store.commit(command())).toStrictEqual(first)
+      expect(yield* fixture.store.getRun('run_00000000-0000-4000-8000-000000000001')).toMatchObject({
         revision: 2,
         snapshot: { checkpoint: 'later' },
       })
@@ -732,12 +611,13 @@ describe('d1 persisted run store', () => {
 
   live('rejects reuse of a commit ID with a different event payload', () =>
     Effect.gen(function* () {
-      yield* seedEffect()
-      yield* store.commit(command())
-      expect(yield* Effect.flip(store.commit(command({ snapshot: { altered: true } })))).toMatchObject({
+      const fixture = yield* d1Fixture
+      yield* fixture.seedEffect()
+      yield* fixture.store.commit(command())
+      expect(yield* Effect.flip(fixture.store.commit(command({ snapshot: { altered: true } })))).toMatchObject({
         _tag: 'StorageConflict',
       })
-      expect(yield* store.getRun('run_00000000-0000-4000-8000-000000000001')).toMatchObject({
+      expect(yield* fixture.store.getRun('run_00000000-0000-4000-8000-000000000001')).toMatchObject({
         revision: 1,
         snapshot: command().snapshot,
       })
@@ -746,11 +626,12 @@ describe('d1 persisted run store', () => {
 
   live('allows exactly one concurrent compare-and-swap winner', () =>
     Effect.gen(function* () {
-      yield* seedEffect()
+      const fixture = yield* d1Fixture
+      yield* fixture.seedEffect()
       const results = yield* Effect.all(
         [
-          store.commit(command()).pipe(Effect.exit),
-          store
+          fixture.store.commit(command()).pipe(Effect.exit),
+          fixture.store
             .commit(command({ commitId: 'commit_00000000-0000-4000-8000-000000000003', events: [] }))
             .pipe(Effect.exit),
         ],
@@ -758,7 +639,7 @@ describe('d1 persisted run store', () => {
       )
       expect(Array.filter(results, Exit.isSuccess)).toHaveLength(1)
       expect(Array.filter(results, Exit.isFailure)).toHaveLength(1)
-      expect(yield* store.getRun('run_00000000-0000-4000-8000-000000000001')).toMatchObject({
+      expect(yield* fixture.store.getRun('run_00000000-0000-4000-8000-000000000001')).toMatchObject({
         revision: 1,
       })
     }),
@@ -766,12 +647,13 @@ describe('d1 persisted run store', () => {
 
   live('rolls back receipt, snapshot and all events when a later event violates uniqueness', () =>
     Effect.gen(function* () {
-      yield* seedEffect()
-      yield* store.commit(command())
+      const fixture = yield* d1Fixture
+      yield* fixture.seedEffect()
+      yield* fixture.store.commit(command())
       const duplicate = Array.getUnsafe(command().events, 0)
       expect(
         yield* Effect.flip(
-          store.commit(
+          fixture.store.commit(
             command({
               commitId: 'commit_00000000-0000-4000-8000-000000000004',
               expectedRevision: 1,
@@ -781,14 +663,16 @@ describe('d1 persisted run store', () => {
           ),
         ),
       ).toMatchObject({ _tag: 'StorageConflict' })
-      expect(yield* store.getRun('run_00000000-0000-4000-8000-000000000001')).toMatchObject({
+      expect(yield* fixture.store.getRun('run_00000000-0000-4000-8000-000000000001')).toMatchObject({
         revision: 1,
         snapshot: command().snapshot,
       })
-      expect(yield* store.getEvents('run_00000000-0000-4000-8000-000000000001', EventRange.All())).toHaveLength(1)
+      expect(yield* fixture.store.getEvents('run_00000000-0000-4000-8000-000000000001', EventRange.All())).toHaveLength(
+        1,
+      )
       // The rejected receipt must not reserve its ID or revision.
       expect(
-        yield* store.commit(
+        yield* fixture.store.commit(
           command({ commitId: 'commit_00000000-0000-4000-8000-000000000004', expectedRevision: 1, events: [] }),
         ),
       ).toMatchObject({ revision: 2 })
@@ -797,18 +681,19 @@ describe('d1 persisted run store', () => {
 
   live('prevents all fresh commits after a run becomes terminal but still ACKs exact duplicates', () =>
     Effect.gen(function* () {
-      yield* seedEffect()
+      const fixture = yield* d1Fixture
+      yield* fixture.seedEffect()
       const terminal = command({ status: 'completed', snapshot: { done: true } })
-      const ack = yield* store.commit(terminal)
+      const ack = yield* fixture.store.commit(terminal)
       expect(
         yield* Effect.flip(
-          store.commit(
+          fixture.store.commit(
             command({ commitId: 'commit_00000000-0000-4000-8000-000000000005', expectedRevision: 1, events: [] }),
           ),
         ),
       ).toMatchObject({ _tag: 'StorageConflict' })
-      expect(yield* store.commit(terminal)).toStrictEqual(ack)
-      expect(yield* store.getRun('run_00000000-0000-4000-8000-000000000001')).toMatchObject({
+      expect(yield* fixture.store.commit(terminal)).toStrictEqual(ack)
+      expect(yield* fixture.store.getRun('run_00000000-0000-4000-8000-000000000001')).toMatchObject({
         revision: 1,
         status: 'completed',
       })
@@ -817,9 +702,10 @@ describe('d1 persisted run store', () => {
 
   live('bounds event reads to the revision used for a detail snapshot', () =>
     Effect.gen(function* () {
-      yield* seedEffect()
-      yield* store.commit(command())
-      yield* store.commit(
+      const fixture = yield* d1Fixture
+      yield* fixture.seedEffect()
+      yield* fixture.store.commit(command())
+      yield* fixture.store.commit(
         command({
           commitId: 'commit_00000000-0000-4000-8000-000000000002',
           expectedRevision: 1,
@@ -830,29 +716,38 @@ describe('d1 persisted run store', () => {
         }),
       )
       expect(
-        yield* store.getEvents('run_00000000-0000-4000-8000-000000000001', { _tag: 'ThroughRevision', revision: 0 }),
+        yield* fixture.store.getEvents('run_00000000-0000-4000-8000-000000000001', {
+          _tag: 'ThroughRevision',
+          revision: 0,
+        }),
       ).toStrictEqual([])
       expect(
-        yield* store.getEvents('run_00000000-0000-4000-8000-000000000001', { _tag: 'ThroughRevision', revision: 1 }),
+        yield* fixture.store.getEvents('run_00000000-0000-4000-8000-000000000001', {
+          _tag: 'ThroughRevision',
+          revision: 1,
+        }),
       ).toHaveLength(1)
-      expect(yield* store.getEvents('run_00000000-0000-4000-8000-000000000001', EventRange.All())).toHaveLength(2)
+      expect(yield* fixture.store.getEvents('run_00000000-0000-4000-8000-000000000001', EventRange.All())).toHaveLength(
+        2,
+      )
     }),
   )
 
   live('rejects graph ID reuse with different immutable graph content', () =>
     Effect.gen(function* () {
-      yield* seedEffect()
+      const fixture = yield* d1Fixture
+      yield* fixture.seedEffect()
       expect(
         yield* Effect.flip(
-          store.create(
+          fixture.store.create(
             yield* newRun('run_00000000-0000-4000-8000-000000000002'),
             { ...demoGraph(version1), nodes: [] },
             demoDefinition.summary.name,
           ),
         ),
       ).toMatchObject({ _tag: 'StorageConflict' })
-      expect(yield* store.listRuns).toHaveLength(1)
-      expect(yield* store.getGraph(demoGraph(version1).graphId)).toStrictEqual(demoGraph(version1))
+      expect(yield* fixture.store.listRuns).toHaveLength(1)
+      expect(yield* fixture.store.getGraph(demoGraph(version1).graphId)).toStrictEqual(demoGraph(version1))
     }),
   )
 })
@@ -860,8 +755,9 @@ describe('d1 persisted run store', () => {
 describe('demo cold restoration', () => {
   live('observes lifecycle hooks only after the matching snapshot and complete event batch are readable in D1', () =>
     Effect.gen(function* () {
+      const fixture = yield* d1Fixture
       const { runId } = command()
-      yield* seedEffect(runId)
+      yield* fixture.seedEffect(runId)
       let observations: Readonly<
         {
           revision: number
@@ -873,13 +769,13 @@ describe('demo cold restoration', () => {
       const executor = yield* makeDemoExecutor.pipe(
         Effect.provide(
           Layer.mergeAll(
-            Layer.succeed(Store, store),
+            Layer.succeed(Store, fixture.store),
             BrowserCrypto.layer,
             Layer.succeed(LifecycleHook, {
               afterCommit: (events, ack) =>
                 Effect.gen(function* () {
-                  const persisted = yield* store.getRun(ack.runId).pipe(Effect.orDie)
-                  const committed = yield* store
+                  const persisted = yield* fixture.store.getRun(ack.runId).pipe(Effect.orDie)
+                  const committed = yield* fixture.store
                     .getEvents(ack.runId, EventRange.ThroughRevision({ revision: ack.revision }))
                     .pipe(Effect.orDie)
                   observations = Array.append(observations, {
@@ -909,9 +805,10 @@ describe('demo cold restoration', () => {
 
   live('does not dispatch lifecycle hooks when D1 rejects the checkpoint revision', () =>
     Effect.gen(function* () {
+      const fixture = yield* d1Fixture
       const { runId } = command()
-      yield* seedEffect(runId)
-      const persisted = store
+      yield* fixture.seedEffect(runId)
+      const persisted = fixture.store
       const afterCommit = vi.fn(() => Effect.void)
       const executor = yield* makeDemoExecutor.pipe(
         Effect.provide(
@@ -936,58 +833,62 @@ describe('demo cold restoration', () => {
     'captures demo dependencies once and executes %s without a caller context',
     (version) =>
       Effect.gen(function* () {
+        const fixture = yield* d1Fixture
         const { runId } = command()
-        yield* seedEffect(runId, version)
+        yield* fixture.seedEffect(runId, version)
         const executor = yield* makeDemoExecutor.pipe(
           Effect.provide(
             Layer.mergeAll(
-              Layer.succeed(Store, store),
+              Layer.succeed(Store, fixture.store),
               TestCrypto.layer('captured-demo-executor').pipe(Layer.provide(BrowserCrypto.layer)),
             ),
           ),
         )
         yield* executor.start(runId)
-        expect(yield* (yield* freshStore).getRun(runId)).toMatchObject({
+        expect(yield* (yield* fixture.freshStore).getRun(runId)).toMatchObject({
           revision: 2,
           status: 'waiting',
         })
         yield* executor.resume(runId)
-        expect(yield* (yield* freshStore).getRun(runId)).toMatchObject({
+        expect(yield* (yield* fixture.freshStore).getRun(runId)).toMatchObject({
           revision: 4,
           status: 'completed',
         })
-        expect(yield* store.getEvents(runId, EventRange.All())).toHaveLength(10)
+        expect(yield* fixture.store.getEvents(runId, EventRange.All())).toHaveLength(10)
       }),
   )
 
   live('generates prefixed UUIDv4 execution, event and commit identities and ACKs an exact duplicate commit', () =>
     Effect.gen(function* () {
-      yield* seedEffect()
-      const persisted = store
+      const fixture = yield* d1Fixture
+      yield* fixture.seedEffect()
+      const persisted = fixture.store
       let commits: Readonly<CommitCommand[]> = []
-      store = {
+      fixture.store = {
         ...persisted,
         commit: (input) => {
           commits = Array.append(commits, input)
           return persisted.commit(input)
         },
       }
-      yield* provideTestServices(startRun('run_00000000-0000-4000-8000-000000000001'))
-      yield* provideTestServices(resumeRun('run_00000000-0000-4000-8000-000000000001'))
+      yield* fixture.provideTestServices(startRun('run_00000000-0000-4000-8000-000000000001'))
+      yield* fixture.provideTestServices(resumeRun('run_00000000-0000-4000-8000-000000000001'))
       expect(Array.every(commits, (input) => Schema.is(CommitId)(input.commitId))).toBe(true)
-      const events = yield* store.getEvents('run_00000000-0000-4000-8000-000000000001', EventRange.All())
+      const events = yield* fixture.store.getEvents('run_00000000-0000-4000-8000-000000000001', EventRange.All())
       expect(Array.every(events, (event) => Schema.is(EventId)(event.eventId))).toBe(true)
       expect(
         Array.every(events, (event) => !('executionId' in event) || Schema.is(ExecutionId)(event.executionId)),
       ).toBe(true)
       const first = Array.getUnsafe(commits, 0)
-      const before = yield* store.getRun('run_00000000-0000-4000-8000-000000000001')
-      expect(yield* store.commit(first)).toMatchObject({
+      const before = yield* fixture.store.getRun('run_00000000-0000-4000-8000-000000000001')
+      expect(yield* fixture.store.commit(first)).toMatchObject({
         commitId: first.commitId,
         revision: 1,
       })
-      expect(yield* store.getRun('run_00000000-0000-4000-8000-000000000001')).toStrictEqual(before)
-      expect(yield* store.getEvents('run_00000000-0000-4000-8000-000000000001', EventRange.All())).toStrictEqual(events)
+      expect(yield* fixture.store.getRun('run_00000000-0000-4000-8000-000000000001')).toStrictEqual(before)
+      expect(
+        yield* fixture.store.getEvents('run_00000000-0000-4000-8000-000000000001', EventRange.All()),
+      ).toStrictEqual(events)
     }),
   )
 
@@ -995,20 +896,21 @@ describe('demo cold restoration', () => {
     'restores the waiting %s version in a new service and completes only after explicit resume',
     (version) =>
       Effect.gen(function* () {
-        yield* seedEffect('run_00000000-0000-4000-8000-000000000001', version)
-        yield* provideTestServices(startRun('run_00000000-0000-4000-8000-000000000001'))
-        const waiting = yield* store.getRun('run_00000000-0000-4000-8000-000000000001')
+        const fixture = yield* d1Fixture
+        yield* fixture.seedEffect('run_00000000-0000-4000-8000-000000000001', version)
+        yield* fixture.provideTestServices(startRun('run_00000000-0000-4000-8000-000000000001'))
+        const waiting = yield* fixture.store.getRun('run_00000000-0000-4000-8000-000000000001')
         expect(waiting).toMatchObject({
           status: 'waiting',
           revision: 2,
           workflowVersion: version,
           snapshot: { version: SemVer.format(version), machine: { active: [{ path: '' }, { path: 'approval' }] } },
         })
-        store = yield* freshStore
-        yield* provideTestServices(startRun('run_00000000-0000-4000-8000-000000000001'))
-        expect(yield* store.getRun('run_00000000-0000-4000-8000-000000000001')).toStrictEqual(waiting)
-        yield* provideTestServices(resumeRun('run_00000000-0000-4000-8000-000000000001'))
-        const completed = yield* store.getRun('run_00000000-0000-4000-8000-000000000001')
+        fixture.store = yield* fixture.freshStore
+        yield* fixture.provideTestServices(startRun('run_00000000-0000-4000-8000-000000000001'))
+        expect(yield* fixture.store.getRun('run_00000000-0000-4000-8000-000000000001')).toStrictEqual(waiting)
+        yield* fixture.provideTestServices(resumeRun('run_00000000-0000-4000-8000-000000000001'))
+        const completed = yield* fixture.store.getRun('run_00000000-0000-4000-8000-000000000001')
         expect(completed).toMatchObject({
           status: 'completed',
           revision: 4,
@@ -1027,25 +929,26 @@ describe('demo cold restoration', () => {
             },
           },
         })
-        const events = yield* store.getEvents('run_00000000-0000-4000-8000-000000000001', EventRange.All())
+        const events = yield* fixture.store.getEvents('run_00000000-0000-4000-8000-000000000001', EventRange.All())
         expect(Array.map(events, (event) => event.sequence)).toStrictEqual(Array.range(1, 10))
         expect(
           Array.filter(events, (event) => event.type === 'node.started' && event.nodeId === 'prepare'),
         ).toHaveLength(1)
         expect(
-          yield* Effect.flip(provideTestServices(resumeRun('run_00000000-0000-4000-8000-000000000001'))),
+          yield* Effect.flip(fixture.provideTestServices(resumeRun('run_00000000-0000-4000-8000-000000000001'))),
         ).toMatchObject({
           _tag: 'InvalidOperation',
         })
-        expect(yield* store.getRun('run_00000000-0000-4000-8000-000000000001')).toStrictEqual(completed)
+        expect(yield* fixture.store.getRun('run_00000000-0000-4000-8000-000000000001')).toStrictEqual(completed)
       }),
   )
 
   live('recovers a committed running prepare checkpoint without duplicating its start event', () =>
     Effect.gen(function* () {
-      yield* seedEffect()
-      const persisted = store
-      store = {
+      const fixture = yield* d1Fixture
+      yield* fixture.seedEffect()
+      const persisted = fixture.store
+      fixture.store = {
         ...persisted,
         commit: (input) =>
           persisted.commit(input).pipe(
@@ -1060,21 +963,21 @@ describe('demo cold restoration', () => {
             ),
           ),
       }
-      expect(yield* Effect.flip(provideTestServices(startRun(command().runId)))).toMatchObject({
+      expect(yield* Effect.flip(fixture.provideTestServices(startRun(command().runId)))).toMatchObject({
         _tag: 'ExternalError',
       })
       const checkpoint = yield* persisted.getRun(command().runId)
       expect(checkpoint).toMatchObject({ revision: 1, status: 'running' })
       expect(yield* persisted.getEvents(command().runId, EventRange.All())).toHaveLength(2)
-      store = yield* freshStore
-      yield* provideTestServices(resumeRun('run_00000000-0000-4000-8000-000000000001'))
-      expect(yield* store.getRun('run_00000000-0000-4000-8000-000000000001')).toMatchObject({
+      fixture.store = yield* fixture.freshStore
+      yield* fixture.provideTestServices(resumeRun('run_00000000-0000-4000-8000-000000000001'))
+      expect(yield* fixture.store.getRun('run_00000000-0000-4000-8000-000000000001')).toMatchObject({
         revision: 2,
         status: 'waiting',
       })
       expect(
         Array.filter(
-          yield* store.getEvents('run_00000000-0000-4000-8000-000000000001', EventRange.All()),
+          yield* fixture.store.getEvents('run_00000000-0000-4000-8000-000000000001', EventRange.All()),
           (event) => event.type === 'node.started' && event.nodeId === 'prepare',
         ),
       ).toHaveLength(1)
@@ -1083,14 +986,17 @@ describe('demo cold restoration', () => {
 
   live('rejects malformed or version-mismatched restored state before executing a node', () =>
     Effect.gen(function* () {
-      yield* seedEffect()
-      yield* store.commit(command({ snapshot: { _tag: 'Preparing', version: 'v9' } }))
+      const fixture = yield* d1Fixture
+      yield* fixture.seedEffect()
+      yield* fixture.store.commit(command({ snapshot: { _tag: 'Preparing', version: 'v9' } }))
       expect(
-        yield* Effect.flip(provideTestServices(resumeRun('run_00000000-0000-4000-8000-000000000001'))),
+        yield* Effect.flip(fixture.provideTestServices(resumeRun('run_00000000-0000-4000-8000-000000000001'))),
       ).toMatchObject({
         _tag: 'InvalidSnapshot',
       })
-      expect(yield* store.getEvents('run_00000000-0000-4000-8000-000000000001', EventRange.All())).toHaveLength(1)
+      expect(yield* fixture.store.getEvents('run_00000000-0000-4000-8000-000000000001', EventRange.All())).toHaveLength(
+        1,
+      )
     }),
   )
 })
@@ -1098,33 +1004,35 @@ describe('demo cold restoration', () => {
 describe('interrupted workflow recovery', () => {
   live('rejects an unregistered persisted workflow before dispatch without changing its checkpoint', () =>
     Effect.gen(function* () {
+      const fixture = yield* d1Fixture
       const unsupported = {
         ...(yield* newRun('run_00000000-0000-4000-8000-000000000004')),
         workflowId: 'unregistered-workflow',
       }
-      yield* store.create(unsupported, demoGraph(version1), 'Unregistered workflow')
+      yield* fixture.store.create(unsupported, demoGraph(version1), 'Unregistered workflow')
       const resume = vi.fn(() => Effect.die('Unregistered workflows must not dispatch'))
       const binding = { start: resume, resume }
       const registry = [{ ...demoDefinition, binding }]
       expect(
         yield* Effect.flip(
           resumeWorkflowRun(unsupported.runId).pipe(
-            Effect.provideService(Store, store),
+            Effect.provideService(Store, fixture.store),
             Effect.provideService(WorkflowRegistry, registry),
           ),
         ),
       ).toMatchObject({ _tag: 'InvalidOperation', message: 'The workflow is not registered' })
       expect(resume).not.toHaveBeenCalled()
-      expect(yield* store.getRun(unsupported.runId)).toStrictEqual(unsupported)
-      expect(yield* store.getEvents(unsupported.runId, EventRange.All())).toStrictEqual([])
+      expect(yield* fixture.store.getRun(unsupported.runId)).toStrictEqual(unsupported)
+      expect(yield* fixture.store.getEvents(unsupported.runId, EventRange.All())).toStrictEqual([])
     }),
   )
 
   live('restores a running publish checkpoint without replaying manual approval or node start', () =>
     Effect.gen(function* () {
-      yield* seedEffect()
-      yield* provideTestServices(startRun('run_00000000-0000-4000-8000-000000000001'))
-      const persisted = store
+      const fixture = yield* d1Fixture
+      yield* fixture.seedEffect()
+      yield* fixture.provideTestServices(startRun('run_00000000-0000-4000-8000-000000000001'))
+      const persisted = fixture.store
       const interrupted: StoreService = {
         ...persisted,
         commit: (input) =>
@@ -1146,26 +1054,26 @@ describe('interrupted workflow recovery', () => {
           ),
         ),
       ).toMatchObject({ _tag: 'ExternalError', kind: 'storage' })
-      expect(yield* store.getRun('run_00000000-0000-4000-8000-000000000001')).toMatchObject({
+      expect(yield* fixture.store.getRun('run_00000000-0000-4000-8000-000000000001')).toMatchObject({
         revision: 3,
         snapshot: { machine: { active: [{ path: '' }, { path: 'publish', value: { prepared: 'draft:v1' } }] } },
         status: 'running',
       })
-      store = yield* freshStore
-      yield* provideTestServices(resumeRun('run_00000000-0000-4000-8000-000000000001'))
-      const events = yield* store.getEvents('run_00000000-0000-4000-8000-000000000001', EventRange.All())
+      fixture.store = yield* fixture.freshStore
+      yield* fixture.provideTestServices(resumeRun('run_00000000-0000-4000-8000-000000000001'))
+      const events = yield* fixture.store.getEvents('run_00000000-0000-4000-8000-000000000001', EventRange.All())
       expect(Array.filter(events, (event) => event.type === 'node.started' && event.nodeId === 'publish')).toHaveLength(
         1,
       )
       expect(
         Array.filter(events, (event) => event.type === 'node.succeeded' && event.nodeId === 'approval'),
       ).toHaveLength(1)
-      expect(yield* store.getRun('run_00000000-0000-4000-8000-000000000001')).toMatchObject({
+      expect(yield* fixture.store.getRun('run_00000000-0000-4000-8000-000000000001')).toMatchObject({
         revision: 4,
         status: 'completed',
       })
       expect(
-        yield* Effect.flip(provideTestServices(startRun('run_00000000-0000-4000-8000-000000000001'))),
+        yield* Effect.flip(fixture.provideTestServices(startRun('run_00000000-0000-4000-8000-000000000001'))),
       ).toMatchObject({
         _tag: 'InvalidOperation',
       })
@@ -1174,40 +1082,42 @@ describe('interrupted workflow recovery', () => {
 
   live('leaves a recoverable pending run if its native static workflow RPC rejects', () =>
     Effect.gen(function* () {
+      const fixture = yield* d1Fixture
       const registry = yield* disconnectedRegistry('start')
       const create = createRun({ version: version1, workflowId: 'demo' }).pipe(
-        Effect.provideService(Store, store),
+        Effect.provideService(Store, fixture.store),
         Effect.provideService(WorkflowRegistry, registry),
         Effect.provide(BrowserCrypto.layer),
       )
       const error = yield* Effect.flip(create)
       expect(error).toBeInstanceOf(ExternalError)
       expect(error).toHaveProperty('kind', 'service')
-      const runs = yield* store.listRuns
+      const runs = yield* fixture.store.listRuns
       expect(runs).toMatchObject([{ revision: 0, status: 'pending' }])
       const pending = Array.getUnsafe(runs, 0)
-      yield* provideTestServices(resumeRun(pending.runId))
-      expect(yield* store.getRun(pending.runId)).toMatchObject({ revision: 2, status: 'waiting' })
+      yield* fixture.provideTestServices(resumeRun(pending.runId))
+      expect(yield* fixture.store.getRun(pending.runId)).toMatchObject({ revision: 2, status: 'waiting' })
     }),
   )
 
   live('keeps the persisted checkpoint unchanged when an individual resume RPC rejects', () =>
     Effect.gen(function* () {
+      const fixture = yield* d1Fixture
       const { runId } = command()
-      yield* seedEffect(runId)
-      yield* provideTestServices(startRun(runId))
-      const waiting = yield* store.getRun(runId)
-      const events = yield* store.getEvents(runId, EventRange.All())
+      yield* fixture.seedEffect(runId)
+      yield* fixture.provideTestServices(startRun(runId))
+      const waiting = yield* fixture.store.getRun(runId)
+      const events = yield* fixture.store.getEvents(runId, EventRange.All())
       const registry = yield* disconnectedRegistry('resume')
       const resume = resumeWorkflowRun(runId).pipe(
-        Effect.provideService(Store, store),
+        Effect.provideService(Store, fixture.store),
         Effect.provideService(WorkflowRegistry, registry),
       )
       const error = yield* Effect.flip(resume)
       expect(error).toBeInstanceOf(ExternalError)
       expect(error).toHaveProperty('kind', 'service')
-      expect(yield* store.getRun(runId)).toStrictEqual(waiting)
-      expect(yield* store.getEvents(runId, EventRange.All())).toStrictEqual(events)
+      expect(yield* fixture.store.getRun(runId)).toStrictEqual(waiting)
+      expect(yield* fixture.store.getEvents(runId, EventRange.All())).toStrictEqual(events)
     }),
   )
 })
@@ -1215,10 +1125,11 @@ describe('interrupted workflow recovery', () => {
 describe('effect HTTP API', () => {
   live('rejects bare UUIDv4 run IDs at persistence and HTTP boundaries', () =>
     Effect.gen(function* () {
+      const fixture = yield* d1Fixture
       const id = '00000000-0000-4000-8000-000000000003'
-      expect(yield* Effect.flip(seedEffect(id))).toMatchObject({ _tag: 'ExternalError' })
-      expect(yield* store.listRuns).toStrictEqual([])
-      const handler = api()
+      expect(yield* Effect.flip(fixture.seedEffect(id))).toMatchObject({ _tag: 'ExternalError' })
+      expect(yield* fixture.store.listRuns).toStrictEqual([])
+      const handler = fixture.api()
       try {
         const read = yield* Effect.promise(async () => handler.handler(new Request(`http://localhost/api/runs/${id}`)))
         expect(read.status).toBe(400)
@@ -1226,97 +1137,102 @@ describe('effect HTTP API', () => {
           handler.handler(new Request(`http://localhost/api/runs/${id}/resume`, { method: 'POST' })),
         )
         expect(resumed.status).toBe(400)
-        expect(yield* store.listRuns).toStrictEqual([])
+        expect(yield* fixture.store.listRuns).toStrictEqual([])
       } finally {
         yield* Effect.promise(async () => handler.dispose())
       }
     }),
   )
 
-  test('supports an arbitrary workflow through registry-only catalog, creation, detail and resume', async () => {
-    const version = SemVer.parseUnsafe('3.4.5-beta.1+build.7')
-    const summary = { workflowId: 'review-workflow', name: 'Review changes', versions: [version], inputs: [] }
-    const graph = {
-      graphId: 'review-workflow-3_4_5-beta_1-build_7-graph-1',
-      schemaVersion: 1,
-      nodes: [],
-      edges: [],
-    } as const
-    const input = Schema.Struct({
-      workflowId: Schema.Literal('review-workflow'),
-      version: Schema.SemVer.check(Schema.makeFilter((value) => SemVer.equals(value, version))),
-      topic: Schema.String,
-    })
-    const start = vi.fn((_runId: string) => Effect.void)
-    const resume = vi.fn((_runId: string) => Effect.void)
-    const persist = vi.spyOn(store, 'create')
-    const handler = api([
-      {
-        summary,
-        prepare: (value) =>
-          Schema.decodeUnknownEffect(input)(value, { onExcessProperty: 'error' }).pipe(
-            Effect.map((decoded) => ({ graph, snapshot: { topic: decoded.topic } })),
-          ),
-        binding: { start, resume },
-      },
-    ])
-    try {
-      const catalog = await handler.handler(new Request('http://localhost/api/workflows'))
-      expect(catalog.status).toBe(200)
-      await expect(catalog.json()).resolves.toStrictEqual({
-        workflows: [{ ...summary, versions: [SemVer.format(version)] }],
-      })
-      const invalid = await handler.handler(
-        new Request('http://localhost/api/runs', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ workflowId: summary.workflowId, version: '3.4.6', topic: 'Correctness' }),
-        }),
-      )
-      expect(invalid.status).toBe(400)
-      expect(persist).not.toHaveBeenCalled()
-      expect(start).not.toHaveBeenCalled()
-      const created = await handler.handler(
-        new Request('http://localhost/api/runs', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
+  live('supports an arbitrary workflow through registry-only catalog, creation, detail and resume', () =>
+    Effect.gen(function* () {
+      const fixture = yield* d1Fixture
+      yield* Effect.tryPromise(async () => {
+        const version = SemVer.parseUnsafe('3.4.5-beta.1+build.7')
+        const summary = { workflowId: 'review-workflow', name: 'Review changes', versions: [version], inputs: [] }
+        const graph = {
+          graphId: 'review-workflow-3_4_5-beta_1-build_7-graph-1',
+          schemaVersion: 1,
+          nodes: [],
+          edges: [],
+        } as const
+        const input = Schema.Struct({
+          workflowId: Schema.Literal('review-workflow'),
+          version: Schema.SemVer.check(Schema.makeFilter((value) => SemVer.equals(value, version))),
+          topic: Schema.String,
+        })
+        const start = vi.fn((_runId: string) => Effect.void)
+        const resume = vi.fn((_runId: string) => Effect.void)
+        const persist = vi.spyOn(fixture.store, 'create')
+        const handler = fixture.api([
+          {
+            summary,
+            prepare: (value) =>
+              Schema.decodeUnknownEffect(input)(value, { onExcessProperty: 'error' }).pipe(
+                Effect.map((decoded) => ({ graph, snapshot: { topic: decoded.topic } })),
+              ),
+            binding: { start, resume },
+          },
+        ])
+        try {
+          const catalog = await handler.handler(new Request('http://localhost/api/workflows'))
+          expect(catalog.status).toBe(200)
+          await expect(catalog.json()).resolves.toStrictEqual({
+            workflows: [{ ...summary, versions: [SemVer.format(version)] }],
+          })
+          const invalid = await handler.handler(
+            new Request('http://localhost/api/runs', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ workflowId: summary.workflowId, version: '3.4.6', topic: 'Correctness' }),
+            }),
+          )
+          expect(invalid.status).toBe(400)
+          expect(persist).not.toHaveBeenCalled()
+          expect(start).not.toHaveBeenCalled()
+          const created = await handler.handler(
+            new Request('http://localhost/api/runs', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({
+                workflowId: summary.workflowId,
+                version: SemVer.format(version),
+                topic: 'Correctness',
+              }),
+            }),
+          )
+          expect(created.status).toBe(201)
+          const detail = Schema.decodeUnknownSync(Schema.toCodecJson(RunDetail))(await created.json())
+          // Read the real D1 row at the adapter boundary, not the catalog or a mocked Store call.
+          const workflowRow = await fixture.database
+            .prepare('SELECT name FROM workflows WHERE workflow_id = ?')
+            .bind(summary.workflowId)
+            .first<{ name: string }>()
+          expect(workflowRow).toStrictEqual({ name: summary.name })
+          expect(detail.run).toMatchObject({
             workflowId: summary.workflowId,
-            version: SemVer.format(version),
-            topic: 'Correctness',
-          }),
-        }),
-      )
-      expect(created.status).toBe(201)
-      const detail = Schema.decodeUnknownSync(Schema.toCodecJson(RunDetail))(await created.json())
-      // Read the real D1 row at the adapter boundary, not the catalog or a mocked Store call.
-      const workflowRow = await database
-        .prepare('SELECT name FROM workflows WHERE workflow_id = ?')
-        .bind(summary.workflowId)
-        .first<{ name: string }>()
-      expect(workflowRow).toStrictEqual({ name: summary.name })
-      expect(detail.run).toMatchObject({
-        workflowId: summary.workflowId,
-        workflowVersion: version,
-        graphId: graph.graphId,
-        snapshot: { topic: 'Correctness' },
-        revision: 0,
+            workflowVersion: version,
+            graphId: graph.graphId,
+            snapshot: { topic: 'Correctness' },
+            revision: 0,
+          })
+          expect(start).toHaveBeenCalledExactlyOnceWith(detail.run.runId)
+          const read = await handler.handler(new Request(`http://localhost/api/runs/${detail.run.runId}`))
+          expect(read.status).toBe(200)
+          await expect(read.json()).resolves.toStrictEqual(Schema.encodeSync(Schema.toCodecJson(RunDetail))(detail))
+          const resumed = await handler.handler(
+            new Request(`http://localhost/api/runs/${detail.run.runId}/resume`, { method: 'POST' }),
+          )
+          expect(resumed.status).toBe(200)
+          await expect(resumed.json()).resolves.toStrictEqual(Schema.encodeSync(Schema.toCodecJson(RunDetail))(detail))
+          expect(resume).toHaveBeenCalledExactlyOnceWith(detail.run.runId)
+        } finally {
+          persist.mockRestore()
+          await handler.dispose()
+        }
       })
-      expect(start).toHaveBeenCalledExactlyOnceWith(detail.run.runId)
-      const read = await handler.handler(new Request(`http://localhost/api/runs/${detail.run.runId}`))
-      expect(read.status).toBe(200)
-      await expect(read.json()).resolves.toStrictEqual(Schema.encodeSync(Schema.toCodecJson(RunDetail))(detail))
-      const resumed = await handler.handler(
-        new Request(`http://localhost/api/runs/${detail.run.runId}/resume`, { method: 'POST' }),
-      )
-      expect(resumed.status).toBe(200)
-      await expect(resumed.json()).resolves.toStrictEqual(Schema.encodeSync(Schema.toCodecJson(RunDetail))(detail))
-      expect(resume).toHaveBeenCalledExactlyOnceWith(detail.run.runId)
-    } finally {
-      persist.mockRestore()
-      await handler.dispose()
-    }
-  })
+    }),
+  )
 
   live.each([
     { workflowId: 'demo', version: 'v1' },
@@ -1331,8 +1247,9 @@ describe('effect HTTP API', () => {
     { workflowId: 'jcode-development', version: '1.0.0', repository: 'https://evil.example/project', task: 'Valid' },
   ])('rejects invalid workflow-owned input before persistence: %j', (input) =>
     Effect.gen(function* () {
-      const create = vi.spyOn(store, 'create')
-      const handler = api()
+      const fixture = yield* d1Fixture
+      const create = vi.spyOn(fixture.store, 'create')
+      const handler = fixture.api()
       try {
         const response = yield* Effect.promise(async () =>
           handler.handler(
@@ -1345,7 +1262,7 @@ describe('effect HTTP API', () => {
         )
         expect(response.status).toBe(400)
         expect(create).not.toHaveBeenCalled()
-        expect(yield* store.listRuns).toStrictEqual([])
+        expect(yield* fixture.store.listRuns).toStrictEqual([])
       } finally {
         create.mockRestore()
         yield* Effect.promise(async () => handler.dispose())
@@ -1354,7 +1271,8 @@ describe('effect HTTP API', () => {
   )
   live('rejects browser-originated text/plain create requests without writing a run', () =>
     Effect.gen(function* () {
-      const handler = api()
+      const fixture = yield* d1Fixture
+      const handler = fixture.api()
       try {
         const response = yield* Effect.promise(async () =>
           handler.handler(
@@ -1366,7 +1284,7 @@ describe('effect HTTP API', () => {
           ),
         )
         expect(response.status).toBe(403)
-        expect(yield* store.listRuns).toStrictEqual([])
+        expect(yield* fixture.store.listRuns).toStrictEqual([])
       } finally {
         yield* Effect.promise(async () => handler.dispose())
       }
@@ -1375,11 +1293,12 @@ describe('effect HTTP API', () => {
 
   live('rejects browser-originated resume requests without advancing the persisted checkpoint', () =>
     Effect.gen(function* () {
-      yield* seedEffect()
-      yield* provideTestServices(startRun('run_00000000-0000-4000-8000-000000000001'))
-      const waiting = yield* store.getRun('run_00000000-0000-4000-8000-000000000001')
-      const events = yield* store.getEvents('run_00000000-0000-4000-8000-000000000001', EventRange.All())
-      const handler = api()
+      const fixture = yield* d1Fixture
+      yield* fixture.seedEffect()
+      yield* fixture.provideTestServices(startRun('run_00000000-0000-4000-8000-000000000001'))
+      const waiting = yield* fixture.store.getRun('run_00000000-0000-4000-8000-000000000001')
+      const events = yield* fixture.store.getEvents('run_00000000-0000-4000-8000-000000000001', EventRange.All())
+      const handler = fixture.api()
       try {
         const response = yield* Effect.promise(async () =>
           handler.handler(
@@ -1390,10 +1309,10 @@ describe('effect HTTP API', () => {
           ),
         )
         expect(response.status).toBe(403)
-        expect(yield* store.getRun('run_00000000-0000-4000-8000-000000000001')).toStrictEqual(waiting)
-        expect(yield* store.getEvents('run_00000000-0000-4000-8000-000000000001', EventRange.All())).toStrictEqual(
-          events,
-        )
+        expect(yield* fixture.store.getRun('run_00000000-0000-4000-8000-000000000001')).toStrictEqual(waiting)
+        expect(
+          yield* fixture.store.getEvents('run_00000000-0000-4000-8000-000000000001', EventRange.All()),
+        ).toStrictEqual(events)
       } finally {
         yield* Effect.promise(async () => handler.dispose())
       }
@@ -1402,7 +1321,8 @@ describe('effect HTTP API', () => {
 
   live('lists bundled workflows and validates the create boundary', () =>
     Effect.gen(function* () {
-      const handler = api()
+      const fixture = yield* d1Fixture
+      const handler = fixture.api()
       try {
         const workflows = yield* Effect.promise(async () =>
           handler.handler(new Request('http://localhost/api/workflows')),
@@ -1455,7 +1375,7 @@ describe('effect HTTP API', () => {
           ),
         )
         expect(unsafeId.status).toBe(400)
-        expect(yield* store.listRuns).toStrictEqual([])
+        expect(yield* fixture.store.listRuns).toStrictEqual([])
       } finally {
         yield* Effect.promise(async () => handler.dispose())
       }
@@ -1466,7 +1386,8 @@ describe('effect HTTP API', () => {
     'creates, reads and resumes a persisted %s run, then protects the completed run',
     (version) =>
       Effect.gen(function* () {
-        const handler = api()
+        const fixture = yield* d1Fixture
+        const handler = fixture.api()
         try {
           const created = yield* Effect.promise(async () =>
             handler.handler(
@@ -1520,15 +1441,20 @@ describe('effect HTTP API', () => {
       }),
   )
 
-  test('returns 404 for a missing persisted run', async () => {
-    const handler = api()
-    try {
-      const response = await handler.handler(
-        new Request('http://localhost/api/runs/run_00000000-0000-4000-8000-000000000005'),
-      )
-      expect(response.status).toBe(404)
-    } finally {
-      await handler.dispose()
-    }
-  })
+  live('returns 404 for a missing persisted run', () =>
+    Effect.gen(function* () {
+      const fixture = yield* d1Fixture
+      yield* Effect.tryPromise(async () => {
+        const handler = fixture.api()
+        try {
+          const response = await handler.handler(
+            new Request('http://localhost/api/runs/run_00000000-0000-4000-8000-000000000005'),
+          )
+          expect(response.status).toBe(404)
+        } finally {
+          await handler.dispose()
+        }
+      })
+    }),
+  )
 })
