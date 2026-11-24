@@ -315,9 +315,9 @@ describe('D1 persisted run store', () => {
     }),
   )
 
-  test('captures workflow service dependencies once and runs every operation without a caller context', async () => {
-    const workflows = Effect.runSync(
-      Workflows.pipe(
+  live('captures workflow service dependencies once and runs every operation without a caller context', () =>
+    Effect.gen(function* () {
+      const workflows = yield* Workflows.pipe(
         Effect.provide(
           Layer.effect(Workflows, makeWorkflows).pipe(
             Layer.provide(
@@ -331,24 +331,24 @@ describe('D1 persisted run store', () => {
             ),
           ),
         ),
-      ),
-    )
+      )
 
-    // Construction has ended. These calls deliberately supply no Store, registry,
-    // Crypto, database, or Workflows context to the returned service operations.
-    await expect(Effect.runPromise(workflows.listRuns())).resolves.toStrictEqual({ runs: [] })
-    await expect(Effect.runPromise(workflows.listWorkflows())).resolves.toMatchObject({
-      workflows: expect.arrayContaining([expect.objectContaining({ workflowId: 'demo' })]),
-    })
-    const created = await Effect.runPromise(workflows.createRun({ workflowId: 'demo', version: version1 }))
-    expect(created.run).toMatchObject({ revision: 2, status: 'waiting' })
-    await expect(Effect.runPromise(workflows.getRunDetail(created.run.runId))).resolves.toStrictEqual(created)
-    await expect(Effect.runPromise(workflows.listRuns())).resolves.toStrictEqual({ runs: [created.run] })
-    const resumed = await Effect.runPromise(workflows.resumeRun(created.run.runId))
-    expect(resumed.run).toMatchObject({ runId: created.run.runId, status: 'completed', revision: 4 })
-    await expect(Effect.runPromise(workflows.getRunDetail(created.run.runId))).resolves.toStrictEqual(resumed)
-    await expect(Effect.runPromise(workflows.listRuns())).resolves.toStrictEqual({ runs: [resumed.run] })
-  })
+      // Construction has ended. These calls deliberately supply no Store, registry,
+      // Crypto, database, or Workflows context to the returned service operations.
+      expect(yield* workflows.listRuns()).toStrictEqual({ runs: [] })
+      expect(yield* workflows.listWorkflows()).toMatchObject({
+        workflows: expect.arrayContaining([expect.objectContaining({ workflowId: 'demo' })]),
+      })
+      const created = yield* workflows.createRun({ workflowId: 'demo', version: version1 })
+      expect(created.run).toMatchObject({ revision: 2, status: 'waiting' })
+      expect(yield* workflows.getRunDetail(created.run.runId)).toStrictEqual(created)
+      expect(yield* workflows.listRuns()).toStrictEqual({ runs: [created.run] })
+      const resumed = yield* workflows.resumeRun(created.run.runId)
+      expect(resumed.run).toMatchObject({ runId: created.run.runId, status: 'completed', revision: 4 })
+      expect(yield* workflows.getRunDetail(created.run.runId)).toStrictEqual(resumed)
+      expect(yield* workflows.listRuns()).toStrictEqual({ runs: [resumed.run] })
+    }),
+  )
 
   test('executes already prepared statements without preparing inside batch', async () => {
     expectTypeOf<Parameters<Effect.Success<typeof makeD1Batch>>[0]>().toEqualTypeOf<PreparedStatement[]>()

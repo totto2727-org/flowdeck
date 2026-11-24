@@ -1,5 +1,6 @@
 import { readD1Migrations } from '@cloudflare/vitest-plugin'
 import type { D1Database } from '@cloudflare/workers-types'
+import { live } from '@effect/vitest'
 import { Machine } from '@typeonce/effect-machine'
 import { ClusterMachine } from '@typeonce/effect-machine/cluster'
 import { Array, Effect, Exit, Layer, ManagedRuntime, Option } from 'effect'
@@ -83,12 +84,14 @@ describe('D1 Cluster machine checkpoints', () => {
     expectTypeOf<Layer.Services<typeof D1ClusterMachineStorage>>().toEqualTypeOf<D1Client>()
   })
 
-  test('loads an empty address without inventing a checkpoint or receipt', async () => {
-    await expect(Effect.runPromise(freshStorage().load(address(), request))).resolves.toStrictEqual({
-      checkpoint: Option.none(),
-      processed: false,
-    })
-  })
+  live('loads an empty address without inventing a checkpoint or receipt', () =>
+    Effect.gen(function* () {
+      expect(yield* freshStorage().load(address(), request)).toStrictEqual({
+        checkpoint: Option.none(),
+        processed: false,
+      })
+    }),
+  )
 
   test('restores the latest checkpoint and all earlier receipts from a new service without rounding snowflakes', async () => {
     const storage = freshStorage()
@@ -164,32 +167,32 @@ describe('D1 Cluster machine checkpoints', () => {
     }
   })
 
-  test('roundtrips every optional public snapshot field through a newly constructed storage service', async () => {
-    const value: ClusterMachine.Checkpoint = {
-      ...checkpoint(),
-      snapshot: {
-        _tag: 'MachineSnapshot',
-        version: 2,
-        active: [{ path: '' }, { path: 'ready', value: { nested: [null, true, 3, '日本語'], empty: {} } }],
-        completed: [
-          { path: 'first' },
-          { path: 'second', output: null },
-          { path: 'third', output: { result: [1, 'done'] } },
-        ],
-        history: {
-          shallow: { mode: 'shallow', active: ['ready'], values: { ready: { draft: 'retained' } } },
-          deep: { mode: 'deep', active: ['parent.child'], values: { 'parent.child': [false, null, 'saved'] } },
+  live('roundtrips every optional public snapshot field through a newly constructed storage service', () =>
+    Effect.gen(function* () {
+      const value: ClusterMachine.Checkpoint = {
+        ...checkpoint(),
+        snapshot: {
+          _tag: 'MachineSnapshot',
+          version: 2,
+          active: [{ path: '' }, { path: 'ready', value: { nested: [null, true, 3, '日本語'], empty: {} } }],
+          completed: [
+            { path: 'first' },
+            { path: 'second', output: null },
+            { path: 'third', output: { result: [1, 'done'] } },
+          ],
+          history: {
+            shallow: { mode: 'shallow', active: ['ready'], values: { ready: { draft: 'retained' } } },
+            deep: { mode: 'deep', active: ['parent.child'], values: { 'parent.child': [false, null, 'saved'] } },
+          },
         },
-      },
-    }
-    await expect(Effect.runPromise(freshStorage().commit(address(), value))).resolves.toStrictEqual(
-      ClusterMachine.CommitResult.Committed(),
-    )
-    await expect(Effect.runPromise(freshStorage().load(address(), request))).resolves.toStrictEqual({
-      checkpoint: Option.some(value),
-      processed: true,
-    })
-  })
+      }
+      expect(yield* freshStorage().commit(address(), value)).toStrictEqual(ClusterMachine.CommitResult.Committed())
+      expect(yield* freshStorage().load(address(), request)).toStrictEqual({
+        checkpoint: Option.some(value),
+        processed: true,
+      })
+    }),
+  )
 
   test('commits exactly once for concurrent deliveries of the same request', async () => {
     const results = await Effect.runPromise(
@@ -207,28 +210,30 @@ describe('D1 Cluster machine checkpoints', () => {
     })
   })
 
-  test.each([
+  live.each([
     ['shard group', address('other')],
     ['shard id', address('group', 2)],
     ['entity type', address('group', 1, 'other')],
     ['entity id', address('group', 1, 'machine', 'other')],
     ['delimiter collision', address('group', 1, 'machine:run', 'tail')],
-  ])('isolates %s in the full address', async (_label, other) => {
-    const first = _label === 'delimiter collision' ? address('group', 1, 'machine', 'run:tail') : address()
-    const storage = freshStorage()
-    await Effect.runPromise(storage.commit(first, checkpoint()))
-    await expect(Effect.runPromise(storage.load(other, request))).resolves.toStrictEqual({
-      checkpoint: Option.none(),
-      processed: false,
-    })
-    await expect(Effect.runPromise(storage.commit(other, checkpoint(request, 'advanced')))).resolves.toStrictEqual(
-      ClusterMachine.CommitResult.Committed(),
-    )
-    await expect(Effect.runPromise(storage.load(first, request))).resolves.toStrictEqual({
-      checkpoint: Option.some(checkpoint()),
-      processed: true,
-    })
-  })
+  ] as const)('isolates %s in the full address', ([_label, other]) =>
+    Effect.gen(function* () {
+      const first = _label === 'delimiter collision' ? address('group', 1, 'machine', 'run:tail') : address()
+      const storage = freshStorage()
+      yield* storage.commit(first, checkpoint())
+      expect(yield* storage.load(other, request)).toStrictEqual({
+        checkpoint: Option.none(),
+        processed: false,
+      })
+      expect(yield* storage.commit(other, checkpoint(request, 'advanced'))).toStrictEqual(
+        ClusterMachine.CommitResult.Committed(),
+      )
+      expect(yield* storage.load(first, request)).toStrictEqual({
+        checkpoint: Option.some(checkpoint()),
+        processed: true,
+      })
+    }),
+  )
 
   test('rolls back the first checkpoint write when the receipt insert fails', async () => {
     await database.exec(
@@ -273,17 +278,19 @@ describe('D1 Cluster machine checkpoints', () => {
     expect(String(error.cause)).toContain('cluster_machine_requests')
   })
 
-  test('retains the exact captured client defect as the persistence cause', async () => {
-    const cause = new Error('native batch failure')
-    const storage = storageWithClient({ ...nativeClient(), batch: () => Effect.die(cause) })
-    const error = await Effect.runPromise(storage.commit(address(), checkpoint()).pipe(Effect.flip))
-    expect(error).toBeInstanceOf(ClusterError.PersistenceError)
-    expect(error.cause).toBe(cause)
-    await expect(Effect.runPromise(freshStorage().load(address(), request))).resolves.toStrictEqual({
-      checkpoint: Option.none(),
-      processed: false,
-    })
-  })
+  live('retains the exact captured client defect as the persistence cause', () =>
+    Effect.gen(function* () {
+      const cause = new Error('native batch failure')
+      const storage = storageWithClient({ ...nativeClient(), batch: () => Effect.die(cause) })
+      const error = yield* storage.commit(address(), checkpoint()).pipe(Effect.flip)
+      expect(error).toBeInstanceOf(ClusterError.PersistenceError)
+      expect(error.cause).toBe(cause)
+      expect(yield* freshStorage().load(address(), request)).toStrictEqual({
+        checkpoint: Option.none(),
+        processed: false,
+      })
+    }),
+  )
 
   test('does not reclassify batch interruption as persistence failure', async () => {
     const storage = storageWithClient({ ...nativeClient(), batch: () => Effect.interrupt })
