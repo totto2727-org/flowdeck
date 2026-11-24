@@ -285,7 +285,10 @@ Expand these contracts only with explicit persistence semantics and public-path 
 | [Native graph tests](../src/core/feature/workflow/graph.test.ts)                       | Native automatic invoke progression matches displayed edges, including nested and hidden allocation states.                  |
 | [Persistence host tests](../src/core/feature/workflow/managed-runtime.test.ts)         | Native start/resume selection, ACK ordering, unchanged polls, error identity, and post-ACK hooks.                            |
 | [ResourceStore tests](../src/core/feature/workflow/resource-store.test.ts)             | Typed volatile sharing, concurrent acquisition, retry, immediate failed-attempt cleanup, and fresh-scope isolation.          |
-| [D1 and public workflow tests](../tests/integration/d1-workflows.test.ts)              | Actual D1 atomicity, cold restoration, both versions, HTTP routes, commit conflicts, and RPC failure recovery.               |
+| [D1 query adapter tests](../tests/integration/d1-query-adapter.test.ts)                | Reylo query decoding, prepared statements, and D1 binding scope.                                                             |
+| [D1 store tests](../tests/integration/d1-workflows.test.ts)                            | Atomic commits, commit conflicts, snapshots, and event reads.                                                                |
+| [Workflow restoration tests](../tests/integration/d1-workflow-restoration.test.ts)     | Restoration of both demo versions and recovery after RPC failure.                                                            |
+| [Workflow HTTP tests](../tests/integration/d1-workflow-http.test.ts)                   | Public workflow routes, request validation, and persisted run details.                                                       |
 | [Development tests](../src/user-land/workflow/development/feature/development.test.ts) | Actual D1 checkpoints with sandbox-boundary controls for receipt recovery, no duplicate submission, and workflow completion. |
 | [Cluster storage tests](../src/core/feature/cluster/d1-storage.test.ts)                | Independent data-only Cluster storage through official Entity.client and actual local D1.                                    |
 
