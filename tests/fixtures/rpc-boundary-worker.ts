@@ -7,7 +7,7 @@ import { ExternalError, NotFound } from '@/core/feature/workflow/domain/errors'
 import { rpcResponse, rpcResult } from '@/core/feature/workflow/rpc/boundary'
 import { RemoteWorkerError } from '@/core/feature/workflow/rpc/problem'
 
-type Scenario = 'success' | 'failure' | 'not-found' | 'defect'
+export type Scenario = 'success' | 'failure' | 'not-found' | 'defect'
 interface ChildBinding {
   start(scenario: Scenario): Promise<string>
 }

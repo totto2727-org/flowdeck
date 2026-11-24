@@ -1,164 +1,125 @@
-import { ok } from 'node:assert/strict'
-import { fileURLToPath } from 'node:url'
+import { live } from '@effect/vitest'
+import { Array, Effect, MutableRef, Option, Result } from 'effect'
+import { expect } from 'vite-plus/test'
 
-import { Array, Option, Result, Schema } from 'effect'
-import { Miniflare } from 'miniflare'
-import { build } from 'vite-plus'
-import { afterEach, beforeAll, beforeEach, describe, expect, test } from 'vite-plus/test'
+import { collectRpcBoundary, requiredPrivateMarkers, presentMarkers } from './rpc-boundary-wire.fixture.ts'
+import { compileRpcBoundary, openRpcBoundary } from './rpc-boundary.fixture.ts'
 
-import { Rfc9457ProblemDetailsSchema } from '@/core/feature/workflow/rpc/problem'
+const source = MutableRef.make(Option.none<Promise<string>>())
+const compiledBundle = async (): Promise<string> => {
+  const existing = MutableRef.get(source)
+  if (Option.isSome(existing)) {
+    return existing.value
+  }
+  const fresh = compileRpcBoundary()
+  MutableRef.set(source, Option.some(fresh))
+  return fresh
+}
+const openBoundary = Effect.promise(compiledBundle).pipe(Effect.flatMap(openRpcBoundary))
 
-import type Parent from './fixtures/rpc-boundary-worker.ts'
-
-const decodeReply = Schema.decodeUnknownSync(
-  Schema.fromJsonString(Schema.toCodecJson(Schema.Result(Schema.Json, Rfc9457ProblemDetailsSchema))),
-  { onExcessProperty: 'error' },
-)
-const decodeLogs = Schema.decodeUnknownSync(
-  Schema.fromJsonString(
-    Schema.Array(
-      Schema.Struct({
-        operation: Schema.String,
-        errorId: Schema.String,
-        renderedCause: Schema.String,
-        localStack: Schema.String,
-        originalStack: Schema.String,
-        remoteError: Schema.Boolean,
-        externalError: Schema.Boolean,
-        priorProblem: Schema.NullOr(Rfc9457ProblemDetailsSchema),
-      }),
-    ),
-  ),
-)
-
-let script: string
-let miniflare: Miniflare
-
-// Miniflare exposes native RPC at runtime but types getWorker as a Fetcher only.
-// Derive the RPC surface from the bundled fixture instead of inventing a second contract.
-const entrypoint = async (name: string): Promise<Pick<Fetcher<Parent>, 'start' | 'logs'>> =>
-  (await miniflare.getWorker(name)) as unknown as Pick<Service<Parent>, 'start' | 'logs'>
-
-beforeAll(async () => {
-  const output = await build({
-    configFile: false,
-    resolve: { tsconfigPaths: true },
-    logLevel: 'silent',
-    build: {
-      target: 'esnext',
-      write: false,
-      outDir: fileURLToPath(new URL('../tmp/rpc-boundary-build', import.meta.url)),
-      minify: false,
-      lib: {
-        entry: fileURLToPath(new URL('fixtures/rpc-boundary-worker.ts', import.meta.url)),
-        formats: ['es'],
-        fileName: 'rpc-boundary-worker',
-      },
-      rolldownOptions: { external: ['cloudflare:workers'] },
+const problemTypes = 'https://github.com/totto2727-org/flowdeck/blob/main/docs/rpc-boundaries.md'
+const errorCases = [
+  {
+    externalError: true,
+    problem: {
+      detail: 'A persistence operation failed.',
+      status: 500,
+      title: 'storage',
+      type: `${problemTypes}#storage`,
     },
-  })
-  const result = Array.isArray(output) ? output[0] : output
-  ok(result && 'output' in result)
-  const chunk = Array.findFirst(result.output, (entry) => entry.type === 'chunk')
-  ok(Option.isSome(chunk) && chunk.value.type === 'chunk')
-  script = chunk.value.code
-})
+    scenario: 'failure',
+  },
+  {
+    externalError: false,
+    problem: {
+      detail: 'The requested resource was not found.',
+      status: 404,
+      title: 'not-found',
+      type: `${problemTypes}#not-found`,
+    },
+    scenario: 'not-found',
+  },
+  {
+    externalError: false,
+    problem: {
+      detail: 'The operation could not be completed.',
+      status: 500,
+      title: 'internal',
+      type: `${problemTypes}#internal`,
+    },
+    scenario: 'defect',
+  },
+] as const
 
-beforeEach(() => {
-  miniflare = new Miniflare({
-    workers: [
-      {
-        name: 'parent',
-        modules: true,
-        script,
-        compatibilityDate: '2026-07-30',
-        serviceBindings: { CHILD: { name: 'child', entrypoint: 'Child' } },
-      },
-      { name: 'child', modules: true, script, compatibilityDate: '2026-07-30' },
-    ],
-  })
-})
+// oxlint-disable-next-line unicorn/no-null -- The known successful JSON reply includes an explicit null array entry.
+const knownJsonNull = null
+const knownReply = { answer: 42, values: [knownJsonNull, true, 'ok'] }
+const failKeys = ['cause', 'stack']
+const remoteErrorKind = 'RemoteWorkerError'
 
-afterEach(async () => {
-  await miniflare.dispose()
-})
-
-describe('native Worker RPC JSON boundary', () => {
-  test('round-trips success across a real service binding without failure logs', async () => {
-    const parent = await entrypoint('parent')
-    const child = await entrypoint('child')
-    const response = await parent.start('success')
+live('round-trips success across a real service binding without failure logs', () =>
+  Effect.gen(function* () {
+    const boundary = yield* openBoundary
+    const { childLogs, parentLogs, reply, response } = yield* collectRpcBoundary(boundary, 'success')
     expect(response).toBeTypeOf('string')
-    const reply = decodeReply(response)
-    ok(Result.isSuccess(reply))
-    expect(reply.success).toStrictEqual({ answer: 42, values: [null, true, 'ok'] })
-    expect(decodeLogs(await parent.logs())).toStrictEqual([])
-    expect(decodeLogs(await child.logs())).toStrictEqual([])
-  })
+    expect(Result.getOrThrow(reply)).toStrictEqual(knownReply)
+    expect({ childLogs, parentLogs }).toStrictEqual({ childLogs: [], parentLogs: [] })
+  }).pipe(Effect.scoped),
+)
 
-  test.each(['failure', 'not-found', 'defect'] as const)(
-    'returns JSON text for a child %s and keeps private diagnostics in its originating isolate',
-    async (scenario) => {
-      const parent = await entrypoint('parent')
-      const child = await entrypoint('child')
-      const response = await parent.start(scenario)
-      expect(response).toBeTypeOf('string')
-      const reply = decodeReply(response)
-      ok(Result.isFailure(reply))
-      expect(reply.failure).toStrictEqual({
-        ...(scenario === 'not-found'
-          ? {
-              detail: 'The requested resource was not found.',
-              status: 404,
-              title: 'not-found',
-              type: 'https://github.com/totto2727-org/flowdeck/blob/main/docs/rpc-boundaries.md#not-found',
-            }
-          : scenario === 'failure'
-            ? {
-                detail: 'A persistence operation failed.',
-                status: 500,
-                title: 'storage',
-                type: 'https://github.com/totto2727-org/flowdeck/blob/main/docs/rpc-boundaries.md#storage',
-              }
-            : {
-                detail: 'The operation could not be completed.',
-                status: 500,
-                title: 'internal',
-                type: 'https://github.com/totto2727-org/flowdeck/blob/main/docs/rpc-boundaries.md#internal',
-              }),
-        instance: expect.any(String),
-      })
-      const childLogs = decodeLogs(await child.logs())
-      const parentLogs = decodeLogs(await parent.logs())
-      expect(childLogs).toHaveLength(1)
-      expect(parentLogs).toHaveLength(1)
-      const childLog = childLogs[0]
-      const parentLog = parentLogs[0]
-      ok(childLog && parentLog)
-      expect(childLog.operation).toBe('child.start')
-      expect(JSON.stringify(childLog)).toContain('PRIVATE_RPC_DATABASE_PASSWORD')
-      expect(JSON.stringify(childLog)).toContain('childOnlyPrivateFrame')
-      expect(childLog.remoteError).toBe(false)
-      expect(childLog.externalError).toBe(scenario === 'failure')
-      expect(parentLog).toMatchObject({
-        operation: 'parent.start',
-        errorId: reply.failure.instance,
-        remoteError: true,
-        externalError: false,
-        originalStack: '',
-        priorProblem: { ...reply.failure, instance: childLog.errorId },
-      })
-      expect(parentLog.errorId).not.toBe(childLog.errorId)
-      expect(parentLog.renderedCause).toContain(childLog.errorId)
-      expect(parentLog.localStack).toContain('RemoteWorkerError')
-      expect(JSON.stringify(parentLog)).not.toContain('PRIVATE_RPC_DATABASE_PASSWORD')
-      expect(JSON.stringify(parentLog)).not.toContain('childOnlyPrivateFrame')
-      expect(response).not.toContain(childLog.errorId)
-      expect(response).not.toContain('PRIVATE_RPC_DATABASE_PASSWORD')
-      expect(response).not.toContain('childOnlyPrivateFrame')
-      expect(response).not.toContain('RemoteWorkerError')
-      expect(reply.failure).not.toHaveProperty('stack')
-      expect(reply.failure).not.toHaveProperty('cause')
-    },
-  )
+const observeFailure = Effect.fn('flowdeck.test.observeWorkerFailure')(function* (
+  scenario: (typeof errorCases)[number]['scenario'],
+) {
+  const boundary = yield* openBoundary
+  const { childLogs, parentLogs, reply, response } = yield* collectRpcBoundary(boundary, scenario)
+  const publicProblem = Result.getOrThrow(Result.flip(reply))
+  const childLog = Option.getOrThrow(Array.head(childLogs))
+  const parentLog = Option.getOrThrow(Array.head(parentLogs))
+  return { childLog, childLogs, parentLog, parentLogs, publicProblem, response }
 })
+
+live.each(errorCases)(
+  'returns JSON text for a child $scenario and keeps private diagnostics in its originating isolate',
+  ({ externalError, problem, scenario }) =>
+    Effect.gen(function* () {
+      const { childLog, childLogs, parentLog, parentLogs, publicProblem, response } = yield* observeFailure(scenario)
+      expect({
+        ...publicProblem,
+        instance: typeof publicProblem.instance,
+        response: typeof response,
+      }).toStrictEqual({ ...problem, instance: 'string', response: 'string' })
+      expect({
+        childCount: Array.length(childLogs),
+        externalError: childLog.externalError,
+        operation: childLog.operation,
+        parentCount: Array.length(parentLogs),
+        privateMarkers: presentMarkers(requiredPrivateMarkers, JSON.stringify(childLog)),
+        remoteError: childLog.remoteError,
+      }).toStrictEqual({
+        childCount: 1,
+        externalError,
+        operation: 'child.start',
+        parentCount: 1,
+        privateMarkers: requiredPrivateMarkers,
+        remoteError: false,
+      })
+      expect(parentLog).toMatchObject({
+        errorId: publicProblem.instance,
+        externalError: false,
+        operation: 'parent.start',
+        originalStack: '',
+        priorProblem: { ...publicProblem, instance: childLog.errorId },
+        remoteError: true,
+      })
+      expect({
+        distinctIds: parentLog.errorId !== childLog.errorId,
+        linksOriginal: parentLog.renderedCause.includes(childLog.errorId),
+        localRemoteError: parentLog.localStack.includes(remoteErrorKind),
+        parentPrivateMarkers: presentMarkers(requiredPrivateMarkers, JSON.stringify(parentLog)),
+      }).toStrictEqual({ distinctIds: true, linksOriginal: true, localRemoteError: true, parentPrivateMarkers: [] })
+      expect({
+        privateFields: Array.intersection(Object.keys(publicProblem), failKeys),
+        publicPrivateMarkers: presentMarkers([...requiredPrivateMarkers, childLog.errorId, remoteErrorKind], response),
+      }).toStrictEqual({ privateFields: [], publicPrivateMarkers: [] })
+    }).pipe(Effect.scoped),
+)
