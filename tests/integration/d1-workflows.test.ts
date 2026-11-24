@@ -130,10 +130,17 @@ beforeEach(async () => {
 afterEach(async () => {
   await miniflare.dispose()
 })
-const run = <A, E>(effect: Effect.Effect<A, E, Store | Crypto.Crypto>): Promise<A> =>
-  Effect.runPromise(effect.pipe(Effect.provideService(Store, store), Effect.provide(BrowserCrypto.layer)))
-const seed = (runId = 'run_00000000-0000-4000-8000-000000000001', version: WorkflowVersion = version1) =>
-  Effect.runPromise(store.create(newRun(runId, version), demoGraph(version), demoDefinition.summary.name))
+const provideTestServices = <A, E>(effect: Effect.Effect<A, E, Store | Crypto.Crypto>): Effect.Effect<A, E> =>
+  effect.pipe(Effect.provideService(Store, store), Effect.provide(BrowserCrypto.layer))
+const run = async <A, E>(effect: Effect.Effect<A, E, Store | Crypto.Crypto>): Promise<A> =>
+  Effect.runPromise(provideTestServices(effect))
+const seedEffect = (
+  runId = 'run_00000000-0000-4000-8000-000000000001',
+  version: WorkflowVersion = version1,
+): ReturnType<StoreService['create']> =>
+  store.create(newRun(runId, version), demoGraph(version), demoDefinition.summary.name)
+const seed = async (runId?: string, version?: WorkflowVersion): Promise<void> =>
+  Effect.runPromise(seedEffect(runId, version))
 
 /*
  * A Layer substitutes only the static binding boundary. Its worker implementation
@@ -427,48 +434,50 @@ describe('D1 persisted run store', () => {
     await expect(Effect.runPromise(store.listRuns)).resolves.toStrictEqual([])
   })
 
-  test('uses Alchemy executors without evaluating the raw client binding', async () => {
-    const client = Effect.runSync(
-      D1Client.pipe(Effect.provide(NativeD1Client.pipe(Layer.provide(Layer.succeed(D1Binding, database))))),
-    )
-    const raw = vi.fn(() => {
-      throw new Error('Raw access is forbidden')
-    })
-    store = Effect.runSync(
-      Store.pipe(
-        Effect.provide(
-          D1StoreLive.pipe(
-            Layer.provide(DatabaseQueriesLive),
-            Layer.provide(AlchemyQueryExecutorLive),
-            Layer.provide(
-              Layer.succeed(D1Client, {
-                ...client,
-                raw: Effect.sync(raw),
-              }),
+  live('uses Alchemy executors without evaluating the raw client binding', () =>
+    Effect.gen(function* () {
+      const client = Effect.runSync(
+        D1Client.pipe(Effect.provide(NativeD1Client.pipe(Layer.provide(Layer.succeed(D1Binding, database))))),
+      )
+      const raw = vi.fn(() => {
+        throw new Error('Raw access is forbidden')
+      })
+      store = Effect.runSync(
+        Store.pipe(
+          Effect.provide(
+            D1StoreLive.pipe(
+              Layer.provide(DatabaseQueriesLive),
+              Layer.provide(AlchemyQueryExecutorLive),
+              Layer.provide(
+                Layer.succeed(D1Client, {
+                  ...client,
+                  raw: Effect.sync(raw),
+                }),
+              ),
             ),
           ),
         ),
-      ),
-    )
-    await seed()
-    await expect(Effect.runPromise(store.listRuns)).resolves.toHaveLength(1)
-    await expect(Effect.runPromise(store.getGraph(demoGraph(version1).graphId))).resolves.toStrictEqual(
-      demoGraph(version1),
-    )
-    await expect(Effect.runPromise(store.commit(command()))).resolves.toMatchObject({ revision: 1 })
-    await expect(Effect.runPromise(store.getRun(command().runId))).resolves.toMatchObject({ revision: 1 })
-    await expect(Effect.runPromise(store.getEvents(command().runId, { _tag: 'All' }))).resolves.toHaveLength(1)
-    expect(raw).not.toHaveBeenCalled()
-  })
+      )
+      yield* seedEffect()
+      expect(yield* store.listRuns).toHaveLength(1)
+      expect(yield* store.getGraph(demoGraph(version1).graphId)).toStrictEqual(demoGraph(version1))
+      expect(yield* store.commit(command())).toMatchObject({ revision: 1 })
+      expect(yield* store.getRun(command().runId)).toMatchObject({ revision: 1 })
+      expect(yield* store.getEvents(command().runId, { _tag: 'All' })).toHaveLength(1)
+      expect(raw).not.toHaveBeenCalled()
+    }),
+  )
 
-  test('retains the original D1 constraint failure and stack for upstream logging', async () => {
-    await seed()
-    await Effect.runPromise(store.commit(command()))
-    const error = await Effect.runPromise(store.commit(command({ snapshot: { changed: true } })).pipe(Effect.flip))
-    expect(error).toMatchObject({ _tag: 'StorageConflict', cause: { message: expect.stringContaining('flowdeck_') } })
-    expect(error).toHaveProperty('cause', expect.any(Error))
-    expect(error).toHaveProperty('cause.stack', expect.any(String))
-  })
+  live('retains the original D1 constraint failure and stack for upstream logging', () =>
+    Effect.gen(function* () {
+      yield* seedEffect()
+      yield* store.commit(command())
+      const error = yield* store.commit(command({ snapshot: { changed: true } })).pipe(Effect.flip)
+      expect(error).toMatchObject({ _tag: 'StorageConflict', cause: { message: expect.stringContaining('flowdeck_') } })
+      expect(error).toHaveProperty('cause', expect.any(Error))
+      expect(error).toHaveProperty('cause.stack', expect.any(String))
+    }),
+  )
 
   test.each([
     { runId: '00000000-0000-4000-8000-000000000001' },
@@ -585,85 +594,83 @@ describe('D1 persisted run store', () => {
     }),
   )
 
-  test('rejects duplicate event IDs inside a new commit without changing receipts, state or events', async () => {
-    await seed()
-    const firstEvent = Array.getUnsafe(command().events, 0)
-    await expect(
-      Effect.runPromise(
-        store.commit(
-          command({
-            events: [firstEvent, { ...firstEvent, payload: { changed: true } }],
-          }),
+  live('rejects duplicate event IDs inside a new commit without changing receipts, state or events', () =>
+    Effect.gen(function* () {
+      yield* seedEffect()
+      const firstEvent = Array.getUnsafe(command().events, 0)
+      expect(
+        yield* Effect.flip(
+          store.commit(
+            command({
+              events: [firstEvent, { ...firstEvent, payload: { changed: true } }],
+            }),
+          ),
         ),
-      ),
-    ).rejects.toMatchObject({ _tag: 'Conflict' })
-    await expect(Effect.runPromise(store.getRun('run_00000000-0000-4000-8000-000000000001'))).resolves.toStrictEqual(
-      newRun('run_00000000-0000-4000-8000-000000000001'),
-    )
-    expect(
-      await Effect.runPromise(store.getEvents('run_00000000-0000-4000-8000-000000000001', { _tag: 'All' })),
-    ).toStrictEqual([])
-    await expect(Effect.runPromise(store.commit(command()))).resolves.toStrictEqual({
-      commitId: 'commit_00000000-0000-4000-8000-000000000001',
-      eventCount: 1,
-      firstSequence: 1,
-      revision: 1,
-      runId: 'run_00000000-0000-4000-8000-000000000001',
-    })
-  })
+      ).toMatchObject({ _tag: 'Conflict' })
+      expect(yield* store.getRun('run_00000000-0000-4000-8000-000000000001')).toStrictEqual(
+        newRun('run_00000000-0000-4000-8000-000000000001'),
+      )
+      expect(yield* store.getEvents('run_00000000-0000-4000-8000-000000000001', { _tag: 'All' })).toStrictEqual([])
+      expect(yield* store.commit(command())).toStrictEqual({
+        commitId: 'commit_00000000-0000-4000-8000-000000000001',
+        eventCount: 1,
+        firstSequence: 1,
+        revision: 1,
+        runId: 'run_00000000-0000-4000-8000-000000000001',
+      })
+    }),
+  )
 
-  test('persists run identity, graph and initial snapshot across store reconstruction', async () => {
-    await seed()
-    const restored = freshStore()
-    await expect(Effect.runPromise(restored.getRun('run_00000000-0000-4000-8000-000000000001'))).resolves.toStrictEqual(
-      newRun('run_00000000-0000-4000-8000-000000000001'),
-    )
-    await expect(Effect.runPromise(restored.getGraph(demoGraph(version1).graphId))).resolves.toStrictEqual(
-      demoGraph(version1),
-    )
-    await expect(Effect.runPromise(restored.listRuns)).resolves.toStrictEqual([
-      newRun('run_00000000-0000-4000-8000-000000000001'),
-    ])
-  })
+  live('persists run identity, graph and initial snapshot across store reconstruction', () =>
+    Effect.gen(function* () {
+      yield* seedEffect()
+      const restored = freshStore()
+      expect(yield* restored.getRun('run_00000000-0000-4000-8000-000000000001')).toStrictEqual(
+        newRun('run_00000000-0000-4000-8000-000000000001'),
+      )
+      expect(yield* restored.getGraph(demoGraph(version1).graphId)).toStrictEqual(demoGraph(version1))
+      expect(yield* restored.listRuns).toStrictEqual([newRun('run_00000000-0000-4000-8000-000000000001')])
+    }),
+  )
 
-  test('atomically commits snapshot revision and sequenced execution events before ACK', async () => {
-    await seed()
-    await expect(Effect.runPromise(store.commit(command()))).resolves.toStrictEqual({
-      commitId: 'commit_00000000-0000-4000-8000-000000000001',
-      eventCount: 1,
-      firstSequence: 1,
-      revision: 1,
-      runId: 'run_00000000-0000-4000-8000-000000000001',
-    })
-    await expect(Effect.runPromise(store.getRun('run_00000000-0000-4000-8000-000000000001'))).resolves.toMatchObject({
-      revision: 1,
-      snapshot: command().snapshot,
-      status: 'running',
-    })
-    expect(
-      await Effect.runPromise(store.getEvents('run_00000000-0000-4000-8000-000000000001', { _tag: 'All' })),
-    ).toStrictEqual([
-      { ...Array.getUnsafe(command().events, 0), runId: 'run_00000000-0000-4000-8000-000000000001', sequence: 1 },
-    ])
-  })
+  live('atomically commits snapshot revision and sequenced execution events before ACK', () =>
+    Effect.gen(function* () {
+      yield* seedEffect()
+      expect(yield* store.commit(command())).toStrictEqual({
+        commitId: 'commit_00000000-0000-4000-8000-000000000001',
+        eventCount: 1,
+        firstSequence: 1,
+        revision: 1,
+        runId: 'run_00000000-0000-4000-8000-000000000001',
+      })
+      expect(yield* store.getRun('run_00000000-0000-4000-8000-000000000001')).toMatchObject({
+        revision: 1,
+        snapshot: command().snapshot,
+        status: 'running',
+      })
+      expect(yield* store.getEvents('run_00000000-0000-4000-8000-000000000001', { _tag: 'All' })).toStrictEqual([
+        { ...Array.getUnsafe(command().events, 0), runId: 'run_00000000-0000-4000-8000-000000000001', sequence: 1 },
+      ])
+    }),
+  )
 
-  test('returns the original ACK for exact duplicate deliveries without advancing revision', async () => {
-    await seed()
-    const first = await Effect.runPromise(store.commit(command()))
-    await expect(Effect.runPromise(store.commit(command()))).resolves.toStrictEqual(first)
-    await expect(Effect.runPromise(store.getRun('run_00000000-0000-4000-8000-000000000001'))).resolves.toMatchObject({
-      revision: 1,
-    })
-    expect(
-      await Effect.runPromise(store.getEvents('run_00000000-0000-4000-8000-000000000001', { _tag: 'All' })),
-    ).toHaveLength(1)
-  })
+  live('returns the original ACK for exact duplicate deliveries without advancing revision', () =>
+    Effect.gen(function* () {
+      yield* seedEffect()
+      const first = yield* store.commit(command())
+      expect(yield* store.commit(command())).toStrictEqual(first)
+      expect(yield* store.getRun('run_00000000-0000-4000-8000-000000000001')).toMatchObject({
+        revision: 1,
+      })
+      expect(yield* store.getEvents('run_00000000-0000-4000-8000-000000000001', { _tag: 'All' })).toHaveLength(1)
+    }),
+  )
 
-  test('returns an old duplicate ACK after later commits without replaying its snapshot', async () => {
-    await seed()
-    const first = await Effect.runPromise(store.commit(command()))
-    await Effect.runPromise(
-      store.commit(
+  live('returns an old duplicate ACK after later commits without replaying its snapshot', () =>
+    Effect.gen(function* () {
+      yield* seedEffect()
+      const first = yield* store.commit(command())
+      yield* store.commit(
         command({
           commitId: 'commit_00000000-0000-4000-8000-000000000002',
           expectedRevision: 1,
@@ -671,31 +678,33 @@ describe('D1 persisted run store', () => {
           snapshot: { checkpoint: 'later' },
           events: [],
         }),
-      ),
-    )
-    await expect(Effect.runPromise(store.commit(command()))).resolves.toStrictEqual(first)
-    await expect(Effect.runPromise(store.getRun('run_00000000-0000-4000-8000-000000000001'))).resolves.toMatchObject({
-      revision: 2,
-      snapshot: { checkpoint: 'later' },
-    })
-  })
+      )
+      expect(yield* store.commit(command())).toStrictEqual(first)
+      expect(yield* store.getRun('run_00000000-0000-4000-8000-000000000001')).toMatchObject({
+        revision: 2,
+        snapshot: { checkpoint: 'later' },
+      })
+    }),
+  )
 
-  test('rejects reuse of a commit ID with a different event payload', async () => {
-    await seed()
-    await Effect.runPromise(store.commit(command()))
-    await expect(Effect.runPromise(store.commit(command({ snapshot: { altered: true } })))).rejects.toMatchObject({
-      _tag: 'StorageConflict',
-    })
-    await expect(Effect.runPromise(store.getRun('run_00000000-0000-4000-8000-000000000001'))).resolves.toMatchObject({
-      revision: 1,
-      snapshot: command().snapshot,
-    })
-  })
+  live('rejects reuse of a commit ID with a different event payload', () =>
+    Effect.gen(function* () {
+      yield* seedEffect()
+      yield* store.commit(command())
+      expect(yield* Effect.flip(store.commit(command({ snapshot: { altered: true } })))).toMatchObject({
+        _tag: 'StorageConflict',
+      })
+      expect(yield* store.getRun('run_00000000-0000-4000-8000-000000000001')).toMatchObject({
+        revision: 1,
+        snapshot: command().snapshot,
+      })
+    }),
+  )
 
-  test('allows exactly one concurrent compare-and-swap winner', async () => {
-    await seed()
-    const results = await Effect.runPromise(
-      Effect.all(
+  live('allows exactly one concurrent compare-and-swap winner', () =>
+    Effect.gen(function* () {
+      yield* seedEffect()
+      const results = yield* Effect.all(
         [
           store.commit(command()).pipe(Effect.exit),
           store
@@ -703,71 +712,71 @@ describe('D1 persisted run store', () => {
             .pipe(Effect.exit),
         ],
         { concurrency: 'unbounded' },
-      ),
-    )
-    expect(Array.filter(results, Exit.isSuccess)).toHaveLength(1)
-    expect(Array.filter(results, Exit.isFailure)).toHaveLength(1)
-    await expect(Effect.runPromise(store.getRun('run_00000000-0000-4000-8000-000000000001'))).resolves.toMatchObject({
-      revision: 1,
-    })
-  })
+      )
+      expect(Array.filter(results, Exit.isSuccess)).toHaveLength(1)
+      expect(Array.filter(results, Exit.isFailure)).toHaveLength(1)
+      expect(yield* store.getRun('run_00000000-0000-4000-8000-000000000001')).toMatchObject({
+        revision: 1,
+      })
+    }),
+  )
 
-  test('rolls back receipt, snapshot and all events when a later event violates uniqueness', async () => {
-    await seed()
-    await Effect.runPromise(store.commit(command()))
-    const duplicate = Array.getUnsafe(command().events, 0)
-    await expect(
-      Effect.runPromise(
-        store.commit(
-          command({
-            commitId: 'commit_00000000-0000-4000-8000-000000000004',
-            expectedRevision: 1,
-            snapshot: { wrong: 'must roll back' },
-            events: [{ ...duplicate, eventId: 'event_00000000-0000-4000-8000-000000000003' }, duplicate],
-          }),
+  live('rolls back receipt, snapshot and all events when a later event violates uniqueness', () =>
+    Effect.gen(function* () {
+      yield* seedEffect()
+      yield* store.commit(command())
+      const duplicate = Array.getUnsafe(command().events, 0)
+      expect(
+        yield* Effect.flip(
+          store.commit(
+            command({
+              commitId: 'commit_00000000-0000-4000-8000-000000000004',
+              expectedRevision: 1,
+              snapshot: { wrong: 'must roll back' },
+              events: [{ ...duplicate, eventId: 'event_00000000-0000-4000-8000-000000000003' }, duplicate],
+            }),
+          ),
         ),
-      ),
-    ).rejects.toMatchObject({ _tag: 'StorageConflict' })
-    await expect(Effect.runPromise(store.getRun('run_00000000-0000-4000-8000-000000000001'))).resolves.toMatchObject({
-      revision: 1,
-      snapshot: command().snapshot,
-    })
-    expect(
-      await Effect.runPromise(store.getEvents('run_00000000-0000-4000-8000-000000000001', { _tag: 'All' })),
-    ).toHaveLength(1)
-    // The rejected receipt must not reserve its ID or revision.
-    expect(
-      await Effect.runPromise(
-        store.commit(
+      ).toMatchObject({ _tag: 'StorageConflict' })
+      expect(yield* store.getRun('run_00000000-0000-4000-8000-000000000001')).toMatchObject({
+        revision: 1,
+        snapshot: command().snapshot,
+      })
+      expect(yield* store.getEvents('run_00000000-0000-4000-8000-000000000001', { _tag: 'All' })).toHaveLength(1)
+      // The rejected receipt must not reserve its ID or revision.
+      expect(
+        yield* store.commit(
           command({ commitId: 'commit_00000000-0000-4000-8000-000000000004', expectedRevision: 1, events: [] }),
         ),
-      ),
-    ).toMatchObject({ revision: 2 })
-  })
+      ).toMatchObject({ revision: 2 })
+    }),
+  )
 
-  test('prevents all fresh commits after a run becomes terminal but still ACKs exact duplicates', async () => {
-    await seed()
-    const terminal = command({ status: 'completed', snapshot: { done: true } })
-    const ack = await Effect.runPromise(store.commit(terminal))
-    await expect(
-      Effect.runPromise(
-        store.commit(
-          command({ commitId: 'commit_00000000-0000-4000-8000-000000000005', expectedRevision: 1, events: [] }),
+  live('prevents all fresh commits after a run becomes terminal but still ACKs exact duplicates', () =>
+    Effect.gen(function* () {
+      yield* seedEffect()
+      const terminal = command({ status: 'completed', snapshot: { done: true } })
+      const ack = yield* store.commit(terminal)
+      expect(
+        yield* Effect.flip(
+          store.commit(
+            command({ commitId: 'commit_00000000-0000-4000-8000-000000000005', expectedRevision: 1, events: [] }),
+          ),
         ),
-      ),
-    ).rejects.toMatchObject({ _tag: 'StorageConflict' })
-    await expect(Effect.runPromise(store.commit(terminal))).resolves.toStrictEqual(ack)
-    await expect(Effect.runPromise(store.getRun('run_00000000-0000-4000-8000-000000000001'))).resolves.toMatchObject({
-      revision: 1,
-      status: 'completed',
-    })
-  })
+      ).toMatchObject({ _tag: 'StorageConflict' })
+      expect(yield* store.commit(terminal)).toStrictEqual(ack)
+      expect(yield* store.getRun('run_00000000-0000-4000-8000-000000000001')).toMatchObject({
+        revision: 1,
+        status: 'completed',
+      })
+    }),
+  )
 
-  test('bounds event reads to the revision used for a detail snapshot', async () => {
-    await seed()
-    await Effect.runPromise(store.commit(command()))
-    await Effect.runPromise(
-      store.commit(
+  live('bounds event reads to the revision used for a detail snapshot', () =>
+    Effect.gen(function* () {
+      yield* seedEffect()
+      yield* store.commit(command())
+      yield* store.commit(
         command({
           commitId: 'commit_00000000-0000-4000-8000-000000000002',
           expectedRevision: 1,
@@ -776,90 +785,86 @@ describe('D1 persisted run store', () => {
             eventId: 'event_00000000-0000-4000-8000-000000000002',
           })),
         }),
-      ),
-    )
-    expect(
-      await Effect.runPromise(
-        store.getEvents('run_00000000-0000-4000-8000-000000000001', { _tag: 'ThroughRevision', revision: 0 }),
-      ),
-    ).toStrictEqual([])
-    expect(
-      await Effect.runPromise(
-        store.getEvents('run_00000000-0000-4000-8000-000000000001', { _tag: 'ThroughRevision', revision: 1 }),
-      ),
-    ).toHaveLength(1)
-    expect(
-      await Effect.runPromise(store.getEvents('run_00000000-0000-4000-8000-000000000001', { _tag: 'All' })),
-    ).toHaveLength(2)
-  })
+      )
+      expect(
+        yield* store.getEvents('run_00000000-0000-4000-8000-000000000001', { _tag: 'ThroughRevision', revision: 0 }),
+      ).toStrictEqual([])
+      expect(
+        yield* store.getEvents('run_00000000-0000-4000-8000-000000000001', { _tag: 'ThroughRevision', revision: 1 }),
+      ).toHaveLength(1)
+      expect(yield* store.getEvents('run_00000000-0000-4000-8000-000000000001', { _tag: 'All' })).toHaveLength(2)
+    }),
+  )
 
-  test('rejects graph ID reuse with different immutable graph content', async () => {
-    await seed()
-    await expect(
-      Effect.runPromise(
-        store.create(
-          newRun('run_00000000-0000-4000-8000-000000000002'),
-          { ...demoGraph(version1), nodes: [] },
-          demoDefinition.summary.name,
+  live('rejects graph ID reuse with different immutable graph content', () =>
+    Effect.gen(function* () {
+      yield* seedEffect()
+      expect(
+        yield* Effect.flip(
+          store.create(
+            newRun('run_00000000-0000-4000-8000-000000000002'),
+            { ...demoGraph(version1), nodes: [] },
+            demoDefinition.summary.name,
+          ),
         ),
-      ),
-    ).rejects.toMatchObject({ _tag: 'StorageConflict' })
-    await expect(Effect.runPromise(store.listRuns)).resolves.toHaveLength(1)
-    await expect(Effect.runPromise(store.getGraph(demoGraph(version1).graphId))).resolves.toStrictEqual(
-      demoGraph(version1),
-    )
-  })
+      ).toMatchObject({ _tag: 'StorageConflict' })
+      expect(yield* store.listRuns).toHaveLength(1)
+      expect(yield* store.getGraph(demoGraph(version1).graphId)).toStrictEqual(demoGraph(version1))
+    }),
+  )
 })
 
 describe('demo cold restoration', () => {
-  test('observes lifecycle hooks only after the matching snapshot and complete event batch are readable in D1', async () => {
-    const runId = command().runId
-    await seed(runId)
-    let observations: Readonly<
-      {
-        revision: number
-        persisted: Run
-        eventIds: Readonly<string[]>
-        storedEventIds: Readonly<string[]>
-      }[]
-    > = []
-    const executor = Effect.runSync(
-      makeDemoExecutor.pipe(
-        Effect.provide(
-          Layer.mergeAll(
-            Layer.succeed(Store, store),
-            BrowserCrypto.layer,
-            Layer.succeed(LifecycleHook, {
-              afterCommit: (events, ack) =>
-                Effect.gen(function* () {
-                  const persisted = yield* store.getRun(ack.runId).pipe(Effect.orDie)
-                  const committed = yield* store
-                    .getEvents(ack.runId, EventRange.ThroughRevision({ revision: ack.revision }))
-                    .pipe(Effect.orDie)
-                  observations = Array.append(observations, {
-                    revision: ack.revision,
-                    persisted,
-                    eventIds: Array.map(events, (event) => event.eventId),
-                    storedEventIds: Array.map(
-                      Array.filter(committed, (event) => event.sequence >= ack.firstSequence),
-                      (event) => event.eventId,
-                    ),
-                  })
-                }),
-            }),
+  live('observes lifecycle hooks only after the matching snapshot and complete event batch are readable in D1', () =>
+    Effect.gen(function* () {
+      const runId = command().runId
+      yield* seedEffect(runId)
+      let observations: Readonly<
+        {
+          revision: number
+          persisted: Run
+          eventIds: Readonly<string[]>
+          storedEventIds: Readonly<string[]>
+        }[]
+      > = []
+      const executor = Effect.runSync(
+        makeDemoExecutor.pipe(
+          Effect.provide(
+            Layer.mergeAll(
+              Layer.succeed(Store, store),
+              BrowserCrypto.layer,
+              Layer.succeed(LifecycleHook, {
+                afterCommit: (events, ack) =>
+                  Effect.gen(function* () {
+                    const persisted = yield* store.getRun(ack.runId).pipe(Effect.orDie)
+                    const committed = yield* store
+                      .getEvents(ack.runId, EventRange.ThroughRevision({ revision: ack.revision }))
+                      .pipe(Effect.orDie)
+                    observations = Array.append(observations, {
+                      revision: ack.revision,
+                      persisted,
+                      eventIds: Array.map(events, (event) => event.eventId),
+                      storedEventIds: Array.map(
+                        Array.filter(committed, (event) => event.sequence >= ack.firstSequence),
+                        (event) => event.eventId,
+                      ),
+                    })
+                  }),
+              }),
+            ),
           ),
         ),
-      ),
-    )
-    await Effect.runPromise(executor.start(runId))
-    await Effect.runPromise(executor.resume(runId))
-    expect(Array.map(observations, (observation) => observation.revision)).toStrictEqual(Array.range(1, 4))
-    Array.forEach(observations, (observation) => {
-      expect(observation.persisted.revision).toBe(observation.revision)
-      expect(observation.storedEventIds).toStrictEqual(observation.eventIds)
-    })
-    expect(Array.last(observations)).toMatchObject({ value: { persisted: { status: 'completed' } } })
-  })
+      )
+      yield* executor.start(runId)
+      yield* executor.resume(runId)
+      expect(Array.map(observations, (observation) => observation.revision)).toStrictEqual(Array.range(1, 4))
+      Array.forEach(observations, (observation) => {
+        expect(observation.persisted.revision).toBe(observation.revision)
+        expect(observation.storedEventIds).toStrictEqual(observation.eventIds)
+      })
+      expect(Array.last(observations)).toMatchObject({ value: { persisted: { status: 'completed' } } })
+    }),
+  )
 
   test('does not dispatch lifecycle hooks when D1 rejects the checkpoint revision', async () => {
     const runId = command().runId
@@ -915,38 +920,36 @@ describe('demo cold restoration', () => {
     },
   )
 
-  test('generates prefixed UUIDv4 execution, event and commit identities and ACKs an exact duplicate commit', async () => {
-    await seed()
-    const persisted = store
-    let commits: Readonly<CommitCommand[]> = []
-    store = {
-      ...persisted,
-      commit: (input) => {
-        commits = Array.append(commits, input)
-        return persisted.commit(input)
-      },
-    }
-    await run(startRun('run_00000000-0000-4000-8000-000000000001'))
-    await run(resumeRun('run_00000000-0000-4000-8000-000000000001'))
-    expect(Array.every(commits, (input) => Schema.is(CommitId)(input.commitId))).toBe(true)
-    const events = await Effect.runPromise(store.getEvents('run_00000000-0000-4000-8000-000000000001', { _tag: 'All' }))
-    expect(Array.every(events, (event) => Schema.is(EventId)(event.eventId))).toBe(true)
-    expect(Array.every(events, (event) => !('executionId' in event) || Schema.is(ExecutionId)(event.executionId))).toBe(
-      true,
-    )
-    const first = Array.getUnsafe(commits, 0)
-    const before = await Effect.runPromise(store.getRun('run_00000000-0000-4000-8000-000000000001'))
-    await expect(Effect.runPromise(store.commit(first))).resolves.toMatchObject({
-      commitId: first.commitId,
-      revision: 1,
-    })
-    await expect(Effect.runPromise(store.getRun('run_00000000-0000-4000-8000-000000000001'))).resolves.toStrictEqual(
-      before,
-    )
-    expect(
-      await Effect.runPromise(store.getEvents('run_00000000-0000-4000-8000-000000000001', { _tag: 'All' })),
-    ).toStrictEqual(events)
-  })
+  live('generates prefixed UUIDv4 execution, event and commit identities and ACKs an exact duplicate commit', () =>
+    Effect.gen(function* () {
+      yield* seedEffect()
+      const persisted = store
+      let commits: Readonly<CommitCommand[]> = []
+      store = {
+        ...persisted,
+        commit: (input) => {
+          commits = Array.append(commits, input)
+          return persisted.commit(input)
+        },
+      }
+      yield* provideTestServices(startRun('run_00000000-0000-4000-8000-000000000001'))
+      yield* provideTestServices(resumeRun('run_00000000-0000-4000-8000-000000000001'))
+      expect(Array.every(commits, (input) => Schema.is(CommitId)(input.commitId))).toBe(true)
+      const events = yield* store.getEvents('run_00000000-0000-4000-8000-000000000001', { _tag: 'All' })
+      expect(Array.every(events, (event) => Schema.is(EventId)(event.eventId))).toBe(true)
+      expect(
+        Array.every(events, (event) => !('executionId' in event) || Schema.is(ExecutionId)(event.executionId)),
+      ).toBe(true)
+      const first = Array.getUnsafe(commits, 0)
+      const before = yield* store.getRun('run_00000000-0000-4000-8000-000000000001')
+      expect(yield* store.commit(first)).toMatchObject({
+        commitId: first.commitId,
+        revision: 1,
+      })
+      expect(yield* store.getRun('run_00000000-0000-4000-8000-000000000001')).toStrictEqual(before)
+      expect(yield* store.getEvents('run_00000000-0000-4000-8000-000000000001', { _tag: 'All' })).toStrictEqual(events)
+    }),
+  )
 
   test.each([version1, version2] as const)(
     'restores the waiting %s version in a new service and completes only after explicit resume',
@@ -1001,119 +1004,133 @@ describe('demo cold restoration', () => {
     },
   )
 
-  test('recovers a committed running prepare checkpoint without duplicating its start event', async () => {
-    await seed()
-    const persisted = store
-    store = {
-      ...persisted,
-      commit: (input) =>
-        persisted.commit(input).pipe(
-          Effect.andThen(
-            Effect.fail(
-              new ExternalError({
-                kind: 'storage',
-                operation: 'lost prepare checkpoint ACK',
-                cause: 'test transport loss',
-              }),
+  live('recovers a committed running prepare checkpoint without duplicating its start event', () =>
+    Effect.gen(function* () {
+      yield* seedEffect()
+      const persisted = store
+      store = {
+        ...persisted,
+        commit: (input) =>
+          persisted.commit(input).pipe(
+            Effect.andThen(
+              Effect.fail(
+                new ExternalError({
+                  kind: 'storage',
+                  operation: 'lost prepare checkpoint ACK',
+                  cause: 'test transport loss',
+                }),
+              ),
             ),
           ),
+      }
+      expect(yield* Effect.flip(provideTestServices(startRun(command().runId)))).toMatchObject({
+        _tag: 'ExternalError',
+      })
+      const checkpoint = yield* persisted.getRun(command().runId)
+      expect(checkpoint).toMatchObject({ revision: 1, status: 'running' })
+      expect(yield* persisted.getEvents(command().runId, EventRange.All())).toHaveLength(2)
+      store = freshStore()
+      yield* provideTestServices(resumeRun('run_00000000-0000-4000-8000-000000000001'))
+      expect(yield* store.getRun('run_00000000-0000-4000-8000-000000000001')).toMatchObject({
+        revision: 2,
+        status: 'waiting',
+      })
+      expect(
+        Array.filter(
+          yield* store.getEvents('run_00000000-0000-4000-8000-000000000001', { _tag: 'All' }),
+          (event) => event.type === 'node.started' && event.nodeId === 'prepare',
         ),
-    }
-    await expect(run(startRun(command().runId))).rejects.toMatchObject({ _tag: 'ExternalError' })
-    const checkpoint = await Effect.runPromise(persisted.getRun(command().runId))
-    expect(checkpoint).toMatchObject({ revision: 1, status: 'running' })
-    await expect(Effect.runPromise(persisted.getEvents(command().runId, EventRange.All()))).resolves.toHaveLength(2)
-    store = freshStore()
-    await run(resumeRun('run_00000000-0000-4000-8000-000000000001'))
-    await expect(Effect.runPromise(store.getRun('run_00000000-0000-4000-8000-000000000001'))).resolves.toMatchObject({
-      revision: 2,
-      status: 'waiting',
-    })
-    expect(
-      Array.filter(
-        await Effect.runPromise(store.getEvents('run_00000000-0000-4000-8000-000000000001', { _tag: 'All' })),
-        (event) => event.type === 'node.started' && event.nodeId === 'prepare',
-      ),
-    ).toHaveLength(1)
-  })
+      ).toHaveLength(1)
+    }),
+  )
 
-  test('rejects malformed or version-mismatched restored state before executing a node', async () => {
-    await seed()
-    await Effect.runPromise(store.commit(command({ snapshot: { _tag: 'Preparing', version: 'v9' } })))
-    await expect(run(resumeRun('run_00000000-0000-4000-8000-000000000001'))).rejects.toMatchObject({
-      _tag: 'InvalidSnapshot',
-    })
-    expect(
-      await Effect.runPromise(store.getEvents('run_00000000-0000-4000-8000-000000000001', { _tag: 'All' })),
-    ).toHaveLength(1)
-  })
+  live('rejects malformed or version-mismatched restored state before executing a node', () =>
+    Effect.gen(function* () {
+      yield* seedEffect()
+      yield* store.commit(command({ snapshot: { _tag: 'Preparing', version: 'v9' } }))
+      expect(
+        yield* Effect.flip(provideTestServices(resumeRun('run_00000000-0000-4000-8000-000000000001'))),
+      ).toMatchObject({
+        _tag: 'InvalidSnapshot',
+      })
+      expect(yield* store.getEvents('run_00000000-0000-4000-8000-000000000001', { _tag: 'All' })).toHaveLength(1)
+    }),
+  )
 })
 
 describe('interrupted workflow recovery', () => {
-  test('rejects an unregistered persisted workflow before dispatch without changing its checkpoint', async () => {
-    const unsupported = { ...newRun('run_00000000-0000-4000-8000-000000000004'), workflowId: 'unregistered-workflow' }
-    await Effect.runPromise(store.create(unsupported, demoGraph(version1), 'Unregistered workflow'))
-    const resume = vi.fn(() => Effect.die('Unregistered workflows must not dispatch'))
-    const binding = { start: resume, resume }
-    const registry = [{ ...demoDefinition, binding }]
-    await expect(
-      Effect.runPromise(
-        resumeWorkflowRun(unsupported.runId).pipe(
-          Effect.provideService(Store, store),
-          Effect.provideService(WorkflowRegistry, registry),
+  live('rejects an unregistered persisted workflow before dispatch without changing its checkpoint', () =>
+    Effect.gen(function* () {
+      const unsupported = { ...newRun('run_00000000-0000-4000-8000-000000000004'), workflowId: 'unregistered-workflow' }
+      yield* store.create(unsupported, demoGraph(version1), 'Unregistered workflow')
+      const resume = vi.fn(() => Effect.die('Unregistered workflows must not dispatch'))
+      const binding = { start: resume, resume }
+      const registry = [{ ...demoDefinition, binding }]
+      expect(
+        yield* Effect.flip(
+          resumeWorkflowRun(unsupported.runId).pipe(
+            Effect.provideService(Store, store),
+            Effect.provideService(WorkflowRegistry, registry),
+          ),
         ),
-      ),
-    ).rejects.toMatchObject({ _tag: 'InvalidOperation', message: 'The workflow is not registered' })
-    expect(resume).not.toHaveBeenCalled()
-    await expect(Effect.runPromise(store.getRun(unsupported.runId))).resolves.toStrictEqual(unsupported)
-    await expect(Effect.runPromise(store.getEvents(unsupported.runId, { _tag: 'All' }))).resolves.toStrictEqual([])
-  })
+      ).toMatchObject({ _tag: 'InvalidOperation', message: 'The workflow is not registered' })
+      expect(resume).not.toHaveBeenCalled()
+      expect(yield* store.getRun(unsupported.runId)).toStrictEqual(unsupported)
+      expect(yield* store.getEvents(unsupported.runId, { _tag: 'All' })).toStrictEqual([])
+    }),
+  )
 
-  test('restores a running publish checkpoint without replaying manual approval or node start', async () => {
-    await seed()
-    await run(startRun('run_00000000-0000-4000-8000-000000000001'))
-    const persisted = store
-    const interrupted: StoreService = {
-      ...persisted,
-      commit: (input) =>
-        input.status === 'completed'
-          ? Effect.fail(
-              new ExternalError({
-                kind: 'storage',
-                operation: 'injected checkpoint failure',
-                cause: 'test interruption',
-              }),
-            )
-          : persisted.commit(input),
-    }
-    await expect(
-      Effect.runPromise(
-        resumeRun('run_00000000-0000-4000-8000-000000000001').pipe(
-          Effect.provideService(Store, interrupted),
-          Effect.provide(BrowserCrypto.layer),
+  live('restores a running publish checkpoint without replaying manual approval or node start', () =>
+    Effect.gen(function* () {
+      yield* seedEffect()
+      yield* provideTestServices(startRun('run_00000000-0000-4000-8000-000000000001'))
+      const persisted = store
+      const interrupted: StoreService = {
+        ...persisted,
+        commit: (input) =>
+          input.status === 'completed'
+            ? Effect.fail(
+                new ExternalError({
+                  kind: 'storage',
+                  operation: 'injected checkpoint failure',
+                  cause: 'test interruption',
+                }),
+              )
+            : persisted.commit(input),
+      }
+      expect(
+        yield* Effect.flip(
+          resumeRun('run_00000000-0000-4000-8000-000000000001').pipe(
+            Effect.provideService(Store, interrupted),
+            Effect.provide(BrowserCrypto.layer),
+          ),
         ),
-      ),
-    ).rejects.toMatchObject({ _tag: 'ExternalError', kind: 'storage' })
-    await expect(Effect.runPromise(store.getRun('run_00000000-0000-4000-8000-000000000001'))).resolves.toMatchObject({
-      revision: 3,
-      snapshot: { machine: { active: [{ path: '' }, { path: 'publish', value: { prepared: 'draft:v1' } }] } },
-      status: 'running',
-    })
-    store = freshStore()
-    await run(resumeRun('run_00000000-0000-4000-8000-000000000001'))
-    const events = await Effect.runPromise(store.getEvents('run_00000000-0000-4000-8000-000000000001', { _tag: 'All' }))
-    expect(Array.filter(events, (event) => event.type === 'node.started' && event.nodeId === 'publish')).toHaveLength(1)
-    expect(
-      Array.filter(events, (event) => event.type === 'node.succeeded' && event.nodeId === 'approval'),
-    ).toHaveLength(1)
-    await expect(Effect.runPromise(store.getRun('run_00000000-0000-4000-8000-000000000001'))).resolves.toMatchObject({
-      revision: 4,
-      status: 'completed',
-    })
-    await expect(run(startRun('run_00000000-0000-4000-8000-000000000001'))).rejects.toMatchObject({
-      _tag: 'InvalidOperation',
-    })
-  })
+      ).toMatchObject({ _tag: 'ExternalError', kind: 'storage' })
+      expect(yield* store.getRun('run_00000000-0000-4000-8000-000000000001')).toMatchObject({
+        revision: 3,
+        snapshot: { machine: { active: [{ path: '' }, { path: 'publish', value: { prepared: 'draft:v1' } }] } },
+        status: 'running',
+      })
+      store = freshStore()
+      yield* provideTestServices(resumeRun('run_00000000-0000-4000-8000-000000000001'))
+      const events = yield* store.getEvents('run_00000000-0000-4000-8000-000000000001', { _tag: 'All' })
+      expect(Array.filter(events, (event) => event.type === 'node.started' && event.nodeId === 'publish')).toHaveLength(
+        1,
+      )
+      expect(
+        Array.filter(events, (event) => event.type === 'node.succeeded' && event.nodeId === 'approval'),
+      ).toHaveLength(1)
+      expect(yield* store.getRun('run_00000000-0000-4000-8000-000000000001')).toMatchObject({
+        revision: 4,
+        status: 'completed',
+      })
+      expect(
+        yield* Effect.flip(provideTestServices(startRun('run_00000000-0000-4000-8000-000000000001'))),
+      ).toMatchObject({
+        _tag: 'InvalidOperation',
+      })
+    }),
+  )
 
   test('leaves a recoverable pending run if its native static workflow RPC rejects', async () => {
     // Promise rejection is the native service-binding boundary wrapped by the production Alchemy client.
