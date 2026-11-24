@@ -1,4 +1,5 @@
-import { clsx, type ClassValue } from 'clsx'
+import { clsx } from 'clsx'
+import type { ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 
 /** Only class composition belongs here. Product behavior stays outside generated UI. */

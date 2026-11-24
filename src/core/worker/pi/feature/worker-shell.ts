@@ -1,4 +1,5 @@
-import { getWorkspace, withWorkspace, type WorkspaceOptions } from '@cloudflare/computer'
+import { getWorkspace, withWorkspace } from '@cloudflare/computer'
+import type { WorkspaceOptions } from '@cloudflare/computer'
 import { ShellWorker, WorkerShellBackend } from '@cloudflare/computer/backends/worker-shell'
 import { DurableObjectState } from 'alchemy/Cloudflare/Workers'
 import { DurableObject } from 'cloudflare:workers'

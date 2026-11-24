@@ -1,7 +1,8 @@
 'use client'
 
 import { Array, Option, Predicate } from 'effect'
-import { useRef, type KeyboardEvent } from 'react'
+import { useRef } from 'react'
+import type { KeyboardEvent } from 'react'
 
 import type { NodeId } from '@/core/feature/workflow/domain/identity'
 

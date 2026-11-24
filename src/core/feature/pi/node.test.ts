@@ -6,7 +6,8 @@ import { describe, expect, test, vi } from 'vite-plus/test'
 import { WorkflowCheckpoint } from '@/core/feature/workflow/managed-runtime'
 import { ResourceStore } from '@/core/feature/workflow/resource-store'
 
-import { makePiNodeEffects, piNodeEvent, type PiExecution } from './node.ts'
+import { makePiNodeEffects, piNodeEvent } from './node.ts'
+import type { PiExecution } from './node.ts'
 import { PiSandbox } from './sandbox.ts'
 
 const execution: PiExecution = {

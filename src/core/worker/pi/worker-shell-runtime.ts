@@ -1,6 +1,7 @@
 import type { WebSocket as WorkerWebSocket } from '@cloudflare/workers-types'
 import { createRegistry, Harness } from '@earendil-works/pi-durable'
-import { PiHarness, type PiModel } from 'agents/harness/pi'
+import { PiHarness } from 'agents/harness/pi'
+import type { PiModel } from 'agents/harness/pi'
 import { Lifecycle } from 'agents/lifecycle'
 import { Effect } from 'effect'
 

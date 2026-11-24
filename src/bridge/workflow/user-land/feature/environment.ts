@@ -1,7 +1,8 @@
 import { makeRpcStub, WorkerEnvironment } from 'alchemy/Cloudflare/Workers'
 import { Context, Effect, Layer } from 'effect'
 
-import { rpcCall, rpcCommandResult, type WireWorkflowExecutor } from '@/core/feature/workflow/rpc/contract'
+import { rpcCall, rpcCommandResult } from '@/core/feature/workflow/rpc/contract'
+import type { WireWorkflowExecutor } from '@/core/feature/workflow/rpc/contract'
 import { DemoWorkflow } from '@/user-land/workflow/demo/definition'
 import { DevelopmentWorkflow } from '@/user-land/workflow/development/definition'
 

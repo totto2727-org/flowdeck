@@ -3,8 +3,9 @@ import { Effect, Option, Schema } from 'effect'
 
 import { ExternalError, InvalidSnapshot } from '@/core/feature/workflow/domain/errors'
 import { ExecutionId } from '@/core/feature/workflow/domain/identity'
-import { type RunStatus } from '@/core/feature/workflow/domain/model'
-import { type EventDraft, WorkflowCheckpoint } from '@/core/feature/workflow/managed-runtime'
+import type { RunStatus } from '@/core/feature/workflow/domain/model'
+import { WorkflowCheckpoint } from '@/core/feature/workflow/managed-runtime'
+import type { EventDraft } from '@/core/feature/workflow/managed-runtime'
 
 const prepared = {
   prepareExecutionId: ExecutionId,

@@ -1,9 +1,6 @@
 import { live } from '@effect/vitest'
-import {
-  WorkerEnvironment,
-  WorkerExecutionContext,
-  type WorkerExecutionContextAccess,
-} from 'alchemy/Cloudflare/Workers'
+import { WorkerEnvironment, WorkerExecutionContext } from 'alchemy/Cloudflare/Workers'
+import type { WorkerExecutionContextAccess } from 'alchemy/Cloudflare/Workers'
 import { RuntimeContext } from 'alchemy/RuntimeContext'
 import { Effect, Layer, Schema } from 'effect'
 import { HttpEffect } from 'effect/http'

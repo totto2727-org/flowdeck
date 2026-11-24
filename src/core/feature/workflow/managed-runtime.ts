@@ -1,7 +1,6 @@
 import { Machine } from '@typeonce/effect-machine'
 import {
   Array,
-  type Cause,
   Context,
   DateTime,
   Deferred,
@@ -10,21 +9,18 @@ import {
   Option,
   Ref,
   Schema,
-  type Scope,
   Semaphore,
   SemVer,
 } from 'effect'
+import type { Cause, Scope } from 'effect'
 
 import { ExternalError, InvalidOperation, InvalidSnapshot } from '@/core/feature/workflow/domain/errors'
-import { makeCommitIdGenerator, makeEventIdGenerator, type RunId } from '@/core/feature/workflow/domain/identity'
-import {
-  JsonObject,
-  type GraphDefinition,
-  type Run,
-  type RunStatus,
-  WorkflowVersion,
-} from '@/core/feature/workflow/domain/model'
-import { type EventDraft, LifecycleHook } from '@/core/feature/workflow/lifecycle'
+import { makeCommitIdGenerator, makeEventIdGenerator } from '@/core/feature/workflow/domain/identity'
+import type { RunId } from '@/core/feature/workflow/domain/identity'
+import { JsonObject, WorkflowVersion } from '@/core/feature/workflow/domain/model'
+import type { GraphDefinition, Run, RunStatus } from '@/core/feature/workflow/domain/model'
+import { LifecycleHook } from '@/core/feature/workflow/lifecycle'
+import type { EventDraft } from '@/core/feature/workflow/lifecycle'
 import { ResourceStore } from '@/core/feature/workflow/resource-store'
 import type { WorkflowFailure } from '@/core/feature/workflow/services/failures'
 import { Store } from '@/core/feature/workflow/services/store'

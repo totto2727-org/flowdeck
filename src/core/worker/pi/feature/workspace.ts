@@ -1,4 +1,5 @@
-import { createPiTools, type CreatePiToolsOptions } from '@cloudflare/computer/tools/pi-ai'
+import { createPiTools } from '@cloudflare/computer/tools/pi-ai'
+import type { CreatePiToolsOptions } from '@cloudflare/computer/tools/pi-ai'
 import type { ToolExecutionResult, ToolRegistration } from '@earendil-works/pi-durable'
 import { Array, HashSet, Predicate } from 'effect'
 

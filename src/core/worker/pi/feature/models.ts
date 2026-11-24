@@ -1,4 +1,5 @@
-import { createModels, createProvider, type Model, type Models } from '@earendil-works/pi-ai'
+import { createModels, createProvider } from '@earendil-works/pi-ai'
+import type { Model, Models } from '@earendil-works/pi-ai'
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy'
 import { cloudflareAIGatewayAuth } from '@earendil-works/pi-ai/providers/cloudflare-auth'
 import { withOpenCodeSessionHeader } from '@earendil-works/pi-ai/providers/opencode-headers'

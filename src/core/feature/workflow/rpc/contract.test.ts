@@ -18,9 +18,8 @@ import {
   rpcCall,
   rpcCommandResult,
   rpcValue,
-  type WireWorkflowExecutor,
-  type WireWorkflowService,
 } from './contract.ts'
+import type { WireWorkflowExecutor, WireWorkflowService } from './contract.ts'
 import { RemoteWorkerError } from './problem.ts'
 
 const decodeRpcRunsResponse = Schema.decodeUnknownSync(RpcRunsResponse)

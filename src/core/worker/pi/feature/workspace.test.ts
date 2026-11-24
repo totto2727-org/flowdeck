@@ -1,4 +1,5 @@
-import { createPiTools, type CreatePiToolsOptions } from '@cloudflare/computer/tools/pi-ai'
+import { createPiTools } from '@cloudflare/computer/tools/pi-ai'
+import type { CreatePiToolsOptions } from '@cloudflare/computer/tools/pi-ai'
 import { createModels } from '@earendil-works/pi-ai'
 import { AssistantEntry, createRegistry, Harness, MemoryStorage, ToolTask } from '@earendil-works/pi-durable'
 import { Array, Option } from 'effect'

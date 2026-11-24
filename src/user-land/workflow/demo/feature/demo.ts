@@ -2,7 +2,7 @@ import { Context, Effect, Match, Schema, SemVer } from 'effect'
 
 import { InvalidSnapshot } from '@/core/feature/workflow/domain/errors'
 import type { RunId } from '@/core/feature/workflow/domain/identity'
-import { type GraphDefinition, type Run, type WorkflowSummary } from '@/core/feature/workflow/domain/model'
+import type { GraphDefinition, Run, WorkflowSummary } from '@/core/feature/workflow/domain/model'
 import { encodeManagedSnapshot, ManagedSnapshot, makeManagedExecutor } from '@/core/feature/workflow/managed-runtime'
 import { Store } from '@/core/feature/workflow/services/store'
 

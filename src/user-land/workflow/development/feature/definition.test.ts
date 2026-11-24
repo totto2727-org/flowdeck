@@ -2,7 +2,8 @@ import { Machine } from '@typeonce/effect-machine'
 import { DateTime, Effect, Option, Schema, SemVer, String } from 'effect'
 import { describe, expect, test } from 'vite-plus/test'
 
-import { JsonObject, type Run } from '@/core/feature/workflow/domain/model'
+import { JsonObject } from '@/core/feature/workflow/domain/model'
+import type { Run } from '@/core/feature/workflow/domain/model'
 
 import { developmentDefinition } from './definition.ts'
 import { DevelopmentMachine, DevelopmentStates } from './development-machine.ts'

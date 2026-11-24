@@ -6,10 +6,12 @@ import { describe, expect, test, vi } from 'vite-plus/test'
 
 import { ExternalError, InvalidSnapshot } from '@/core/feature/workflow/domain/errors'
 import type { GraphDefinition, Run, RunStatus } from '@/core/feature/workflow/domain/model'
-import { LifecycleHook, type EventDraft } from '@/core/feature/workflow/lifecycle'
+import { LifecycleHook } from '@/core/feature/workflow/lifecycle'
+import type { EventDraft } from '@/core/feature/workflow/lifecycle'
 import { ResourceStore } from '@/core/feature/workflow/resource-store'
 import type { WorkflowFailure } from '@/core/feature/workflow/services/failures'
-import { type CommitCommand, Store, type StoreFailure, type StoreService } from '@/core/feature/workflow/services/store'
+import { Store } from '@/core/feature/workflow/services/store'
+import type { CommitCommand, StoreFailure, StoreService } from '@/core/feature/workflow/services/store'
 
 import {
   encodeManagedSnapshot,

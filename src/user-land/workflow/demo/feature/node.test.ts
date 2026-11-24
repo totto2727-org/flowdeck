@@ -3,7 +3,8 @@ import { Machine } from '@typeonce/effect-machine'
 import { Array, Effect, Option } from 'effect'
 import { describe, expect, test } from 'vite-plus/test'
 
-import { type EventDraft, resumeEvent, WorkflowCheckpoint } from '@/core/feature/workflow/managed-runtime'
+import { resumeEvent, WorkflowCheckpoint } from '@/core/feature/workflow/managed-runtime'
+import type { EventDraft } from '@/core/feature/workflow/managed-runtime'
 
 import { demoBoundaryEvents } from './node.ts'
 import { demoVersion1Machine, demoVersion1States } from './version-1.ts'

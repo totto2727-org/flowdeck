@@ -1,6 +1,7 @@
 import type { D1Result } from '@cloudflare/workers-types'
 import type { PreparedStatement, QueryDatabaseClient } from 'alchemy/Cloudflare/D1'
-import { Context, type Effect } from 'effect'
+import { Context } from 'effect'
+import type { Effect } from 'effect'
 
 interface BoundD1Statement extends PreparedStatement {
   bind(...values: Parameters<PreparedStatement['bind']>): BoundD1Statement

@@ -1,7 +1,8 @@
 import { Context, Data, Effect, Predicate, Schema } from 'effect'
 
 import { makeExecutionIdGenerator, ExecutionId } from '@/core/feature/workflow/domain/identity'
-import { WorkflowCheckpoint, type EventDraft } from '@/core/feature/workflow/managed-runtime'
+import { WorkflowCheckpoint } from '@/core/feature/workflow/managed-runtime'
+import type { EventDraft } from '@/core/feature/workflow/managed-runtime'
 import { ResourceStore } from '@/core/feature/workflow/resource-store'
 
 import { CommandId, makeCommandIdGenerator } from './model.ts'

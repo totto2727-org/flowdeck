@@ -1,6 +1,7 @@
 import { ClusterMachine } from '@typeonce/effect-machine/cluster'
 import { Effect, Layer, Option } from 'effect'
-import { ClusterError, type EntityAddress } from 'effect/cluster'
+import { ClusterError } from 'effect/cluster'
+import type { EntityAddress } from 'effect/cluster'
 
 import { AlchemyQueryExecutorLive, makeD1Queries } from '@/core/feature/d1/reylo'
 

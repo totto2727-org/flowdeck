@@ -1,4 +1,5 @@
-import { Worker, type WorkerServices } from 'alchemy/Cloudflare/Workers'
+import { Worker } from 'alchemy/Cloudflare/Workers'
+import type { WorkerServices } from 'alchemy/Cloudflare/Workers'
 import type { HttpEffect } from 'alchemy/Http'
 import type { RuntimeContext } from 'alchemy/RuntimeContext'
 

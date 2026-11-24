@@ -7,8 +7,8 @@ import {
   encodeRunDetail,
   encodeRunsResponse,
   encodeWorkflowsResponse,
-  type WireWorkflowService,
 } from '@/core/feature/workflow/rpc/contract'
+import type { WireWorkflowService } from '@/core/feature/workflow/rpc/contract'
 import { Workflows } from '@/core/feature/workflow/services/workflows'
 
 const decodeCreateRun = Schema.decodeUnknownEffect(RpcCreateRun)

@@ -35,7 +35,8 @@ import insertWorkflowQuery from './queries/insert-workflow.sql'
 import listRunsQuery from './queries/list-runs.sql'
 import updateRunQuery from './queries/update-run.sql'
 import updateStateQuery from './queries/update-state.sql'
-import { type CommitCommand, type EventRange, Store, type StoreService } from './store.ts'
+import { Store } from './store.ts'
+import type { CommitCommand, EventRange, StoreService } from './store.ts'
 
 const makeGetRun = Effect.gen(function* () {
   const { run: query } = yield* DatabaseQueries

@@ -10,8 +10,8 @@ import {
   RpcWorkflowsResponse,
   rpcCall,
   rpcValue,
-  type WireWorkflowService,
 } from '@/core/feature/workflow/rpc/contract'
+import type { WireWorkflowService } from '@/core/feature/workflow/rpc/contract'
 import { Workflows } from '@/core/feature/workflow/services/workflows'
 
 import { Control } from './definition.ts'
