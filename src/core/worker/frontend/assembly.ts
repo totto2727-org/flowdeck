@@ -1,5 +1,5 @@
 import { WorkerEnvironment, WorkerExecutionContext } from 'alchemy/Cloudflare/Workers'
-import { Context, Effect, Layer, Predicate, Schema } from 'effect'
+import { Context, Effect, Layer, Predicate, Result, Schema } from 'effect'
 import { FetchHttpClient } from 'effect/http'
 
 import { frontendAuthorization } from '@/core/worker/frontend/feature/authorization'
@@ -44,7 +44,7 @@ const ControlEnvironment = Schema.Struct({
       Predicate.isObject(input) && Predicate.hasProperty(input, 'fetch') && Predicate.isFunction(input.fetch),
   ),
 })
-const decodeControlEnvironment = Schema.decodeUnknownSync(ControlEnvironment)
+const decodeControlEnvironment = Schema.decodeUnknownResult(ControlEnvironment)
 
 /**
  * The service binding exposes native fetch, not an Effect HTTP interface.
@@ -54,8 +54,11 @@ const decodeControlEnvironment = Schema.decodeUnknownSync(ControlEnvironment)
  */
 export const makeControlFetch = Effect.gen(function* () {
   const environment = yield* WorkerEnvironment
-  const fetch: typeof globalThis.fetch = (input, init) =>
-    decodeControlEnvironment(environment).CONTROL.fetch(new Request(input, init))
+  const fetch: typeof globalThis.fetch = (input, init) => {
+    const environmentResult = decodeControlEnvironment(environment)
+    const { CONTROL } = Result.getOrThrow(environmentResult)
+    return CONTROL.fetch(new Request(input, init))
+  }
   return fetch
 })
 
