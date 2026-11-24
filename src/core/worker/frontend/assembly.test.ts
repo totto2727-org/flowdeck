@@ -2,99 +2,136 @@ import { live } from '@effect/vitest'
 import { WorkerEnvironment, WorkerExecutionContext } from 'alchemy/Cloudflare/Workers'
 import type { WorkerExecutionContextAccess } from 'alchemy/Cloudflare/Workers'
 import { RuntimeContext } from 'alchemy/RuntimeContext'
-import { Effect, Layer, Schema } from 'effect'
+import { Data, Effect, Layer, Schema } from 'effect'
 import { HttpEffect } from 'effect/http'
 import { describe, expect, test, vi } from 'vite-plus/test'
 
-import { ControlApi } from '@/core/worker/frontend/feature/control-api'
+import { ControlApi, ControlError } from '@/core/worker/frontend/feature/control-api'
+import { HttpStatus } from '@/share/feature/http/status'
 
 import { frontendRequest, FrontendRequestLayer } from './assembly.ts'
+import type { ControlBinding } from './assembly.ts'
 
-/** Only the platform admission is substituted. The real request Layer and HTTP adapter run below. */
-const host = (
-  environment: Record<string, unknown>,
-  admission: WorkerExecutionContextAccess | undefined,
-): Layer.Layer<RuntimeContext | WorkerEnvironment | WorkerExecutionContext> =>
-  Layer.mergeAll(
-    Layer.succeed(WorkerEnvironment, environment),
-    Layer.succeed(WorkerExecutionContext, {
-      access: Effect.succeed(admission),
-      waitUntil: () => Effect.void,
-      passThroughOnException: () => Effect.void,
-      get raw(): WorkerExecutionContext['Service']['raw'] {
-        throw new Error('Native execution context must not be used by request assembly')
-      },
-      get cache(): WorkerExecutionContext['Service']['cache'] {
-        throw new Error('Native cache must not be used by request assembly')
-      },
-    }),
-    Layer.mock(RuntimeContext, { Type: 'test', id: 'frontend-request', env: {} }),
-  )
-const admitted = (aud = 'flowdeck-audience'): WorkerExecutionContextAccess => ({
+class UnexpectedPlatformRead extends Data.TaggedError('UnexpectedPlatformRead')<{ capability: string }> {}
+
+const workerContext = (admission?: WorkerExecutionContextAccess): WorkerExecutionContext['Service'] => ({
+  access: Effect.succeed(admission),
+  get cache(): WorkerExecutionContext['Service']['cache'] {
+    throw new UnexpectedPlatformRead({ capability: 'native cache' })
+  },
+  passThroughOnException: () => Effect.void,
+  get raw(): WorkerExecutionContext['Service']['raw'] {
+    throw new UnexpectedPlatformRead({ capability: 'native execution context' })
+  },
+  waitUntil: () => Effect.void,
+})
+
+const audience = 'flowdeck-audience'
+const env = { FLOWDECK_ACCESS_AUD: audience }
+
+const admitted = (aud = audience): WorkerExecutionContextAccess => ({
   aud,
   getIdentity: () => Effect.die('Trusted admission must not trigger an identity lookup'),
 })
-const completeLayer = (environment: Record<string, unknown>, admission: WorkerExecutionContextAccess | undefined) =>
-  FrontendRequestLayer.pipe(Layer.provideMerge(host(environment, admission)))
 
-const catalog = (name: string) => ({
-  workflows: [{ workflowId: 'demo', name, versions: ['1.0.0'], inputs: [] }],
-})
+// Substitute only the platform admission. The real request layer runs the HTTP adapter.
+const host = (
+  environment: Record<string, unknown>,
+  admission?: WorkerExecutionContextAccess,
+): Layer.Layer<RuntimeContext | WorkerEnvironment | WorkerExecutionContext> =>
+  Layer.mergeAll(
+    Layer.succeed(WorkerEnvironment, environment),
+    Layer.succeed(WorkerExecutionContext, workerContext(admission)),
+    Layer.mock(RuntimeContext, { Type: 'test', env: {}, id: 'frontend-request' }),
+  )
 
-describe('frontend request composition', () => {
-  test.each([
-    [{}, admitted(), 503, 'Access is not configured.'],
-    [{ FLOWDECK_ACCESS_AUD: '' }, admitted(), 503, 'Access is not configured.'],
-    [{ FLOWDECK_ACCESS_AUD: 'flowdeck-audience' }, undefined, 401, 'Cloudflare Access authentication is required.'],
-    [
-      { FLOWDECK_ACCESS_AUD: 'flowdeck-audience' },
-      admitted('another-application'),
-      403,
-      'This Access application is not authorized.',
-    ],
-  ] as const)(
-    'returns the fail-closed response before resolving an invalid Control binding: %j',
-    async (environment, admission, status, message) => {
-      const control = vi.fn(() => {
-        throw new Error('Denied requests must not inspect the Control binding')
+const completeLayer = (
+  environment: Record<string, unknown>,
+  admission?: WorkerExecutionContextAccess,
+): Layer.Layer<
+  Layer.Success<typeof FrontendRequestLayer> | RuntimeContext | WorkerEnvironment | WorkerExecutionContext
+> => FrontendRequestLayer.pipe(Layer.provideMerge(host(environment, admission)))
+
+const deniedCases = [
+  {
+    admission: admitted(),
+    environment: {},
+    message: 'Access is not configured.',
+    status: HttpStatus.serviceUnavailable,
+  },
+  {
+    admission: admitted(),
+    environment: { FLOWDECK_ACCESS_AUD: '' },
+    message: 'Access is not configured.',
+    status: HttpStatus.serviceUnavailable,
+  },
+  {
+    admission: undefined,
+    environment: env,
+    message: 'Cloudflare Access authentication is required.',
+    status: HttpStatus.unauthorized,
+  },
+  {
+    admission: admitted('another-application'),
+    environment: env,
+    message: 'This Access application is not authorized.',
+    status: HttpStatus.forbidden,
+  },
+]
+
+describe('frontend access admission', () => {
+  test.each(deniedCases)(
+    'returns $status before resolving an invalid Control binding',
+    async ({ admission, environment, message, status }) => {
+      const control = vi.fn<() => never>(() => {
+        throw new UnexpectedPlatformRead({ capability: 'Control binding' })
       })
-      const handler = HttpEffect.toWebHandler(
-        frontendRequest.pipe(
-          Effect.provide(
-            completeLayer(
-              {
-                ...environment,
-                get CONTROL() {
-                  return control()
-                },
-              },
-              admission,
-            ),
-          ),
-        ),
-      )
+      const bindings = {
+        ...environment,
+        get CONTROL() {
+          return control()
+        },
+      }
+      const layer = completeLayer(bindings, admission)
+      const operation = frontendRequest.pipe(Effect.provide(layer))
+      const handler = HttpEffect.toWebHandler(operation)
       const response = await handler(new Request('https://flowdeck.example/'))
       expect(response.status).toBe(status)
       await expect(response.text()).resolves.toBe(message)
       expect(control).not.toHaveBeenCalled()
     },
   )
+})
 
-  live('keeps independently constructed Control clients bound to their own request environment', () =>
+const requestApi = Effect.fn('flowdeck.test.constructRequestControlClient')(function* (binding: ControlBinding) {
+  const layer = completeLayer({ ...env, CONTROL: binding }, admitted())
+  return yield* ControlApi.pipe(Effect.provide(layer))
+})
+
+const workflowResponse = (name: string): Response =>
+  Response.json({ workflows: [{ inputs: [], name, versions: ['1.0.0'], workflowId: 'demo' }] })
+
+const respondWithCatalog =
+  (name: string): ControlBinding['fetch'] =>
+  // oxlint-disable-next-line typescript/promise-function-async -- The native binding resolves a fresh response for each call.
+  () =>
+    Promise.resolve(workflowResponse(name))
+
+const parseVersion = Schema.decodeEffect(Schema.SemVerFromString)
+interface RecordedRequest {
+  body: unknown
+  method: string
+  url: string
+}
+
+describe('frontend native Control adapter', () => {
+  live('keeps each independently constructed client bound to its request environment', () =>
     Effect.gen(function* () {
-      const firstFetch = vi.fn(async () => Response.json(catalog('First request')))
-      const secondFetch = vi.fn(async () => Response.json(catalog('Second request')))
-      const firstApi = yield* ControlApi.pipe(
-        Effect.provide(
-          completeLayer({ FLOWDECK_ACCESS_AUD: 'flowdeck-audience', CONTROL: { fetch: firstFetch } }, admitted()),
-        ),
-      )
-      const secondApi = yield* ControlApi.pipe(
-        Effect.provide(
-          completeLayer({ FLOWDECK_ACCESS_AUD: 'flowdeck-audience', CONTROL: { fetch: secondFetch } }, admitted()),
-        ),
-      )
-      // Calls have no ambient HttpClient or WorkerEnvironment. Construction captured each capability.
+      const firstFetch = vi.fn<ControlBinding['fetch']>().mockImplementation(respondWithCatalog('First request'))
+      const secondFetch = vi.fn<ControlBinding['fetch']>().mockImplementation(respondWithCatalog('Second request'))
+      const firstApi = yield* requestApi({ fetch: firstFetch })
+      const secondApi = yield* requestApi({ fetch: secondFetch })
+      // Calls have no ambient HttpClient or WorkerEnvironment. Construction captured each binding.
       const [first, second, firstAgain] = yield* Effect.all(
         [firstApi.workflows, secondApi.workflows, firstApi.workflows],
         { concurrency: 'unbounded' },
@@ -107,23 +144,20 @@ describe('frontend request composition', () => {
     }),
   )
 
-  live('uses the native binding only at the HTTP adapter and preserves mutation method and JSON body', () =>
+  live('uses the native binding at the HTTP adapter and preserves the mutation method and JSON body', () =>
     Effect.gen(function* () {
-      const seen: { method: string; url: string; body: unknown }[] = []
-      const fetch = vi.fn(async (request: Request) => {
-        seen.push({ method: request.method, url: request.url, body: await request.json() })
-        return Response.json({ error: 'unavailable' }, { status: 503 })
+      const seen: RecordedRequest[] = []
+      const fetch = vi.fn<ControlBinding['fetch']>(async (request) => {
+        const body: unknown = await request.json()
+        seen.push({ body, method: request.method, url: request.url })
+        return Response.json({ error: 'unavailable' }, { status: HttpStatus.serviceUnavailable })
       })
-      const api = yield* ControlApi.pipe(
-        Effect.provide(completeLayer({ FLOWDECK_ACCESS_AUD: 'flowdeck-audience', CONTROL: { fetch } }, admitted())),
-      )
-      // The real domain codec emits SemVer as a string before the adapter converts the request.
-      const result = yield* api
-        .start({ workflowId: 'demo', version: Schema.decodeUnknownSync(Schema.SemVerFromString)('1.0.0') })
-        .pipe(Effect.result)
-      expect(result).toMatchObject({ _tag: 'Failure', failure: { _tag: 'ControlError' } })
+      const api = yield* requestApi({ fetch })
+      const version = yield* parseVersion('1.0.0')
+      const failure = yield* api.start({ version, workflowId: 'demo' }).pipe(Effect.flip)
+      expect(failure).toBeInstanceOf(ControlError)
       expect(seen).toStrictEqual([
-        { body: { workflowId: 'demo', version: '1.0.0' }, method: 'POST', url: 'https://control.internal/api/runs' },
+        { body: { version: '1.0.0', workflowId: 'demo' }, method: 'POST', url: 'https://control.internal/api/runs' },
       ])
     }),
   )
