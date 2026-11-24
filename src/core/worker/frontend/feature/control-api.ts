@@ -1,36 +1,44 @@
-import { Context, Data, Effect, Schema } from 'effect'
+import { Context, Effect, Schema } from 'effect'
 import { HttpClient, HttpClientRequest, HttpClientResponse } from 'effect/http'
 
 import type { RunId } from '@/core/feature/workflow/domain/identity'
 import { CreateRun, RunDetail, RunsResponse, WorkflowsResponse } from '@/core/feature/workflow/domain/model'
 
+import { ControlError } from './control-error.ts'
+
+export { ControlError } from './control-error.ts'
+
 const encodeCreateRun = Schema.encodeEffect(Schema.toCodecJson(CreateRun))
 
-export class ControlError extends Data.TaggedError('ControlError')<
-  Readonly<{
-    message: string
-  }>
-> {}
+type DecodeResponse<A, E> = (response: HttpClientResponse.HttpClientResponse) => Effect.Effect<A, E>
+type RequestResponse<A> = (outgoing: HttpClientRequest.HttpClientRequest) => Effect.Effect<A, ControlError>
 
-const makeRequest = <A, E>(decodeResponse: (response: HttpClientResponse.HttpClientResponse) => Effect.Effect<A, E>) =>
-  Effect.map(
-    HttpClient.HttpClient,
-    (client) => (outgoing: HttpClientRequest.HttpClientRequest) =>
-      client.execute(outgoing).pipe(
+const invalidResponse = (): ControlError =>
+  new ControlError({ message: 'The control plane could not complete this request. Refresh and try again.' })
+
+const startFailed = (): ControlError =>
+  new ControlError({ message: 'The run could not be started. Refresh and try again.' })
+
+const makeRequest =
+  <A, E>(client: HttpClient.HttpClient, decodeResponse: DecodeResponse<A, E>): RequestResponse<A> =>
+  (outgoing) =>
+    client
+      .execute(outgoing)
+      .pipe(
         Effect.flatMap(HttpClientResponse.filterStatusOk),
         Effect.flatMap(decodeResponse),
-        Effect.mapError(
-          () =>
-            new ControlError({ message: 'The control plane could not complete this request. Refresh and try again.' }),
-        ),
-      ),
-  )
+        Effect.mapError(invalidResponse),
+      )
+
 const decodeWorkflowsResponse = HttpClientResponse.schemaBodyJson(Schema.toCodecJson(WorkflowsResponse))
 const decodeRunsResponse = HttpClientResponse.schemaBodyJson(Schema.toCodecJson(RunsResponse))
 const decodeRunDetail = HttpClientResponse.schemaBodyJson(Schema.toCodecJson(RunDetail))
-const makeWorkflowsRequest = makeRequest(decodeWorkflowsResponse)
-const makeRunsRequest = makeRequest(decodeRunsResponse)
-const makeRunDetailRequest = makeRequest(decodeRunDetail)
+const controlUrl = (path: string): string => `https://control.internal/api${path}`
+const workflowsRequest = HttpClientRequest.get(controlUrl('/workflows'))
+const runsRequest = HttpClientRequest.get(controlUrl('/runs'))
+const startRunRequest = HttpClientRequest.post(controlUrl('/runs'))
+
+const runPath = (runId: RunId): string => `/runs/${encodeURIComponent(runId)}`
 
 /** The only data capability exposed to Effront. Transport is supplied by the Worker. */
 export class ControlApi extends Context.Service<
@@ -45,22 +53,26 @@ export class ControlApi extends Context.Service<
 >()('flowdeck/web/ControlApi') {}
 
 export const makeControlApi = Effect.gen(function* () {
-  const requestWorkflows = yield* makeWorkflowsRequest
-  const requestRuns = yield* makeRunsRequest
-  const requestRunDetail = yield* makeRunDetailRequest
-  const url = (path: string): string => `https://control.internal/api${path}`
+  const client = yield* HttpClient.HttpClient
+  const requestWorkflows = makeRequest(client, decodeWorkflowsResponse)
+  const requestRuns = makeRequest(client, decodeRunsResponse)
+  const requestRunDetail = makeRequest(client, decodeRunDetail)
   return ControlApi.of({
-    workflows: requestWorkflows(HttpClientRequest.get(url('/workflows'))),
-    runs: requestRuns(HttpClientRequest.get(url('/runs'))),
-    detail: (runId) => requestRunDetail(HttpClientRequest.get(url(`/runs/${encodeURIComponent(runId)}`))),
+    detail: (runId) => {
+      const url = controlUrl(runPath(runId))
+      return requestRunDetail(HttpClientRequest.get(url))
+    },
+    resume: (runId) => {
+      const url = controlUrl(`${runPath(runId)}/resume`)
+      return requestRunDetail(HttpClientRequest.post(url))
+    },
+    runs: requestRuns(runsRequest),
     start: (input) =>
       Effect.gen(function* () {
         const payload = yield* encodeCreateRun(input)
-        const request = yield* HttpClientRequest.post(url('/runs')).pipe(HttpClientRequest.bodyJson(payload))
+        const request = yield* startRunRequest.pipe(HttpClientRequest.bodyJson(payload))
         return yield* requestRunDetail(request)
-      }).pipe(
-        Effect.mapError(() => new ControlError({ message: 'The run could not be started. Refresh and try again.' })),
-      ),
-    resume: (runId) => requestRunDetail(HttpClientRequest.post(url(`/runs/${encodeURIComponent(runId)}/resume`))),
+      }).pipe(Effect.mapError(startFailed)),
+    workflows: requestWorkflows(workflowsRequest),
   })
 })
