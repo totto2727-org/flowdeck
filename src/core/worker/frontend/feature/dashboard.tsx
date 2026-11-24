@@ -10,11 +10,12 @@ import { Badge } from './components/generated/badge.tsx'
 import { Button } from './components/generated/button.tsx'
 import { Card, CardContent } from './components/generated/card.tsx'
 import { NodeInspector, RunGraph } from './graph.tsx'
-import { eventLabel, orderedEvents, renderJson, runRecoveryAction, shortId } from './presentation.ts'
+import { renderJson, runRecoveryAction, shortId } from './presentation.ts'
+import { RunEvents } from './run-events.tsx'
 import { loadDashboard, resumeRun, selectRun, startRun } from './server.ts'
 import type { DashboardData, Result } from './server.ts'
 import { ThemeToggle } from './theme-toggle.tsx'
-import type { RunDetail, RunEvent } from './view-model.ts'
+import type { RunDetail } from './view-model.ts'
 
 function Status({ value }: Readonly<{ value: string }>) {
   return (
@@ -26,88 +27,6 @@ function Status({ value }: Readonly<{ value: string }>) {
       <span className='inline-block size-[5px] rounded-full bg-current' />
       {value}
     </Badge>
-  )
-}
-
-function Events({
-  events,
-  selectedNode,
-}: Readonly<{
-  events: Readonly<RunEvent[]>
-  selectedNode: NodeId | null
-}>) {
-  const [nodeOnly, setNodeOnly] = useState(false)
-  const visible = orderedEvents(
-    nodeOnly && selectedNode
-      ? Array.filter(events, (event) => 'nodeId' in event && event.nodeId === selectedNode)
-      : events,
-  )
-  return (
-    <section
-      className='[&>div:first-child]:mb-4 [&>div:first-child]:items-start max-[1100px]:[&>div:first-child]:flex-wrap [&>div:first-child>p]:text-[10px]'
-      aria-label='Persisted events'
-    >
-      <div className='flex items-center justify-between gap-3.5'>
-        <p className='text-[13px] text-muted-foreground'>
-          {Array.length(visible)} committed events · ordered by sequence
-        </p>
-        <label className='flex items-center gap-1.5 text-[9px] whitespace-nowrap text-[#788d7e] dark:text-muted-foreground'>
-          <input
-            className='accent-primary'
-            type='checkbox'
-            checked={nodeOnly}
-            disabled={Predicate.isNull(selectedNode)}
-            onChange={(event) => {
-              setNodeOnly(event.target.checked)
-            }}
-          />
-          Selected node only
-        </label>
-      </div>
-      {Array.length(visible) === 0 ? (
-        <p className='py-5 text-[11px] text-[#82988a] dark:text-muted-foreground'>No events for this selection.</p>
-      ) : (
-        <ol className='m-0 list-none p-0 [&>li]:flex [&>li]:items-start [&>li]:gap-3 [&>li]:border-t [&>li]:border-[#edf1ee] [&>li]:py-3 dark:[&>li]:border-border [&_details]:min-w-0 [&_details]:flex-1 [&_summary]:cursor-pointer [&_summary]:text-[10px] [&_summary]:leading-[22px] [&_details[open]_summary]:mb-3 [&_summary_code]:text-[9px] [&_summary_code]:text-[#8a9e90] dark:[&_summary_code]:text-muted-foreground [&_time]:block [&_time]:text-[8px] [&_time]:leading-[1.4] [&_time]:wrap-anywhere [&_time]:text-[#91a497] dark:[&_time]:text-muted-foreground'>
-          {Array.map(visible, (event) => (
-            <li key={event.eventId}>
-              <span className='w-[22px] shrink-0 rounded-sm bg-[#f1f6f2] text-center text-[9px] leading-[22px] text-[#8ea395] dark:bg-secondary dark:text-[#b0e6c6]'>
-                {event.sequence}
-              </span>
-              <details>
-                <summary>
-                  <span className='mr-2.5 font-[550] text-[#526c5b] capitalize dark:text-foreground'>
-                    {eventLabel(event.type)}
-                  </span>
-                  <code>{'nodeId' in event ? event.nodeId : 'run'}</code>
-                  <time dateTime={event.createdAt}>{event.createdAt}</time>
-                </summary>
-                <dl className='mt-[17px] grid grid-cols-2 gap-x-5 gap-y-3 [&_dt]:mb-1 [&_dt]:text-[9px] [&_dt]:tracking-[0.7px] [&_dt]:text-[#8a998e] [&_dt]:uppercase [&_dd]:m-0 [&_dd]:text-[11px] [&_dd]:wrap-anywhere [&_dd]:text-[#576f5f] dark:[&_dt]:text-muted-foreground dark:[&_dd]:text-foreground'>
-                  <div>
-                    <dt>Event ID</dt>
-                    <dd>
-                      <code>{event.eventId}</code>
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Execution ID</dt>
-                    <dd>
-                      <code>{'executionId' in event ? event.executionId : 'Run event'}</code>
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Attempt</dt>
-                    <dd>{'attempt' in event ? event.attempt : 'Not applicable'}</dd>
-                  </div>
-                </dl>
-                <pre className='mt-3.5 max-h-[400px] overflow-auto rounded-md border border-[#e7eee9] bg-[#f6f9f7] p-[15px] font-mono text-[10px] whitespace-pre-wrap wrap-anywhere text-[#537360] dark:border-border dark:bg-[#101a14] dark:text-[#b5e4c6]'>
-                  {renderJson(event.payload)}
-                </pre>
-              </details>
-            </li>
-          ))}
-        </ol>
-      )}
-    </section>
   )
 }
 
@@ -245,7 +164,7 @@ function SelectedRun({
           </div>
         </div>
         {view === 'events' ? (
-          <Events events={detail.events} selectedNode={node} />
+          <RunEvents events={detail.events} selectedNode={node} />
         ) : (
           <div className='[&>div:first-child]:mb-4 [&>div:first-child]:items-start [&_p]:text-[10px]'>
             <div className='flex items-center justify-between gap-3.5'>

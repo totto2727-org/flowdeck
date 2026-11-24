@@ -1,10 +1,11 @@
 import { Array, Option, Predicate } from 'effect'
-import type { ReactElement, ReactNode } from 'react'
+import type { ReactElement } from 'react'
 
 import type { NodeId } from '@/core/feature/workflow/domain/identity'
 import type { NodeShape } from '@/core/feature/workflow/domain/model'
 
 import { badgeVariants } from './components/generated/badge.tsx'
+import { detailField } from './detail-field.tsx'
 import { cn } from './lib/utils.ts'
 import { latestExecution, nodeEvents, renderJson } from './presentation.ts'
 import type { ExecutionEvent } from './presentation.ts'
@@ -27,13 +28,6 @@ const empty = (
       Select a node to inspect its executions. Use Tab and Enter, or arrow keys inside the graph.
     </p>
   </section>
-)
-
-const field = (label: string, value: ReactNode): ReactElement => (
-  <div>
-    <dt>{label}</dt>
-    <dd>{value}</dd>
-  </div>
 )
 
 type InspectorProps = Readonly<{ detail: RunDetail; nodeId: NodeId | null }>
@@ -85,10 +79,10 @@ export function NodeInspector({ detail, nodeId }: InspectorProps): ReactElement 
   const heading = inspectorHeading(node)
   const properties = (
     <dl className='mt-[17px] grid grid-cols-2 gap-x-5 gap-y-3 [&_dt]:mb-1 [&_dt]:text-[9px] [&_dt]:tracking-[0.7px] [&_dt]:text-[#8a998e] [&_dt]:uppercase [&_dd]:m-0 [&_dd]:text-[11px] [&_dd]:wrap-anywhere [&_dd]:text-[#576f5f] dark:[&_dt]:text-muted-foreground dark:[&_dd]:text-foreground [&_code]:font-mono [&_code]:text-[0.9em]'>
-      {field('Node ID', <code>{node.nodeId}</code>)}
-      {field('Kind', node.kind)}
-      {field('Execution', <code>{execution?.executionId ?? 'Not started'}</code>)}
-      {field('Attempt', execution?.attempt ?? 'Not started')}
+      {detailField('Node ID', <code>{node.nodeId}</code>)}
+      {detailField('Kind', node.kind)}
+      {detailField('Execution', <code>{execution?.executionId ?? 'Not started'}</code>)}
+      {detailField('Attempt', execution?.attempt ?? 'Not started')}
     </dl>
   )
   const payload = Predicate.isNotNullish(latest) && (
