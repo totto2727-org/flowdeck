@@ -1,10 +1,11 @@
-import { Cause, Effect, Schema, flow } from 'effect'
+import { Cause, Data, Effect, Schema, flow } from 'effect'
 
 import { ExternalError } from '@/core/feature/workflow/domain/errors'
 import type { RunId } from '@/core/feature/workflow/domain/identity'
 import { CreateRun, RunDetail, RunsResponse, WorkflowsResponse } from '@/core/feature/workflow/domain/model'
 
 import { rpcResult } from './boundary.ts'
+import type { RemoteWorkerError } from './problem.ts'
 
 export const RpcCreateRun = Schema.toCodecJson(CreateRun)
 export const RpcRunDetail = Schema.toCodecJson(RunDetail)
@@ -29,7 +30,12 @@ export type WireWorkflowExecutor<R = never> = Readonly<{
   resume: (runId: RunId) => Effect.Effect<string, never, R>
 }>
 
-/**
+class RpcBoundaryFailure extends Data.TaggedError('RpcBoundaryFailure')<Readonly<{ message: string }>> {}
+
+const rpcFailure = (operation: string, message: string): ExternalError =>
+  new ExternalError({ cause: new RpcBoundaryFailure({ message }), kind: 'service', operation })
+
+/*
  * Apply only to the native Alchemy RPC call, before decoding its application reply.
  * The official stub decodes SDK error envelopes into failures before rpcValue can
  * validate the JSON-only protocol, and exposes no client error middleware hook.
@@ -44,29 +50,30 @@ export const rpcCall =
       Effect.catchCause((cause) =>
         Cause.hasInterruptsOnly(cause)
           ? Effect.interrupt
-          : Effect.fail(new ExternalError({ operation, kind: 'service', cause: new Error('RPC service call failed') })),
+          : Effect.fail(rpcFailure(operation, 'RPC service call failed')),
       ),
     )
 
-const makeRpcValueDecoder = <S extends Schema.Constraint>(schema: S) => {
+type RpcReplyFailure = ExternalError | RemoteWorkerError
+type DecodeReply<S extends Schema.Constraint> = (
+  response: unknown,
+) => Effect.Effect<S['Type'], RpcReplyFailure, S['DecodingServices']>
+
+const makeRpcValueDecoder = <S extends Schema.Constraint>(schema: S): ((operation: string) => DecodeReply<S>) => {
+  // oxlint-disable-next-line rules/require-top-level-decoder, rules/prefer-non-unknown-decode -- This factory receives a runtime schema and validates an untrusted peer value against it.
   const decode = Schema.decodeUnknownEffect(schema, { onExcessProperty: 'error' })
   return (operation: string) => (response: unknown) =>
     rpcResult(operation)(response).pipe(
       Effect.flatMap(decode),
       Effect.catchTag('SchemaError', () =>
-        Effect.fail(
-          new ExternalError({
-            operation,
-            kind: 'service',
-            cause: new Error('RPC response does not match the expected value schema'),
-          }),
-        ),
+        Effect.fail(rpcFailure(operation, 'RPC response does not match the expected value schema')),
       ),
     )
 }
 
-export const rpcValue = <S extends Schema.Constraint>(operation: string, schema: S) =>
+export const rpcValue = <S extends Schema.Constraint>(operation: string, schema: S): DecodeReply<S> =>
   makeRpcValueDecoder(schema)(operation)
 
 const decodeCommandReply = makeRpcValueDecoder(Schema.Null)
-export const rpcCommandResult = (operation: string) => flow(decodeCommandReply(operation), Effect.asVoid)
+export const rpcCommandResult = (operation: string): ((response: unknown) => Effect.Effect<void, RpcReplyFailure>) =>
+  flow(decodeCommandReply(operation), Effect.asVoid)
