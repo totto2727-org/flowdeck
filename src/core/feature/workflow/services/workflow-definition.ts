@@ -7,12 +7,12 @@ import type { CreateRun, GraphDefinition, JsonObject, WorkflowSummary } from '@/
 import type { WorkflowFailure } from './failures.ts'
 
 /** Each workflow owns input validation, supported versions, and its initial checkpoint. */
-export interface WorkflowDefinition {
-  readonly summary: WorkflowSummary
-  readonly prepare: (
+export type WorkflowDefinition = Readonly<{
+  summary: WorkflowSummary
+  prepare: (
     input: CreateRun,
   ) => Effect.Effect<Readonly<{ graph: GraphDefinition; snapshot: JsonObject }>, Schema.SchemaError>
-}
+}>
 
 /** Static execution binding supplied by the application's composition root. */
 export type WorkflowExecutor = Readonly<{
@@ -20,9 +20,7 @@ export type WorkflowExecutor = Readonly<{
   resume: (runId: RunId) => Effect.Effect<void, WorkflowFailure>
 }>
 
-export interface RegisteredWorkflow extends WorkflowDefinition {
-  readonly binding: WorkflowExecutor
-}
+export type RegisteredWorkflow = WorkflowDefinition & Readonly<{ binding: WorkflowExecutor }>
 
 export class WorkflowRegistry extends Context.Service<WorkflowRegistry, Readonly<RegisteredWorkflow[]>>()(
   'flowdeck/WorkflowRegistry',
