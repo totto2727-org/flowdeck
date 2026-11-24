@@ -13,6 +13,7 @@ import {
 } from '@/core/feature/workflow/domain/model'
 import type { WorkflowFailure } from '@/core/feature/workflow/services/failures'
 import { Workflows } from '@/core/feature/workflow/services/workflows'
+import { HttpStatus } from '@/share/feature/http/status'
 import { operationFailureLogging } from '@/share/feature/operation-logging'
 
 type ApiFailure =
@@ -75,19 +76,29 @@ const ApiErrors = HttpRouter.middleware<{ handles: ApiFailure }>()((handler) =>
           ),
           error.cause.detail,
         ),
-      NotFound: () => errorResponse(404, 'NotFound', 'Run or graph not found'),
-      Conflict: () => errorResponse(409, 'Conflict', 'Run changed concurrently or a delivery ID was reused'),
-      StorageConflict: () => errorResponse(409, 'Conflict', 'Run changed concurrently or a delivery ID was reused'),
-      InvalidOperation: (error) => errorResponse(409, 'InvalidOperation', error.message),
-      InvalidSnapshot: () => errorResponse(409, 'InvalidSnapshot', 'Persisted workflow state is invalid'),
-      PlatformError: () => errorResponse(500, 'PlatformError', 'Run identity could not be generated'),
+      NotFound: () => errorResponse(HttpStatus.notFound, 'NotFound', 'Run or graph not found'),
+      Conflict: () =>
+        errorResponse(HttpStatus.conflict, 'Conflict', 'Run changed concurrently or a delivery ID was reused'),
+      StorageConflict: () =>
+        errorResponse(HttpStatus.conflict, 'Conflict', 'Run changed concurrently or a delivery ID was reused'),
+      InvalidOperation: (error) => errorResponse(HttpStatus.conflict, 'InvalidOperation', error.message),
+      InvalidSnapshot: () =>
+        errorResponse(HttpStatus.conflict, 'InvalidSnapshot', 'Persisted workflow state is invalid'),
+      PlatformError: () =>
+        errorResponse(HttpStatus.internalServerError, 'PlatformError', 'Run identity could not be generated'),
       ExternalError: (error) =>
         error.kind === 'storage'
-          ? errorResponse(500, 'ExternalError', 'Persistence operation failed')
-          : errorResponse(502, 'ExternalError', 'Workflow worker is unavailable. The run remains persisted'),
-      SchemaError: () => errorResponse(400, 'InvalidRequest', 'Request does not match the API schema'),
-      HttpServerError: () => errorResponse(400, 'InvalidRequest', 'Request body could not be read'),
-      HttpBodyError: () => errorResponse(500, 'EncodingError', 'Response could not be encoded'),
+          ? errorResponse(HttpStatus.internalServerError, 'ExternalError', 'Persistence operation failed')
+          : errorResponse(
+              HttpStatus.badGateway,
+              'ExternalError',
+              'Workflow worker is unavailable. The run remains persisted',
+            ),
+      SchemaError: () =>
+        errorResponse(HttpStatus.badRequest, 'InvalidRequest', 'Request does not match the API schema'),
+      HttpServerError: () => errorResponse(HttpStatus.badRequest, 'InvalidRequest', 'Request body could not be read'),
+      HttpBodyError: () =>
+        errorResponse(HttpStatus.internalServerError, 'EncodingError', 'Response could not be encoded'),
     }),
   ),
 )
@@ -97,7 +108,11 @@ const ServerMutations = HttpRouter.middleware((handler) =>
   Effect.gen(function* () {
     const request = yield* HttpServerRequest.HttpServerRequest
     if (request.method === 'POST' && Headers.has(request.headers, 'origin')) {
-      return yield* errorResponse(403, 'Forbidden', 'Browser-originated control mutations are not allowed')
+      return yield* errorResponse(
+        HttpStatus.forbidden,
+        'Forbidden',
+        'Browser-originated control mutations are not allowed',
+      )
     }
     return yield* handler
   }),
@@ -133,7 +148,7 @@ export const ApiRoutes = HttpRouter.use((router) =>
         const input = yield* createRunBody
         const workflows = yield* Workflows
         return yield* respondRunDetail(yield* workflows.createRun(input), {
-          status: 201,
+          status: HttpStatus.created,
         })
       }),
     ),

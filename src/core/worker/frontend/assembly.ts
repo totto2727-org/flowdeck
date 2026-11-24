@@ -5,6 +5,7 @@ import { FetchHttpClient } from 'effect/http'
 import { frontendAuthorization } from '@/core/worker/frontend/feature/authorization'
 import { ControlApi, makeControlApi } from '@/core/worker/frontend/feature/control-api'
 import { makeWebWorker, WebWorker } from '@/core/worker/frontend/feature/worker'
+import { HttpStatus } from '@/share/feature/http/status'
 
 import { AccessDenied, authorizeAccess } from './access-auth.ts'
 
@@ -20,7 +21,9 @@ const decodeAccessEnvironment = Schema.decodeUnknownEffect(AccessEnvironment)
 export const accessAudienceFromEnvironment = (environment: unknown): Effect.Effect<{ aud: string }, AccessDenied> =>
   decodeAccessEnvironment(environment).pipe(
     Effect.map(({ FLOWDECK_ACCESS_AUD }) => ({ aud: FLOWDECK_ACCESS_AUD })),
-    Effect.mapError(() => new AccessDenied({ message: 'Access is not configured.', status: 503 })),
+    Effect.mapError(
+      () => new AccessDenied({ message: 'Access is not configured.', status: HttpStatus.serviceUnavailable }),
+    ),
   )
 
 /** Construct inside each request. Missing configuration remains a checked middleware failure. */

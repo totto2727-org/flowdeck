@@ -1,11 +1,16 @@
 import { Array, Schema, SemVer, String } from 'effect'
 
+const maximumRepositoryUrlLength = 256
+const repositoryPathSegments = 3
+const leadingSeparatorSegments = 1
+const maximumTaskLength = 16_000
+
 /** Repository policy is expressed on the native URL, not its persistence representation. */
 export const PublicRepository = Schema.URL.check(
   Schema.makeFilter((url) => {
     const segments = String.split(url.pathname, '/')
     return (
-      String.length(url.href) <= 256 &&
+      String.length(url.href) <= maximumRepositoryUrlLength &&
       !String.includes('?')(url.href) &&
       !String.includes('#')(url.href) &&
       url.protocol === 'https:' &&
@@ -13,13 +18,16 @@ export const PublicRepository = Schema.URL.check(
       String.isEmpty(url.port) &&
       String.isEmpty(url.username) &&
       String.isEmpty(url.password) &&
-      segments.length === 3 &&
-      Array.every(Array.drop(segments, 1), (segment) => String.isNonEmpty(segment) && !String.includes('%')(segment))
+      segments.length === repositoryPathSegments &&
+      Array.every(
+        Array.drop(segments, leadingSeparatorSegments),
+        (segment) => String.isNonEmpty(segment) && !String.includes('%')(segment),
+      )
     )
   }),
 )
 export const DevelopmentTask = Schema.String.check(
-  Schema.isMaxLength(16_000),
+  Schema.isMaxLength(maximumTaskLength),
   Schema.makeFilter((task) => String.isNonEmpty(String.trim(task))),
 )
 export const developmentVersion = SemVer.make({ major: 1, minor: 0, patch: 0 })
