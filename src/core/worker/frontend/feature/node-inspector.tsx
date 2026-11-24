@@ -30,7 +30,7 @@ const empty = (
   </section>
 )
 
-type InspectorProps = Readonly<{ detail: RunDetail; nodeId: NodeId | null }>
+type InspectorProps = Readonly<{ detail: RunDetail; nodeId: NodeId | null | undefined }>
 
 type EventDetails = Readonly<{
   events: RunDetail['events']

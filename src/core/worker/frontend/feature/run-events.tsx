@@ -11,7 +11,7 @@ import type { RunEvent } from './view-model.ts'
 
 type RunEventsProps = Readonly<{
   events: Readonly<RunEvent[]>
-  selectedNode: NodeId | null
+  selectedNode: NodeId | null | undefined
 }>
 
 // oxlint-disable-next-line eslint/func-style -- The shared React rule requires a declaration for named components.

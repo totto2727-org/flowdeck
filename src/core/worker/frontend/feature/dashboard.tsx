@@ -4,187 +4,17 @@ import { Array, Effect, Option, Predicate, Record } from 'effect'
 import { Activity, ArrowRight, Box, Check, ChevronRight, GitBranch, Layers, Play, RefreshCw } from 'lucide-react'
 import { Fragment, useState, useSyncExternalStore, useTransition } from 'react'
 
-import type { NodeId, RunId } from '@/core/feature/workflow/domain/identity'
+import type { RunId } from '@/core/feature/workflow/domain/identity'
 
 import { Badge } from './components/generated/badge.tsx'
 import { Button } from './components/generated/button.tsx'
 import { Card, CardContent } from './components/generated/card.tsx'
-import { NodeInspector, RunGraph } from './graph.tsx'
-import { renderJson, runRecoveryAction, shortId } from './presentation.ts'
-import { RunEvents } from './run-events.tsx'
+import { shortId } from './presentation.ts'
+import { RunStatus } from './run-status.tsx'
+import { SelectedRun } from './selected-run.tsx'
 import { loadDashboard, resumeRun, selectRun, startRun } from './server.ts'
 import type { DashboardData, Result } from './server.ts'
 import { ThemeToggle } from './theme-toggle.tsx'
-import type { RunDetail } from './view-model.ts'
-
-function Status({ value }: Readonly<{ value: string }>) {
-  return (
-    <Badge
-      variant='outline'
-      data-state={value}
-      className='h-[21px] gap-1.25 border-[#e0e7e2] bg-[#f4f6f5] text-[10px] font-medium text-[#697c70] capitalize dark:border-[#4c6154] dark:bg-[#27362e] dark:text-[#bdd0c3] data-[state=completed]:border-[#d5e9d9] data-[state=completed]:bg-[#eef7ef] data-[state=completed]:text-[#337246] data-[state=succeeded]:border-[#d5e9d9] data-[state=succeeded]:bg-[#eef7ef] data-[state=succeeded]:text-[#337246] data-[state=waiting]:border-[#efe3b7] data-[state=waiting]:bg-[#fffae9] data-[state=waiting]:text-[#8a691a] data-[state=running]:border-[#ccdef6] data-[state=running]:bg-[#eef5ff] data-[state=running]:text-[#3f6bb7] data-[state=failed]:border-[#f1cdd1] data-[state=failed]:bg-[#fff1f2] data-[state=failed]:text-[#a9434c] dark:data-[state=completed]:border-[#4d805e] dark:data-[state=completed]:bg-[#1e3929] dark:data-[state=completed]:text-[#a0dfb2] dark:data-[state=succeeded]:border-[#4d805e] dark:data-[state=succeeded]:bg-[#1e3929] dark:data-[state=succeeded]:text-[#a0dfb2] dark:data-[state=waiting]:border-[#78652f] dark:data-[state=waiting]:bg-[#372f1c] dark:data-[state=waiting]:text-[#eed383] dark:data-[state=running]:border-[#5275a2] dark:data-[state=running]:bg-[#1e304a] dark:data-[state=running]:text-[#a9cdfb] dark:data-[state=failed]:border-[#945461] dark:data-[state=failed]:bg-[#3c2228] dark:data-[state=failed]:text-[#ffb4bf]'
-    >
-      <span className='inline-block size-[5px] rounded-full bg-current' />
-      {value}
-    </Badge>
-  )
-}
-
-function SelectedRun({
-  detail,
-  pending,
-  onResume,
-}: Readonly<{
-  detail: RunDetail
-  pending: boolean
-  onResume: () => void
-}>) {
-  const [node, setNode] = useState<NodeId | null>(null)
-  const [view, setView] = useState<'events' | 'state'>('events')
-  const recoveryAction = runRecoveryAction(detail.run.status)
-  return (
-    <>
-      <section
-        className='min-w-0 overflow-hidden rounded-[10px] border border-border bg-card'
-        aria-labelledby='selected-run-heading'
-      >
-        <div className='flex items-center justify-between gap-3.5 px-[23px] pt-[22px] pb-2.5 max-[1100px]:flex-wrap max-[1100px]:items-start max-[800px]:px-[17px]'>
-          <div>
-            <p className='mb-1.25 text-[10px] font-[650] tracking-[1.15px] text-[#78867f] uppercase dark:text-muted-foreground'>
-              Selected run
-            </p>
-            <h2 className='text-[17px] font-[620] tracking-[-0.35px]' id='selected-run-heading'>
-              Execution <span className='font-mono text-[0.9em]'>#{shortId(detail.run.runId)}</span>
-            </h2>
-          </div>
-          <div className='flex items-center gap-2'>
-            <Badge variant='secondary'>{detail.run.workflowVersion}</Badge>
-            <Status value={detail.run.status} />
-          </div>
-        </div>
-        <div className='flex flex-wrap gap-4 px-[23px] pb-5 text-[10px] text-[#7a8b80] dark:text-muted-foreground [&>span]:inline-flex [&>span]:items-center [&>span]:gap-1.25'>
-          <span>
-            <GitBranch size={14} />
-            {detail.run.workflowId}
-          </span>
-          <span>Revision {detail.state.revision}</span>
-          <span title={detail.run.graphId}>
-            Graph <code>{shortId(detail.run.graphId)}</code>
-          </span>
-        </div>
-        {Predicate.isNotNullish(recoveryAction) && (
-          <div className='flex items-center justify-between gap-4 border-y border-[#f3ebcc] bg-[#fffbed] px-5 py-[15px] dark:border-[#78652f] dark:bg-[#372f1c] dark:text-[#eed383] max-[1100px]:flex-col max-[1100px]:items-start [&_strong]:text-[12px] [&_strong]:font-semibold [&_strong]:text-[#7c6221] dark:[&_strong]:text-[#eed383] [&_p]:mt-[3px] [&_p]:max-w-[360px] [&_p]:text-[11px] [&_p]:text-[#9b854c] dark:[&_p]:text-[#eed383] [&_button]:shrink-0 [&_button]:text-[11px]'>
-            <div>
-              <strong>
-                {recoveryAction === 'resume' ? 'Waiting for an explicit resume' : 'Recover from committed state'}
-              </strong>
-              <p>
-                {recoveryAction === 'resume'
-                  ? `The committed state is retained. Resume continues this run with ${detail.run.workflowVersion}.`
-                  : `If execution was interrupted, recover this run with ${detail.run.workflowVersion}. Review its committed state and events first.`}
-              </p>
-            </div>
-            <Button type='button' disabled={pending} onClick={onResume}>
-              <Play />
-              {recoveryAction === 'resume' ? 'Resume run' : 'Recover run'}
-            </Button>
-          </div>
-        )}
-        <div className='flex items-center justify-between gap-3 border-t border-[#edf1ee] px-[22px] pt-4 pb-2.5 dark:border-border max-[1100px]:flex-col max-[1100px]:items-start [&>span]:mb-0'>
-          <span className='mb-1.25 text-[10px] font-[650] tracking-[1.15px] text-[#78867f] uppercase dark:text-muted-foreground'>
-            Workflow topology
-          </span>
-          <div className='flex gap-[11px] text-[9px] text-[#85948a] dark:text-muted-foreground max-[620px]:flex-wrap [&_span]:flex [&_span]:items-center [&_span]:gap-1'>
-            <span>
-              <i className='size-[5px] rounded-full bg-[#b4c2b9] dark:bg-[#a1b6a8]' />
-              Idle
-            </span>
-            <span>
-              <i className='size-[5px] rounded-full bg-[#5d8dce] dark:bg-[#a9cdfb]' />
-              Active
-            </span>
-            <span>
-              <i className='size-[5px] rounded-full bg-[#5c9c70] dark:bg-[#a0dfb2]' />
-              Succeeded
-            </span>
-            <span>
-              <i className='size-[5px] rounded-full bg-[#c4a44a] dark:bg-[#eed383]' />
-              Waiting
-            </span>
-          </div>
-        </div>
-        <RunGraph detail={detail} selectedNode={node} onSelect={setNode} />
-        <NodeInspector detail={detail} nodeId={node} />
-      </section>
-      <section
-        className='mt-5 min-w-0 overflow-hidden rounded-[10px] border border-border bg-card px-[23px] py-[22px] max-[800px]:px-[17px] [&>div:first-child]:mb-[18px] max-[1100px]:[&>div:first-child]:flex-col max-[1100px]:[&>div:first-child]:items-start max-[620px]:[&>div:first-child]:flex-row max-[620px]:[&>div:first-child]:flex-wrap max-[620px]:[&>div:first-child]:items-center'
-        aria-labelledby='trace-heading'
-      >
-        <div className='flex items-center justify-between gap-3.5'>
-          <div>
-            <p className='mb-1.25 text-[10px] font-[650] tracking-[1.15px] text-[#78867f] uppercase dark:text-muted-foreground'>
-              Source of truth
-            </p>
-            <h2 className='text-[17px] font-[620] tracking-[-0.35px]' id='trace-heading'>
-              State & events
-            </h2>
-          </div>
-          <div
-            className='flex gap-[3px] rounded-[7px] border border-[#e6ece8] p-[3px] dark:border-border [&_button]:text-[10px]'
-            aria-label='Trace view'
-          >
-            <Button
-              type='button'
-              size='sm'
-              variant={view === 'events' ? 'secondary' : 'ghost'}
-              aria-pressed={view === 'events'}
-              onClick={() => {
-                setView('events')
-              }}
-            >
-              Events{' '}
-              <span className='ml-1 inline-flex min-w-[20px] items-center justify-center rounded-sm bg-[#edf2ee] px-1.25 align-middle text-[10px] leading-[18px] font-medium text-[#65816c] dark:bg-secondary dark:text-[#b0e6c6]'>
-                {Array.length(detail.events)}
-              </span>
-            </Button>
-            <Button
-              type='button'
-              size='sm'
-              variant={view === 'state' ? 'secondary' : 'ghost'}
-              aria-pressed={view === 'state'}
-              onClick={() => {
-                setView('state')
-              }}
-            >
-              State{' '}
-              <span className='ml-1 inline-flex min-w-[20px] items-center justify-center rounded-sm bg-[#edf2ee] px-1.25 align-middle text-[10px] leading-[18px] font-medium text-[#65816c] dark:bg-secondary dark:text-[#b0e6c6]'>
-                r{detail.state.revision}
-              </span>
-            </Button>
-          </div>
-        </div>
-        {view === 'events' ? (
-          <RunEvents events={detail.events} selectedNode={node} />
-        ) : (
-          <div className='[&>div:first-child]:mb-4 [&>div:first-child]:items-start [&_p]:text-[10px]'>
-            <div className='flex items-center justify-between gap-3.5'>
-              <p className='text-[13px] text-muted-foreground'>
-                Last committed snapshot · revision {detail.state.revision}
-              </p>
-              <Badge variant='outline'>Read only</Badge>
-            </div>
-            <pre
-              className='mt-3.5 max-h-[400px] overflow-auto rounded-md border border-[#e7eee9] bg-[#f6f9f7] p-[15px] font-mono text-[10px] whitespace-pre-wrap wrap-anywhere text-[#537360] dark:border-border dark:bg-[#101a14] dark:text-[#b5e4c6]'
-              aria-label='Committed run state'
-            >
-              {renderJson(detail.state.snapshot)}
-            </pre>
-          </div>
-        )}
-      </section>
-    </>
-  )
-}
 
 // SSR controls stay inert until React has attached their event handlers.
 const subscribeHydration = () => () => undefined
@@ -583,7 +413,7 @@ export function Dashboard({ initial }: Readonly<{ initial: DashboardData }>) {
                           <Badge variant='secondary'>{run.workflowVersion}</Badge>
                         </span>
                         <span className='mt-2.5 mb-2 flex items-center justify-between gap-2 max-[620px]:my-1.5 [&>svg]:text-[#8da494] dark:[&>svg]:text-muted-foreground'>
-                          <Status value={run.status} />
+                          <RunStatus value={run.status} />
                           <ArrowRight size={14} />
                         </span>
                         <time dateTime={run.createdAt}>{run.createdAt}</time>

@@ -16,7 +16,7 @@ export { NodeInspector } from './node-inspector.tsx'
 type RunGraphProps = Readonly<{
   detail: RunDetail
   onSelect: (nodeId: NodeId) => void
-  selectedNode: NodeId | null
+  selectedNode: NodeId | null | undefined
 }>
 
 const firstNodeNumber = 1
