@@ -2,7 +2,7 @@ import { ok } from 'node:assert/strict'
 
 import { Cause, Context, Crypto, Effect, Exit, Layer, Logger, Option, References } from 'effect'
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from 'effect/http'
-import { describe, expect, it } from 'vite-plus/test'
+import { describe, expect, test } from 'vite-plus/test'
 
 import { Conflict, ExternalError, StorageConflict } from '@/core/feature/workflow/domain/errors'
 import { rpcResponse, rpcResult } from '@/core/feature/workflow/rpc/boundary'
@@ -34,7 +34,7 @@ const capture = <A, E>(effect: Effect.Effect<A, E, HttpServerRequest.HttpServerR
 }
 
 describe('operation failure logging', () => {
-  it.each(['storage', 'conflict'] as const)('logs the original %s stack only at the child RPC boundary', (kind) => {
+  test.each(['storage', 'conflict'] as const)('logs the original %s stack only at the child RPC boundary', (kind) => {
     const original = new Error('D1 execution failed')
     original.stack = 'Error: D1 execution failed\n    at executeQuery (database.ts:42:7)'
     const error =
@@ -57,7 +57,7 @@ describe('operation failure logging', () => {
     expect(exit.value).not.toContain('D1 execution failed')
     expect(entries[0]!.annotations).toMatchObject({ errorId: local.cause.instance })
   })
-  it.each(['domain', 'storage'] as const)(
+  test.each(['domain', 'storage'] as const)(
     'returns the same sanitized HTTP conflict after RPC for a %s conflict',
     async (kind) => {
       const original = new Error('private database constraint')
@@ -90,13 +90,13 @@ describe('operation failure logging', () => {
           Context.make(Logger.CurrentLoggers, new Set([logger])),
         )
         expect(response.status).toBe(409)
-        expect(await response.json()).toEqual({
+        await expect(response.json()).resolves.toStrictEqual({
           error: 'Conflict',
           message: local.cause.detail,
         })
         expect(entries).toHaveLength(1)
         expect(child.entries).toHaveLength(1)
-        expect(entries[0]?.cause).toEqual(Cause.fail(local))
+        expect(entries[0]?.cause).toStrictEqual(Cause.fail(local))
         expect(Cause.pretty(entries[0]!.cause)).not.toContain('private database constraint')
         expect(child.entries[0]!.annotations).toMatchObject({ errorId: local.cause.instance })
       } finally {
@@ -104,7 +104,7 @@ describe('operation failure logging', () => {
       }
     },
   )
-  it.each(['typed failure', 'defect'] as const)(
+  test.each(['typed failure', 'defect'] as const)(
     'logs a real Control request %s once with the original stack',
     async (failure) => {
       const original = new Error('private database failure')
@@ -129,10 +129,13 @@ describe('operation failure logging', () => {
         )
         expect(response.status).toBe(500)
         if (failure === 'typed failure') {
-          expect(await response.json()).toEqual({ error: 'ExternalError', message: 'Persistence operation failed' })
+          await expect(response.json()).resolves.toStrictEqual({
+            error: 'ExternalError',
+            message: 'Persistence operation failed',
+          })
         }
         expect(entries).toHaveLength(1)
-        expect(entries[0]?.cause).toEqual(failure === 'typed failure' ? Cause.fail(error) : Cause.die(error))
+        expect(entries[0]?.cause).toStrictEqual(failure === 'typed failure' ? Cause.fail(error) : Cause.die(error))
         expect(Cause.prettyErrors(entries[0]!.cause)[0]?.cause).toMatchObject({ stack: original.stack })
       } finally {
         await handler.dispose()
@@ -140,24 +143,24 @@ describe('operation failure logging', () => {
     },
   )
 
-  it('logs a nested external error once with its original cause and stack, without changing the failure', () => {
+  test('logs a nested external error once with its original cause and stack, without changing the failure', () => {
     const original = new Error('D1 execution failed')
     original.stack = 'Error: D1 execution failed\n    at executeQuery (database.ts:42:7)'
     const error = new ExternalError({ operation: 'persist run', kind: 'storage', cause: original })
     const cause = Cause.fail(error)
     const { entries, exit } = capture(Effect.failCause(cause).pipe(operationFailureLogging))
 
-    expect(exit).toEqual(Exit.failCause(cause))
+    expect(exit).toStrictEqual(Exit.failCause(cause))
     expect(entries).toHaveLength(1)
     expect(entries[0]?.logLevel).toBe('Error')
-    expect(entries[0]?.message).toEqual(['HTTP operation failed'])
+    expect(entries[0]?.message).toStrictEqual(['HTTP operation failed'])
     expect(entries[0]?.cause).toBe(cause)
     expect(Cause.prettyErrors(entries[0]!.cause)[0]?.cause).toMatchObject({ stack: original.stack })
     expect(Cause.pretty(entries[0]!.cause)).toContain('at executeQuery (database.ts:42:7)')
     expect(error.cause).toBe(original)
   })
 
-  it('logs before response translation without adding a second failure log', () => {
+  test('logs before response translation without adding a second failure log', () => {
     const error = new ExternalError({ operation: 'call worker', kind: 'service', cause: new Error('offline') })
     const { entries, exit } = capture(
       Effect.fail(error).pipe(
@@ -166,43 +169,43 @@ describe('operation failure logging', () => {
       ),
     )
 
-    expect(exit).toEqual(Exit.succeed(HttpServerResponse.empty({ status: 502 })))
+    expect(exit).toStrictEqual(Exit.succeed(HttpServerResponse.empty({ status: 502 })))
     expect(entries).toHaveLength(1)
-    expect(entries[0]?.cause).toEqual(Cause.fail(error))
+    expect(entries[0]?.cause).toStrictEqual(Cause.fail(error))
   })
 
-  it('returns successful results without logging', () => {
+  test('returns successful results without logging', () => {
     const { entries, exit } = capture(
       Effect.succeed(HttpServerResponse.text('persisted')).pipe(operationFailureLogging),
     )
 
-    expect(exit).toEqual(Exit.succeed(HttpServerResponse.text('persisted')))
-    expect(entries).toEqual([])
+    expect(exit).toStrictEqual(Exit.succeed(HttpServerResponse.text('persisted')))
+    expect(entries).toStrictEqual([])
   })
 
-  it('leaves expected interruption unchanged without an error log', () => {
+  test('leaves expected interruption unchanged without an error log', () => {
     const cause = Cause.interrupt(123)
     const { entries, exit } = capture(Effect.failCause(cause).pipe(operationFailureLogging))
 
-    expect(exit).toEqual(Exit.failCause(cause))
-    expect(entries).toEqual([])
+    expect(exit).toStrictEqual(Exit.failCause(cause))
+    expect(entries).toStrictEqual([])
   })
 
-  it('logs defects without converting them into typed failures', () => {
+  test('logs defects without converting them into typed failures', () => {
     const defect = new Error('unexpected runtime defect')
     const cause = Cause.die(defect)
     const { entries, exit } = capture(Effect.failCause(cause).pipe(operationFailureLogging))
 
-    expect(exit).toEqual(Exit.failCause(cause))
+    expect(exit).toStrictEqual(Exit.failCause(cause))
     expect(entries).toHaveLength(1)
     expect(entries[0]?.cause).toBe(cause)
   })
 
-  it('does not hide a real failure when its cause also contains interruption', () => {
+  test('does not hide a real failure when its cause also contains interruption', () => {
     const cause = Cause.combine(Cause.die(new Error('runtime defect')), Cause.interrupt(123))
     const { entries, exit } = capture(Effect.failCause(cause).pipe(operationFailureLogging))
 
-    expect(exit).toEqual(Exit.failCause(cause))
+    expect(exit).toStrictEqual(Exit.failCause(cause))
     expect(entries).toHaveLength(1)
     expect(entries[0]?.cause).toBe(cause)
   })

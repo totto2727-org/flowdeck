@@ -3,7 +3,7 @@ import { makeRpcStub } from 'alchemy/Cloudflare/Workers'
 import { ErrorTag } from 'alchemy/Rpc'
 import { Cause, Context, Effect, Exit, Layer, Logger, Option, Schema } from 'effect'
 import { HttpRouter } from 'effect/http'
-import { describe, expect, expectTypeOf, it } from 'vite-plus/test'
+import { describe, expect, expectTypeOf, test } from 'vite-plus/test'
 
 import { Conflict, ExternalError } from '@/core/feature/workflow/domain/errors'
 import { Workflows } from '@/core/feature/workflow/services/workflows'
@@ -26,7 +26,7 @@ const response = <A extends Schema.Json>(value: A) =>
   Effect.runSync(Effect.succeed(value).pipe(rpcResponse('child.test'), Effect.provide(BrowserCrypto.layer)))
 
 describe('workflow RPC value contracts', () => {
-  it('classifies invalid server-produced domain values as internal errors rather than bad requests', () => {
+  test('classifies invalid server-produced domain values as internal errors rather than bad requests', () => {
     const valid = Schema.decodeUnknownSync(RpcRunsResponse)({
       runs: [
         {
@@ -55,28 +55,28 @@ describe('workflow RPC value contracts', () => {
     expect(failure).toMatchObject({ cause: { title: 'internal', status: 500 } })
   })
 
-  it('exposes JSON text rather than domain values or typed failures on the wire', () => {
+  test('exposes JSON text rather than domain values or typed failures on the wire', () => {
     expectTypeOf<Effect.Success<ReturnType<WireWorkflowService['listRuns']>>>().toEqualTypeOf<string>()
     expectTypeOf<Effect.Error<ReturnType<WireWorkflowService['listRuns']>>>().toEqualTypeOf<never>()
     expectTypeOf<Effect.Success<ReturnType<WireWorkflowExecutor['start']>>>().toEqualTypeOf<string>()
     expectTypeOf<Effect.Error<ReturnType<WireWorkflowExecutor['start']>>>().toEqualTypeOf<never>()
   })
 
-  it('decodes the successful operation value after validating the envelope', () => {
+  test('decodes the successful operation value after validating the envelope', () => {
     expect(
       Effect.runSync(rpcValue('Workflow.listWorkflows', RpcWorkflowsResponse)(response({ workflows: [] }))),
-    ).toEqual({
+    ).toStrictEqual({
       workflows: [],
     })
   })
 
-  it('accepts only JSON null as a successful command acknowledgement', () => {
+  test('accepts only JSON null as a successful command acknowledgement', () => {
     expect(Effect.runSync(rpcCommandResult('DemoWorkflow.start')(response(null)))).toBeUndefined()
     const result = Effect.runSyncExit(rpcCommandResult('DemoWorkflow.start')(response({ unexpected: true })))
     expect(result).toMatchObject({ _tag: 'Failure' })
   })
 
-  it('treats an invalid operation value as a local service failure without retaining peer data', () => {
+  test('treats an invalid operation value as a local service failure without retaining peer data', () => {
     const result = Effect.runSync(
       rpcValue(
         'Workflow.listWorkflows',
@@ -94,7 +94,7 @@ describe('workflow RPC value contracts', () => {
 })
 
 describe('native SDK RPC client boundary', () => {
-  it('passes a successful SDK command reply to the application decoder unchanged', async () => {
+  test('passes a successful SDK command reply to the application decoder unchanged', async () => {
     const text = response(null)
     const rpc = makeRpcStub<WireWorkflowExecutor>(Effect.succeed({ start: async () => text }))
     await expect(
@@ -106,7 +106,7 @@ describe('native SDK RPC client boundary', () => {
     ).resolves.toBeUndefined()
   })
 
-  it('does not retain malformed successful SDK reply bytes during application decoding', async () => {
+  test('does not retain malformed successful SDK reply bytes during application decoding', async () => {
     const rpc = makeRpcStub<WireWorkflowService>(Effect.succeed({ listRuns: async () => 'PRIVATE_PEER_BYTES' }))
     const local = await Effect.runPromise(
       rpc
@@ -122,14 +122,16 @@ describe('native SDK RPC client boundary', () => {
     expect(Cause.pretty(Cause.fail(local))).not.toContain('PRIVATE_PEER_BYTES')
   })
 
-  it.each(['SDK error envelope', 'rejected call', 'SDK defect'] as const)(
+  test.each(['SDK error envelope', 'rejected call', 'SDK defect'] as const)(
     'discards origin diagnostics from a %s before the parent HTTP operation logs',
     async (scenario) => {
       const origin = new Error('PRIVATE_ORIGIN_MESSAGE', { cause: { password: 'PRIVATE_ORIGIN_SECRET' } })
       origin.stack = 'Error: PRIVATE_ORIGIN_MESSAGE\n at PRIVATE_ORIGIN_STACK (child.ts:1:1)'
       const peer = {
         listRuns: async () => {
-          if (scenario === 'rejected call') throw origin
+          if (scenario === 'rejected call') {
+            throw origin
+          }
           return {
             _tag: ErrorTag,
             error: {
@@ -178,7 +180,7 @@ describe('native SDK RPC client boundary', () => {
           Context.make(Logger.CurrentLoggers, new Set([logger])),
         )
         expect(reply.status).toBe(502)
-        expect(await reply.text()).not.toContain('PRIVATE_ORIGIN')
+        await expect(reply.text()).resolves.not.toContain('PRIVATE_ORIGIN')
         expect(entries).toHaveLength(1)
         const logged = Option.getOrThrow(Cause.findErrorOption(entries[0]!.cause))
         expect(logged).toBeInstanceOf(ExternalError)
@@ -191,7 +193,7 @@ describe('native SDK RPC client boundary', () => {
     },
   )
 
-  it('preserves validated application problems after the SDK call boundary', async () => {
+  test('preserves validated application problems after the SDK call boundary', async () => {
     const text = await Effect.runPromise(
       Effect.fail(new Conflict({ message: 'private conflict' })).pipe(
         rpcResponse('child'),
@@ -217,9 +219,11 @@ describe('native SDK RPC client boundary', () => {
     expect(Cause.pretty(Cause.fail(local))).not.toContain('private conflict')
   })
 
-  it('preserves a cancellation-only cause without creating a local service failure', () => {
+  test('preserves a cancellation-only cause without creating a local service failure', () => {
     const exit = Effect.runSyncExit(Effect.interrupt.pipe(rpcCall('cancelled SDK call')))
     expect(Exit.isFailure(exit)).toBe(true)
-    if (Exit.isFailure(exit)) expect(Cause.hasInterruptsOnly(exit.cause)).toBe(true)
+    if (Exit.isFailure(exit)) {
+      expect(Cause.hasInterruptsOnly(exit.cause)).toBe(true)
+    }
   })
 })

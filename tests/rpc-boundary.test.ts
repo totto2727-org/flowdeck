@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { Array, Option, Result, Schema } from 'effect'
 import { Miniflare } from 'miniflare'
 import { build } from 'vite-plus'
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vite-plus/test'
+import { afterEach, beforeAll, beforeEach, describe, expect, test } from 'vite-plus/test'
 
 import { Rfc9457ProblemDetails } from '@/core/feature/workflow/rpc/problem'
 
@@ -84,19 +84,19 @@ afterEach(async () => {
 })
 
 describe('native Worker RPC JSON boundary', () => {
-  it('round-trips success across a real service binding without failure logs', async () => {
+  test('round-trips success across a real service binding without failure logs', async () => {
     const parent = await entrypoint('parent')
     const child = await entrypoint('child')
     const response = await parent.start('success')
     expect(typeof response).toBe('string')
     const reply = decodeReply(response)
     ok(Result.isSuccess(reply))
-    expect(reply.success).toEqual({ answer: 42, values: [null, true, 'ok'] })
-    expect(decodeLogs(await parent.logs())).toEqual([])
-    expect(decodeLogs(await child.logs())).toEqual([])
+    expect(reply.success).toStrictEqual({ answer: 42, values: [null, true, 'ok'] })
+    expect(decodeLogs(await parent.logs())).toStrictEqual([])
+    expect(decodeLogs(await child.logs())).toStrictEqual([])
   })
 
-  it.each(['failure', 'not-found', 'defect'] as const)(
+  test.each(['failure', 'not-found', 'defect'] as const)(
     'returns JSON text for a child %s and keeps private diagnostics in its originating isolate',
     async (scenario) => {
       const parent = await entrypoint('parent')
@@ -105,7 +105,7 @@ describe('native Worker RPC JSON boundary', () => {
       expect(typeof response).toBe('string')
       const reply = decodeReply(response)
       ok(Result.isFailure(reply))
-      expect(reply.failure).toEqual({
+      expect(reply.failure).toStrictEqual({
         ...(scenario === 'not-found'
           ? {
               type: 'https://github.com/totto2727-org/flowdeck/blob/main/docs/rpc-boundaries.md#not-found',

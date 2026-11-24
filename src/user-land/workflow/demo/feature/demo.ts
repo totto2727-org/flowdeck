@@ -56,13 +56,15 @@ export const restoreDemo = (run: Run) =>
       run.workflowId !== 'demo' ||
       !SemVer.equals(snapshot.version, version) ||
       run.graphId !== definition.graph.graphId
-    )
+    ) {
       return yield* Effect.fail(new InvalidSnapshot({ message: 'Demo identity, graph and version must agree' }))
+    }
     const state = yield* SemVer.equals(version, demoVersion1)
       ? decodeDemoVersion1(snapshot.machine)
       : decodeDemoVersion2(snapshot.machine)
-    if (demoStatus(state) !== run.status)
+    if (demoStatus(state) !== run.status) {
       return yield* Effect.fail(new InvalidSnapshot({ message: 'Native demo state and run status must agree' }))
+    }
     return snapshot
   })
 export const makeDemoExecutor = Effect.gen(function* () {

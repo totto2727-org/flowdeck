@@ -1,15 +1,15 @@
-import { expect, expectTypeOf, it } from 'vite-plus/test'
+import { expect, expectTypeOf, test } from 'vite-plus/test'
 
 import { Conflict, ExternalError, StorageConflict } from './errors.ts'
 
-it('represents a domain conflict without an external cause', () => {
+test('represents a domain conflict without an external cause', () => {
   expectTypeOf<ConstructorParameters<typeof Conflict>[0]>().toEqualTypeOf<{ readonly message: string }>()
   const error = new Conflict({ message: 'Event IDs must be unique' })
   expect(error.message).toBe('Event IDs must be unique')
   expect(error).not.toHaveProperty('cause')
 })
 
-it('requires the original cause and operation for storage conflicts', () => {
+test('requires the original cause and operation for storage conflicts', () => {
   expectTypeOf<ConstructorParameters<typeof StorageConflict>[0]>().toEqualTypeOf<{
     readonly message: string
     readonly operation: string
@@ -21,7 +21,7 @@ it('requires the original cause and operation for storage conflicts', () => {
   expect(error.operation).toBe('batch')
 })
 
-it('requires the original cause for external failures', () => {
+test('requires the original cause for external failures', () => {
   expectTypeOf<ConstructorParameters<typeof ExternalError>[0]>().toEqualTypeOf<{
     readonly operation: string
     readonly kind: 'storage' | 'service'

@@ -1,6 +1,6 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it, vi } from 'vite-plus/test'
+import { describe, expect, test, vi } from 'vite-plus/test'
 
 import { Dashboard } from './dashboard.tsx'
 
@@ -12,7 +12,7 @@ vi.mock('./server', () => ({
 }))
 
 describe('workflow launch catalog', () => {
-  it('selects the first advertised version and renders workflow-owned input descriptors', () => {
+  test('selects the first advertised version and renders workflow-owned input descriptors', () => {
     const html = renderToStaticMarkup(
       createElement(Dashboard, {
         initial: {
@@ -48,7 +48,7 @@ describe('workflow launch catalog', () => {
     expect(html).toContain('<textarea id="body" name="body" placeholder="Draft"')
   })
 
-  it('renders a workflow with an explicitly empty input catalog without an input layout', () => {
+  test('renders a workflow with an explicitly empty input catalog without an input layout', () => {
     const html = renderToStaticMarkup(
       createElement(Dashboard, {
         initial: {
@@ -64,7 +64,7 @@ describe('workflow launch catalog', () => {
     expect(html).not.toContain('<textarea')
   })
 
-  it('renders an empty catalog without inventing a version or inputs', () => {
+  test('renders an empty catalog without inventing a version or inputs', () => {
     const html = renderToStaticMarkup(
       createElement(Dashboard, { initial: { workflows: [], runs: [], selected: null } }),
     )

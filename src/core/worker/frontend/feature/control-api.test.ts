@@ -1,6 +1,6 @@
 import { Array, DateTime, Effect, SemVer } from 'effect'
 import { HttpClient, HttpClientResponse } from 'effect/http'
-import { describe, expect, it } from 'vite-plus/test'
+import { describe, expect, test } from 'vite-plus/test'
 
 import { makeControlApi } from './control-api.ts'
 
@@ -21,7 +21,7 @@ const run = {
 }
 
 describe('ControlApi', () => {
-  it('decodes valid prefixed run identities and named graph identities', async () => {
+  test('decodes valid prefixed run identities and named graph identities', async () => {
     const api = await Effect.runPromise(
       makeControlApi.pipe(Effect.provideService(HttpClient.HttpClient, clientReturning({ runs: [run] }))),
     )
@@ -35,10 +35,10 @@ describe('ControlApi', () => {
       workflowVersion: SemVer.format(decoded.workflowVersion),
       createdAt: DateTime.formatIso(decoded.createdAt),
       updatedAt: DateTime.formatIso(decoded.updatedAt),
-    }).toEqual(run)
+    }).toStrictEqual(run)
   })
 
-  it.each([
+  test.each([
     { runId: '00000000-0000-4000-8000-000000000001' },
     { runId: 'event_00000000-0000-4000-8000-000000000001' },
     { runId: 'run_01890f2e-7b55-7cc1-8c5a-000000000001' },
@@ -53,7 +53,7 @@ describe('ControlApi', () => {
     expect((await Effect.runPromise(api.runs.pipe(Effect.result)))._tag).toBe('Failure')
   })
 
-  it('decodes workflow responses through the supplied Effect HttpClient', async () => {
+  test('decodes workflow responses through the supplied Effect HttpClient', async () => {
     const api = await Effect.runPromise(
       makeControlApi.pipe(
         Effect.provideService(
@@ -65,10 +65,10 @@ describe('ControlApi', () => {
       ),
     )
     const value = await Effect.runPromise(api.workflows)
-    expect(Array.map(Array.getUnsafe(value.workflows, 0).versions, SemVer.format)).toEqual(['1.0.0', '2.0.0'])
+    expect(Array.map(Array.getUnsafe(value.workflows, 0).versions, SemVer.format)).toStrictEqual(['1.0.0', '2.0.0'])
   })
 
-  it('does not pass malformed control responses to the dashboard', async () => {
+  test('does not pass malformed control responses to the dashboard', async () => {
     const api = await Effect.runPromise(
       makeControlApi.pipe(Effect.provideService(HttpClient.HttpClient, clientReturning({ runs: [{ runId: 17 }] }))),
     )
@@ -76,7 +76,7 @@ describe('ControlApi', () => {
     expect(value._tag).toBe('Failure')
   })
 
-  it('turns unavailable control responses into a recoverable error', async () => {
+  test('turns unavailable control responses into a recoverable error', async () => {
     const api = await Effect.runPromise(
       makeControlApi.pipe(Effect.provideService(HttpClient.HttpClient, clientReturning({ error: 'unavailable' }, 503))),
     )

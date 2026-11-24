@@ -3,7 +3,7 @@ import { runInNewContext } from 'node:vm'
 import { Effect, Predicate } from 'effect'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
+import { afterEach, describe, expect, test, vi } from 'vite-plus/test'
 
 import { ThemeToggle } from './theme-toggle.tsx'
 import { browserTheme, selectTheme, serverTheme, subscribeTheme, themeBootstrap, themeStorageKey } from './theme.ts'
@@ -28,11 +28,15 @@ function browser(stored: string | null = null, storageDenied = false) {
   }
   const storage = {
     getItem: (key: string) => {
-      if (storageDenied) throw new Error('Storage denied')
+      if (storageDenied) {
+        throw new Error('Storage denied')
+      }
       return values.get(key) ?? null
     },
     setItem: (key: string, value: string) => {
-      if (storageDenied) throw new Error('Storage denied')
+      if (storageDenied) {
+        throw new Error('Storage denied')
+      }
       values.set(key, value)
     },
   }
@@ -46,7 +50,7 @@ function browser(stored: string | null = null, storageDenied = false) {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('theme before first paint', () => {
-  it.each([
+  test.each([
     { stored: null, expected: 'dark' },
     { stored: 'dark', expected: 'dark' },
     { stored: 'light', expected: 'light' },
@@ -60,14 +64,14 @@ describe('theme before first paint', () => {
     expect(boundary.meta.content).toBe(expected === 'dark' ? '#101714' : '#f7f9f8')
   })
 
-  it('keeps dark when storage access is denied', () => {
+  test('keeps dark when storage access is denied', () => {
     const boundary = browser('light', true)
     expect(() => runInNewContext(themeBootstrap, boundary)).not.toThrow()
     expect(boundary.document.documentElement.dataset.theme).toBe('dark')
     expect(boundary.classes.has('dark')).toBe(true)
   })
 
-  it('renders the same accessible dark toggle on the server without browser APIs', () => {
+  test('renders the same accessible dark toggle on the server without browser APIs', () => {
     expect(serverTheme()).toBe('dark')
     const markup = renderToStaticMarkup(createElement(ThemeToggle, { disabled: true }))
     expect(markup).toContain('aria-label="Dark mode"')
@@ -78,7 +82,7 @@ describe('theme before first paint', () => {
 })
 
 describe('theme browser boundary', () => {
-  it('switches both ways, notifies React, and restores the selection on reload', () => {
+  test('switches both ways, notifies React, and restores the selection on reload', () => {
     const boundary = browser()
     vi.stubGlobal('document', boundary.document)
     vi.stubGlobal('window', boundary.window)
@@ -108,7 +112,7 @@ describe('theme browser boundary', () => {
     expect(notify).toHaveBeenCalledTimes(2)
   })
 
-  it('keeps the toggle functional when persistence is denied', () => {
+  test('keeps the toggle functional when persistence is denied', () => {
     const boundary = browser(null, true)
     vi.stubGlobal('document', boundary.document)
     vi.stubGlobal('window', boundary.window)

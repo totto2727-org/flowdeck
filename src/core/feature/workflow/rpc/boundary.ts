@@ -33,57 +33,66 @@ const decodeProblem = Schema.decodeUnknownSync(Rfc9457ProblemDetails, { onExcess
 const classify = (error: unknown): Omit<Rfc9457ProblemDetails, 'instance'> => {
   if (error instanceof RemoteWorkerError) {
     const validated = decodeRemoteProblemOption(error.cause)
-    if (Option.isSome(validated)) return validated.value
+    if (Option.isSome(validated)) {
+      return validated.value
+    }
   }
-  if (error instanceof NotFound)
+  if (error instanceof NotFound) {
     return {
       type: 'https://github.com/totto2727-org/flowdeck/blob/main/docs/rpc-boundaries.md#not-found',
       title: 'not-found',
       status: 404,
       detail: 'The requested resource was not found.',
     }
-  if (error instanceof Conflict || error instanceof StorageConflict)
+  }
+  if (error instanceof Conflict || error instanceof StorageConflict) {
     return {
       type: 'https://github.com/totto2727-org/flowdeck/blob/main/docs/rpc-boundaries.md#conflict',
       title: 'conflict',
       status: 409,
       detail: 'The operation conflicts with the current state.',
     }
-  if (error instanceof InvalidOperation)
+  }
+  if (error instanceof InvalidOperation) {
     return {
       type: 'https://github.com/totto2727-org/flowdeck/blob/main/docs/rpc-boundaries.md#invalid-operation',
       title: 'invalid-operation',
       status: 409,
       detail: 'The operation is not allowed in the current state.',
     }
-  if (error instanceof InvalidSnapshot)
+  }
+  if (error instanceof InvalidSnapshot) {
     return {
       type: 'https://github.com/totto2727-org/flowdeck/blob/main/docs/rpc-boundaries.md#invalid-snapshot',
       title: 'invalid-snapshot',
       status: 409,
       detail: 'The workflow state cannot be used for this operation.',
     }
-  if (Schema.isSchemaError(error))
+  }
+  if (Schema.isSchemaError(error)) {
     return {
       type: 'https://github.com/totto2727-org/flowdeck/blob/main/docs/rpc-boundaries.md#invalid-request',
       title: 'invalid-request',
       status: 400,
       detail: 'The request did not match the expected schema.',
     }
-  if (error instanceof ExternalError && error.kind === 'storage')
+  }
+  if (error instanceof ExternalError && error.kind === 'storage') {
     return {
       type: 'https://github.com/totto2727-org/flowdeck/blob/main/docs/rpc-boundaries.md#storage',
       title: 'storage',
       status: 500,
       detail: 'A persistence operation failed.',
     }
-  if (error instanceof ExternalError && error.kind === 'service')
+  }
+  if (error instanceof ExternalError && error.kind === 'service') {
     return {
       type: 'https://github.com/totto2727-org/flowdeck/blob/main/docs/rpc-boundaries.md#service',
       title: 'service',
       status: 502,
       detail: 'A required service could not complete the operation.',
     }
+  }
   return {
     type: 'https://github.com/totto2727-org/flowdeck/blob/main/docs/rpc-boundaries.md#internal',
     title: 'internal',
@@ -101,7 +110,9 @@ export const makeRpcResponse = Effect.map(
       effect.pipe(
         Effect.flatMap((value) => encode(Result.succeed(value)).pipe(Effect.orDie)),
         Effect.catchCause((cause) => {
-          if (Cause.hasInterruptsOnly(cause)) return Effect.interrupt
+          if (Cause.hasInterruptsOnly(cause)) {
+            return Effect.interrupt
+          }
           return Effect.gen(function* () {
             const errorId = `urn:uuid:${yield* crypto.randomUUIDv4().pipe(Effect.orDie)}`
             const error = Option.getOrUndefined(Cause.findErrorOption(cause))

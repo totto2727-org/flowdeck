@@ -43,10 +43,15 @@ export const piNodeEvent = (
 })
 
 const receiptOutcome = (receipt: TurnReceipt, commandId: CommandId): PiOutcome => {
-  if (receipt.commandId !== commandId)
+  if (receipt.commandId !== commandId) {
     return outcome.Failed({ message: 'Gateway returned a different command identity' })
-  if (receipt.status === 'running') return outcome.Waiting()
-  if (receipt.status === 'completed') return outcome.Completed({ result: receipt.text })
+  }
+  if (receipt.status === 'running') {
+    return outcome.Waiting()
+  }
+  if (receipt.status === 'completed') {
+    return outcome.Completed({ result: receipt.text })
+  }
   return outcome.Failed({ message: receipt.error })
 }
 
@@ -75,10 +80,11 @@ export const makePiNodeEffects = Effect.gen(function* () {
       return yield* Effect.gen(function* () {
         const provider = yield* capability
         const session = yield* provider.ensureSession(checkpoint.runId)
-        if (session.status !== 'active')
+        if (session.status !== 'active') {
           return outcome.Failed({
             message: 'The original active Pi session is unavailable. Container retained for inspection.',
           })
+        }
         // Only authoritative absence of an unacknowledged intent permits this
         // exact operation to be submitted. Awaiting polls never use this path.
         const existing = yield* provider.getTurn(checkpoint.runId, input.execution.commandId)
@@ -115,8 +121,9 @@ export const makePiNodeEffects = Effect.gen(function* () {
       return yield* Effect.gen(function* () {
         const provider = yield* capability
         const original = yield* provider.ensureSession(checkpoint.runId)
-        if (original.sessionId !== '1')
+        if (original.sessionId !== '1') {
           return outcome.Failed({ message: 'The original Pi session is unavailable for completion' })
+        }
         const session = yield* provider.complete(checkpoint.runId)
         return session.sessionId === '1' && session.status === 'completed'
           ? outcome.Completed({ result: result.result })

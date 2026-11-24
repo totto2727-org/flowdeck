@@ -1,5 +1,5 @@
 import { DateTime, Effect, Schema, SemVer } from 'effect'
-import { describe, expect, it } from 'vite-plus/test'
+import { describe, expect, test } from 'vite-plus/test'
 
 import { GraphDefinition, type Run } from '@/core/feature/workflow/domain/model'
 
@@ -22,15 +22,15 @@ const fixture = (version: typeof demoVersion1): Run => ({
 })
 
 describe('demo definition', () => {
-  it.each([demoVersion1, demoVersion2])('keeps the published definition %s stable', async (version) => {
+  test.each([demoVersion1, demoVersion2])('keeps the published definition %s stable', async (version) => {
     const prepared = await Effect.runPromise(demoDefinition.prepare({ workflowId: 'demo', version }))
     expect(prepared).toMatchSnapshot(`demo ${SemVer.format(version)}`)
   })
-  it.each([demoVersion1, demoVersion2])(
+  test.each([demoVersion1, demoVersion2])(
     'prepares and restores the selected implementation without Crypto %s',
     async (version) => {
       const prepared = await Effect.runPromise(demoDefinition.prepare({ workflowId: 'demo', version }))
-      expect(prepared).toEqual({
+      expect(prepared).toStrictEqual({
         graph: demoGraph(version),
         snapshot: {
           schemaVersion: 1,
@@ -42,15 +42,15 @@ describe('demo definition', () => {
       expect(prepared.graph.graphId).toBe(
         SemVer.equals(version, demoVersion1) ? 'demo-1_0_0-graph-1' : 'demo-2_0_0-graph-1',
       )
-      expect(await Effect.runPromise(restoreDemo(fixture(version)))).toEqual(initialSnapshot(version))
+      await expect(Effect.runPromise(restoreDemo(fixture(version)))).resolves.toStrictEqual(initialSnapshot(version))
     },
   )
-  it.each(['v1', 'v2'])('rejects legacy snapshot version %s', async (version) => {
+  test.each(['v1', 'v2'])('rejects legacy snapshot version %s', async (version) => {
     await expect(
       Effect.runPromise(Schema.decodeUnknownEffect(snapshotCodec)({ _tag: 'Ready', schemaVersion: 1, version })),
     ).rejects.toThrow()
   })
-  it.each([
+  test.each([
     { workflowId: 'other' },
     { graphId: 'other-graph' },
     { workflowVersion: demoVersion2 },
@@ -59,15 +59,17 @@ describe('demo definition', () => {
   ] as const)('rejects inconsistent persisted identity or native state %j', async (change) => {
     await expect(Effect.runPromise(restoreDemo({ ...fixture(demoVersion1), ...change }))).rejects.toThrow()
   })
-  it('requires native execution identities to use the owned execution schema', () => {
+  test('requires native execution identities to use the owned execution schema', () => {
     const prepare = Schema.decodeUnknownSync(DemoData.cases.prepare)
-    expect(prepare({ _tag: 'prepare', prepareExecutionId: 'execution_00000000-0000-4000-8000-000000000001' })).toEqual({
+    expect(
+      prepare({ _tag: 'prepare', prepareExecutionId: 'execution_00000000-0000-4000-8000-000000000001' }),
+    ).toStrictEqual({
       _tag: 'prepare',
       prepareExecutionId: 'execution_00000000-0000-4000-8000-000000000001',
     })
     expect(() => prepare({ _tag: 'prepare', prepareExecutionId: 'run:prepare:1' })).toThrow()
   })
-  it.each([
+  test.each([
     {
       path: 'prepare',
       status: 'running',
@@ -103,7 +105,7 @@ describe('demo definition', () => {
         machine: { _tag: 'MachineSnapshot', version: 2, active: [{ path: '' }, { path, value }] },
       }
       const run = { ...fixture(demoVersion1), status, snapshot }
-      expect(await Effect.runPromise(restoreDemo(run))).toEqual({ ...snapshot, version: demoVersion1 })
+      await expect(Effect.runPromise(restoreDemo(run))).resolves.toStrictEqual({ ...snapshot, version: demoVersion1 })
       const corrupted = {
         ...snapshot,
         machine: {
@@ -114,7 +116,7 @@ describe('demo definition', () => {
       await expect(Effect.runPromise(restoreDemo({ ...run, snapshot: corrupted }))).rejects.toThrow()
     },
   )
-  it.each([
+  test.each([
     { workflowId: 'demo', version: 'v1' },
     { workflowId: 'demo', version: 'v2' },
     { workflowId: 'demo', version: SemVer.make({ major: 3, minor: 0, patch: 0 }) },

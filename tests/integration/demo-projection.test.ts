@@ -1,5 +1,5 @@
 import { Array, DateTime, HashMap, Option } from 'effect'
-import { describe, expect, it } from 'vite-plus/test'
+import { describe, expect, test } from 'vite-plus/test'
 
 import type { NodeId } from '@/core/feature/workflow/domain/identity'
 import type { EventType, RunEvent } from '@/core/feature/workflow/domain/model'
@@ -21,32 +21,34 @@ const event = (sequence: number, nodeId: NodeId, type: NodeEventType): Extract<R
 })
 
 describe('graph projections', () => {
-  it.each([demoVersion1, demoVersion2])(
+  test.each([demoVersion1, demoVersion2])(
     'creates stable node and edge geometry without mutating the %s version graph',
     (version) => {
       const graph = demoGraph(version)
       const shapes = graphToShapes(graph)
-      expect(Array.map(shapes.nodes, (node) => ({ id: node.nodeId, state: node.state, x: node.position.x }))).toEqual([
+      expect(
+        Array.map(shapes.nodes, (node) => ({ id: node.nodeId, state: node.state, x: node.position.x })),
+      ).toStrictEqual([
         { id: 'prepare', state: 'idle', x: 48 },
         { id: 'approval', state: 'idle', x: 328 },
         { id: 'publish', state: 'idle', x: 608 },
       ])
-      expect(Array.map(shapes.edges, (edge) => edge.traversed)).toEqual([false, false])
-      expect(graph).toEqual(demoGraph(version))
+      expect(Array.map(shapes.edges, (edge) => edge.traversed)).toStrictEqual([false, false])
+      expect(graph).toStrictEqual(demoGraph(version))
     },
   )
 
-  it('uses sequence order rather than delivery order or wall clock time', () => {
+  test('uses sequence order rather than delivery order or wall clock time', () => {
     const projection = projectEvents([
       event(3, 'prepare', 'node.succeeded'),
       event(1, 'prepare', 'node.started'),
       event(2, 'approval', 'run.waiting'),
     ])
-    expect(HashMap.get(projection, 'prepare')).toEqual(Option.some('succeeded'))
-    expect(HashMap.get(projection, 'approval')).toEqual(Option.some('waiting'))
+    expect(HashMap.get(projection, 'prepare')).toStrictEqual(Option.some('succeeded'))
+    expect(HashMap.get(projection, 'approval')).toStrictEqual(Option.some('waiting'))
   })
 
-  it('retains a traversed edge while a previously successful source is active in a later attempt', () => {
+  test('retains a traversed edge while a previously successful source is active in a later attempt', () => {
     const shapes = graphToShapes(demoGraph(demoVersion1), [
       event(1, 'prepare', 'node.succeeded'),
       event(2, 'approval', 'node.started'),
@@ -57,7 +59,7 @@ describe('graph projections', () => {
         attempt: 2,
       },
     ])
-    expect(Array.map(shapes.nodes, (node) => node.state)).toEqual(['running', 'waiting', 'idle'])
-    expect(Array.map(shapes.edges, (edge) => edge.traversed)).toEqual([true, false])
+    expect(Array.map(shapes.nodes, (node) => node.state)).toStrictEqual(['running', 'waiting', 'idle'])
+    expect(Array.map(shapes.edges, (edge) => edge.traversed)).toStrictEqual([true, false])
   })
 })

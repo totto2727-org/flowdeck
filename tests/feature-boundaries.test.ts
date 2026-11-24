@@ -4,7 +4,7 @@ import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { Array, Predicate, String } from 'effect'
 import { isStringLiteralLikeNode } from 'typescript/ast'
 import { API } from 'typescript/sync'
-import { describe, expect, it } from 'vite-plus/test'
+import { describe, expect, test } from 'vite-plus/test'
 
 const sourceRoot = resolve('src')
 const sources = Array.map(globSync('src/**/*.{ts,tsx}'), (file) => resolve(file))
@@ -28,7 +28,9 @@ const localTarget = (file: string, specifier: string) =>
 const parseDependencies = (compiler: API, file: string, text: string) => {
   using lease = compiler.createSourceFile(file, text)
   return Array.flatMap(lease.sourceFile.imports, (node) => {
-    if (!isStringLiteralLikeNode(node)) return []
+    if (!isStringLiteralLikeNode(node)) {
+      return []
+    }
     const target = localTarget(file, node.text)
     return Predicate.isUndefined(target) ? [] : [{ file, target }]
   })
@@ -45,7 +47,7 @@ const featureDependencies = Array.filter(productionDependencies, ({ file }) => w
 // Check tests too: application integration tests belong under tests/, not core.
 // Type-only imports, dynamic imports, and re-exports all carry architecture dependencies.
 describe('source ownership boundaries', () => {
-  it('classifies every source as share, core, a worker bridge, or user-land', () => {
+  test('classifies every source as share, core, a worker bridge, or user-land', () => {
     expect(sources).not.toHaveLength(0)
     expect(
       Array.filter(sources, (file) => {
@@ -57,34 +59,34 @@ describe('source ownership boundaries', () => {
           (parts[0] === 'bridge' && Array.contains(['core', 'bridge', 'user-land'], parts[2] ?? ''))
         )
       }),
-    ).toEqual([])
+    ).toStrictEqual([])
   })
 
-  it('keeps share independent from core, bridges, and user-land', () => {
+  test('keeps share independent from core, bridges, and user-land', () => {
     const shared = Array.filter(dependencies, ({ file }) => within(file, 'share'))
     expect(Array.filter(sources, (file) => within(file, 'share'))).not.toHaveLength(0)
-    expect(Array.filter(shared, ({ target }) => !within(target, 'share'))).toEqual([])
+    expect(Array.filter(shared, ({ target }) => !within(target, 'share'))).toStrictEqual([])
   })
 
-  it('forbids core imports of user-land and bridge integration, including indirect entry points', () => {
+  test('forbids core imports of user-land and bridge integration, including indirect entry points', () => {
     expect(coreDependencies).not.toHaveLength(0)
-    expect(Array.filter(coreDependencies, ({ target }) => !coreTarget(target))).toEqual([])
+    expect(Array.filter(coreDependencies, ({ target }) => !coreTarget(target))).toStrictEqual([])
   })
 
-  it('keeps reusable core features independent from concrete Worker resources', () => {
+  test('keeps reusable core features independent from concrete Worker resources', () => {
     expect(featureDependencies).not.toHaveLength(0)
     expect(
       Array.filter(featureDependencies, ({ target }) => !within(target, 'core/feature') && !within(target, 'share')),
-    ).toEqual([])
+    ).toStrictEqual([])
   })
 
-  it('keeps D1 execution independent from workflow policy and application resources', () => {
+  test('keeps D1 execution independent from workflow policy and application resources', () => {
     const d1 = Array.filter(productionDependencies, ({ file }) => within(file, 'core/feature/d1'))
     expect(d1).not.toHaveLength(0)
-    expect(Array.filter(d1, ({ target }) => !within(target, 'core/feature/d1'))).toEqual([])
+    expect(Array.filter(d1, ({ target }) => !within(target, 'core/feature/d1'))).toStrictEqual([])
   })
 
-  it('keeps the workflow RPC protocol independent from persistence and concrete Workers', () => {
+  test('keeps the workflow RPC protocol independent from persistence and concrete Workers', () => {
     const rpc = Array.filter(productionDependencies, ({ file }) => within(file, 'core/feature/workflow/rpc'))
     expect(rpc).not.toHaveLength(0)
     expect(
@@ -92,10 +94,10 @@ describe('source ownership boundaries', () => {
         rpc,
         ({ target }) => !within(target, 'core/feature/workflow/rpc') && !within(target, 'core/feature/workflow/domain'),
       ),
-    ).toEqual([])
+    ).toStrictEqual([])
   })
 
-  it('keeps Cluster checkpoint storage independent from workflow policy and application resources', () => {
+  test('keeps Cluster checkpoint storage independent from workflow policy and application resources', () => {
     const cluster = Array.filter(productionDependencies, ({ file }) => within(file, 'core/feature/cluster'))
     expect(cluster).not.toHaveLength(0)
     expect(
@@ -103,10 +105,10 @@ describe('source ownership boundaries', () => {
         cluster,
         ({ target }) => !within(target, 'core/feature/cluster') && !within(target, 'core/feature/d1'),
       ),
-    ).toEqual([])
+    ).toStrictEqual([])
   })
 
-  it('keeps workflow domain values independent from services and transport', () => {
+  test('keeps workflow domain values independent from services and transport', () => {
     const domain = Array.filter(productionDependencies, ({ file }) => within(file, 'core/feature/workflow/domain'))
     expect(domain).not.toHaveLength(0)
     expect(
@@ -114,10 +116,10 @@ describe('source ownership boundaries', () => {
         domain,
         ({ target }) => !within(target, 'core/feature/workflow/domain') && !within(target, 'share/feature/identity'),
       ),
-    ).toEqual([])
+    ).toStrictEqual([])
   })
 
-  it('parses every supported import form instead of allowing type, re-export, or lazy-import bypasses', () => {
+  test('parses every supported import form instead of allowing type, re-export, or lazy-import bypasses', () => {
     using compiler = new API()
     const targets = parseDependencies(
       compiler,
@@ -130,8 +132,8 @@ describe('source ownership boundaries', () => {
        const load = () => import('@/user-land/lazy')`,
     )
     expect(targets).toHaveLength(6)
-    expect(Array.filter(targets, ({ target }) => coreTarget(target))).toEqual([])
-    expect(Array.map(targets, ({ target }) => relative(sourceRoot, target))).toEqual([
+    expect(Array.filter(targets, ({ target }) => coreTarget(target))).toStrictEqual([])
+    expect(Array.map(targets, ({ target }) => relative(sourceRoot, target))).toStrictEqual([
       'user-land/definition',
       'user-land/value',
       'bridge/workflow/bridge/worker',

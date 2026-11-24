@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { Array, Option } from 'effect'
 import { Miniflare } from 'miniflare'
 import { build } from 'vite-plus'
-import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test'
+import { afterAll, beforeAll, describe, expect, test } from 'vite-plus/test'
 
 describe('official DO-only Pi workspace', () => {
   let miniflare: Miniflare
@@ -22,10 +22,14 @@ describe('official DO-only Pi workspace', () => {
       },
     })
     const output = Array.isArray(result) ? result[0] : result
-    if (!output || !('output' in output)) throw new Error('Expected Worker-shell fixture bundle')
+    if (!output || !('output' in output)) {
+      throw new Error('Expected Worker-shell fixture bundle')
+    }
     const chunks = Array.filter(output.output, (entry) => entry.type === 'chunk')
     const main = Array.findFirst(chunks, (entry) => entry.isEntry)
-    if (Option.isNone(main)) throw new Error('Expected Worker-shell fixture entry')
+    if (Option.isNone(main)) {
+      throw new Error('Expected Worker-shell fixture entry')
+    }
     miniflare = new Miniflare({
       modules: Array.map(
         Array.prepend(
@@ -54,20 +58,20 @@ describe('official DO-only Pi workspace', () => {
     return response.json()
   }
 
-  it('initializes the real PiHarness without Container or Gateway provisioning', async () => {
-    expect(await read('/sdk')).toEqual({ jobs: 0, fetchStatus: 404 })
-    expect(await read('/sdk')).toEqual({ jobs: 0, fetchStatus: 404 })
+  test('initializes the real PiHarness without Container or Gateway provisioning', async () => {
+    await expect(read('/sdk')).resolves.toStrictEqual({ jobs: 0, fetchStatus: 404 })
+    await expect(read('/sdk')).resolves.toStrictEqual({ jobs: 0, fetchStatus: 404 })
   })
 
-  it('reaches durable files through the outer Alchemy PiRun bridge after the previous Scope closes', async () => {
-    expect(await read('/write')).toEqual({ written: true })
-    expect(await read('/read')).toEqual({ text: 'durable workspace' })
-    expect(await read('/exec')).toMatchObject({ exitCode: 0, stdout: 'durable workspace', stderr: '' })
-    expect(await read('/read')).toEqual({ text: 'durable workspace' })
+  test('reaches durable files through the outer Alchemy PiRun bridge after the previous Scope closes', async () => {
+    await expect(read('/write')).resolves.toStrictEqual({ written: true })
+    await expect(read('/read')).resolves.toStrictEqual({ text: 'durable workspace' })
+    await expect(read('/exec')).resolves.toMatchObject({ exitCode: 0, stdout: 'durable workspace', stderr: '' })
+    await expect(read('/read')).resolves.toStrictEqual({ text: 'durable workspace' })
   })
 
-  it('does not claim Node process support from the DO-local shell', async () => {
-    expect(await read('/unsupported')).toMatchObject({
+  test('does not claim Node process support from the DO-local shell', async () => {
+    await expect(read('/unsupported')).resolves.toMatchObject({
       exitCode: 127,
       stdout: '',
       stderr: expect.stringContaining('node'),

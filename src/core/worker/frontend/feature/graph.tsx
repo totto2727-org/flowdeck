@@ -31,7 +31,9 @@ export function RunGraph({
   const ids = Array.map(detail.shapes.nodes, (node) => node.nodeId)
   const navigate = (event: KeyboardEvent<HTMLButtonElement>, nodeId: NodeId) => {
     const next = nextNode(ids, nodeId, event.key)
-    if (Predicate.isUndefined(next)) return
+    if (Predicate.isUndefined(next)) {
+      return
+    }
     event.preventDefault()
     onSelect(next)
     buttons.current[next]?.focus()
@@ -70,7 +72,9 @@ export function RunGraph({
             const target = Option.getOrUndefined(
               Array.findFirst(detail.shapes.nodes, (node) => node.nodeId === edge.target),
             )
-            if (!source || !target) return null
+            if (!source || !target) {
+              return null
+            }
             const x1 = source.position.x + source.size.width
             const y1 = source.position.y + source.size.height / 2
             const x2 = target.position.x
@@ -131,7 +135,7 @@ export function RunGraph({
 
 export function NodeInspector({ detail, nodeId }: { readonly detail: RunDetail; readonly nodeId: NodeId | null }) {
   const node = Option.getOrUndefined(Array.findFirst(detail.shapes.nodes, (item) => item.nodeId === nodeId))
-  if (!node)
+  if (!node) {
     return (
       <section
         id='node-inspector'
@@ -145,6 +149,7 @@ export function NodeInspector({ detail, nodeId }: { readonly detail: RunDetail; 
         </p>
       </section>
     )
+  }
   const events = nodeEvents(detail.events, node.nodeId)
   const latest = Option.getOrUndefined(Array.last(events))
   const execution = Option.getOrUndefined(latestExecution(events))

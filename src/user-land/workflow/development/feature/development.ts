@@ -44,30 +44,43 @@ export const developmentGraphFor = (_version: typeof DevelopmentWorkflowVersion.
   developmentGraph
 
 export const developmentStatus = (state: DevelopmentNativeState): RunStatus => {
-  if (DevelopmentStates.matches(state, 'completed')) return 'completed'
-  if (DevelopmentStates.matches(state, 'failed')) return 'failed'
-  if (DevelopmentStates.matches(state, 'implement.allocate')) return 'pending'
-  if (DevelopmentStates.matches(state, 'implement.awaiting') || DevelopmentStates.matches(state, 'verify.awaiting'))
+  if (DevelopmentStates.matches(state, 'completed')) {
+    return 'completed'
+  }
+  if (DevelopmentStates.matches(state, 'failed')) {
+    return 'failed'
+  }
+  if (DevelopmentStates.matches(state, 'implement.allocate')) {
+    return 'pending'
+  }
+  if (DevelopmentStates.matches(state, 'implement.awaiting') || DevelopmentStates.matches(state, 'verify.awaiting')) {
     return 'waiting'
+  }
   return 'running'
 }
 const boundaryEvents = (state: DevelopmentNativeState): ReadonlyArray<EventDraft> => {
   const implementing = DevelopmentStates.get(state, 'implement.awaiting')
-  if (Option.isSome(implementing)) return [piNodeEvent('implement', implementing.value, 'run.waiting')]
+  if (Option.isSome(implementing)) {
+    return [piNodeEvent('implement', implementing.value, 'run.waiting')]
+  }
   const verifying = DevelopmentStates.get(state, 'verify.awaiting')
-  if (Option.isSome(verifying)) return [piNodeEvent('verify', verifying.value, 'run.waiting')]
+  if (Option.isSome(verifying)) {
+    return [piNodeEvent('verify', verifying.value, 'run.waiting')]
+  }
   const completed = DevelopmentStates.get(state, 'completed')
-  if (Option.isSome(completed))
+  if (Option.isSome(completed)) {
     return [
       piNodeEvent('verify', completed.value, 'node.succeeded', { output: completed.value.result }),
       { type: 'run.completed', payload: {} },
     ]
+  }
   const failed = DevelopmentStates.get(state, 'failed')
-  if (Option.isSome(failed))
+  if (Option.isSome(failed)) {
     return [
       piNodeEvent(failed.value.nodeId, failed.value, 'node.failed', { message: failed.value.message }),
       { type: 'run.failed', payload: {} },
     ]
+  }
   return []
 }
 

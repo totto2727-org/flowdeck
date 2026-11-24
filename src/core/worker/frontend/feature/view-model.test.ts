@@ -1,5 +1,5 @@
 import { DateTime, Schema, SemVer } from 'effect'
-import { describe, expect, it } from 'vite-plus/test'
+import { describe, expect, test } from 'vite-plus/test'
 
 import {
   Run as DomainRun,
@@ -22,23 +22,23 @@ const runJson = {
 }
 
 describe('frontend view boundary', () => {
-  it('presents official JSON versions without changing domain values', () => {
+  test('presents official JSON versions without changing domain values', () => {
     const run = Schema.decodeUnknownSync(Schema.toCodecJson(DomainRun))(runJson)
-    expect(presentRun(run)).toEqual(runJson)
+    expect(presentRun(run)).toStrictEqual(runJson)
     expect(SemVer.isSemVer(run.workflowVersion)).toBe(true)
     expect(DateTime.isUtc(run.createdAt)).toBe(true)
     expect(DateTime.isUtc(run.updatedAt)).toBe(true)
     expect(Schema.is(DomainRun)(runJson)).toBe(false)
   })
 
-  it('presents all catalog versions as DOM option strings', () => {
+  test('presents all catalog versions as DOM option strings', () => {
     const json = { workflowId: 'demo', name: 'Demo', versions: ['1.0.0', '2.13.7-rc.1+build.42'], inputs: [] }
     const workflow = Schema.decodeUnknownSync(Schema.toCodecJson(DomainWorkflowSummary))(json)
-    expect(presentWorkflow(workflow)).toEqual(json)
+    expect(presentWorkflow(workflow)).toStrictEqual(json)
     expect(SemVer.isSemVer(workflow.versions[0])).toBe(true)
   })
 
-  it('presents selected details using the same representation as list entries', () => {
+  test('presents selected details using the same representation as list entries', () => {
     const json = {
       run: runJson,
       state: { runId: runJson.runId, revision: 1, snapshot: {} },
@@ -81,8 +81,8 @@ describe('frontend view boundary', () => {
       },
     }
     const detail = Schema.decodeUnknownSync(Schema.toCodecJson(DomainRunDetail))(json)
-    expect(presentDetail(detail)).toEqual(json)
-    expect(presentDetail(detail).run).toEqual(presentRun(detail.run))
+    expect(presentDetail(detail)).toStrictEqual(json)
+    expect(presentDetail(detail).run).toStrictEqual(presentRun(detail.run))
     expect(SemVer.isSemVer(detail.run.workflowVersion)).toBe(true)
   })
 })

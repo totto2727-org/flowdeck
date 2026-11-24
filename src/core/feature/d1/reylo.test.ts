@@ -7,7 +7,7 @@ import { makeWorkerRuntimeContext } from 'alchemy/Cloudflare/Workers/WorkerRunti
 import { RuntimeContext } from 'alchemy/RuntimeContext'
 import { Array, Effect, Exit, Layer } from 'effect'
 import { Miniflare } from 'miniflare'
-import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from 'vite-plus/test'
+import { afterEach, beforeEach, describe, expect, expectTypeOf, test, vi } from 'vite-plus/test'
 
 import { makeD1Batch } from './batch.ts'
 import { D1Client } from './client.ts'
@@ -61,7 +61,7 @@ afterEach(async () => {
 })
 
 describe('captured native D1 queries', () => {
-  it('narrows only captured all and batch requirements, not the complete SDK client', () => {
+  test('narrows only captured all and batch requirements, not the complete SDK client', () => {
     const client = clientFor(database)
     const statement = client.prepare('SELECT 1 AS value').bind()
     const all = statement.all()
@@ -73,7 +73,7 @@ describe('captured native D1 queries', () => {
     expectTypeOf<Effect.Services<typeof exec>>().toEqualTypeOf<RuntimeContext>()
   })
 
-  it('prepares, batches and reads without a RuntimeContext or a caller-selected database', async () => {
+  test('prepares, batches and reads without a RuntimeContext or a caller-selected database', async () => {
     const queries = queriesFor({ ...clientFor(database), raw: Effect.die('Exposed raw access is forbidden') })
     const statement = await Effect.runPromise(queries.prepare(insertValue, { value: 7 }))
     const batch = queries.batch([statement])
@@ -87,7 +87,7 @@ describe('captured native D1 queries', () => {
         Effect.provideService(RuntimeContext, makeWorkerRuntimeContext('conflicting-batch-runtime')),
       ),
     )
-    expect(await Effect.runPromise(read)).toEqual({ value: 7 })
+    await expect(Effect.runPromise(read)).resolves.toStrictEqual({ value: 7 })
     const unexpected = vi.fn(() => Effect.die('Caller QueryExecutor must not run'))
     expect(
       await Effect.runPromise(
@@ -98,12 +98,14 @@ describe('captured native D1 queries', () => {
           Effect.provideService(QueryExecutor, { dialect: 'sqlite', execute: unexpected }),
         ),
       ),
-    ).toEqual({ value: 7 })
+    ).toStrictEqual({ value: 7 })
     expect(unexpected).not.toHaveBeenCalled()
-    expect(await otherDatabase.prepare('SELECT count(*) AS count FROM entries').first()).toEqual({ count: 0 })
+    await expect(otherDatabase.prepare('SELECT count(*) AS count FROM entries').first()).resolves.toStrictEqual({
+      count: 0,
+    })
   })
 
-  it('executes an existing prepared batch without calling the public client prepare again', async () => {
+  test('executes an existing prepared batch without calling the public client prepare again', async () => {
     expectTypeOf<Parameters<Effect.Success<typeof makeD1Batch>>[0]>().toEqualTypeOf<PreparedStatement[]>()
     const client = clientFor(database)
     const statement = client.prepare('INSERT INTO entries (value) VALUES (?)').bind(11)
@@ -113,10 +115,10 @@ describe('captured native D1 queries', () => {
     const batch = Effect.runSync(makeD1Batch.pipe(Effect.provideService(D1Client, { ...client, prepare })))
     await Effect.runPromise(batch([statement]))
     expect(prepare).not.toHaveBeenCalled()
-    expect(await database.prepare('SELECT value FROM entries').first()).toEqual({ value: 11 })
+    await expect(database.prepare('SELECT value FROM entries').first()).resolves.toStrictEqual({ value: 11 })
   })
 
-  it('preserves a preparation failure without executing a batch or inventing a storage error', async () => {
+  test('preserves a preparation failure without executing a batch or inventing a storage error', async () => {
     const cause = new Error('Input accessor failed')
     const input = {
       get value(): number {
@@ -126,10 +128,10 @@ describe('captured native D1 queries', () => {
     const error = await Effect.runPromise(queriesFor(clientFor(database)).prepare(insertValue, input).pipe(Effect.flip))
     expect(error).toBeInstanceOf(QueryPreparationError)
     expect(error.cause).toBe(cause)
-    expect(await database.prepare('SELECT count(*) AS count FROM entries').first()).toEqual({ count: 0 })
+    await expect(database.prepare('SELECT count(*) AS count FROM entries').first()).resolves.toStrictEqual({ count: 0 })
   })
 
-  it('retains the original execution defect inside the official Reylo error', async () => {
+  test('retains the original execution defect inside the official Reylo error', async () => {
     const client = clientFor(database)
     const statement = client.prepare('SELECT value FROM entries')
     const cause = new Error('Native D1 execution failed')
@@ -146,11 +148,11 @@ describe('captured native D1 queries', () => {
     }
   })
 
-  it('preserves batch interruption without converting it into an execution failure', async () => {
+  test('preserves batch interruption without converting it into an execution failure', async () => {
     const queries = queriesFor({ ...clientFor(database), batch: () => Effect.interrupt })
     const statement = await Effect.runPromise(queries.prepare(insertValue, { value: 19 }))
     const exit = await Effect.runPromiseExit(queries.batch([statement]))
     expect(Exit.hasInterrupts(exit)).toBe(true)
-    expect(await database.prepare('SELECT count(*) AS count FROM entries').first()).toEqual({ count: 0 })
+    await expect(database.prepare('SELECT count(*) AS count FROM entries').first()).resolves.toStrictEqual({ count: 0 })
   })
 })

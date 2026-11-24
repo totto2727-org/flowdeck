@@ -1,7 +1,7 @@
 import { BrowserCrypto } from '@effect/platform-browser'
 import { Effect, Schema } from 'effect'
 import { TestCrypto } from 'effect/testing'
-import { describe, expect, it } from 'vite-plus/test'
+import { describe, expect, test } from 'vite-plus/test'
 
 import { makePrefixedUUIDv4, UserDefinedId } from './id.ts'
 
@@ -9,11 +9,11 @@ const uuid = '3d360c7a-4b1a-4df3-9633-861a220bf5b7'
 const prefixes = ['run', 'execution', 'event', 'commit', 'command', 'repository']
 
 describe('user-defined identities', () => {
-  it.each(['demo', 'release-checkpoint', 'Review_42', 'a'.repeat(128)])('accepts safe ID %s', (id) => {
+  test.each(['demo', 'release-checkpoint', 'Review_42', 'a'.repeat(128)])('accepts safe ID %s', (id) => {
     expect(Schema.decodeUnknownSync(UserDefinedId)(id)).toBe(id)
   })
 
-  it.each([
+  test.each([
     '',
     '../run',
     'a/b',
@@ -41,17 +41,18 @@ describe('user-defined identities', () => {
 })
 
 describe('prefixed cryptographic random identities', () => {
-  it.each(['', '../run', 'two words', '日本語'])('rejects unsafe factory prefix %s at schema construction', (prefix) =>
-    expect(() => makePrefixedUUIDv4(prefix)).toThrow(),
+  test.each(['', '../run', 'two words', '日本語'])(
+    'rejects unsafe factory prefix %s at schema construction',
+    (prefix) => expect(() => makePrefixedUUIDv4(prefix)).toThrow(),
   )
 
-  it('supports a caller-selected safe prefix without changing the factory', () => {
+  test('supports a caller-selected safe prefix without changing the factory', () => {
     const { schema } = makePrefixedUUIDv4('repository')
     expect(Schema.decodeUnknownSync(schema)(`repository_${uuid}`)).toBe(`repository_${uuid}`)
     expect(Schema.is(schema)(`run_${uuid}`)).toBe(false)
   })
 
-  it('keeps factories independent and generates a fresh ID when their Effects are rerun', async () => {
+  test('keeps factories independent and generates a fresh ID when their Effects are rerun', async () => {
     const repository = makePrefixedUUIDv4('repository')
     const task = makePrefixedUUIDv4('task')
     const nextRepository = repository.make
@@ -66,7 +67,7 @@ describe('prefixed cryptographic random identities', () => {
     expect(Schema.is(task.schema)(first)).toBe(false)
   })
 
-  it.each(prefixes)('round-trips %s and uses the official v4 check for its suffix', (kind) => {
+  test.each(prefixes)('round-trips %s and uses the official v4 check for its suffix', (kind) => {
     const { schema } = makePrefixedUUIDv4(kind)
     const id = `${kind}_${uuid}`
     expect(Schema.decodeUnknownSync(schema)(id)).toBe(id)
@@ -85,7 +86,7 @@ describe('prefixed cryptographic random identities', () => {
     }
   })
 
-  it.each(prefixes)('generates valid distinct %s IDs through the real Crypto layer', async (kind) => {
+  test.each(prefixes)('generates valid distinct %s IDs through the real Crypto layer', async (kind) => {
     const { schema, make } = makePrefixedUUIDv4(kind)
     const ids = await Effect.runPromise(Effect.all([make, make]).pipe(Effect.provide(BrowserCrypto.layer)))
     expect(ids[0]).not.toBe(ids[1])
@@ -93,7 +94,7 @@ describe('prefixed cryptographic random identities', () => {
     expect(Schema.is(schema)(ids[1])).toBe(true)
   })
 
-  it.each(prefixes)('keeps the constructed %s generator usable without a caller Crypto service', async (kind) => {
+  test.each(prefixes)('keeps the constructed %s generator usable without a caller Crypto service', async (kind) => {
     const { schema, makeGenerator } = makePrefixedUUIDv4(kind)
     const generate = await Effect.runPromise(makeGenerator.pipe(Effect.provide(BrowserCrypto.layer)))
     const first = await Effect.runPromise(generate())
@@ -105,15 +106,17 @@ describe('prefixed cryptographic random identities', () => {
     expect(Schema.encodeSync(schema)(second)).toBe(second)
   })
 
-  it('uses the Crypto service supplied at execution time and supports deterministic TestCrypto', async () => {
+  test('uses the Crypto service supplied at execution time and supports deterministic TestCrypto', async () => {
     const { schema, make } = makePrefixedUUIDv4('test')
     const generate = Effect.all([make, make])
     const runWithSeed = (seed: string) =>
       Effect.runPromise(generate.pipe(Effect.provide(TestCrypto.layer(seed)), Effect.provide(BrowserCrypto.layer)))
     const first = await runWithSeed('first-seed')
-    expect(await runWithSeed('first-seed')).toEqual(first)
-    expect(await runWithSeed('other-seed')).not.toEqual(first)
+    await expect(runWithSeed('first-seed')).resolves.toStrictEqual(first)
+    await expect(runWithSeed('other-seed')).resolves.not.toStrictEqual(first)
     expect(first[0]).not.toBe(first[1])
-    for (const id of first) expect(Schema.is(schema)(id)).toBe(true)
+    for (const id of first) {
+      expect(Schema.is(schema)(id)).toBe(true)
+    }
   })
 })

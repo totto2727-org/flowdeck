@@ -15,7 +15,9 @@ export const workspaceProxyBuild = (): Plugin => ({
   // The public hook is stable, but this virtual-module prefix is a beta.83
   // implementation detail. The generated-entry/workerd regression detects drift.
   transform(code, id) {
-    if (!id.startsWith(ALCHEMY_ENTRY_PREFIX) || code.includes(WORKSPACE_PROXY_EXPORT)) return null
+    if (!id.startsWith(ALCHEMY_ENTRY_PREFIX) || code.includes(WORKSPACE_PROXY_EXPORT)) {
+      return null
+    }
     return { code: `${code}\n${WORKSPACE_PROXY_EXPORT}\n`, map: null }
   },
 })

@@ -6,7 +6,7 @@ import { Array, Crypto, DateTime, Effect, Layer, Option, Predicate, Schema, SemV
 import { HttpRouter } from 'effect/http'
 import { TestCrypto } from 'effect/testing'
 import { Miniflare } from 'miniflare'
-import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test'
+import { afterEach, beforeEach, describe, expect, test } from 'vite-plus/test'
 
 import { makeWorkflows } from '@/bridge/workflow/core/feature/workflow'
 import { makeWorkflowRegistry } from '@/bridge/workflow/user-land/feature/registration'
@@ -169,7 +169,7 @@ const rejectCommit = () =>
 // The maintained integration tests execute the public workflow entry against
 // real D1. Only the remote PiHarness/Container boundary is substituted.
 describe('development workflow with canonical D1 checkpoints', () => {
-  it('captures stable provider dependencies once and completes without caller context', async () => {
+  test('captures stable provider dependencies once and completes without caller context', async () => {
     const executor = await execute(makeDevelopmentExecutor)
     sandbox = { ensureSession: offline, submitTurn: offline, getTurn: offline, complete: offline }
     await Effect.runPromise(executor.start(initialRun.runId))
@@ -181,10 +181,10 @@ describe('development workflow with canonical D1 checkpoints', () => {
     await Effect.runPromise(executor.resume(initialRun.runId))
     expect((await current()).status).toBe('completed')
     expect(submissions).toHaveLength(2)
-    expect(completeCalls).toEqual([initialRun.runId])
+    expect(completeCalls).toStrictEqual([initialRun.runId])
   })
 
-  it.each([
+  test.each([
     'run_00000000-0000-4000-8000-000000000002:implement:1',
     '3d360c7a-4b1a-4df3-9633-861a220bf5b7',
     '01890f2e-7b55-7cc1-8c5a-000000000001',
@@ -203,7 +203,7 @@ describe('development workflow with canonical D1 checkpoints', () => {
     expect(submissions).toHaveLength(1)
   })
 
-  it('routes create and read-only Resume through the static development binding', async () => {
+  test('routes create and read-only Resume through the static development binding', async () => {
     const provide = <A, E>(effect: Effect.Effect<A, E, Store | PiSandbox | Crypto.Crypto>) =>
       effect.pipe(
         Effect.provideService(Store, freshStore()),
@@ -254,27 +254,29 @@ describe('development workflow with canonical D1 checkpoints', () => {
         new Request(`http://localhost/api/runs/${detail.run.runId}/resume`, { method: 'POST' }),
       )
       expect(resumed.status).toBe(200)
-      expect(Schema.decodeUnknownSync(Schema.toCodecJson(RunDetail))(await resumed.json()).run).toEqual(detail.run)
+      expect(Schema.decodeUnknownSync(Schema.toCodecJson(RunDetail))(await resumed.json()).run).toStrictEqual(
+        detail.run,
+      )
       expect(submissions).toHaveLength(1)
     } finally {
       await handler.dispose()
     }
   })
 
-  it('persists native inputs, pinned version and immutable graph before starting', async () => {
-    expect(await current()).toEqual(initialRun)
+  test('persists native inputs, pinned version and immutable graph before starting', async () => {
+    await expect(current()).resolves.toStrictEqual(initialRun)
     expect(rootOf(initialRun.snapshot)).toMatchObject({
       runtime: 'pi-harness',
       repository: input.repository,
       task: input.task,
     })
-    expect(await Effect.runPromise(store.getGraph(initialRun.graphId))).toEqual(developmentGraph)
+    await expect(Effect.runPromise(store.getGraph(initialRun.graphId))).resolves.toStrictEqual(developmentGraph)
     expect(matches(initialRun.snapshot, 'implement.allocate')).toBe(true)
     expect(initialRun.snapshot).not.toHaveProperty('context')
   })
 
   describe.each([undefined, 'pi'] as const)('legacy runtime %s', (runtime) => {
-    it.each([
+    test.each([
       ['Ready', 'pending'],
       ['Starting', 'running'],
       ['PendingTurn', 'running'],
@@ -316,12 +318,12 @@ describe('development workflow with canonical D1 checkpoints', () => {
       await expect(Effect.runPromise(restoreDevelopment(before))).rejects.toMatchObject({ _tag: 'InvalidSnapshot' })
       await expect(start()).rejects.toMatchObject({ _tag: 'InvalidSnapshot' })
       await expect(resume()).rejects.toMatchObject({ _tag: 'InvalidSnapshot' })
-      expect(await current()).toEqual(before)
-      expect(await events()).toEqual([])
+      await expect(current()).resolves.toStrictEqual(before)
+      await expect(events()).resolves.toStrictEqual([])
     })
   })
 
-  it('commits stable command and execution identity before external initialization and submission', async () => {
+  test('commits stable command and execution identity before external initialization and submission', async () => {
     let commitIds: ReadonlyArray<string> = []
     const ensure = sandbox.ensureSession
     sandbox = {
@@ -360,7 +362,7 @@ describe('development workflow with canonical D1 checkpoints', () => {
     expect(submissions[0]?.input.prompt).not.toContain('/sandbox/')
     expect(submissions[0]?.input.prompt).not.toContain('/home/sandbox/')
     const recorded = await events()
-    expect(Array.map(recorded, (event) => event.type)).toEqual(['run.started', 'node.started', 'run.waiting'])
+    expect(Array.map(recorded, (event) => event.type)).toStrictEqual(['run.started', 'node.started', 'run.waiting'])
     expect(recorded[0]).not.toHaveProperty('nodeId')
     expect(recorded[0]).not.toHaveProperty('executionId')
     expect(recorded[0]).not.toHaveProperty('attempt')
@@ -375,28 +377,28 @@ describe('development workflow with canonical D1 checkpoints', () => {
     expect(DateTime.isUtc(persisted.updatedAt)).toBe(true)
   })
 
-  it('polls a running operation read-only without changing checkpoints, events, initialization or submission', async () => {
+  test('polls a running operation read-only without changing checkpoints, events, initialization or submission', async () => {
     await start()
     const before = await current()
     const recorded = await events()
     const initialized = ensureCalls
     await resume()
-    expect(await current()).toEqual(before)
-    expect(await events()).toEqual(recorded)
+    await expect(current()).resolves.toStrictEqual(before)
+    await expect(events()).resolves.toStrictEqual(recorded)
     expect(ensureCalls).toBe(initialized)
     expect(submissions).toHaveLength(1)
   })
 
-  it('ignores repeated Start while waiting for explicit Resume', async () => {
+  test('ignores repeated Start while waiting for explicit Resume', async () => {
     await start()
     finishTurn('implement')
     const before = await current()
     await start()
-    expect(await current()).toEqual(before)
+    await expect(current()).resolves.toStrictEqual(before)
     expect(submissions).toHaveLength(1)
   })
 
-  it('reconstructs native runtime and submits verification in the same run and root session', async () => {
+  test('reconstructs native runtime and submits verification in the same run and root session', async () => {
     await start()
     finishTurn('implement')
     await resume()
@@ -409,11 +411,11 @@ describe('development workflow with canonical D1 checkpoints', () => {
     expect(submissions[1]?.input.prompt).toContain('official Vite+ CLI')
     expect(submissions[1]?.input.prompt).not.toContain('/sandbox/')
     expect(submissions[1]?.input.prompt).not.toContain('/home/sandbox/')
-    expect(completeCalls).toEqual([])
+    expect(completeCalls).toStrictEqual([])
     expect(session.sessionId).toBe('1')
   })
 
-  it('completes only after verification and retains container with canonical event identities', async () => {
+  test('completes only after verification and retains container with canonical event identities', async () => {
     await start()
     finishTurn('implement')
     await resume()
@@ -424,7 +426,7 @@ describe('development workflow with canonical D1 checkpoints', () => {
     expect(Option.getOrThrow(DevelopmentStates.get(nativeOf(persisted.snapshot), 'completed')).result).toBe(
       'verify result',
     )
-    expect(completeCalls).toEqual([initialRun.runId])
+    expect(completeCalls).toStrictEqual([initialRun.runId])
     const recorded = await events()
     expect(Array.every(recorded, (event) => Schema.is(EventId)(event.eventId))).toBe(true)
     const verification = Array.filter(recorded, (event) => 'nodeId' in event && event.nodeId === 'verify')
@@ -436,7 +438,7 @@ describe('development workflow with canonical D1 checkpoints', () => {
       'executionId',
       'executionId' in verification[1]! ? verification[1].executionId : '',
     )
-    expect(Array.map(recorded, (event) => event.type)).toEqual([
+    expect(Array.map(recorded, (event) => event.type)).toStrictEqual([
       'run.started',
       'node.started',
       'run.waiting',
@@ -451,7 +453,7 @@ describe('development workflow with canonical D1 checkpoints', () => {
     await expect(resume()).rejects.toMatchObject({ _tag: 'InvalidOperation' })
   })
 
-  it.each(['failed', 'interrupted'] as const)(
+  test.each(['failed', 'interrupted'] as const)(
     'commits a %s receipt as a business failure and retains the container',
     async (status) => {
       await start()
@@ -462,16 +464,16 @@ describe('development workflow with canonical D1 checkpoints', () => {
       await resume()
       expect((await current()).status).toBe('failed')
       expect(failedOf((await current()).snapshot).nodeId).toBe('implement')
-      expect(Array.map(Array.takeRight(await events(), 2), (event) => event.type)).toEqual([
+      expect(Array.map(Array.takeRight(await events(), 2), (event) => event.type)).toStrictEqual([
         'node.failed',
         'run.failed',
       ])
       expect(submissions).toHaveLength(1)
-      expect(completeCalls).toEqual([])
+      expect(completeCalls).toStrictEqual([])
     },
   )
 
-  it('never resubmits an acknowledged operation whose receipt disappears', async () => {
+  test('never resubmits an acknowledged operation whose receipt disappears', async () => {
     await start()
     receipts = {}
     await resume()
@@ -480,7 +482,7 @@ describe('development workflow with canonical D1 checkpoints', () => {
     expect(submissions).toHaveLength(1)
   })
 
-  it('recovers accepted submit after the Waiting checkpoint fails without another submission', async () => {
+  test('recovers accepted submit after the Waiting checkpoint fails without another submission', async () => {
     await expect(
       execute(startDevelopmentRun(initialRun.runId), {
         ...store,
@@ -494,13 +496,13 @@ describe('development workflow with canonical D1 checkpoints', () => {
     expect(Array.filter(await events(), (event) => event.type === 'node.started')).toHaveLength(1)
   })
 
-  it('recovers session initialization failure with one stable command and execution identity', async () => {
+  test('recovers session initialization failure with one stable command and execution identity', async () => {
     const original = sandbox.ensureSession
     sandbox = { ...sandbox, ensureSession: offline }
     await expect(start()).rejects.toMatchObject({ _tag: 'ExternalError', kind: 'service' })
     const before = activeOf((await current()).snapshot)
     expect(matches((await current()).snapshot, 'implement.intent')).toBe(true)
-    expect(submissions).toEqual([])
+    expect(submissions).toStrictEqual([])
     sandbox = { ...sandbox, ensureSession: original }
     await resume()
     expect(submissions).toHaveLength(1)
@@ -511,7 +513,7 @@ describe('development workflow with canonical D1 checkpoints', () => {
     expect(Array.filter(await events(), (event) => event.type === 'node.started')).toHaveLength(1)
   })
 
-  it('fails closed when verification finds an already completed session', async () => {
+  test('fails closed when verification finds an already completed session', async () => {
     await start()
     finishTurn('implement')
     session = { ...session, status: 'completed' }
@@ -521,10 +523,10 @@ describe('development workflow with canonical D1 checkpoints', () => {
       message: expect.stringContaining('original active Pi session'),
     })
     expect(submissions).toHaveLength(1)
-    expect(completeCalls).toEqual([])
+    expect(completeCalls).toStrictEqual([])
   })
 
-  it('recovers acknowledged completion after terminal checkpoint failure without another turn', async () => {
+  test('recovers acknowledged completion after terminal checkpoint failure without another turn', async () => {
     await start()
     finishTurn('implement')
     await resume()
@@ -543,7 +545,7 @@ describe('development workflow with canonical D1 checkpoints', () => {
     expect(Array.filter(await events(), (event) => event.type === 'run.completed')).toHaveLength(1)
   })
 
-  it('recovers completion transport failure from durable result without polling or resubmitting', async () => {
+  test('recovers completion transport failure from durable result without polling or resubmitting', async () => {
     await start()
     finishTurn('implement')
     await resume()
@@ -564,10 +566,10 @@ describe('development workflow with canonical D1 checkpoints', () => {
     await resume()
     expect((await current()).status).toBe('completed')
     expect(submissions).toHaveLength(2)
-    expect(completeCalls).toEqual([initialRun.runId])
+    expect(completeCalls).toStrictEqual([initialRun.runId])
   })
 
-  it('rejects a receipt with a different command identity without submitting again', async () => {
+  test('rejects a receipt with a different command identity without submitting again', async () => {
     await start()
     const commandId = submissions[0]!.input.commandId
     receipts = {
@@ -583,7 +585,7 @@ describe('development workflow with canonical D1 checkpoints', () => {
     expect(submissions).toHaveLength(1)
   })
 
-  it('rejects historical completing checkpoints with missing command and execution identities', async () => {
+  test('rejects historical completing checkpoints with missing command and execution identities', async () => {
     const snapshot = {
       _tag: 'Completing',
       runtime: 'pi-harness',
@@ -608,12 +610,12 @@ describe('development workflow with canonical D1 checkpoints', () => {
     const before = await current()
     await expect(Effect.runPromise(restoreDevelopment(before))).rejects.toMatchObject({ _tag: 'InvalidSnapshot' })
     await expect(resume()).rejects.toMatchObject({ _tag: 'InvalidSnapshot' })
-    expect(await current()).toEqual(before)
-    expect(submissions).toEqual([])
-    expect(completeCalls).toEqual([])
+    await expect(current()).resolves.toStrictEqual(before)
+    expect(submissions).toStrictEqual([])
+    expect(completeCalls).toStrictEqual([])
   })
 
-  it('fails when Pi completion is not acknowledged after verification', async () => {
+  test('fails when Pi completion is not acknowledged after verification', async () => {
     await start()
     finishTurn('implement')
     await resume()
@@ -621,10 +623,10 @@ describe('development workflow with canonical D1 checkpoints', () => {
     sandbox = { ...sandbox, complete: () => Effect.succeed(session) }
     await resume()
     expect(failedOf((await current()).snapshot).nodeId).toBe('verify')
-    expect(completeCalls).toEqual([])
+    expect(completeCalls).toStrictEqual([])
   })
 
-  it('recovers submit rejected before acceptance using the original command ID', async () => {
+  test('recovers submit rejected before acceptance using the original command ID', async () => {
     const original = sandbox.submitTurn
     sandbox = { ...sandbox, submitTurn: offline }
     await expect(start()).rejects.toMatchObject({ _tag: 'ExternalError', kind: 'service' })
@@ -635,16 +637,16 @@ describe('development workflow with canonical D1 checkpoints', () => {
     expect(submissions[0]?.input.commandId).toBe(pending.commandId)
   })
 
-  it('prevents initialization and submission when the intent checkpoint rejects', async () => {
+  test('prevents initialization and submission when the intent checkpoint rejects', async () => {
     await expect(
       execute(startDevelopmentRun(initialRun.runId), { ...store, commit: rejectCommit }),
     ).rejects.toMatchObject({ _tag: 'ExternalError', kind: 'storage' })
     expect(ensureCalls).toBe(0)
-    expect(submissions).toEqual([])
-    expect(await current()).toEqual(initialRun)
+    expect(submissions).toStrictEqual([])
+    await expect(current()).resolves.toStrictEqual(initialRun)
   })
 
-  it.each([
+  test.each([
     { workflowVersion: SemVer.make({ major: 2, minor: 0, patch: 0 }) },
     { graphId: 'different-graph' },
     { workflowId: 'demo' },
@@ -653,21 +655,21 @@ describe('development workflow with canonical D1 checkpoints', () => {
     await expect(Effect.runPromise(restoreDevelopment({ ...initialRun, ...changed }))).rejects.toMatchObject({
       _tag: 'InvalidSnapshot',
     })
-    expect(submissions).toEqual([])
+    expect(submissions).toStrictEqual([])
   })
 })
 
 describe('development CreateRun trust boundary', () => {
-  it('decodes wire SemVer and URL into ideal domain input', () => {
+  test('decodes wire SemVer and URL into ideal domain input', () => {
     expect(
       Schema.decodeUnknownSync(Schema.toCodecJson(DevelopmentCreateRun))({
         ...input,
         repository: input.repository.href,
         version: '1.0.0',
       }),
-    ).toEqual(input)
+    ).toStrictEqual(input)
   })
-  it.each([
+  test.each([
     'http://github.com/example/project',
     'https://gitlab.com/example/project',
     'https://github.com.evil.test/example/project',
@@ -679,7 +681,7 @@ describe('development CreateRun trust boundary', () => {
       Schema.decodeUnknownSync(Schema.toCodecJson(DevelopmentCreateRun))({ ...input, version: '1.0.0', repository }),
     ).toThrow()
   })
-  it.each(['', '   ', 'x'.repeat(16_001)])('rejects empty or oversized task', (task) => {
+  test.each(['', '   ', 'x'.repeat(16_001)])('rejects empty or oversized task', (task) => {
     expect(() =>
       Schema.decodeUnknownSync(Schema.toCodecJson(DevelopmentCreateRun))({
         ...input,
@@ -689,7 +691,7 @@ describe('development CreateRun trust boundary', () => {
       }),
     ).toThrow()
   })
-  it.each(['v1', 'v2', '1.0.1', '2.0.0'])('rejects unsupported version %s', (version) => {
+  test.each(['v1', 'v2', '1.0.1', '2.0.0'])('rejects unsupported version %s', (version) => {
     expect(() =>
       Schema.decodeUnknownSync(Schema.toCodecJson(DevelopmentCreateRun))({
         ...input,

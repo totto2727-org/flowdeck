@@ -111,11 +111,13 @@ export const restoreManagedSnapshot = <State>(definition: ManagedRestoration<Sta
       !SemVer.equals(run.workflowVersion, definition.version) ||
       !SemVer.equals(snapshot.version, definition.version) ||
       run.graphId !== definition.graph.graphId
-    )
+    ) {
       return yield* Effect.fail(new InvalidSnapshot({ message: 'Run identity, version and graph must agree' }))
+    }
     const state = yield* definition.decode(snapshot.machine)
-    if (definition.status(state) !== run.status)
+    if (definition.status(state) !== run.status) {
       return yield* Effect.fail(new InvalidSnapshot({ message: 'Native state and run status must agree' }))
+    }
     return state
   }).pipe(
     Effect.catchDefect((cause) =>
@@ -155,8 +157,9 @@ export const makeManagedExecutor = <State, NativeError, Output, Requirements>(
         Effect.gen(function* () {
           const canonical = yield* store.getRun(runId)
           const state = yield* restore(canonical)
-          if (canonical.status === 'completed' || canonical.status === 'failed')
+          if (canonical.status === 'completed' || canonical.status === 'failed') {
             return yield* Effect.fail(new InvalidOperation({ message: 'Terminal runs cannot execute again' }))
+          }
           const current = yield* Ref.make(canonical)
           const storageFailure = yield* Deferred.make<never, WorkflowFailure>()
           type Checkpoint = (drafts: ReadonlyArray<EventDraft>) => Effect.Effect<void, WorkflowFailure>
@@ -172,7 +175,9 @@ export const makeManagedExecutor = <State, NativeError, Output, Requirements>(
               })
               const status = program.status(next)
               // Native lifecycle notifications and unchanged polls are not new durable state.
-              if (status === run.status && equivalentSnapshot(encoded, run.snapshot)) return
+              if (status === run.status && equivalentSnapshot(encoded, run.snapshot)) {
+                return
+              }
               const updatedAt = yield* DateTime.now
               const resumed: ReadonlyArray<EventDraft> =
                 run.status === 'waiting' ? [{ type: 'run.resumed', payload: {} }] : []
@@ -221,7 +226,9 @@ export const makeManagedExecutor = <State, NativeError, Output, Requirements>(
             Effect.mapError(program.mapError),
           )
           yield* Deferred.succeed(refReady, (drafts) => ref.state.pipe(Effect.flatMap((next) => persist(next, drafts))))
-          if (operation === 'resume') yield* ref.send(resumeEvent).pipe(Effect.mapError(program.mapError))
+          if (operation === 'resume') {
+            yield* ref.send(resumeEvent).pipe(Effect.mapError(program.mapError))
+          }
           const boundary = yield* Machine.waitFor(ref, (snapshot) => program.isReplyBoundary(snapshot.state)).pipe(
             Effect.mapError(program.mapError),
             Effect.raceFirst(Deferred.await(storageFailure)),

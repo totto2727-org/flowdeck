@@ -2,7 +2,7 @@ import { readD1Migrations } from '@cloudflare/vitest-plugin'
 import type { D1Database } from '@cloudflare/workers-types'
 import { Array } from 'effect'
 import { Miniflare } from 'miniflare'
-import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test'
+import { afterEach, beforeEach, describe, expect, test } from 'vite-plus/test'
 
 let miniflare: Miniflare
 let database: D1Database
@@ -43,7 +43,7 @@ afterEach(async () => {
 })
 
 describe('generated D1 schema', () => {
-  it.each([
+  test.each([
     ['workflows.workflow_id', "INSERT INTO workflows VALUES (NULL, 'Workflow')"],
     ['graphs.graph_id', "INSERT INTO graphs VALUES (NULL, 1, '{}')"],
     ['workflow_versions.workflow_id', "INSERT INTO workflow_versions VALUES (NULL, '2.0.0', 'graph')"],
@@ -62,19 +62,19 @@ describe('generated D1 schema', () => {
     await expect(database.prepare(query).run()).rejects.toThrow(`NOT NULL constraint failed: ${column}`)
   })
 
-  it('rejects an unsupported graph schema version', async () => {
+  test('rejects an unsupported graph schema version', async () => {
     await expect(database.prepare("INSERT INTO graphs VALUES ('other', 2, '{}')").run()).rejects.toThrow(
       'CHECK constraint failed: schema_version = 1',
     )
   })
 
-  it('rejects duplicate receipt revisions', async () => {
+  test('rejects duplicate receipt revisions', async () => {
     await expect(
       database.prepare("INSERT INTO commit_receipts VALUES ('other', 'run', 0, 1, 1, 1, '{}')").run(),
     ).rejects.toThrow('UNIQUE constraint failed: commit_receipts.run_id, commit_receipts.revision')
   })
 
-  it('rejects duplicate event sequences', async () => {
+  test('rejects duplicate event sequences', async () => {
     await expect(
       database
         .prepare(
@@ -84,7 +84,7 @@ describe('generated D1 schema', () => {
     ).rejects.toThrow('UNIQUE constraint failed: run_events.run_id, run_events.sequence')
   })
 
-  it('rejects invalid JSON in a Cluster machine checkpoint', async () => {
+  test('rejects invalid JSON in a Cluster machine checkpoint', async () => {
     await expect(
       database
         .prepare(
@@ -94,7 +94,7 @@ describe('generated D1 schema', () => {
     ).rejects.toThrow('CHECK constraint failed: json_valid(snapshot_json)')
   })
 
-  it('rejects a Cluster request receipt without its full checkpoint address', async () => {
+  test('rejects a Cluster request receipt without its full checkpoint address', async () => {
     await expect(
       database.prepare("INSERT INTO cluster_machine_requests VALUES ('default', 1, 'machine', 'entity', '1')").run(),
     ).rejects.toThrow('FOREIGN KEY constraint failed')

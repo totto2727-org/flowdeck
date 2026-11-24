@@ -1,7 +1,7 @@
 import { BrowserCrypto } from '@effect/platform-browser'
 import { Machine } from '@typeonce/effect-machine'
 import { Array, Cause, Context, DateTime, Deferred, Effect, Exit, HashSet, Schema } from 'effect'
-import { describe, expect, it, vi } from 'vite-plus/test'
+import { describe, expect, test, vi } from 'vite-plus/test'
 
 import { ExternalError, InvalidSnapshot } from '@/core/feature/workflow/domain/errors'
 import type { GraphDefinition, Run, RunStatus } from '@/core/feature/workflow/domain/model'
@@ -100,7 +100,9 @@ const makeHarness = (multipleCheckpoints = false) => {
       secondA: effect('A phase 2', []),
       check: Effect.gen(function* () {
         const checkpoint = yield* WorkflowCheckpoint
-        if (transportFailure) return yield* checkpoint.fail(unavailable)
+        if (transportFailure) {
+          return yield* checkpoint.fail(unavailable)
+        }
         return finish
       }),
       b: effect('B', [{ type: 'node.started', ...node('B'), payload: {} }]),
@@ -267,17 +269,17 @@ const makeHarness = (multipleCheckpoints = false) => {
 }
 
 describe('request-scoped managed native runtime', () => {
-  it('automatically reaches waiting, then resumes in a new runtime and ACKs final state once', async () => {
+  test('automatically reaches waiting, then resumes in a new runtime and ACKs final state once', async () => {
     const harness = makeHarness()
     const first = await Effect.runPromise(harness.executor())
     await Effect.runPromise(first.start(runId))
     expect(harness.current().status).toBe('waiting')
-    expect(harness.external.mock.calls).toEqual([['A']])
+    expect(harness.external.mock.calls).toStrictEqual([['A']])
     expect(harness.commits()).toHaveLength(2)
     const replacement = await Effect.runPromise(harness.executor())
     await Effect.runPromise(replacement.resume(runId))
     expect(harness.current().status).toBe('completed')
-    expect(harness.external.mock.calls).toEqual([['A'], ['B']])
+    expect(harness.external.mock.calls).toStrictEqual([['A'], ['B']])
     expect(harness.started).toHaveBeenCalledTimes(1)
     expect(harness.resumed).toHaveBeenCalledTimes(1)
     expect(harness.commits()).toHaveLength(4)
@@ -289,7 +291,7 @@ describe('request-scoped managed native runtime', () => {
     ).toHaveLength(1)
   })
 
-  it('does not call external effects until the checkpoint commit ACK', async () => {
+  test('does not call external effects until the checkpoint commit ACK', async () => {
     const harness = makeHarness()
     const ack = Deferred.makeUnsafe<void>()
     const saving = Deferred.makeUnsafe<void>()
@@ -303,7 +305,7 @@ describe('request-scoped managed native runtime', () => {
     expect(harness.external).toHaveBeenCalledExactlyOnceWith('A')
   })
 
-  it('does not return a final response before the final boundary commit ACK', async () => {
+  test('does not return a final response before the final boundary commit ACK', async () => {
     const harness = makeHarness()
     const executor = await Effect.runPromise(harness.executor())
     await Effect.runPromise(executor.start(runId))
@@ -335,19 +337,21 @@ describe('request-scoped managed native runtime', () => {
     expect(harness.commits()).toHaveLength(4)
   })
 
-  it('propagates the original checkpoint failure without a business failure or external submission', async () => {
+  test('propagates the original checkpoint failure without a business failure or external submission', async () => {
     const harness = makeHarness()
     harness.beforeCommit(() => Effect.fail(unavailable))
     const executor = await Effect.runPromise(harness.executor())
     const result = await Effect.runPromise(executor.start(runId).pipe(Effect.exit))
     expect(Exit.isFailure(result)).toBe(true)
-    if (Exit.isFailure(result)) expect(Cause.squash(result.cause)).toBe(unavailable)
+    if (Exit.isFailure(result)) {
+      expect(Cause.squash(result.cause)).toBe(unavailable)
+    }
     expect(harness.external).not.toHaveBeenCalled()
     expect(harness.current().status).toBe('pending')
     expect(harness.commits()).toHaveLength(0)
   })
 
-  it('waits for the boundary ACK and can restore an earlier committed intent after boundary failure', async () => {
+  test('waits for the boundary ACK and can restore an earlier committed intent after boundary failure', async () => {
     const harness = makeHarness()
     harness.beforeCommit((command) => (command.status === 'waiting' ? Effect.fail(unavailable) : Effect.void))
     const first = await Effect.runPromise(harness.executor())
@@ -369,7 +373,7 @@ describe('request-scoped managed native runtime', () => {
     ).toHaveLength(1)
   })
 
-  it('does not write revisions or events for unchanged polls and does not approve waiting on start', async () => {
+  test('does not write revisions or events for unchanged polls and does not approve waiting on start', async () => {
     const harness = makeHarness()
     const first = await Effect.runPromise(harness.executor())
     await Effect.runPromise(first.start(runId))
@@ -379,11 +383,11 @@ describe('request-scoped managed native runtime', () => {
     await Effect.runPromise(replacement.start(runId))
     await Effect.runPromise(replacement.resume(runId))
     expect(harness.current().revision).toBe(revision)
-    expect(harness.external.mock.calls).toEqual([['A']])
+    expect(harness.external.mock.calls).toStrictEqual([['A']])
     expect(harness.commits()).toHaveLength(2)
   })
 
-  it('rejects mismatched graph, version, status and malformed native state before opening the runtime', async () => {
+  test('rejects mismatched graph, version, status and malformed native state before opening the runtime', async () => {
     const harness = makeHarness()
     const original = harness.current()
     const executor = await Effect.runPromise(harness.executor())
@@ -405,12 +409,12 @@ describe('request-scoped managed native runtime', () => {
     expect(harness.external).not.toHaveBeenCalled()
   })
 
-  it('persists different native checkpoints within one node without another node start', async () => {
+  test('persists different native checkpoints within one node without another node start', async () => {
     const harness = makeHarness(true)
     const executor = await Effect.runPromise(harness.executor())
     await Effect.runPromise(executor.start(runId))
-    expect(Array.map(harness.commits(), (commit) => commit.status)).toEqual(['running', 'running', 'waiting'])
-    expect(harness.external.mock.calls).toEqual([['A'], ['A phase 2']])
+    expect(Array.map(harness.commits(), (commit) => commit.status)).toStrictEqual(['running', 'running', 'waiting'])
+    expect(harness.external.mock.calls).toStrictEqual([['A'], ['A phase 2']])
     expect(
       Array.filter(
         Array.flatMap(harness.commits(), (commit) => commit.events),
@@ -421,7 +425,7 @@ describe('request-scoped managed native runtime', () => {
     expect(harness.current().snapshot).not.toHaveProperty('state')
   })
 
-  it('shares one volatile resource across nodes until ACK and recreates it for the next execution', async () => {
+  test('shares one volatile resource across nodes until ACK and recreates it for the next execution', async () => {
     const harness = makeHarness(true)
     const executor = await Effect.runPromise(harness.executor())
     await Effect.runPromise(executor.start(runId))
@@ -436,7 +440,7 @@ describe('request-scoped managed native runtime', () => {
     expect(harness.resourceReleased).toHaveBeenCalledTimes(2)
   })
 
-  it('preserves a native defect as the cause of an infrastructure failure', async () => {
+  test('preserves a native defect as the cause of an infrastructure failure', async () => {
     const harness = makeHarness()
     const defect = new Error('defective persistence')
     harness.beforeCommit(() => Effect.die(defect))
@@ -446,13 +450,15 @@ describe('request-scoped managed native runtime', () => {
     if (Exit.isFailure(result)) {
       const failure = Cause.squash(result.cause)
       expect(failure).toBeInstanceOf(ExternalError)
-      if (failure instanceof ExternalError) expect(failure.cause).toBe(defect)
+      if (failure instanceof ExternalError) {
+        expect(failure.cause).toBe(defect)
+      }
     }
     expect(harness.external).not.toHaveBeenCalled()
     expect(harness.commits()).toHaveLength(0)
   })
 
-  it('propagates transport failure from a native invoke without changing the waiting checkpoint', async () => {
+  test('propagates transport failure from a native invoke without changing the waiting checkpoint', async () => {
     const harness = makeHarness()
     const executor = await Effect.runPromise(harness.executor())
     await Effect.runPromise(executor.start(runId))
@@ -460,13 +466,15 @@ describe('request-scoped managed native runtime', () => {
     harness.setTransportFailure()
     const result = await Effect.runPromise(executor.resume(runId).pipe(Effect.exit))
     expect(Exit.isFailure(result)).toBe(true)
-    if (Exit.isFailure(result)) expect(Cause.squash(result.cause)).toBe(unavailable)
-    expect(harness.current()).toEqual(waiting)
+    if (Exit.isFailure(result)) {
+      expect(Cause.squash(result.cause)).toBe(unavailable)
+    }
+    expect(harness.current()).toStrictEqual(waiting)
     expect(harness.commits()).toHaveLength(2)
     expect(harness.external).toHaveBeenCalledExactlyOnceWith('A')
   })
 
-  it('fails a later checkpoint before its external submission without committing business failure', async () => {
+  test('fails a later checkpoint before its external submission without committing business failure', async () => {
     const harness = makeHarness(true)
     harness.beforeCommit((command) =>
       Array.isReadonlyArrayEmpty(command.events) ? Effect.fail(unavailable) : Effect.void,
@@ -474,42 +482,42 @@ describe('request-scoped managed native runtime', () => {
     const executor = await Effect.runPromise(harness.executor())
     const result = await Effect.runPromise(executor.start(runId).pipe(Effect.exit))
     expect(Exit.isFailure(result)).toBe(true)
-    if (Exit.isFailure(result)) expect(Cause.squash(result.cause)).toBe(unavailable)
+    if (Exit.isFailure(result)) {
+      expect(Cause.squash(result.cause)).toBe(unavailable)
+    }
     expect(harness.current().status).toBe('running')
     expect(harness.external).toHaveBeenCalledExactlyOnceWith('A')
-    expect(Array.flatMap(harness.commits(), (command) => Array.map(command.events, (event) => event.type))).toEqual([
-      'run.started',
-      'node.started',
-    ])
+    expect(
+      Array.flatMap(harness.commits(), (command) => Array.map(command.events, (event) => event.type)),
+    ).toStrictEqual(['run.started', 'node.started'])
   })
 
-  it('validates native task state construction before checkpointing or submitting the next effect', async () => {
+  test('validates native task state construction before checkpointing or submitting the next effect', async () => {
     const harness = makeHarness(true)
     harness.setInvalidPhase()
     const executor = await Effect.runPromise(harness.executor())
     const result = await Effect.runPromise(executor.start(runId).pipe(Effect.exit))
     expect(Exit.isFailure(result)).toBe(true)
-    if (Exit.isFailure(result)) expect(Cause.squash(result.cause)).toBeInstanceOf(InvalidSnapshot)
+    if (Exit.isFailure(result)) {
+      expect(Cause.squash(result.cause)).toBeInstanceOf(InvalidSnapshot)
+    }
     expect(harness.commits()).toHaveLength(1)
     expect(harness.current().status).toBe('running')
     expect(harness.external).toHaveBeenCalledExactlyOnceWith('A')
   })
 
-  it('commits explicit native business failure and isolates defective post-ACK hooks', async () => {
+  test('commits explicit native business failure and isolates defective post-ACK hooks', async () => {
     const harness = makeHarness()
     harness.setBusinessFailure()
     const executor = await Effect.runPromise(harness.executor({ afterCommit: () => Effect.die('observer failed') }))
     await Effect.runPromise(executor.start(runId))
     expect(harness.current().status).toBe('failed')
-    expect(Array.flatMap(harness.commits(), (command) => Array.map(command.events, (event) => event.type))).toEqual([
-      'run.started',
-      'node.started',
-      'node.failed',
-      'run.failed',
-    ])
+    expect(
+      Array.flatMap(harness.commits(), (command) => Array.map(command.events, (event) => event.type)),
+    ).toStrictEqual(['run.started', 'node.started', 'node.failed', 'run.failed'])
   })
 
-  it('restores a native checkpoint without Store, Crypto, or provider runtime dependencies', async () => {
+  test('restores a native checkpoint without Store, Crypto, or provider runtime dependencies', async () => {
     const harness = makeHarness()
     const restored = await Effect.runPromise(harness.restore())
     expect(restored).toBeDefined()
@@ -518,12 +526,12 @@ describe('request-scoped managed native runtime', () => {
     expect(harness.external).not.toHaveBeenCalled()
   })
 
-  it('serializes concurrent commands for the same run and ignores defective post-ACK hooks', async () => {
+  test('serializes concurrent commands for the same run and ignores defective post-ACK hooks', async () => {
     const harness = makeHarness()
     const executor = await Effect.runPromise(harness.executor({ afterCommit: () => Effect.die('broken observer') }))
     await Effect.runPromise(Effect.all([executor.start(runId), executor.start(runId)], { concurrency: 'unbounded' }))
     expect(harness.current().status).toBe('waiting')
-    expect(harness.external.mock.calls).toEqual([['A']])
+    expect(harness.external.mock.calls).toStrictEqual([['A']])
     expect(harness.commits()).toHaveLength(2)
   })
 })

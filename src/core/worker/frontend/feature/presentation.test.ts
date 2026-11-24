@@ -1,5 +1,5 @@
 import { Array, Option, String } from 'effect'
-import { describe, expect, it } from 'vite-plus/test'
+import { describe, expect, test } from 'vite-plus/test'
 
 import type { ExecutionId, NodeId } from '@/core/feature/workflow/domain/identity'
 
@@ -35,7 +35,7 @@ const event = (
 })
 
 describe('workflow presentation', () => {
-  it('offers explicit recovery only for nonterminal runs', () => {
+  test('offers explicit recovery only for nonterminal runs', () => {
     expect(runRecoveryAction('pending')).toBe('recover')
     expect(runRecoveryAction('running')).toBe('recover')
     expect(runRecoveryAction('waiting')).toBe('resume')
@@ -43,7 +43,7 @@ describe('workflow presentation', () => {
     expect(runRecoveryAction('failed')).toBeNull()
   })
 
-  it('keeps keyboard node navigation bounded and supports both axes', () => {
+  test('keeps keyboard node navigation bounded and supports both axes', () => {
     const nodes = ['prepare', 'approval', 'publish']
     expect(nextNode(nodes, 'prepare', 'ArrowRight')).toBe('approval')
     expect(nextNode(nodes, 'approval', 'ArrowDown')).toBe('publish')
@@ -56,7 +56,7 @@ describe('workflow presentation', () => {
     expect(nextNode([], 'missing', 'ArrowRight')).toBeUndefined()
   })
 
-  it('sorts persisted sequence without mutating events and retains repeated executions', () => {
+  test('sorts persisted sequence without mutating events and retains repeated executions', () => {
     const runEvent: RunEvent = {
       eventId: 'event_00000000-0000-4000-8000-000000000004',
       runId: 'run_00000000-0000-4000-8000-000000000001',
@@ -66,15 +66,15 @@ describe('workflow presentation', () => {
       createdAt: '2026-10-17T00:00:00.000Z',
     }
     const events = [event(3, 'prepare', secondExecution), runEvent, event(2, 'prepare', firstExecution)]
-    expect(Array.map(orderedEvents(events), (item) => item.sequence)).toEqual([1, 2, 3])
+    expect(Array.map(orderedEvents(events), (item) => item.sequence)).toStrictEqual([1, 2, 3])
     expect(
       Array.map(nodeEvents(events, 'prepare'), (item) => ('executionId' in item ? item.executionId : undefined)),
-    ).toEqual([firstExecution, secondExecution])
+    ).toStrictEqual([firstExecution, secondExecution])
     expect(Array.getUnsafe(events, 0).sequence).toBe(3)
-    expect(nodeEvents(events, 'unknown')).toEqual([])
+    expect(nodeEvents(events, 'unknown')).toStrictEqual([])
   })
 
-  it('retains the node execution when a later checkpoint references the same execution', () => {
+  test('retains the node execution when a later checkpoint references the same execution', () => {
     const started = { ...event(2, 'approval', firstExecution), type: 'node.started' as const }
     const waiting = { ...event(3, 'approval', firstExecution), type: 'run.waiting' as const }
     const execution = Option.getOrUndefined(latestExecution([waiting, started]))
@@ -83,8 +83,8 @@ describe('workflow presentation', () => {
     expect(Option.isNone(latestExecution([waiting]))).toBe(true)
   })
 
-  it('derives graph bounds from common shapes without workflow-specific coordinates', () => {
-    expect(graphSize({ nodes: [], edges: [] })).toEqual({ width: 560, height: 220 })
+  test('derives graph bounds from common shapes without workflow-specific coordinates', () => {
+    expect(graphSize({ nodes: [], edges: [] })).toStrictEqual({ width: 560, height: 220 })
     expect(
       graphSize({
         nodes: [
@@ -101,10 +101,10 @@ describe('workflow presentation', () => {
         ],
         edges: [],
       }),
-    ).toEqual({ width: 1120, height: 530 })
+    ).toStrictEqual({ width: 1120, height: 530 })
   })
 
-  it('formats identifiers and event names with Effect String', () => {
+  test('formats identifiers and event names with Effect String', () => {
     expect(shortId('run_00000000-0000-4000-8000-001234567890')).toBe('34567890')
     expect(eventLabel('node.succeeded')).toBe('node succeeded')
     expect(renderJson({ state: 'Waiting', revision: 2 })).toBe('{\n  "state": "Waiting",\n  "revision": 2\n}')

@@ -64,10 +64,13 @@ export const makeHarnessSandbox = (options: {
       getTurn: (_runId, commandId) =>
         io(async (): Promise<TurnReceipt | null> => {
           const pending = await options.harness.pending({ session: ROOT_SESSION })
-          if (Array.some(pending, (operation) => operation.operationId === commandId))
+          if (Array.some(pending, (operation) => operation.operationId === commandId)) {
             return { commandId, status: 'running' }
+          }
           const result = await options.harness.wait(commandId, { session: ROOT_SESSION })
-          if (result.reason === 'not_found') return null
+          if (result.reason === 'not_found') {
+            return null
+          }
           return result.status === 'done'
             ? { commandId: decodeCommandId(result.operationId), status: 'completed', text: result.text ?? '' }
             : { commandId: decodeCommandId(result.operationId), status: 'failed', error: 'sdk_failure' }
@@ -76,7 +79,9 @@ export const makeHarnessSandbox = (options: {
         lock.withPermit(
           io(async () => {
             const pending = await options.harness.pending({ session: ROOT_SESSION })
-            if (Array.isReadonlyArrayNonEmpty(pending)) throw new Error('Pi session still has pending work')
+            if (Array.isReadonlyArrayNonEmpty(pending)) {
+              throw new Error('Pi session still has pending work')
+            }
             // Completion is only an acknowledgement. Durable storage and any
             // backend retention remain owned by the run and its native lifecycle.
             return session('completed')

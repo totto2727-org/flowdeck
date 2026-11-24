@@ -42,7 +42,9 @@ const makeGetRun = Effect.gen(function* () {
   return Effect.fn('D1Store.getRun')(function* (runId: RunId) {
     yield* decodeRunId(runId)
     const row = yield* execute('get run', query(getRunQuery, { runId }))
-    if (!row) return yield* Effect.fail(new NotFound({ resource: `run:${runId}` }))
+    if (!row) {
+      return yield* Effect.fail(new NotFound({ resource: `run:${runId}` }))
+    }
     return yield* decodeRun(row)
   })
 })
@@ -121,7 +123,9 @@ const makeCommit = Effect.gen(function* () {
     )
     yield* batch([receipt, updateRun, updateState, ...events])
     const ack = yield* execute('read commit acknowledgement', query(getAckQuery, identity))
-    if (!ack) return yield* Effect.fail(new NotFound({ resource: `run:${command.runId}` }))
+    if (!ack) {
+      return yield* Effect.fail(new NotFound({ resource: `run:${command.runId}` }))
+    }
     return yield* decodeAck(ack)
   })
 })
@@ -136,7 +140,9 @@ const makeGetGraph = Effect.gen(function* () {
   return Effect.fn('D1Store.getGraph')(function* (graphId: GraphId) {
     yield* decodeGraphId(graphId)
     const row = yield* execute('get graph', query(getGraphQuery, { graphId }))
-    if (!row) return yield* Effect.fail(new NotFound({ resource: `graph:${graphId}` }))
+    if (!row) {
+      return yield* Effect.fail(new NotFound({ resource: `graph:${graphId}` }))
+    }
     return yield* decodeGraph(yield* fromJson(row.graph_json))
   })
 })

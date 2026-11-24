@@ -21,16 +21,21 @@ export const projectMachineGraph = (options: {
       onSome: (annotation) => [{ nodeId: node.path, label: annotation.title, kind: annotation.description }],
     }),
   )
-  if (Array.isArrayEmpty(visible))
+  if (Array.isArrayEmpty(visible)) {
     throw new InvalidSnapshot({ message: 'A workflow graph needs annotated business nodes' })
+  }
   const owner = (path: string) =>
     Array.findLast(visible, (node) => path === node.nodeId || String.startsWith(`${node.nodeId}.`)(path))
   // Allocation-only states can sit between visible nodes. Follow their static
   // native edges without evaluating guards, resolvers, or invoked work.
   const destinations = (path: string, visited: HashSet.HashSet<string>): ReadonlyArray<string> => {
     const visibleOwner = owner(path)
-    if (Option.isSome(visibleOwner)) return [visibleOwner.value.nodeId]
-    if (HashSet.has(visited, path)) return []
+    if (Option.isSome(visibleOwner)) {
+      return [visibleOwner.value.nodeId]
+    }
+    if (HashSet.has(visited, path)) {
+      return []
+    }
     const seen = HashSet.add(visited, path)
     const node = Array.findFirst(options.nodes, (candidate) => candidate.path === path)
     const initial = Option.isSome(node) && node.value.type === 'compound' ? destinations(node.value.initial, seen) : []
@@ -47,9 +52,13 @@ export const projectMachineGraph = (options: {
   }
   const candidates = Array.flatMap(options.transitions, (transition) =>
     Array.flatMap(transition.branches, (branch) => {
-      if (Predicate.isUndefined(branch.target)) return []
+      if (Predicate.isUndefined(branch.target)) {
+        return []
+      }
       const source = owner(transition.source)
-      if (Option.isNone(source)) return []
+      if (Option.isNone(source)) {
+        return []
+      }
       const label =
         branch.type === 'branch'
           ? branch.title

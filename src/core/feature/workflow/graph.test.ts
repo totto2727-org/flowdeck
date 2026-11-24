@@ -1,6 +1,6 @@
 import { Machine } from '@typeonce/effect-machine'
 import { Effect } from 'effect'
-import { describe, expect, it, vi } from 'vite-plus/test'
+import { describe, expect, test, vi } from 'vite-plus/test'
 
 import { projectMachineGraph } from './graph.ts'
 
@@ -41,7 +41,7 @@ const makeWorkflow = (execute: (phase: string) => void) =>
   })
 
 describe('executable native Machine graph', () => {
-  it('projects the same native completion edge that automatically invokes the next business node', async () => {
+  test('projects the same native completion edge that automatically invokes the next business node', async () => {
     const execute = vi.fn()
     const native = makeWorkflow(execute)
     const graph = projectMachineGraph({
@@ -50,11 +50,11 @@ describe('executable native Machine graph', () => {
       transitions: Machine.transitionDefinitions(native),
     })
     expect(execute).not.toHaveBeenCalled()
-    expect(graph.nodes).toEqual([
+    expect(graph.nodes).toStrictEqual([
       { nodeId: 'implement', label: 'Implement task', kind: 'task' },
       { nodeId: 'verify', label: 'Verify task', kind: 'task' },
     ])
-    expect(graph.edges).toEqual([
+    expect(graph.edges).toStrictEqual([
       { edgeId: 'implement-verify', source: 'implement', target: 'verify', label: 'implementation complete' },
     ])
     await Effect.runPromise(
@@ -65,10 +65,10 @@ describe('executable native Machine graph', () => {
         }),
       ).pipe(Effect.timeout('2 seconds')),
     )
-    expect(execute.mock.calls).toEqual([['implement'], ['verify']])
+    expect(execute.mock.calls).toStrictEqual([['implement'], ['verify']])
   })
 
-  it('projects through unannotated native allocation invokes without executing them during introspection', async () => {
+  test('projects through unannotated native allocation invokes without executing them during introspection', async () => {
     const allocate = vi.fn()
     const root = Machine.state({
       states: {
@@ -100,7 +100,7 @@ describe('executable native Machine graph', () => {
         nodes: Machine.stateNodes(native),
         transitions: Machine.transitionDefinitions(native),
       }).edges,
-    ).toEqual([{ edgeId: 'approval-publish', source: 'approval', target: 'publish', label: 'Resume' }])
+    ).toStrictEqual([{ edgeId: 'approval-publish', source: 'approval', target: 'publish', label: 'Resume' }])
     expect(allocate).not.toHaveBeenCalled()
     await Effect.runPromise(
       Effect.scoped(
@@ -114,7 +114,7 @@ describe('executable native Machine graph', () => {
     expect(allocate).toHaveBeenCalledTimes(1)
   })
 
-  it('combines native alternatives between the same visible nodes without adding a second topology', () => {
+  test('combines native alternatives between the same visible nodes without adding a second topology', () => {
     const root = Machine.state({
       states: {
         approval: { annotations: { title: 'Approval', description: 'checkpoint' } },
@@ -136,7 +136,7 @@ describe('executable native Machine graph', () => {
       nodes: Machine.stateNodes(native),
       transitions: Machine.transitionDefinitions(native),
     })
-    expect(graph.edges).toEqual([
+    expect(graph.edges).toStrictEqual([
       { edgeId: 'approval-publish', source: 'approval', target: 'publish', label: 'Resume, Approve' },
     ])
   })

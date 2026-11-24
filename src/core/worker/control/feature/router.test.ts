@@ -4,7 +4,7 @@ import { makeRpcStub } from 'alchemy/Cloudflare/Workers'
 import { RpcCallError } from 'alchemy/Rpc'
 import { Crypto, Effect, Layer, Predicate, Schema, DateTime } from 'effect'
 import { HttpRouter } from 'effect/http'
-import { describe, expect, it, vi } from 'vite-plus/test'
+import { describe, expect, test, vi } from 'vite-plus/test'
 
 import {
   Conflict,
@@ -47,7 +47,7 @@ const unavailableWorkflows: Workflows['Service'] = {
 
 // Native requests exercise Control's public HTTP boundary with only its aggregate service supplied.
 describe('Control aggregate Workflow service boundary', () => {
-  it('serializes domain SemVer catalog values as HTTP strings', async () => {
+  test('serializes domain SemVer catalog values as HTTP strings', async () => {
     const workflows = [
       {
         workflowId: 'demo',
@@ -60,13 +60,13 @@ describe('Control aggregate Workflow service boundary', () => {
     try {
       const response = await handler.handler(new Request('http://localhost/api/workflows'))
       expect(response.status).toBe(200)
-      expect(await response.json()).toEqual({ workflows: [{ ...workflows[0], versions: ['1.0.0'] }] })
+      await expect(response.json()).resolves.toStrictEqual({ workflows: [{ ...workflows[0], versions: ['1.0.0'] }] })
     } finally {
       await handler.dispose()
     }
   })
 
-  it('encodes timestamp and event variants for RPC without losing domain values', () => {
+  test('encodes timestamp and event variants for RPC without losing domain values', () => {
     const runId = 'run_00000000-0000-4000-8000-000000000001'
     const timestamp = DateTime.makeUnsafe('2026-10-31T00:00:00.000Z')
     const snapshot = { nested: { valid: [true, null, 1] } }
@@ -115,9 +115,9 @@ describe('Control aggregate Workflow service boundary', () => {
         { type: 'node.started', nodeId: 'prepare', attempt: 1 },
       ],
     })
-    expect(Schema.decodeUnknownSync(RpcRunDetail, { onExcessProperty: 'error' })(structuredClone(encoded))).toEqual(
-      detail,
-    )
+    expect(
+      Schema.decodeUnknownSync(RpcRunDetail, { onExcessProperty: 'error' })(structuredClone(encoded)),
+    ).toStrictEqual(detail)
     const invalid = {
       ...Schema.decodeUnknownSync(Schema.JsonObject)(encoded),
       events: [{ ...detail.events[0], createdAt: DateTime.formatIso(timestamp), nodeId: null }],
@@ -125,23 +125,23 @@ describe('Control aggregate Workflow service boundary', () => {
     expect(() => Schema.decodeUnknownSync(RpcRunDetail, { onExcessProperty: 'error' })(invalid)).toThrow()
   })
 
-  it('round trips create input SemVer through native RPC-compatible values', () => {
+  test('round trips create input SemVer through native RPC-compatible values', () => {
     const input = { workflowId: 'demo', version: Schema.decodeUnknownSync(Schema.SemVerFromString)('1.2.3') }
     const encodedInput = Schema.encodeSync(RpcCreateRun)(input)
-    expect(encodedInput).toEqual({ workflowId: 'demo', version: '1.2.3' })
-    expect(Schema.decodeUnknownSync(RpcCreateRun)(structuredClone(encodedInput))).toEqual(input)
+    expect(encodedInput).toStrictEqual({ workflowId: 'demo', version: '1.2.3' })
+    expect(Schema.decodeUnknownSync(RpcCreateRun)(structuredClone(encodedInput))).toStrictEqual(input)
   })
 
-  it('round trips catalog SemVer through native RPC-compatible values', () => {
+  test('round trips catalog SemVer through native RPC-compatible values', () => {
     const version = Schema.decodeUnknownSync(Schema.SemVerFromString)('1.2.3')
     const catalog = { workflows: [{ workflowId: 'demo', name: 'Demo', versions: [version], inputs: [] }] }
     const encodedCatalog = Schema.encodeSync(RpcWorkflowsResponse)(catalog)
-    expect(encodedCatalog).toEqual({
+    expect(encodedCatalog).toStrictEqual({
       workflows: [{ workflowId: 'demo', name: 'Demo', versions: ['1.2.3'], inputs: [] }],
     })
-    expect(Schema.decodeUnknownSync(RpcWorkflowsResponse)(structuredClone(encodedCatalog))).toEqual(catalog)
+    expect(Schema.decodeUnknownSync(RpcWorkflowsResponse)(structuredClone(encodedCatalog))).toStrictEqual(catalog)
   })
-  it.each([
+  test.each([
     '00000000-0000-4000-8000-000000000001',
     'not-a-run-id',
     'event_00000000-0000-4000-8000-000000000001',
@@ -162,7 +162,7 @@ describe('Control aggregate Workflow service boundary', () => {
     }
   })
 
-  it.each([
+  test.each([
     ['GET', '/api/workflows', undefined],
     ['GET', '/api/runs', undefined],
     ['GET', '/api/runs/run_00000000-0000-4000-8000-000000000001', undefined],
@@ -190,13 +190,13 @@ describe('Control aggregate Workflow service boundary', () => {
         ),
       )
       expect(response.status).toBe(502)
-      expect(await response.json()).toMatchObject({ error: 'ExternalError' })
+      await expect(response.json()).resolves.toMatchObject({ error: 'ExternalError' })
     } finally {
       await handler.dispose()
     }
   })
 
-  it.each([
+  test.each([
     [new NotFound({ resource: 'private graph' }), 404, 'NotFound'],
     [new Conflict({ message: 'private conflict' }), 409, 'Conflict'],
     [
@@ -240,7 +240,7 @@ describe('Control aggregate Workflow service boundary', () => {
         )
         expect(response.status).toBe(status)
         const body = await response.json()
-        expect(body).toEqual({ error: code, message: local.cause.detail })
+        expect(body).toStrictEqual({ error: code, message: local.cause.detail })
         expect(JSON.stringify(body)).not.toContain('private')
         expect(body).not.toHaveProperty('stack')
         expect(body).not.toHaveProperty('cause')
@@ -250,7 +250,7 @@ describe('Control aggregate Workflow service boundary', () => {
     },
   )
 
-  it.each([
+  test.each([
     ['GET', '/api/workflows', undefined],
     ['GET', '/api/runs', undefined],
     ['GET', '/api/runs/run_00000000-0000-4000-8000-000000000001', undefined],
@@ -268,13 +268,13 @@ describe('Control aggregate Workflow service boundary', () => {
         ),
       )
       expect(response.status).toBe(502)
-      expect(await response.json()).toMatchObject({ error: 'ExternalError' })
+      await expect(response.json()).resolves.toMatchObject({ error: 'ExternalError' })
     } finally {
       await handler.dispose()
     }
   })
 
-  it.each([
+  test.each([
     ['/api/runs', '{"workflowId":"demo","version":"1.0.0"}'],
     ['/api/runs', 'not JSON'],
     ['/api/runs/run_00000000-0000-4000-8000-000000000001/resume', undefined],
@@ -291,7 +291,7 @@ describe('Control aggregate Workflow service boundary', () => {
         }),
       )
       expect(response.status).toBe(403)
-      expect(await response.json()).toEqual({
+      await expect(response.json()).resolves.toStrictEqual({
         error: 'Forbidden',
         message: 'Browser-originated control mutations are not allowed',
       })

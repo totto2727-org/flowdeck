@@ -6,7 +6,7 @@ import {
 import { RuntimeContext } from 'alchemy/RuntimeContext'
 import { Effect, Layer, Schema } from 'effect'
 import { HttpEffect } from 'effect/http'
-import { describe, expect, it, vi } from 'vite-plus/test'
+import { describe, expect, test, vi } from 'vite-plus/test'
 
 import { ControlApi } from '@/core/worker/frontend/feature/control-api'
 
@@ -41,7 +41,7 @@ const catalog = (name: string) => ({
 })
 
 describe('frontend request composition', () => {
-  it.each([
+  test.each([
     [{}, admitted(), 503, 'Access is not configured.'],
     [{ FLOWDECK_ACCESS_AUD: '' }, admitted(), 503, 'Access is not configured.'],
     [{ FLOWDECK_ACCESS_AUD: 'flowdeck-audience' }, undefined, 401, 'Cloudflare Access authentication is required.'],
@@ -74,12 +74,12 @@ describe('frontend request composition', () => {
       )
       const response = await handler(new Request('https://flowdeck.example/'))
       expect(response.status).toBe(status)
-      expect(await response.text()).toBe(message)
+      await expect(response.text()).resolves.toBe(message)
       expect(control).not.toHaveBeenCalled()
     },
   )
 
-  it('keeps independently constructed Control clients bound to their own request environment', async () => {
+  test('keeps independently constructed Control clients bound to their own request environment', async () => {
     const firstFetch = vi.fn(async () => Response.json(catalog('First request')))
     const secondFetch = vi.fn(async () => Response.json(catalog('Second request')))
     const firstApi = await Effect.runPromise(
@@ -102,12 +102,12 @@ describe('frontend request composition', () => {
     )
     expect(first.workflows).toMatchObject([{ name: 'First request' }])
     expect(second.workflows).toMatchObject([{ name: 'Second request' }])
-    expect(firstAgain).toEqual(first)
+    expect(firstAgain).toStrictEqual(first)
     expect(firstFetch).toHaveBeenCalledTimes(2)
     expect(secondFetch).toHaveBeenCalledTimes(1)
   })
 
-  it('uses the native binding only at the HTTP adapter and preserves mutation method and JSON body', async () => {
+  test('uses the native binding only at the HTTP adapter and preserves mutation method and JSON body', async () => {
     const seen: Array<{ method: string; url: string; body: unknown }> = []
     const fetch = vi.fn(async (request: Request) => {
       seen.push({ method: request.method, url: request.url, body: await request.json() })
@@ -125,7 +125,7 @@ describe('frontend request composition', () => {
         .pipe(Effect.result),
     )
     expect(result).toMatchObject({ _tag: 'Failure', failure: { _tag: 'ControlError' } })
-    expect(seen).toEqual([
+    expect(seen).toStrictEqual([
       { method: 'POST', url: 'https://control.internal/api/runs', body: { workflowId: 'demo', version: '1.0.0' } },
     ])
   })

@@ -2,12 +2,12 @@ import { fileURLToPath } from 'node:url'
 
 import { Array, Option } from 'effect'
 import { build } from 'vite-plus'
-import { describe, expect, it } from 'vite-plus/test'
+import { describe, expect, test } from 'vite-plus/test'
 
 import { workspaceProxyBuild } from './workspace-proxy-build.ts'
 
 describe('workspaceProxyBuild scope', () => {
-  it.each(['/source/worker.ts', '\0virtual:another-entry:test', '/source/virtual:alchemy-entry:test'])(
+  test.each(['/source/worker.ts', '\0virtual:another-entry:test', '/source/virtual:alchemy-entry:test'])(
     'does not inject the SDK into unrelated module %s',
     async (id) => {
       const result = await build({
@@ -37,10 +37,14 @@ describe('workspaceProxyBuild scope', () => {
         },
       })
       const output = Array.isArray(result) ? result[0] : result
-      if (!output || !('output' in output)) throw new Error('Expected fixture output')
+      if (!output || !('output' in output)) {
+        throw new Error('Expected fixture output')
+      }
       const entry = Array.findFirst(output.output, (chunk) => chunk.type === 'chunk' && chunk.isEntry)
-      if (Option.isNone(entry) || entry.value.type !== 'chunk') throw new Error('Expected fixture entry')
-      expect(entry.value.exports).toEqual(['value'])
+      if (Option.isNone(entry) || entry.value.type !== 'chunk') {
+        throw new Error('Expected fixture entry')
+      }
+      expect(entry.value.exports).toStrictEqual(['value'])
       expect(entry.value.code).not.toContain('WorkspaceProxy')
     },
   )

@@ -1,6 +1,6 @@
 import { Machine } from '@typeonce/effect-machine'
 import { DateTime, Effect, Option, Schema, SemVer, String } from 'effect'
-import { describe, expect, it } from 'vite-plus/test'
+import { describe, expect, test } from 'vite-plus/test'
 
 import { JsonObject, type Run } from '@/core/feature/workflow/domain/model'
 
@@ -39,7 +39,7 @@ describe('development strict restore boundary', () => {
     result: 'done',
   }
 
-  it.each(['"runtime":"pi"', '"runtime":null', '"runtime":false', '"other":"pi-harness"'])(
+  test.each(['"runtime":"pi"', '"runtime":null', '"runtime":false', '"other":"pi-harness"'])(
     'rejects malformed native runtime %s before accessing Pi',
     async (runtime) => {
       const prepared = await Effect.runPromise(developmentDefinition.prepare(input))
@@ -52,19 +52,19 @@ describe('development strict restore boundary', () => {
     },
   )
 
-  it('rejects omitted runtime and command identities instead of restoring them', async () => {
+  test('rejects omitted runtime and command identities instead of restoring them', async () => {
     await expect(Effect.runPromise(restoreDevelopment({ ...run, snapshot: completing }))).rejects.toMatchObject({
       _tag: 'InvalidSnapshot',
     })
   })
 
-  it.each(['pi', 'pi-harness'])('rejects runtime %s with missing command identity', async (runtime) => {
+  test.each(['pi', 'pi-harness'])('rejects runtime %s with missing command identity', async (runtime) => {
     await expect(
       Effect.runPromise(restoreDevelopment({ ...run, snapshot: { ...completing, runtime } })),
     ).rejects.toMatchObject({ _tag: 'InvalidSnapshot' })
   })
 
-  it('rejects an invalid explicit runtime instead of treating it as missing', async () => {
+  test('rejects an invalid explicit runtime instead of treating it as missing', async () => {
     await expect(
       Effect.runPromise(restoreDevelopment({ ...run, snapshot: { ...completing, runtime: null } })),
     ).rejects.toMatchObject({ _tag: 'InvalidSnapshot' })
@@ -72,8 +72,8 @@ describe('development strict restore boundary', () => {
 })
 
 describe('development definition', () => {
-  it('prepares the workflow-owned graph and PiHarness snapshot', async () => {
-    expect(await Effect.runPromise(developmentDefinition.prepare(input))).toMatchObject({
+  test('prepares the workflow-owned graph and PiHarness snapshot', async () => {
+    await expect(Effect.runPromise(developmentDefinition.prepare(input))).resolves.toMatchObject({
       graph: {
         graphId: 'jcode-development-1_0_0-graph-1',
         schemaVersion: 1,
@@ -93,7 +93,7 @@ describe('development definition', () => {
     })
   })
 
-  it.each(['https://github.com/example/project', 'https://github.com/example/project.git'])(
+  test.each(['https://github.com/example/project', 'https://github.com/example/project.git'])(
     'preserves the validated URL string %s',
     async (repository) => {
       const prepared = await Effect.runPromise(developmentDefinition.prepare({ ...input, repository }))
@@ -104,7 +104,7 @@ describe('development definition', () => {
     },
   )
 
-  it.each([
+  test.each([
     'https://github.com:8443/example/project',
     'https://github.com/example/%70roject',
     'http://github.com/example/project',
@@ -119,11 +119,11 @@ describe('development definition', () => {
     await expect(Effect.runPromise(developmentDefinition.prepare({ ...input, repository }))).rejects.toThrow()
   })
 
-  it('rejects a string version at the domain boundary', () => {
+  test('rejects a string version at the domain boundary', () => {
     expect(() => Schema.decodeUnknownSync(DevelopmentCreateRun)({ ...input, version: '1.0.0' })).toThrow()
   })
 
-  it.each([
+  test.each([
     { ...input, version: SemVer.make({ major: 2, minor: 0, patch: 0 }) },
     { ...input, task: '' },
     { ...input, task: '   ' },

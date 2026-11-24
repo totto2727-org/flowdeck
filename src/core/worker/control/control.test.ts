@@ -1,7 +1,7 @@
 import { WorkerEnvironment } from 'alchemy/Cloudflare/Workers'
 import { Effect, Result, Schema, Scope } from 'effect'
 import { HttpEffect } from 'effect/http'
-import { describe, expect, expectTypeOf, it, vi } from 'vite-plus/test'
+import { describe, expect, expectTypeOf, test, vi } from 'vite-plus/test'
 
 import { makeControl } from './control.ts'
 
@@ -13,7 +13,7 @@ const catalog = (name: string) => ({
 })
 
 describe('Control runtime initialization', () => {
-  it('constructs one reusable HTTP handler before request bindings exist and resolves each binding at call time', async () => {
+  test('constructs one reusable HTTP handler before request bindings exist and resolves each binding at call time', async () => {
     expectTypeOf<Effect.Services<typeof makeControl>>().toEqualTypeOf<Scope.Scope>()
     const firstRpc = vi.fn(async () => encodeReply(Result.succeed(catalog('First binding'))))
     const secondRpc = vi.fn(async () => encodeReply(Result.succeed(catalog('Second binding'))))
@@ -36,9 +36,9 @@ describe('Control runtime initialization', () => {
             expect(firstResponse.status).toBe(200)
             expect(secondResponse.status).toBe(200)
             expect(firstAgain.status).toBe(200)
-            expect(await firstResponse.json()).toEqual(catalog('First binding'))
-            expect(await secondResponse.json()).toEqual(catalog('Second binding'))
-            expect(await firstAgain.json()).toEqual(catalog('First binding'))
+            await expect(firstResponse.json()).resolves.toStrictEqual(catalog('First binding'))
+            await expect(secondResponse.json()).resolves.toStrictEqual(catalog('Second binding'))
+            await expect(firstAgain.json()).resolves.toStrictEqual(catalog('First binding'))
           })
         }),
       ),

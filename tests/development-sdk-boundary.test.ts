@@ -6,7 +6,7 @@ import { makeEffectVirtualEntry } from 'alchemy/Cloudflare/Workers/Sources/Rolld
 import { Array, Context, Effect, Option, Schedule } from 'effect'
 import { Miniflare } from 'miniflare'
 import { build } from 'vite-plus'
-import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test'
+import { afterAll, beforeAll, describe, expect, test } from 'vite-plus/test'
 
 import { workspaceProxyBuild } from '@/core/worker/pi/feature/workspace-proxy-build'
 
@@ -61,11 +61,15 @@ describe('Alchemy Effect DO and official native SDK raw boundary', () => {
       },
     })
     const output = Array.isArray(result) ? result[0] : result
-    if (!output || !('output' in output)) throw new Error('Expected bundled SDK fixture')
+    if (!output || !('output' in output)) {
+      throw new Error('Expected bundled SDK fixture')
+    }
     const chunks = Array.filter(output.output, (entry) => entry.type === 'chunk')
     const chunk = Array.findFirst(chunks, (entry) => entry.isEntry)
-    if (Option.isNone(chunk)) throw new Error('Expected SDK fixture entry chunk')
-    expect(chunk.value.exports).toEqual(expect.arrayContaining(['SdkBoundary', 'WorkspaceProxy', 'default']))
+    if (Option.isNone(chunk)) {
+      throw new Error('Expected SDK fixture entry chunk')
+    }
+    expect(chunk.value.exports).toStrictEqual(expect.arrayContaining(['SdkBoundary', 'WorkspaceProxy', 'default']))
     miniflare = new Miniflare({
       workers: [
         {
@@ -110,28 +114,28 @@ describe('Alchemy Effect DO and official native SDK raw boundary', () => {
     return response.json()
   }
 
-  it('starts the production PiHarness in an Effect DO with SQLite and no external I/O', async () => {
-    expect(await read()).toEqual({ jobs: 0, sqlite: 1 })
-    expect(await read('/fetch')).toEqual({ jobs: 0 })
+  test('starts the production PiHarness in an Effect DO with SQLite and no external I/O', async () => {
+    await expect(read()).resolves.toStrictEqual({ jobs: 0, sqlite: 1 })
+    await expect(read('/fetch')).resolves.toStrictEqual({ jobs: 0 })
   })
 
-  it('does not mistake the SDK Capnweb target for a native Cloudflare RPC capability', async () => {
-    expect(await read('/capnweb')).toEqual({
+  test('does not mistake the SDK Capnweb target for a native Cloudflare RPC capability', async () => {
+    await expect(read('/capnweb')).resolves.toStrictEqual({
       accepted: false,
       name: 'DataCloneError',
       message: expect.stringContaining('WorkspaceStub'),
     })
   })
 
-  it('retains WorkspaceProxy in the generated Effect bundle even when the plugin is registered twice', async () => {
-    expect(await read('/proxy')).toEqual({ status: 200, text: 'ok\n' })
+  test('retains WorkspaceProxy in the generated Effect bundle even when the plugin is registered twice', async () => {
+    await expect(read('/proxy')).resolves.toStrictEqual({ status: 200, text: 'ok\n' })
   })
 
-  it('forwards a real workerd alarm to the official Lifecycle job queue', async () => {
-    expect(await read('/schedule')).toEqual({ queued: 1 })
+  test('forwards a real workerd alarm to the official Lifecycle job queue', async () => {
+    await expect(read('/schedule')).resolves.toStrictEqual({ queued: 1 })
     await Effect.runPromise(
       Effect.tryPromise(async () => {
-        expect(await read()).toEqual({ jobs: 0, sqlite: 1 })
+        await expect(read()).resolves.toStrictEqual({ jobs: 0, sqlite: 1 })
       }).pipe(Effect.retry({ times: 50, schedule: Schedule.spaced('20 millis') })),
     )
   })

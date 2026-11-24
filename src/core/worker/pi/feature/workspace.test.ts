@@ -2,7 +2,7 @@ import { createPiTools, type CreatePiToolsOptions } from '@cloudflare/computer/t
 import { createModels } from '@earendil-works/pi-ai'
 import { AssistantEntry, createRegistry, Harness, MemoryStorage, ToolTask } from '@earendil-works/pi-durable'
 import { Array, Option } from 'effect'
-import { describe, expect, it, vi } from 'vite-plus/test'
+import { describe, expect, test, vi } from 'vite-plus/test'
 
 import { CONTAINER_BACKEND, createWorkspaceTools, WORKER_SHELL_BACKEND } from './workspace.ts'
 
@@ -44,7 +44,7 @@ const fixture = (backendId = CONTAINER_BACKEND) =>
   }) satisfies CreatePiToolsOptions['workspace']
 
 describe('Pi workspace tools', () => {
-  it.each(
+  test.each(
     Array.flatMap([CONTAINER_BACKEND, WORKER_SHELL_BACKEND], (backendId) =>
       Array.map(
         [
@@ -58,7 +58,9 @@ describe('Pi workspace tools', () => {
     ),
   )('commits Computer $name output from $backendId to the durable model transcript (failure=$fail)', async (call) => {
     const workspace = fixture(call.backendId)
-    if (call.fail) workspace.runtime.exec.mockRejectedValue(new Error('container unavailable'))
+    if (call.fail) {
+      workspace.runtime.exec.mockRejectedValue(new Error('container unavailable'))
+    }
     const context: Parameters<Harness['close']>[0] = {
       abortSignal: undefined,
       value: () => undefined,
@@ -102,9 +104,11 @@ describe('Pi workspace tools', () => {
           },
         )
       }, context)
-      expect(await harness.waitForTask(task, context)).toMatchObject({ state: { outcome: { status: 'completed' } } })
+      await expect(harness.waitForTask(task, context)).resolves.toMatchObject({
+        state: { outcome: { status: 'completed' } },
+      })
       const view = await root.context(context)
-      expect(Array.filter(view.messages, (message) => message.role === 'toolResult')).toEqual([
+      expect(Array.filter(view.messages, (message) => message.role === 'toolResult')).toStrictEqual([
         expect.objectContaining({
           role: 'toolResult',
           toolCallId: toolCall.id,
@@ -113,15 +117,16 @@ describe('Pi workspace tools', () => {
           isError: expected.isError,
         }),
       ])
-      expect(expected.content).not.toEqual([])
-      if (call.name === 'exec' && !call.fail)
-        expect(expected.content).toEqual([{ type: 'text', text: expect.stringContaining('hello') }])
+      expect(expected.content).not.toStrictEqual([])
+      if (call.name === 'exec' && !call.fail) {
+        expect(expected.content).toStrictEqual([{ type: 'text', text: expect.stringContaining('hello') }])
+      }
     } finally {
       await harness.close(context)
     }
   })
 
-  it('preserves the official declarations and schema enforcement metadata', () => {
+  test('preserves the official declarations and schema enforcement metadata', () => {
     const workspace = fixture()
     const { tools } = createPiTools({
       workspace,
@@ -134,11 +139,11 @@ describe('Pi workspace tools', () => {
         parameters: tool.parameters,
         ...(tool.constrainedSampling ? { constrainedSampling: tool.constrainedSampling } : {}),
       })),
-    ).toEqual(tools)
+    ).toStrictEqual(tools)
   })
 
-  it('keeps non-idempotent edit and shell commands unsafe to replay', () => {
-    expect(Array.map(createWorkspaceTools(fixture()), ({ name, replay }) => ({ name, replay }))).toEqual([
+  test('keeps non-idempotent edit and shell commands unsafe to replay', () => {
+    expect(Array.map(createWorkspaceTools(fixture()), ({ name, replay }) => ({ name, replay }))).toStrictEqual([
       { name: 'read', replay: 'safe' },
       { name: 'ls', replay: 'safe' },
       { name: 'find', replay: 'safe' },
@@ -150,7 +155,7 @@ describe('Pi workspace tools', () => {
     ])
   })
 
-  it('offers only the Container shell without JavaScript module arguments', () => {
+  test('offers only the Container shell without JavaScript module arguments', () => {
     const exec = Array.findFirst(createWorkspaceTools(fixture()), (tool) => tool.name === 'exec')
     expect(exec).toMatchObject({
       _tag: 'Some',

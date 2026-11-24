@@ -1,5 +1,5 @@
 import { Array, DateTime, Schema, SemVer } from 'effect'
-import { describe, expect, it } from 'vite-plus/test'
+import { describe, expect, test } from 'vite-plus/test'
 
 import { CreateRun, GraphDefinition, NodeShape, Run, RunEvent, RunState, WorkflowVersion } from './model.ts'
 
@@ -44,44 +44,47 @@ const decodeCreate = Schema.decodeUnknownSync(createCodec)
 const decodeVersion = Schema.decodeUnknownSync(Schema.toCodecJson(WorkflowVersion))
 
 describe('workflow-neutral wire schemas', () => {
-  it('keeps rich domain versions and UTC timestamps separate from JSON', () => {
+  test('keeps rich domain versions and UTC timestamps separate from JSON', () => {
     const domain = decodeRun(run)
     expect(Schema.is(Run)(domain)).toBe(true)
     expect(Schema.is(Run)(run)).toBe(false)
     expect(DateTime.isUtc(domain.createdAt)).toBe(true)
     expect(DateTime.isUtc(domain.updatedAt)).toBe(true)
-    expect(Schema.encodeSync(runCodec)(domain)).toEqual(run)
-    expect(Schema.encodeSync(eventCodec)(decodeEvent(event))).toEqual(event)
+    expect(Schema.encodeSync(runCodec)(domain)).toStrictEqual(run)
+    expect(Schema.encodeSync(eventCodec)(decodeEvent(event))).toStrictEqual(event)
     const input = { workflowId: 'demo', version: '1.0.0', title: 'Release' }
-    expect(Schema.encodeSync(createCodec)(decodeCreate(input))).toEqual(input)
+    expect(Schema.encodeSync(createCodec)(decodeCreate(input))).toStrictEqual(input)
   })
 
-  it.each(['createdAt', 'updatedAt'] as const)('rejects invalid run timestamp %s', (field) => {
+  test.each(['createdAt', 'updatedAt'] as const)('rejects invalid run timestamp %s', (field) => {
     expect(() => decodeRun({ ...run, [field]: 'not-a-date' })).toThrow()
     expect(() => decodeRun({ ...run, [field]: null })).toThrow()
     expect(() => decodeEvent({ ...event, createdAt: 'not-a-date' })).toThrow()
   })
 
-  it.each(['run.started', 'run.resumed', 'run.completed', 'run.failed'])('decodes %s without node identity', (type) => {
-    const input = {
-      eventId: event.eventId,
-      runId: event.runId,
-      sequence: 1,
-      payload: {},
-      createdAt: event.createdAt,
-      type,
-    }
-    const decoded = decodeEvent(input)
-    expect('nodeId' in decoded).toBe(false)
-    expect('executionId' in decoded).toBe(false)
-    expect('attempt' in decoded).toBe(false)
-    expect(Schema.encodeSync(eventCodec)(decoded)).toEqual(input)
-  })
+  test.each(['run.started', 'run.resumed', 'run.completed', 'run.failed'])(
+    'decodes %s without node identity',
+    (type) => {
+      const input = {
+        eventId: event.eventId,
+        runId: event.runId,
+        sequence: 1,
+        payload: {},
+        createdAt: event.createdAt,
+        type,
+      }
+      const decoded = decodeEvent(input)
+      expect('nodeId' in decoded).toBe(false)
+      expect('executionId' in decoded).toBe(false)
+      expect('attempt' in decoded).toBe(false)
+      expect(Schema.encodeSync(eventCodec)(decoded)).toStrictEqual(input)
+    },
+  )
 
-  it.each(['node.started', 'node.succeeded', 'node.failed', 'run.waiting'])(
+  test.each(['node.started', 'node.succeeded', 'node.failed', 'run.waiting'])(
     'requires node execution for %s',
     (type) => {
-      expect(Schema.encodeSync(eventCodec)(decodeEvent({ ...event, type }))).toEqual({ ...event, type })
+      expect(Schema.encodeSync(eventCodec)(decodeEvent({ ...event, type }))).toStrictEqual({ ...event, type })
       Array.forEach(['nodeId', 'executionId', 'attempt'] as const, (field) => {
         expect(() => decodeEvent({ ...event, type, [field]: undefined })).toThrow()
         expect(() => decodeEvent({ ...event, type, [field]: null })).toThrow()
@@ -89,7 +92,7 @@ describe('workflow-neutral wire schemas', () => {
     },
   )
 
-  it.each(['run.started', 'run.resumed', 'run.completed', 'run.failed'])(
+  test.each(['run.started', 'run.resumed', 'run.completed', 'run.failed'])(
     'rejects execution placeholders on %s instead of silently dropping them',
     (type) => {
       expect(() => decodeEvent({ ...event, type })).toThrow()
@@ -97,7 +100,7 @@ describe('workflow-neutral wire schemas', () => {
     },
   )
 
-  it('requires position and size objects instead of flat node geometry', () => {
+  test('requires position and size objects instead of flat node geometry', () => {
     const identity = {
       id: 'prepare',
       nodeId: 'prepare',
@@ -108,13 +111,13 @@ describe('workflow-neutral wire schemas', () => {
     }
     const geometry = { position: { x: 48, y: 72 }, size: { width: 224, height: 100 } }
     const decodeShape = Schema.decodeUnknownSync(NodeShape)
-    expect(decodeShape({ ...identity, ...geometry })).toEqual({ ...identity, ...geometry })
+    expect(decodeShape({ ...identity, ...geometry })).toStrictEqual({ ...identity, ...geometry })
     expect(() => decodeShape({ ...identity, x: 48, y: 72, width: 224, height: 100 })).toThrow()
     expect(() => decodeShape({ ...identity, position: { x: 48 }, size: geometry.size })).toThrow()
     expect(() => decodeShape({ ...identity, position: geometry.position, size: { width: 224 } })).toThrow()
   })
 
-  it.each([
+  test.each([
     null,
     [],
     'state',
@@ -131,26 +134,26 @@ describe('workflow-neutral wire schemas', () => {
     expect(() => decodeEvent({ ...event, payload: snapshot })).toThrow()
   })
 
-  it('accepts recursive JSON objects for snapshots and payloads', () => {
+  test('accepts recursive JSON objects for snapshots and payloads', () => {
     const snapshot = { nested: { values: [null, true, 42, 'value', { state: 'waiting' }] } }
-    expect(decodeRun({ ...run, snapshot }).snapshot).toEqual(snapshot)
-    expect(Schema.decodeUnknownSync(RunState)({ ...state, snapshot }).snapshot).toEqual(snapshot)
-    expect(decodeEvent({ ...event, payload: snapshot }).payload).toEqual(snapshot)
+    expect(decodeRun({ ...run, snapshot }).snapshot).toStrictEqual(snapshot)
+    expect(Schema.decodeUnknownSync(RunState)({ ...state, snapshot }).snapshot).toStrictEqual(snapshot)
+    expect(decodeEvent({ ...event, payload: snapshot }).payload).toStrictEqual(snapshot)
   })
 
-  it.each(unsafeIds)('rejects unsafe caller-supplied workflow ID %s', (workflowId) => {
+  test.each(unsafeIds)('rejects unsafe caller-supplied workflow ID %s', (workflowId) => {
     expect(() => decodeCreate({ workflowId, version: '1.0.0' })).toThrow()
     expect(Schema.is(Run)({ ...run, workflowId })).toBe(false)
   })
 
-  it.each(['1.0.0', '2.13.7-rc.1+build.42', '0.0.0'])('round-trips semantic version %s', (version) => {
+  test.each(['1.0.0', '2.13.7-rc.1+build.42', '0.0.0'])('round-trips semantic version %s', (version) => {
     expect(Schema.is(WorkflowVersion)(decodeVersion(version))).toBe(true)
     expect(SemVer.format(decodeVersion(version))).toBe(version)
     expect(Schema.encodeSync(Schema.toCodecJson(WorkflowVersion))(decodeVersion(version))).toBe(version)
     expect(SemVer.format(decodeRun({ ...run, workflowVersion: version }).workflowVersion)).toBe(version)
   })
 
-  it.each(['v1', 'v2', '1', '1.0', '01.0.0', '1.0.0-01', '', ' 1.0.0', '1.0.0 ', '1.0.0\n'])(
+  test.each(['v1', 'v2', '1', '1.0', '01.0.0', '1.0.0-01', '', ' 1.0.0', '1.0.0 ', '1.0.0\n'])(
     'rejects malformed version %s in creation and persisted runs',
     (version) => {
       expect(Schema.is(WorkflowVersion)(version)).toBe(false)
@@ -160,28 +163,28 @@ describe('workflow-neutral wire schemas', () => {
     },
   )
 
-  it('preserves arbitrary workflow input without importing a workflow implementation', () => {
+  test('preserves arbitrary workflow input without importing a workflow implementation', () => {
     const input = { workflowId: 'review', version: '3.4.5-beta.1+build.7', pullRequest: 42 }
-    expect(decodeCreate(input)).toEqual({
+    expect(decodeCreate(input)).toStrictEqual({
       ...input,
       version: decodeVersion(input.version),
     })
   })
 
-  it('round-trips strict run, state, graph and event identities', () => {
-    expect(decodeRun(run)).toEqual({
+  test('round-trips strict run, state, graph and event identities', () => {
+    expect(decodeRun(run)).toStrictEqual({
       ...run,
       workflowVersion: decodeVersion(run.workflowVersion),
       createdAt: DateTime.makeUnsafe(run.createdAt),
       updatedAt: DateTime.makeUnsafe(run.updatedAt),
     })
-    expect(Schema.decodeUnknownSync(RunState)(state)).toEqual(state)
-    expect(decodeEvent(event)).toEqual({ ...event, createdAt: DateTime.makeUnsafe(event.createdAt) })
-    expect(Schema.decodeUnknownSync(GraphDefinition)(graph)).toEqual(graph)
+    expect(Schema.decodeUnknownSync(RunState)(state)).toStrictEqual(state)
+    expect(decodeEvent(event)).toStrictEqual({ ...event, createdAt: DateTime.makeUnsafe(event.createdAt) })
+    expect(Schema.decodeUnknownSync(GraphDefinition)(graph)).toStrictEqual(graph)
     expect(() => decodeEvent({ ...event, nodeId: null, executionId: null, attempt: null })).toThrow()
   })
 
-  it.each(['demo-1_0_0-graph-1', 'jcode-development-1_0_0-graph-1', 'Graph_123'])(
+  test.each(['demo-1_0_0-graph-1', 'jcode-development-1_0_0-graph-1', 'Graph_123'])(
     'accepts named graph ID %s',
     (graphId) => {
       expect(Schema.decodeUnknownSync(GraphDefinition)({ ...graph, graphId }).graphId).toBe(graphId)
@@ -189,7 +192,7 @@ describe('workflow-neutral wire schemas', () => {
     },
   )
 
-  it.each([uuid, `event_${uuid}`, `run_${uuid7}`, 'run_not-a-uuid', `run_${uuid}\n`, `run_${uuid}extra`])(
+  test.each([uuid, `event_${uuid}`, `run_${uuid7}`, 'run_not-a-uuid', `run_${uuid}\n`, `run_${uuid}extra`])(
     'rejects invalid run ID %s across run, state and event boundaries',
     (runId) => {
       expect(() => decodeRun({ ...run, runId })).toThrow()
@@ -198,14 +201,14 @@ describe('workflow-neutral wire schemas', () => {
     },
   )
 
-  it.each(['eventId', 'executionId'] as const)('enforces the %s UUIDv4 prefix', (field) => {
+  test.each(['eventId', 'executionId'] as const)('enforces the %s UUIDv4 prefix', (field) => {
     const prefix = field === 'eventId' ? 'event' : 'execution'
     Array.forEach([uuid, `run_${uuid}`, `${prefix}_${uuid7}`, `${prefix}_bad`, `${prefix}_${uuid}\n`], (id) => {
       expect(() => decodeEvent({ ...event, [field]: id })).toThrow()
     })
   })
 
-  it.each(unsafeIds)('rejects invalid named identity %s in every graph position', (id) => {
+  test.each(unsafeIds)('rejects invalid named identity %s in every graph position', (id) => {
     expect(() => decodeRun({ ...run, graphId: id })).toThrow()
     expect(() => Schema.decodeUnknownSync(GraphDefinition)({ ...graph, graphId: id })).toThrow()
     expect(() => decodeEvent({ ...event, nodeId: id })).toThrow()

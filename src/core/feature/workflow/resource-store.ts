@@ -29,7 +29,9 @@ export class ResourceStore extends Context.Service<ResourceStore, ResourceStoreS
           Effect.uninterruptibleMask((restore) =>
             Effect.gen(function* () {
               const existing = yield* get(key)
-              if (Option.isSome(existing)) return existing.value
+              if (Option.isSome(existing)) {
+                return existing.value
+              }
               // Each attempt needs cleanup on failure; successful children stay attached to the runtime scope.
               // Provide this scope here because a caller's operation scope must not own cached resources.
               const attempt = yield* Scope.fork(scope)

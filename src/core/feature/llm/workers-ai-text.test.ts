@@ -3,7 +3,7 @@ import { AIBinding, WorkerEnvironment, WorkersAIError } from 'alchemy/Cloudflare
 import { makeWorkerRuntimeContext } from 'alchemy/Cloudflare/Workers/WorkerRuntimeContext'
 import { RuntimeContext } from 'alchemy/RuntimeContext'
 import { Deferred, Effect, Exit, Fiber, Result, Schema } from 'effect'
-import { describe, expect, expectTypeOf, it, vi } from 'vite-plus/test'
+import { describe, expect, expectTypeOf, test, vi } from 'vite-plus/test'
 
 import { makeWorkersAiText, WorkersAiText, WorkersAiTextModel, workersAiTextModel } from './workers-ai-text.ts'
 
@@ -53,21 +53,21 @@ const makeMachine = (review: (text: string) => void) =>
   })
 
 describe('Workers AI text (synthetic inference)', () => {
-  it.each(WorkersAiTextModel.literals)('runs the caller-selected compatible model %s', async (model) => {
+  test.each(WorkersAiTextModel.literals)('runs the caller-selected compatible model %s', async (model) => {
     const run = vi.fn(async () => ({ response: 'selected model output' }))
     const text = await makeText(run)
-    expect(await Effect.runPromise(text.generate({ prompt: 'Write', max_tokens: 20 }, model))).toBe(
+    await expect(Effect.runPromise(text.generate({ prompt: 'Write', max_tokens: 20 }, model))).resolves.toBe(
       'selected model output',
     )
     expect(run).toHaveBeenCalledExactlyOnceWith(model, { prompt: 'Write', max_tokens: 20, stream: false }, undefined)
   })
 
-  it('uses the native model contract, forces nonstreaming and returns generated text', async () => {
+  test('uses the native model contract, forces nonstreaming and returns generated text', async () => {
     const run = vi.fn(async () => ({ response: 'A concise summary' }))
     const text = await makeText(run)
     const result = text.generate({ prompt: 'Summarize', max_tokens: 40, temperature: 0.2 })
     expectTypeOf<Effect.Services<typeof result>>().toEqualTypeOf<never>()
-    expect(await Effect.runPromise(result)).toBe('A concise summary')
+    await expect(Effect.runPromise(result)).resolves.toBe('A concise summary')
     expect(run).toHaveBeenCalledExactlyOnceWith(
       workersAiTextModel,
       {
@@ -80,12 +80,12 @@ describe('Workers AI text (synthetic inference)', () => {
     )
   })
 
-  it('accepts the native string output alternative', async () => {
+  test('accepts the native string output alternative', async () => {
     const text = await makeText(async () => 'Plain generated text')
-    expect(await Effect.runPromise(text.generate({ prompt: 'Write' }))).toBe('Plain generated text')
+    await expect(Effect.runPromise(text.generate({ prompt: 'Write' }))).resolves.toBe('Plain generated text')
   })
 
-  it.each([
+  test.each([
     { name: 'async receipts', output: { request_id: 'pending' } },
     { name: 'tool-only responses', output: { tool_calls: [] } },
     { name: 'nontext responses', output: { response: 42 } },
@@ -93,10 +93,12 @@ describe('Workers AI text (synthetic inference)', () => {
     const text = await makeText(async () => output)
     const result = await Effect.runPromise(Effect.result(text.generate({ prompt: 'Write' })))
     expect(Result.isFailure(result)).toBe(true)
-    if (Result.isFailure(result)) expect(result.failure._tag).toBe('SchemaError')
+    if (Result.isFailure(result)) {
+      expect(result.failure._tag).toBe('SchemaError')
+    }
   })
 
-  it('retains the original native inference error as the WorkersAIError cause', async () => {
+  test('retains the original native inference error as the WorkersAIError cause', async () => {
     const cause = new Error('synthetic binding failure')
     const text = await makeText(async () => {
       throw cause
@@ -105,11 +107,13 @@ describe('Workers AI text (synthetic inference)', () => {
     expect(Result.isFailure(result)).toBe(true)
     if (Result.isFailure(result)) {
       expect(result.failure).toBeInstanceOf(WorkersAIError)
-      if (result.failure instanceof WorkersAIError) expect(result.failure.cause).toBe(cause)
+      if (result.failure instanceof WorkersAIError) {
+        expect(result.failure.cause).toBe(cause)
+      }
     }
   })
 
-  it('does not let a caller replace the captured native binding', async () => {
+  test('does not let a caller replace the captured native binding', async () => {
     const text = await makeText(async () => ({ response: 'original' }))
     const unexpected = vi.fn(async () => ({ response: 'replacement' }))
     const result = await Effect.runPromise(
@@ -124,7 +128,7 @@ describe('Workers AI text (synthetic inference)', () => {
     expect(unexpected).not.toHaveBeenCalled()
   })
 
-  it('preserves interruption while inference is pending', async () => {
+  test('preserves interruption while inference is pending', async () => {
     const started = Deferred.makeUnsafe<void>()
     const text = await makeText(() => {
       Effect.runSync(Deferred.succeed(started, undefined))
@@ -141,7 +145,7 @@ describe('Workers AI text (synthetic inference)', () => {
     expect(Exit.hasInterrupts(exit)).toBe(true)
   })
 
-  it('ordinary Machine.start automatically invokes generation and the next node', async () => {
+  test('ordinary Machine.start automatically invokes generation and the next node', async () => {
     const text = await makeText(async () => ({ response: 'generated' }))
     const review = vi.fn()
     const machine = makeMachine(review)
@@ -157,7 +161,7 @@ describe('Workers AI text (synthetic inference)', () => {
     expect(review).toHaveBeenCalledExactlyOnceWith('generated')
   })
 
-  it('ordinary Machine.invoke routes a typed inference failure without invoking the success node', async () => {
+  test('ordinary Machine.invoke routes a typed inference failure without invoking the success node', async () => {
     const text = await makeText(async () => {
       throw new Error('synthetic failure')
     })
@@ -174,7 +178,7 @@ describe('Workers AI text (synthetic inference)', () => {
     expect(review).not.toHaveBeenCalled()
   })
 
-  it('ordinary Machine.resume reacquires a new text service and progresses from the saved invoke state', async () => {
+  test('ordinary Machine.resume reacquires a new text service and progresses from the saved invoke state', async () => {
     const machine = makeMachine(vi.fn())
     const snapshot = await Effect.runPromise(
       Effect.scoped(

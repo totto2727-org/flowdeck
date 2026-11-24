@@ -39,7 +39,9 @@ export const D1ClusterMachineStorage = Layer.effect(
               ...addressParams(address),
               requestId: yield* encodeRequestId(requestId),
             })
-            if (!row) return { checkpoint: Option.none(), processed: false }
+            if (!row) {
+              return { checkpoint: Option.none(), processed: false }
+            }
             return {
               checkpoint: Option.some({
                 machineId: row.machineId,
@@ -68,8 +70,12 @@ export const D1ClusterMachineStorage = Layer.effect(
             // Both insert and update paths are gated before the receipt is added.
             const results = yield* batch([writeCheckpoint, writeRequest])
             const changes = results[1]?.meta.changes
-            if (changes === 1) return ClusterMachine.CommitResult.Committed()
-            if (changes === 0) return ClusterMachine.CommitResult.Duplicate()
+            if (changes === 1) {
+              return ClusterMachine.CommitResult.Committed()
+            }
+            if (changes === 0) {
+              return ClusterMachine.CommitResult.Duplicate()
+            }
             return yield* Effect.fail(new Error('D1 returned an invalid request receipt change count'))
           }),
         ),

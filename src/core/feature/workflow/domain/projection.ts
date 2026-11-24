@@ -16,7 +16,9 @@ export const projectEvents = (events: ReadonlyArray<RunEvent>) =>
     ),
     HashMap.empty<NodeId, NodeVisualState>(),
     (states, event) => {
-      if (!('nodeId' in event)) return states
+      if (!('nodeId' in event)) {
+        return states
+      }
       const visual = Match.value(event.type).pipe(
         Match.when('node.started', () => 'running' as const),
         Match.when('node.succeeded', () => 'succeeded' as const),

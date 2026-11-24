@@ -1,7 +1,7 @@
 import { BrowserCrypto } from '@effect/platform-browser'
 import { Machine } from '@typeonce/effect-machine'
 import { Array, Effect, Option } from 'effect'
-import { describe, expect, it } from 'vite-plus/test'
+import { describe, expect, test } from 'vite-plus/test'
 
 import { type EventDraft, resumeEvent, WorkflowCheckpoint } from '@/core/feature/workflow/managed-runtime'
 
@@ -15,7 +15,7 @@ const implementations = [
 ]
 
 describe('native demo execution', () => {
-  it.each(
+  test.each(
     Array.flatMap(implementations, (implementation) =>
       Array.map(['prepare', 'publish'] as const, (phase) => ({ ...implementation, phase })),
     ),
@@ -57,14 +57,15 @@ describe('native demo execution', () => {
                 ? Option.getOrThrow(states.get(boundary.state, 'approval'))
                 : Option.getOrThrow(states.get(boundary.state, 'completed'))
             expect(stored.prepareExecutionId).toBe(prepareExecutionId)
-            if (phase === 'publish')
+            if (phase === 'publish') {
               expect(stored).toMatchObject({ approvalExecutionId, publishExecutionId, result: `published:${draft}` })
+            }
           }),
         ).pipe(Effect.provideService(WorkflowCheckpoint, checkpoint), Effect.provide(BrowserCrypto.layer)),
       )
     },
   )
-  it.each(implementations)(
+  test.each(implementations)(
     'waits for approval and preserves execution identities after runtime replacement: $draft',
     async ({ native, states, draft }) => {
       let checkpoints: ReadonlyArray<EventDraft> = []
@@ -83,7 +84,7 @@ describe('native demo execution', () => {
             const boundary = yield* Machine.waitFor(ref, ({ state }) => states.matches(state, 'approval'))
             const data = Option.getOrThrow(states.get(boundary.state, 'approval'))
             expect(data.prepared).toBe(draft)
-            expect(checkpoints).toEqual([
+            expect(checkpoints).toStrictEqual([
               { type: 'run.started', payload: {} },
               {
                 type: 'node.started',
@@ -93,7 +94,7 @@ describe('native demo execution', () => {
                 payload: {},
               },
             ])
-            expect(demoBoundaryEvents(boundary.state)).toEqual([
+            expect(demoBoundaryEvents(boundary.state)).toStrictEqual([
               {
                 type: 'node.succeeded',
                 nodeId: 'prepare',
@@ -129,7 +130,7 @@ describe('native demo execution', () => {
             const completed = yield* Machine.waitFor(ref, ({ state }) => states.matches(state, 'completed'))
             const result = Option.getOrThrow(states.get(completed.state, 'completed'))
             expect(result).toMatchObject({ ...waiting.data, _tag: 'completed', result: `published:${draft}` })
-            expect(checkpoints).toEqual([
+            expect(checkpoints).toStrictEqual([
               { type: 'run.started', payload: {} },
               {
                 type: 'node.started',
@@ -153,7 +154,7 @@ describe('native demo execution', () => {
                 payload: {},
               },
             ])
-            expect(demoBoundaryEvents(completed.state)).toEqual([
+            expect(demoBoundaryEvents(completed.state)).toStrictEqual([
               {
                 type: 'node.succeeded',
                 nodeId: 'publish',

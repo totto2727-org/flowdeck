@@ -5,7 +5,7 @@ import { ClusterMachine } from '@typeonce/effect-machine/cluster'
 import { Array, Effect, Exit, Layer, ManagedRuntime, Option } from 'effect'
 import { ClusterError, EntityAddress, EntityId, EntityType, ShardId, Snowflake, TestRunner } from 'effect/cluster'
 import { Miniflare } from 'miniflare'
-import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from 'vite-plus/test'
+import { afterEach, beforeEach, describe, expect, expectTypeOf, test, vi } from 'vite-plus/test'
 
 import { D1Client } from '@/core/feature/d1/client'
 import { D1Binding, NativeD1Client } from '@/core/feature/d1/native'
@@ -79,47 +79,49 @@ afterEach(async () => {
 })
 
 describe('D1 Cluster machine checkpoints', () => {
-  it('requires only the captured D1 client', () => {
+  test('requires only the captured D1 client', () => {
     expectTypeOf<Layer.Services<typeof D1ClusterMachineStorage>>().toEqualTypeOf<D1Client>()
   })
 
-  it('loads an empty address without inventing a checkpoint or receipt', async () => {
-    expect(await Effect.runPromise(freshStorage().load(address(), request))).toEqual({
+  test('loads an empty address without inventing a checkpoint or receipt', async () => {
+    await expect(Effect.runPromise(freshStorage().load(address(), request))).resolves.toStrictEqual({
       checkpoint: Option.none(),
       processed: false,
     })
   })
 
-  it('restores the latest checkpoint and all earlier receipts from a new service without rounding snowflakes', async () => {
+  test('restores the latest checkpoint and all earlier receipts from a new service without rounding snowflakes', async () => {
     const storage = freshStorage()
-    expect(await Effect.runPromise(storage.commit(address(), checkpoint()))).toEqual(
+    await expect(Effect.runPromise(storage.commit(address(), checkpoint()))).resolves.toStrictEqual(
       ClusterMachine.CommitResult.Committed(),
     )
-    expect(await Effect.runPromise(storage.commit(address(), checkpoint(laterRequest, 'advanced')))).toEqual(
-      ClusterMachine.CommitResult.Committed(),
-    )
+    await expect(
+      Effect.runPromise(storage.commit(address(), checkpoint(laterRequest, 'advanced'))),
+    ).resolves.toStrictEqual(ClusterMachine.CommitResult.Committed())
     const restored = freshStorage()
-    expect(await Effect.runPromise(restored.load(address(), request))).toEqual({
+    await expect(Effect.runPromise(restored.load(address(), request))).resolves.toStrictEqual({
       checkpoint: Option.some(checkpoint(laterRequest, 'advanced')),
       processed: true,
     })
-    expect(await Effect.runPromise(restored.load(address(), Snowflake.Snowflake('9007199254740992')))).toEqual({
+    await expect(
+      Effect.runPromise(restored.load(address(), Snowflake.Snowflake('9007199254740992'))),
+    ).resolves.toStrictEqual({
       checkpoint: Option.some(checkpoint(laterRequest, 'advanced')),
       processed: false,
     })
     expect(
       await database.prepare('SELECT request_id FROM cluster_machine_requests ORDER BY request_id').all(),
     ).toMatchObject({ results: [{ request_id: '9007199254740993' }, { request_id: '9007199254740995' }] })
-    expect(await Effect.runPromise(restored.commit(address(), checkpoint(request, 'completed')))).toEqual(
-      ClusterMachine.CommitResult.Duplicate(),
-    )
-    expect(await Effect.runPromise(freshStorage().load(address(), laterRequest))).toEqual({
+    await expect(
+      Effect.runPromise(restored.commit(address(), checkpoint(request, 'completed'))),
+    ).resolves.toStrictEqual(ClusterMachine.CommitResult.Duplicate())
+    await expect(Effect.runPromise(freshStorage().load(address(), laterRequest))).resolves.toStrictEqual({
       checkpoint: Option.some(checkpoint(laterRequest, 'advanced')),
       processed: true,
     })
   })
 
-  it('commits with two native prepares and one batch without reads, then loads with one read', async () => {
+  test('commits with two native prepares and one batch without reads, then loads with one read', async () => {
     const client = nativeClient()
     const nativePrepare = client.prepare.bind(client)
     const read = vi.fn()
@@ -140,7 +142,7 @@ describe('D1 Cluster machine checkpoints', () => {
     const batch = vi.spyOn(client, 'batch')
     try {
       const storage = storageWithClient(client)
-      expect(await Effect.runPromise(storage.commit(address(), checkpoint()))).toEqual(
+      await expect(Effect.runPromise(storage.commit(address(), checkpoint()))).resolves.toStrictEqual(
         ClusterMachine.CommitResult.Committed(),
       )
       expect(prepare).toHaveBeenCalledTimes(2)
@@ -149,7 +151,7 @@ describe('D1 Cluster machine checkpoints', () => {
       expect(read).not.toHaveBeenCalled()
       prepare.mockClear()
       batch.mockClear()
-      expect(await Effect.runPromise(storage.load(address(), request))).toEqual({
+      await expect(Effect.runPromise(storage.load(address(), request))).resolves.toStrictEqual({
         checkpoint: Option.some(checkpoint()),
         processed: true,
       })
@@ -162,7 +164,7 @@ describe('D1 Cluster machine checkpoints', () => {
     }
   })
 
-  it('roundtrips every optional public snapshot field through a newly constructed storage service', async () => {
+  test('roundtrips every optional public snapshot field through a newly constructed storage service', async () => {
     const value: ClusterMachine.Checkpoint = {
       ...checkpoint(),
       snapshot: {
@@ -180,30 +182,32 @@ describe('D1 Cluster machine checkpoints', () => {
         },
       },
     }
-    expect(await Effect.runPromise(freshStorage().commit(address(), value))).toEqual(
+    await expect(Effect.runPromise(freshStorage().commit(address(), value))).resolves.toStrictEqual(
       ClusterMachine.CommitResult.Committed(),
     )
-    expect(await Effect.runPromise(freshStorage().load(address(), request))).toEqual({
+    await expect(Effect.runPromise(freshStorage().load(address(), request))).resolves.toStrictEqual({
       checkpoint: Option.some(value),
       processed: true,
     })
   })
 
-  it('commits exactly once for concurrent deliveries of the same request', async () => {
+  test('commits exactly once for concurrent deliveries of the same request', async () => {
     const results = await Effect.runPromise(
       Effect.all([freshStorage().commit(address(), checkpoint()), freshStorage().commit(address(), checkpoint())], {
         concurrency: 'unbounded',
       }),
     )
-    expect(results).toEqual(
+    expect(results).toStrictEqual(
       expect.arrayContaining([ClusterMachine.CommitResult.Committed(), ClusterMachine.CommitResult.Duplicate()]),
     )
-    expect(await database.prepare('SELECT count(*) AS count FROM cluster_machine_requests').first()).toEqual({
+    await expect(
+      database.prepare('SELECT count(*) AS count FROM cluster_machine_requests').first(),
+    ).resolves.toStrictEqual({
       count: 1,
     })
   })
 
-  it.each([
+  test.each([
     ['shard group', address('other')],
     ['shard id', address('group', 2)],
     ['entity type', address('group', 1, 'other')],
@@ -213,37 +217,37 @@ describe('D1 Cluster machine checkpoints', () => {
     const first = _label === 'delimiter collision' ? address('group', 1, 'machine', 'run:tail') : address()
     const storage = freshStorage()
     await Effect.runPromise(storage.commit(first, checkpoint()))
-    expect(await Effect.runPromise(storage.load(other, request))).toEqual({
+    await expect(Effect.runPromise(storage.load(other, request))).resolves.toStrictEqual({
       checkpoint: Option.none(),
       processed: false,
     })
-    expect(await Effect.runPromise(storage.commit(other, checkpoint(request, 'advanced')))).toEqual(
+    await expect(Effect.runPromise(storage.commit(other, checkpoint(request, 'advanced')))).resolves.toStrictEqual(
       ClusterMachine.CommitResult.Committed(),
     )
-    expect(await Effect.runPromise(storage.load(first, request))).toEqual({
+    await expect(Effect.runPromise(storage.load(first, request))).resolves.toStrictEqual({
       checkpoint: Option.some(checkpoint()),
       processed: true,
     })
   })
 
-  it('rolls back the first checkpoint write when the receipt insert fails', async () => {
+  test('rolls back the first checkpoint write when the receipt insert fails', async () => {
     await database.exec(
       "CREATE TRIGGER reject_receipt BEFORE INSERT ON cluster_machine_requests BEGIN SELECT RAISE(ABORT, 'receipt rejected'); END",
     )
     const error = await Effect.runPromise(freshStorage().commit(address(), checkpoint()).pipe(Effect.flip))
     expect(error).toBeInstanceOf(ClusterError.PersistenceError)
     expect(error.cause).toBeDefined()
-    expect(await Effect.runPromise(freshStorage().load(address(), request))).toEqual({
+    await expect(Effect.runPromise(freshStorage().load(address(), request))).resolves.toStrictEqual({
       checkpoint: Option.none(),
       processed: false,
     })
     await database.exec('DROP TRIGGER reject_receipt')
-    expect(await Effect.runPromise(freshStorage().commit(address(), checkpoint()))).toEqual(
+    await expect(Effect.runPromise(freshStorage().commit(address(), checkpoint()))).resolves.toStrictEqual(
       ClusterMachine.CommitResult.Committed(),
     )
   })
 
-  it('preserves the earlier checkpoint and receipt when a later receipt insert aborts', async () => {
+  test('preserves the earlier checkpoint and receipt when a later receipt insert aborts', async () => {
     await Effect.runPromise(freshStorage().commit(address(), checkpoint()))
     await database.exec(
       "CREATE TRIGGER reject_receipt BEFORE INSERT ON cluster_machine_requests BEGIN SELECT RAISE(ABORT, 'receipt rejected'); END",
@@ -251,17 +255,17 @@ describe('D1 Cluster machine checkpoints', () => {
     expect(
       await Effect.runPromise(freshStorage().commit(address(), checkpoint(laterRequest, 'advanced')).pipe(Effect.flip)),
     ).toBeInstanceOf(ClusterError.PersistenceError)
-    expect(await Effect.runPromise(freshStorage().load(address(), laterRequest))).toEqual({
+    await expect(Effect.runPromise(freshStorage().load(address(), laterRequest))).resolves.toStrictEqual({
       checkpoint: Option.some(checkpoint()),
       processed: false,
     })
-    expect(await Effect.runPromise(freshStorage().load(address(), request))).toEqual({
+    await expect(Effect.runPromise(freshStorage().load(address(), request))).resolves.toStrictEqual({
       checkpoint: Option.some(checkpoint()),
       processed: true,
     })
   })
 
-  it('retains native failure causes', async () => {
+  test('retains native failure causes', async () => {
     await database.exec('DROP TABLE cluster_machine_requests')
     const error = await Effect.runPromise(freshStorage().commit(address(), checkpoint()).pipe(Effect.flip))
     expect(error).toBeInstanceOf(ClusterError.PersistenceError)
@@ -269,35 +273,35 @@ describe('D1 Cluster machine checkpoints', () => {
     expect(String(error.cause)).toContain('cluster_machine_requests')
   })
 
-  it('retains the exact captured client defect as the persistence cause', async () => {
+  test('retains the exact captured client defect as the persistence cause', async () => {
     const cause = new Error('native batch failure')
     const storage = storageWithClient({ ...nativeClient(), batch: () => Effect.die(cause) })
     const error = await Effect.runPromise(storage.commit(address(), checkpoint()).pipe(Effect.flip))
     expect(error).toBeInstanceOf(ClusterError.PersistenceError)
     expect(error.cause).toBe(cause)
-    expect(await Effect.runPromise(freshStorage().load(address(), request))).toEqual({
+    await expect(Effect.runPromise(freshStorage().load(address(), request))).resolves.toStrictEqual({
       checkpoint: Option.none(),
       processed: false,
     })
   })
 
-  it('does not reclassify batch interruption as persistence failure', async () => {
+  test('does not reclassify batch interruption as persistence failure', async () => {
     const storage = storageWithClient({ ...nativeClient(), batch: () => Effect.interrupt })
     expect(Exit.hasInterrupts(await Effect.runPromiseExit(storage.commit(address(), checkpoint())))).toBe(true)
-    expect(await Effect.runPromise(freshStorage().load(address(), request))).toEqual({
+    await expect(Effect.runPromise(freshStorage().load(address(), request))).resolves.toStrictEqual({
       checkpoint: Option.none(),
       processed: false,
     })
   })
 
-  it.each(['{}', '{"_tag":"MachineSnapshot","version":2,"active":[{"path":42}]}'])(
+  test.each(['{}', '{"_tag":"MachineSnapshot","version":2,"active":[{"path":42}]}'])(
     'fails safely on malformed stored snapshot %s',
     async (snapshot) => {
       await Effect.runPromise(freshStorage().commit(address(), checkpoint()))
       await database.prepare('UPDATE cluster_machine_checkpoints SET snapshot_json = ?').bind(snapshot).run()
-      expect(await Effect.runPromise(freshStorage().load(address(), request).pipe(Effect.flip))).toBeInstanceOf(
-        ClusterError.PersistenceError,
-      )
+      await expect(
+        Effect.runPromise(freshStorage().load(address(), request).pipe(Effect.flip)),
+      ).resolves.toBeInstanceOf(ClusterError.PersistenceError)
     },
   )
 })
@@ -325,15 +329,17 @@ const persisted = () =>
     .first<{ machine_id: string; version: string; request_id: string; snapshot_json: string }>()
 
 describe('official Cluster machine with D1 checkpoint storage', () => {
-  it('rejects a failed receipt insert without partial persistence and recovers after host reconstruction', async () => {
+  test('rejects a failed receipt insert without partial persistence and recovers after host reconstruction', async () => {
     await database.exec(
       "CREATE TRIGGER reject_receipt BEFORE INSERT ON cluster_machine_requests BEGIN SELECT RAISE(ABORT, 'receipt rejected'); END",
     )
     const failed = host()
     try {
-      expect(await failed.send()).toMatchObject({ _tag: 'Rejected', reason: 'PersistenceFailure' })
-      expect(await persisted()).toBeNull()
-      expect(await database.prepare('SELECT count(*) AS count FROM cluster_machine_requests').first()).toEqual({
+      await expect(failed.send()).resolves.toMatchObject({ _tag: 'Rejected', reason: 'PersistenceFailure' })
+      await expect(persisted()).resolves.toBeNull()
+      await expect(
+        database.prepare('SELECT count(*) AS count FROM cluster_machine_requests').first(),
+      ).resolves.toStrictEqual({
         count: 0,
       })
     } finally {
@@ -342,11 +348,11 @@ describe('official Cluster machine with D1 checkpoint storage', () => {
     await database.exec('DROP TRIGGER reject_receipt')
     const recovered = host()
     try {
-      expect(await recovered.send()).toEqual(new ClusterMachine.Accepted({}))
+      await expect(recovered.send()).resolves.toStrictEqual(new ClusterMachine.Accepted({}))
       const restored = await persisted()
       expect(restored).toMatchObject({ machine_id: StorageTestMachine.id, version: '1' })
       expect(JSON.parse(restored!.snapshot_json)).toMatchObject({ active: [{ path: '' }, { path: 'advanced' }] })
-      expect(await database.prepare('SELECT request_id FROM cluster_machine_requests').all()).toMatchObject({
+      await expect(database.prepare('SELECT request_id FROM cluster_machine_requests').all()).resolves.toMatchObject({
         results: [{ request_id: restored!.request_id }],
       })
     } finally {
@@ -354,10 +360,10 @@ describe('official Cluster machine with D1 checkpoint storage', () => {
     }
   })
 
-  it('resumes the data-only machine after host disposal and accepts final requests as no-ops', async () => {
+  test('resumes the data-only machine after host disposal and accepts final requests as no-ops', async () => {
     const first = host()
     try {
-      expect(await first.send()).toEqual(new ClusterMachine.Accepted({}))
+      await expect(first.send()).resolves.toStrictEqual(new ClusterMachine.Accepted({}))
     } finally {
       await first.runtime.dispose()
     }
@@ -366,10 +372,10 @@ describe('official Cluster machine with D1 checkpoint storage', () => {
     expect(JSON.parse(afterFirst!.snapshot_json)).toMatchObject({ active: [{ path: '' }, { path: 'advanced' }] })
     const second = host()
     try {
-      expect(await second.send()).toEqual(new ClusterMachine.Accepted({}))
+      await expect(second.send()).resolves.toStrictEqual(new ClusterMachine.Accepted({}))
       const completed = await persisted()
       expect(JSON.parse(completed!.snapshot_json)).toMatchObject({ active: [{ path: '' }, { path: 'completed' }] })
-      expect(await second.send()).toEqual(new ClusterMachine.Accepted({}))
+      await expect(second.send()).resolves.toStrictEqual(new ClusterMachine.Accepted({}))
       const noop = await persisted()
       expect(noop!.snapshot_json).toBe(completed!.snapshot_json)
       expect(noop!.request_id).not.toBe(completed!.request_id)
@@ -378,7 +384,7 @@ describe('official Cluster machine with D1 checkpoint storage', () => {
     }
   })
 
-  it.each([
+  test.each([
     ['version', 'VersionMismatch', "UPDATE cluster_machine_checkpoints SET version = 'other'"],
     ['identity', 'MachineIdMismatch', "UPDATE cluster_machine_checkpoints SET machine_id = 'other'"],
     [
@@ -389,7 +395,7 @@ describe('official Cluster machine with D1 checkpoint storage', () => {
   ])('rejects incompatible %s without changing persisted state', async (_label, reason, mutation) => {
     const first = host()
     try {
-      expect(await first.send()).toEqual(new ClusterMachine.Accepted({}))
+      await expect(first.send()).resolves.toStrictEqual(new ClusterMachine.Accepted({}))
     } finally {
       await first.runtime.dispose()
     }
@@ -397,10 +403,10 @@ describe('official Cluster machine with D1 checkpoint storage', () => {
     const before = await persisted()
     const restored = host()
     try {
-      expect(await restored.send()).toMatchObject({ _tag: 'Rejected', reason })
+      await expect(restored.send()).resolves.toMatchObject({ _tag: 'Rejected', reason })
     } finally {
       await restored.runtime.dispose()
     }
-    expect(await persisted()).toEqual(before)
+    await expect(persisted()).resolves.toStrictEqual(before)
   })
 })

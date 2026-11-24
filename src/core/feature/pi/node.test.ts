@@ -1,6 +1,6 @@
 import { BrowserCrypto } from '@effect/platform-browser'
 import { Effect } from 'effect'
-import { describe, expect, it, vi } from 'vite-plus/test'
+import { describe, expect, test, vi } from 'vite-plus/test'
 
 import { WorkflowCheckpoint } from '@/core/feature/workflow/managed-runtime'
 import { ResourceStore } from '@/core/feature/workflow/resource-store'
@@ -16,7 +16,7 @@ const execution: PiExecution = {
 const runId = 'run_00000000-0000-4000-8000-000000000003'
 
 describe('shared Pi node effects', () => {
-  it('submits a generic turn without selecting workflow nodes or emitting business checkpoints', async () => {
+  test('submits a generic turn without selecting workflow nodes or emitting business checkpoints', async () => {
     const checkpoint = vi.fn(() => Effect.void)
     const submitTurn = vi.fn<PiSandbox['Service']['submitTurn']>(() =>
       Effect.succeed({ commandId: execution.commandId, status: 'running' }),
@@ -38,7 +38,7 @@ describe('shared Pi node effects', () => {
         Effect.scoped,
       ),
     )
-    expect(result).toEqual({ _tag: 'Waiting' })
+    expect(result).toStrictEqual({ _tag: 'Waiting' })
     expect(checkpoint).not.toHaveBeenCalled()
     expect(submitTurn).toHaveBeenCalledExactlyOnceWith(runId, {
       commandId: execution.commandId,
@@ -46,8 +46,8 @@ describe('shared Pi node effects', () => {
     })
   })
 
-  it('preserves caller-owned node identity in event drafts', () => {
-    expect(piNodeEvent('review-release', execution, 'node.succeeded', { output: 'ready' })).toEqual({
+  test('preserves caller-owned node identity in event drafts', () => {
+    expect(piNodeEvent('review-release', execution, 'node.succeeded', { output: 'ready' })).toStrictEqual({
       type: 'node.succeeded',
       nodeId: 'review-release',
       executionId: execution.executionId,

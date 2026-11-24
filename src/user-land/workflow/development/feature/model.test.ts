@@ -1,6 +1,6 @@
 import { Machine } from '@typeonce/effect-machine'
 import { Array, Effect, Option, Schema, String } from 'effect'
-import { describe, expect, it } from 'vite-plus/test'
+import { describe, expect, test } from 'vite-plus/test'
 
 import { CommandId, SessionId, TurnReceipt, TurnRequest } from '@/core/feature/pi/model'
 
@@ -20,19 +20,19 @@ const initialSnapshot = initialDevelopmentSnapshot({
 const commandId = 'command_3d360c7a-4b1a-4df3-9633-861a220bf5b7'
 
 describe('development operation wire schemas', () => {
-  it('rejects an empty prompt with the official nonempty string schema', () => {
+  test('rejects an empty prompt with the official nonempty string schema', () => {
     expect(Schema.is(TurnRequest)({ commandId, prompt: '' })).toBe(false)
   })
 
-  it('accepts prefixed UUIDv4 operation identities through the standard Schema check', () => {
+  test('accepts prefixed UUIDv4 operation identities through the standard Schema check', () => {
     expect(Schema.decodeUnknownSync(CommandId)(commandId)).toBe(commandId)
-    expect(Schema.decodeUnknownSync(TurnRequest)({ commandId, prompt: 'Verify the change.' })).toEqual({
+    expect(Schema.decodeUnknownSync(TurnRequest)({ commandId, prompt: 'Verify the change.' })).toStrictEqual({
       commandId,
       prompt: 'Verify the change.',
     })
   })
 
-  it.each([
+  test.each([
     'run:implement:1',
     'not-a-uuid',
     '3d360c7a-4b1a-4df3-9633-861a220bf5b7',
@@ -41,17 +41,17 @@ describe('development operation wire schemas', () => {
     expect(() => Schema.decodeUnknownSync(CommandId)(invalid)).toThrow()
   })
 
-  it('rejects receipts from legacy operation histories', () => {
+  test('rejects receipts from legacy operation histories', () => {
     const receipt = { commandId: 'old-run:verify:1', status: 'completed', text: 'done' }
     expect(() => Schema.decodeUnknownSync(TurnReceipt)(receipt)).toThrow()
   })
 
-  it('accepts only the official root session identity', () => {
+  test('accepts only the official root session identity', () => {
     expect(Schema.decodeUnknownSync(SessionId)('1')).toBe('1')
     expect(() => Schema.decodeUnknownSync(SessionId)('replacement-session')).toThrow()
   })
 
-  it.each([
+  test.each([
     'implement.intent',
     'implement.awaiting',
     'implement.polling',
@@ -79,7 +79,9 @@ describe('development operation wire schemas', () => {
     ]
     const wire = { ...encoded, active }
     const restored = await Effect.runPromise(Machine.decodeSnapshot(DevelopmentMachine, wire))
-    expect(await Effect.runPromise(Machine.encodeSnapshot(DevelopmentMachine, restored))).toMatchObject({ active })
+    await expect(Effect.runPromise(Machine.encodeSnapshot(DevelopmentMachine, restored))).resolves.toMatchObject({
+      active,
+    })
     await expect(
       Effect.runPromise(
         Machine.decodeSnapshot(DevelopmentMachine, {
@@ -98,22 +100,24 @@ describe('development operation wire schemas', () => {
     ).rejects.toMatchObject({ _tag: 'MachineSchemaDecodeError' })
   })
 
-  it('round-trips native versions and repository values through both snapshot codecs', async () => {
+  test('round-trips native versions and repository values through both snapshot codecs', async () => {
     const encoded = encodeDevelopmentSnapshot(initialSnapshot)
     expect(encoded).toMatchObject({ version: '1.0.0', machine: { _tag: 'MachineSnapshot', version: 2 } })
     expect(encoded).not.toHaveProperty('context')
     const decoded = decodeDevelopmentSnapshot(encoded)
-    expect(decoded).toEqual(initialSnapshot)
+    expect(decoded).toStrictEqual(initialSnapshot)
     expect(Schema.is(DevelopmentSnapshot)(encoded)).toBe(false)
     const state = await Effect.runPromise(Machine.decodeSnapshot(DevelopmentMachine, decoded.machine))
     const root = Option.getOrThrow(DevelopmentStates.get(state, ''))
-    expect(root.version).toEqual(developmentVersion)
+    expect(root.version).toStrictEqual(developmentVersion)
     expect(root.repository).toBeInstanceOf(URL)
     expect(root.repository.href).toBe('https://github.com/example/project')
-    expect(await Effect.runPromise(Machine.encodeSnapshot(DevelopmentMachine, state))).toEqual(decoded.machine)
+    await expect(Effect.runPromise(Machine.encodeSnapshot(DevelopmentMachine, state))).resolves.toStrictEqual(
+      decoded.machine,
+    )
   })
 
-  it('keeps native repository URLs in the domain and uses the official wire codec', () => {
+  test('keeps native repository URLs in the domain and uses the official wire codec', () => {
     const codec = Schema.toCodecJson(PublicRepository)
     const repository = Schema.decodeUnknownSync(codec)('https://GITHUB.COM/example/other/../project')
     expect(repository).toBeInstanceOf(URL)

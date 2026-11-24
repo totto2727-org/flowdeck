@@ -1,22 +1,22 @@
-import { describe, expect, it, vi } from 'vite-plus/test'
+import { describe, expect, test, vi } from 'vite-plus/test'
 
 import { makePiModels } from './models.ts'
 
 describe('development models', () => {
-  it('registers only the fixed Gateway model without exposing the credential on the model', () => {
+  test('registers only the fixed Gateway model without exposing the credential on the model', () => {
     const { models, model } = makePiModels({
       accountId: 'account',
       gatewayId: 'gateway',
       apiKey: 'worker-only-token',
     })
 
-    expect(models.getModels()).toEqual([model])
+    expect(models.getModels()).toStrictEqual([model])
     expect(model.id).toBe('custom-opencode-go/deepseek-v4.1-flash')
     expect(model.api).toBe('openai-completions')
     expect(JSON.stringify(model)).not.toContain('worker-only-token')
   })
 
-  it.each(['complete', 'completeSimple'] as const)(
+  test.each(['complete', 'completeSimple'] as const)(
     '%s uses official Gateway auth and per-conversation OpenCode headers in the real transport',
     async (operation) => {
       const { models, model } = makePiModels({
@@ -40,7 +40,7 @@ describe('development models', () => {
       )
 
       expect(result.stopReason).toBe('stop')
-      expect(result.content).toEqual([{ type: 'text', text: 'ok' }])
+      expect(result.content).toStrictEqual([{ type: 'text', text: 'ok' }])
       expect(fetch).toHaveBeenCalledOnce()
       const call = fetch.mock.calls[0]!
       const request = new Request(call[0], call[1])
@@ -49,7 +49,7 @@ describe('development models', () => {
       expect(request.headers.has('authorization')).toBe(false)
       expect(request.headers.has('x-api-key')).toBe(false)
       expect(request.headers.get('x-opencode-session')).toBe('0199ef75-0000-7000-8000-000000000001')
-      expect(await request.json()).toMatchObject({
+      await expect(request.json()).resolves.toMatchObject({
         model: 'custom-opencode-go/deepseek-v4.1-flash',
         stream: true,
         messages: [{ role: 'user', content: 'Hello' }],

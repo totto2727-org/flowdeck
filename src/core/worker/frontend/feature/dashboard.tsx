@@ -291,8 +291,11 @@ export function Dashboard({ initial }: { readonly initial: DashboardData }) {
           Effect.match({
             onFailure: setError,
             onSuccess: (result) => {
-              if (result.ok) success(result.value)
-              else setError(result.message)
+              if (result.ok) {
+                success(result.value)
+              } else {
+                setError(result.message)
+              }
             },
           }),
         ),
@@ -316,7 +319,9 @@ export function Dashboard({ initial }: { readonly initial: DashboardData }) {
       },
     )
   const start = () => {
-    if (!workflow || !Array.contains(workflow.versions, version)) return
+    if (!workflow || !Array.contains(workflow.versions, version)) {
+      return
+    }
     const input = { ...inputs, workflowId, version }
     invoke(
       () => startRun(input),
@@ -328,7 +333,9 @@ export function Dashboard({ initial }: { readonly initial: DashboardData }) {
   }
   const resume = () => {
     const runId = data.selected?.run.runId
-    if (!runId) return
+    if (!runId) {
+      return
+    }
     invoke(
       () => resumeRun(runId),
       ({ detail, runs }) => {

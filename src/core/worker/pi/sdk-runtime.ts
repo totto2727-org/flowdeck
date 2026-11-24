@@ -92,11 +92,15 @@ export const makePiSdk = Effect.gen(function* () {
       Effect.runPromise(
         Effect.gen(function* () {
           const active = yield* state.storage.get<unknown>('active-run-id')
-          if (Predicate.isUndefined(active)) return undefined
+          if (Predicate.isUndefined(active)) {
+            return undefined
+          }
           const runId = yield* decodeRunId(active)
           const run = yield* store.getRun(runId)
           const container = host.getWorkspaceContainer()
-          if (run.status === 'completed' || !(yield* Effect.promise(() => container.status())).running) return undefined
+          if (run.status === 'completed' || !(yield* Effect.promise(() => container.status())).running) {
+            return undefined
+          }
           yield* Effect.promise(() => container.setInactivityTimeout(INACTIVITY_MS))
           return { rescheduleAt: (yield* Clock.currentTimeMillis) + RENEW_AFTER_MS }
         }).pipe(Effect.provideContext(context)),
@@ -149,7 +153,9 @@ export const makePiSdk = Effect.gen(function* () {
     fetch: (request: Request) =>
       Effect.promise(async () => {
         const response = await host.backend.handleFetch(request)
-        if (response.status === 101) await host.getWorkspaceContainer().setInactivityTimeout(INACTIVITY_MS)
+        if (response.status === 101) {
+          await host.getWorkspaceContainer().setInactivityTimeout(INACTIVITY_MS)
+        }
         return response
       }),
     webSocketMessage: (socket: WorkerWebSocket, message: string | ArrayBuffer) =>

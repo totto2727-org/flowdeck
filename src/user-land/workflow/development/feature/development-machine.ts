@@ -133,11 +133,14 @@ export const DevelopmentMachine = Machine.make({
             onDone: {
               branches: 'implementationReceipt',
               resolve: ({ state, output, select }) => {
-                if (output._tag === 'Waiting') return select.running({ data: piExecutionData(state) })
-                if (output._tag === 'Completed')
+                if (output._tag === 'Waiting') {
+                  return select.running({ data: piExecutionData(state) })
+                }
+                if (output._tag === 'Completed') {
                   return select['implementation complete']({
                     data: { ...piExecutionData(state), result: output.result },
                   })
+                }
                 return select.failed({
                   data: { ...piExecutionData(state), nodeId: 'implement', message: output.message },
                 })
@@ -182,9 +185,12 @@ export const DevelopmentMachine = Machine.make({
             onDone: {
               branches: 'verificationReceipt',
               resolve: ({ state, output, select }) => {
-                if (output._tag === 'Waiting') return select.running({ data: piExecutionData(state) })
-                if (output._tag === 'Completed')
+                if (output._tag === 'Waiting') {
+                  return select.running({ data: piExecutionData(state) })
+                }
+                if (output._tag === 'Completed') {
                   return select.completed({ data: { ...piExecutionData(state), result: output.result } })
+                }
                 return select.failed({ data: { ...piExecutionData(state), nodeId: 'verify', message: output.message } })
               },
             },

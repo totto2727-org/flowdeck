@@ -40,8 +40,9 @@ const originalError = () => {
 
 export class Child extends WorkerEntrypoint {
   start(scenario: Scenario): Promise<string> {
-    if (scenario === 'success')
+    if (scenario === 'success') {
       return respond('child.start', Effect.succeed({ answer: 42, values: [null, true, 'ok'] }))
+    }
     const original = originalError()
     if (scenario === 'not-found') {
       const error = new NotFound({ resource: 'PRIVATE_RPC_DATABASE_PASSWORD' })
