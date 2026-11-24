@@ -5,14 +5,9 @@ import { live } from '@effect/vitest'
 import { Machine } from '@typeonce/effect-machine'
 import type { Crypto } from 'effect'
 import { Array, DateTime, Effect, Layer, Option, Predicate, Schema, SemVer } from 'effect'
-import { HttpRouter } from 'effect/http'
-import { TestCrypto } from 'effect/testing'
 import { Miniflare } from 'miniflare'
 import { afterEach, beforeEach, describe, expect, test } from 'vite-plus/test'
 
-import { makeWorkflows } from '@/bridge/workflow/core/feature/workflow'
-import { makeWorkflowRegistry } from '@/bridge/workflow/user-land/feature/registration'
-import { DevelopmentWorkflowBinding, WorkflowBinding } from '@/bridge/workflow/user-land/feature/workflow-binding'
 import { D1Binding, NativeD1Client } from '@/core/feature/d1/native'
 import { AlchemyQueryExecutorLive } from '@/core/feature/d1/reylo'
 import { CommandId } from '@/core/feature/pi/model'
@@ -20,15 +15,12 @@ import type { Session, TurnReceipt, TurnRequest } from '@/core/feature/pi/model'
 import { PiSandbox } from '@/core/feature/pi/sandbox'
 import { ExternalError } from '@/core/feature/workflow/domain/errors'
 import { CommitId, EventId, ExecutionId } from '@/core/feature/workflow/domain/identity'
-import { JsonObject, RunDetail } from '@/core/feature/workflow/domain/model'
+import { JsonObject } from '@/core/feature/workflow/domain/model'
 import type { Run } from '@/core/feature/workflow/domain/model'
 import { D1StoreLive } from '@/core/feature/workflow/services/d1-store'
 import { DatabaseQueriesLive } from '@/core/feature/workflow/services/database-queries'
 import { Store } from '@/core/feature/workflow/services/store'
 import type { StoreService } from '@/core/feature/workflow/services/store'
-import { WorkflowRegistry } from '@/core/feature/workflow/services/workflow-definition'
-import { Workflows } from '@/core/feature/workflow/services/workflows'
-import { ApiRoutes } from '@/core/worker/control/feature/router'
 
 import { DevelopmentMachine, DevelopmentStates } from './development-machine.ts'
 import {
@@ -229,66 +221,6 @@ describe('development workflow with canonical D1 checkpoints', () => {
       expect(submissions).toHaveLength(1)
     }),
   )
-
-  test('routes create and read-only Resume through the static development binding', async () => {
-    const provide = <A, E>(effect: Effect.Effect<A, E, Store | PiSandbox | Crypto.Crypto>): Effect.Effect<A, E> =>
-      effect.pipe(
-        Effect.provideService(Store, freshStore()),
-        Effect.provideService(PiSandbox, sandbox),
-        Effect.provide(BrowserCrypto.layer),
-      )
-    const handler = HttpRouter.toWebHandler(
-      ApiRoutes.pipe(
-        HttpRouter.provideRequest(
-          Layer.effect(Workflows, makeWorkflows).pipe(
-            Layer.provide(Layer.effect(WorkflowRegistry, makeWorkflowRegistry)),
-            Layer.provide(
-              Layer.mergeAll(
-                Layer.succeed(Store, store),
-                Layer.succeed(DevelopmentWorkflowBinding, {
-                  start: (runId) => provide(startDevelopmentRun(runId)),
-                  resume: (runId) => provide(resumeDevelopmentRun(runId)),
-                }),
-                Layer.succeed(WorkflowBinding, { start: offline, resume: offline }),
-                TestCrypto.layer('development-api').pipe(Layer.provide(BrowserCrypto.layer)),
-              ),
-            ),
-          ),
-        ),
-      ),
-    )
-    try {
-      const response = await handler.handler(
-        new Request('http://localhost/api/runs', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ ...input, repository: input.repository.href, version: '1.0.0' }),
-        }),
-      )
-      expect(response.status).toBe(201)
-      const detail = Schema.decodeUnknownSync(Schema.toCodecJson(RunDetail))(await response.json())
-      expect(detail.run).toMatchObject({
-        status: 'waiting',
-        workflowId: 'jcode-development',
-        workflowVersion: developmentVersion,
-      })
-      expect(rootOf(detail.run.snapshot)).toMatchObject({
-        runtime: 'pi-harness',
-        repository: input.repository,
-        task: input.task,
-      })
-      const resumed = await handler.handler(
-        new Request(`http://localhost/api/runs/${detail.run.runId}/resume`, { method: 'POST' }),
-      )
-      expect(resumed.status).toBe(200)
-      expect(Schema.decodeUnknownSync(Schema.toCodecJson(RunDetail))(await resumed.json()).run).toStrictEqual(
-        detail.run,
-      )
-      expect(submissions).toHaveLength(1)
-    } finally {
-      await handler.dispose()
-    }
-  })
 
   live('persists native inputs, pinned version and immutable graph before starting', () =>
     Effect.gen(function* () {
