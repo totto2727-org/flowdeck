@@ -1,315 +1,122 @@
-import { ok } from 'node:assert/strict'
-
 import { live } from '@effect/vitest'
 import { makeRpcStub } from 'alchemy/Cloudflare/Workers'
-import { RpcCallError } from 'alchemy/Rpc'
-import { Crypto, Effect, Layer, Predicate, Schema, DateTime } from 'effect'
-import { HttpRouter } from 'effect/http'
-import { describe, expect, test, vi } from 'vite-plus/test'
+import { Effect, Schema } from 'effect'
+import { expect, vi } from 'vite-plus/test'
+
+import type { Workflows } from '@/core/feature/workflow/services/workflows'
 
 import {
-  Conflict,
-  ExternalError,
-  InvalidOperation,
-  InvalidSnapshot,
-  NotFound,
-  StorageConflict,
-} from '@/core/feature/workflow/domain/errors'
-import { rpcResponse, rpcResult } from '@/core/feature/workflow/rpc/boundary'
-import { RpcCreateRun, RpcRunDetail, RpcWorkflowsResponse } from '@/core/feature/workflow/rpc/contract'
-import { RemoteWorkerError } from '@/core/feature/workflow/rpc/problem'
-import { Workflows } from '@/core/feature/workflow/services/workflows'
+  catalogPath,
+  createBody,
+  createRequest,
+  openApi,
+  post,
+  responseJson,
+  resumePath,
+  runPath,
+  runsPath,
+  unavailable,
+  unavailableWorkflows,
+} from './control-api.fixture.ts'
 
-import { ApiRoutes } from './router.ts'
-
-const decodeRpcCreateRun = Schema.decodeUnknownSync(RpcCreateRun)
-const decodeRpcWorkflowsResponse = Schema.decodeUnknownSync(RpcWorkflowsResponse)
-
-const crypto = Crypto.make({
-  randomBytes: (size) => globalThis.crypto.getRandomValues(new Uint8Array(size)),
-  digest: (_algorithm, bytes) => Effect.succeed(bytes),
+const httpOk = 200
+const httpBadRequest = 400
+const httpForbidden = 403
+const httpBadGateway = 502
+const decodeVersion = Schema.decodeEffect(Schema.SemVerFromString)
+const textOrigin = { 'content-type': 'text/plain', origin: 'https://evil.example' }
+const loadCatalog = Effect.gen(function* () {
+  const version = yield* decodeVersion('1.0.0')
+  const workflows = [{ inputs: [], name: 'Demo', versions: [version], workflowId: 'demo' }]
+  return { workflows }
 })
 
-const api = (workflows: Workflows['Service']) =>
-  HttpRouter.toWebHandler(ApiRoutes.pipe(HttpRouter.provideRequest(Layer.succeed(Workflows, workflows))))
+live('serializes domain SemVer catalog values as HTTP strings', () =>
+  Effect.gen(function* () {
+    const request = yield* openApi({ ...unavailableWorkflows, listWorkflows: () => loadCatalog })
+    const response = yield* request(catalogPath)
+    expect(response.status).toBe(httpOk)
+    expect(yield* responseJson(response)).toStrictEqual({
+      workflows: [{ inputs: [], name: 'Demo', versions: ['1.0.0'], workflowId: 'demo' }],
+    })
+  }),
+)
 
-const unavailable = (): Effect.Effect<never, ExternalError> =>
-  Effect.fail(
-    new ExternalError({
-      operation: 'call workflow worker',
-      cause: 'Workflow integration worker unavailable',
-      kind: 'service',
-    }),
-  )
-const unavailableWorkflows: Workflows['Service'] = {
-  listWorkflows: unavailable,
-  listRuns: unavailable,
-  getRunDetail: unavailable,
-  createRun: unavailable,
-  resumeRun: unavailable,
+live.each([
+  '00000000-0000-4000-8000-000000000001',
+  'not-a-run-id',
+  'event_00000000-0000-4000-8000-000000000001',
+  'run_01890f2e-7b55-7cc1-8c5a-000000000001',
+])('rejects malformed run ID %s before calling the workflow service', (id) =>
+  Effect.gen(function* () {
+    const getRunDetail = vi.fn<Workflows['Service']['getRunDetail']>(unavailable)
+    const resumeRun = vi.fn<Workflows['Service']['resumeRun']>(unavailable)
+    const request = yield* openApi({ ...unavailableWorkflows, getRunDetail, resumeRun })
+    const read = yield* request(`${runsPath}/${id}`)
+    const resume = yield* request(`${runsPath}/${id}/resume`, post)
+    expect([read.status, resume.status]).toStrictEqual([httpBadRequest, httpBadRequest])
+    expect(getRunDetail).not.toHaveBeenCalled()
+    expect(resumeRun).not.toHaveBeenCalled()
+  }),
+)
+
+const requests: Readonly<{ init?: RequestInit; method: string; path: string }[]> = [
+  { method: 'GET', path: catalogPath },
+  { method: 'GET', path: runsPath },
+  { method: 'GET', path: runPath },
+  { init: createRequest, method: 'POST', path: runsPath },
+  { init: post, method: 'POST', path: resumePath },
+]
+
+// These promises come from the native RPC target before Effect can translate them.
+// oxlint-disable-next-line typescript/require-await -- The real SDK observes a rejected native Promise from the transport.
+const reject = async (): Promise<never> => {
+  // oxlint-disable-next-line rules/require-tagged-error -- Model a native transport rejection without an application tag.
+  throw new Error('Service binding disconnected')
 }
 
-// Native requests exercise Control's public HTTP boundary with only its aggregate service supplied.
-describe('control aggregate Workflow service boundary', () => {
-  test('serializes domain SemVer catalog values as HTTP strings', async () => {
-    const workflows = [
-      {
-        workflowId: 'demo',
-        name: 'Demo',
-        versions: [Schema.decodeUnknownSync(Schema.SemVerFromString)('1.0.0')],
-        inputs: [],
-      },
-    ]
-    const handler = api({ ...unavailableWorkflows, listWorkflows: () => Effect.succeed({ workflows }) })
-    try {
-      const response = await handler.handler(new Request('http://localhost/api/workflows'))
-      expect(response.status).toBe(200)
-      await expect(response.json()).resolves.toStrictEqual({ workflows: [{ ...workflows[0], versions: ['1.0.0'] }] })
-    } finally {
-      await handler.dispose()
-    }
-  })
-
-  test('encodes timestamp and event variants for RPC without losing domain values', () => {
-    const runId = 'run_00000000-0000-4000-8000-000000000001'
-    const timestamp = DateTime.makeUnsafe('2026-10-31T00:00:00.000Z')
-    const snapshot = { nested: { valid: [true, null, 1] } }
-    const detail = {
-      run: {
-        runId,
-        workflowId: 'demo',
-        workflowVersion: Schema.decodeUnknownSync(Schema.SemVerFromString)('1.0.0'),
-        graphId: 'graph-1',
-        status: 'running',
-        revision: 1,
-        snapshot,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      },
-      graph: { graphId: 'graph-1', schemaVersion: 1, nodes: [], edges: [] },
-      state: { runId, revision: 1, snapshot },
-      events: [
-        {
-          eventId: 'event_00000000-0000-4000-8000-000000000001',
-          runId,
-          sequence: 1,
-          type: 'run.started',
-          payload: {},
-          createdAt: timestamp,
-        },
-        {
-          eventId: 'event_00000000-0000-4000-8000-000000000002',
-          runId,
-          sequence: 2,
-          type: 'node.started',
-          nodeId: 'prepare',
-          executionId: 'execution_00000000-0000-4000-8000-000000000001',
-          attempt: 1,
-          payload: {},
-          createdAt: timestamp,
-        },
-      ],
-      shapes: { nodes: [], edges: [] },
-    } as const
-    const encoded = Schema.encodeSync(RpcRunDetail)(detail)
-    expect(encoded).toMatchObject({
-      events: [
-        { type: 'run.started', createdAt: '2026-10-31T00:00:00.000Z' },
-        { type: 'node.started', nodeId: 'prepare', attempt: 1 },
-      ],
-      run: { workflowVersion: '1.0.0', createdAt: '2026-10-31T00:00:00.000Z', updatedAt: '2026-10-31T00:00:00.000Z' },
-    })
-    expect(
-      Schema.decodeUnknownSync(RpcRunDetail, { onExcessProperty: 'error' })(structuredClone(encoded)),
-    ).toStrictEqual(detail)
-    const invalid = {
-      ...Schema.decodeUnknownSync(Schema.JsonObject)(encoded),
-      events: [{ ...detail.events[0], createdAt: DateTime.formatIso(timestamp), nodeId: null }],
-    }
-    expect(() => Schema.decodeUnknownSync(RpcRunDetail, { onExcessProperty: 'error' })(invalid)).toThrow()
-  })
-
-  test('round trips create input SemVer through native RPC-compatible values', () => {
-    const input = { workflowId: 'demo', version: Schema.decodeUnknownSync(Schema.SemVerFromString)('1.2.3') }
-    const encodedInput = Schema.encodeSync(RpcCreateRun)(input)
-    expect(encodedInput).toStrictEqual({ version: '1.2.3', workflowId: 'demo' })
-    expect(decodeRpcCreateRun(structuredClone(encodedInput))).toStrictEqual(input)
-  })
-
-  test('round trips catalog SemVer through native RPC-compatible values', () => {
-    const version = Schema.decodeUnknownSync(Schema.SemVerFromString)('1.2.3')
-    const catalog = { workflows: [{ workflowId: 'demo', name: 'Demo', versions: [version], inputs: [] }] }
-    const encodedCatalog = Schema.encodeSync(RpcWorkflowsResponse)(catalog)
-    expect(encodedCatalog).toStrictEqual({
-      workflows: [{ inputs: [], name: 'Demo', versions: ['1.2.3'], workflowId: 'demo' }],
-    })
-    expect(decodeRpcWorkflowsResponse(structuredClone(encodedCatalog))).toStrictEqual(catalog)
-  })
-
-  test.each([
-    '00000000-0000-4000-8000-000000000001',
-    'not-a-run-id',
-    'event_00000000-0000-4000-8000-000000000001',
-    'run_01890f2e-7b55-7cc1-8c5a-000000000001',
-  ])('rejects malformed run ID %s before calling the workflow service', async (id) => {
-    const getRunDetail = vi.fn(unavailable)
-    const resumeRun = vi.fn(unavailable)
-    const handler = api({ ...unavailableWorkflows, getRunDetail, resumeRun })
-    try {
-      const read = await handler.handler(new Request(`http://localhost/api/runs/${id}`))
-      const resume = await handler.handler(new Request(`http://localhost/api/runs/${id}/resume`, { method: 'POST' }))
-      expect(read.status).toBe(400)
-      expect(resume.status).toBe(400)
-      expect(getRunDetail).not.toHaveBeenCalled()
-      expect(resumeRun).not.toHaveBeenCalled()
-    } finally {
-      await handler.dispose()
-    }
-  })
-
-  test.each([
-    ['GET', '/api/workflows', undefined],
-    ['GET', '/api/runs', undefined],
-    ['GET', '/api/runs/run_00000000-0000-4000-8000-000000000001', undefined],
-    ['POST', '/api/runs', '{"workflowId":"demo","version":"1.0.0"}'],
-    ['POST', '/api/runs/run_00000000-0000-4000-8000-000000000001/resume', undefined],
-  ] as const)('returns 502 for %s %s when native RPC transport rejects', async (method, path, body) => {
-    // Native promises model the Cloudflare RPC target, not an Effect service failure.
-    const reject = (): Promise<never> => Promise.reject(new Error('Service binding disconnected'))
-    const handler = api(
-      makeRpcStub<Workflows['Service']>({
-        listWorkflows: reject,
-        listRuns: reject,
-        getRunDetail: reject,
-        createRun: reject,
-        resumeRun: reject,
-      }),
-    )
-    try {
-      const response = await handler.handler(
-        new Request(
-          `http://localhost${path}`,
-          Predicate.isUndefined(body)
-            ? { method }
-            : { method: 'POST', headers: { 'content-type': 'application/json' }, body },
-        ),
-      )
-      expect(response.status).toBe(502)
-      await expect(response.json()).resolves.toMatchObject({ error: 'ExternalError' })
-    } finally {
-      await handler.dispose()
-    }
-  })
-
-  live.each([
-    [new NotFound({ resource: 'private graph' }), 404, 'NotFound'],
-    [new Conflict({ message: 'private conflict' }), 409, 'Conflict'],
-    [
-      new StorageConflict({ operation: 'batch', message: 'private constraint', cause: new Error('private SQL') }),
-      409,
-      'Conflict',
-    ],
-    [new InvalidOperation({ message: 'private recovery information' }), 409, 'InvalidOperation'],
-    [new InvalidSnapshot({ message: 'private checkpoint' }), 409, 'InvalidSnapshot'],
-    [
-      new ExternalError({ operation: 'read run', cause: 'private database failure', kind: 'storage' }),
-      500,
-      'ExternalError',
-    ],
-    [
-      new ExternalError({ operation: 'call workflow worker', cause: 'private disconnection', kind: 'service' }),
-      502,
-      'ExternalError',
-    ],
-    [new RpcCallError({ method: 'resume', cause: 'private disconnection' }), 500, 'ExternalError'],
-    [Effect.runSync(Effect.flip(Schema.decodeUnknownEffect(Schema.String)(null))), 400, 'InvalidRequest'],
-    [new Error('private unexpected failure'), 500, 'ExternalError'],
-  ] as const)(
-    'maps a fresh local error from remote %s to HTTP %s without reviving its cause',
-    ([error, status, code]) =>
-      Effect.gen(function* () {
-        const responseText = yield* Effect.fail(error).pipe(
-          rpcResponse('Workflow.resumeRun'),
-          Effect.provideService(Crypto.Crypto, crypto),
-        )
-        expect(responseText).not.toContain('private')
-        expect(responseText).not.toContain('stack')
-        const local = yield* Effect.flip(rpcResult('Control.resumeRun')(responseText))
-        ok(local instanceof RemoteWorkerError)
-        expect(local).not.toBe(error)
-        const handler = api({
-          ...unavailableWorkflows,
-          resumeRun: () => Effect.fail(local),
-        })
-        try {
-          const response = yield* Effect.promise(async () =>
-            handler.handler(
-              new Request('http://localhost/api/runs/run_00000000-0000-4000-8000-000000000001/resume', {
-                method: 'POST',
-              }),
-            ),
-          )
-          expect(response.status).toBe(status)
-          const body = yield* Effect.promise(async () => response.json())
-          expect(body).toStrictEqual({ error: code, message: local.cause.detail })
-          expect(JSON.stringify(body)).not.toContain('private')
-          expect(body).not.toHaveProperty('stack')
-          expect(body).not.toHaveProperty('cause')
-        } finally {
-          yield* Effect.promise(async () => handler.dispose())
-        }
-      }),
-  )
-
-  test.each([
-    ['GET', '/api/workflows', undefined],
-    ['GET', '/api/runs', undefined],
-    ['GET', '/api/runs/run_00000000-0000-4000-8000-000000000001', undefined],
-    ['POST', '/api/runs', '{"workflowId":"demo","version":"1.0.0"}'],
-    ['POST', '/api/runs/run_00000000-0000-4000-8000-000000000001/resume', undefined],
-  ] as const)('returns 502 for %s %s when the aggregate worker is unavailable', async (method, path, body) => {
-    const handler = api(unavailableWorkflows)
-    try {
-      const response = await handler.handler(
-        new Request(
-          `http://localhost${path}`,
-          Predicate.isUndefined(body)
-            ? { method }
-            : { method: 'POST', headers: { 'content-type': 'application/json' }, body },
-        ),
-      )
-      expect(response.status).toBe(502)
-      await expect(response.json()).resolves.toMatchObject({ error: 'ExternalError' })
-    } finally {
-      await handler.dispose()
-    }
-  })
-
-  test.each([
-    ['/api/runs', '{"workflowId":"demo","version":"1.0.0"}'],
-    ['/api/runs', 'not JSON'],
-    ['/api/runs/run_00000000-0000-4000-8000-000000000001/resume', undefined],
-  ] as const)('rejects browser-originated %s requests before calling Workflows with body %s', async (path, body) => {
-    const createRun = vi.fn(unavailable)
-    const resumeRun = vi.fn(unavailable)
-    const handler = api({ ...unavailableWorkflows, createRun, resumeRun })
-    try {
-      const response = await handler.handler(
-        new Request(`http://localhost${path}`, {
-          method: 'POST',
-          headers: { origin: 'https://evil.example', 'content-type': 'text/plain' },
-          ...(Predicate.isUndefined(body) ? {} : { body }),
-        }),
-      )
-      expect(response.status).toBe(403)
-      await expect(response.json()).resolves.toStrictEqual({
-        error: 'Forbidden',
-        message: 'Browser-originated control mutations are not allowed',
-      })
-      expect(createRun).not.toHaveBeenCalled()
-      expect(resumeRun).not.toHaveBeenCalled()
-    } finally {
-      await handler.dispose()
-    }
-  })
+const disconnected = makeRpcStub<Workflows['Service']>({
+  createRun: reject,
+  getRunDetail: reject,
+  listRuns: reject,
+  listWorkflows: reject,
+  resumeRun: reject,
 })
+
+live.each(requests)('returns 502 for $method $path when native RPC transport rejects', ({ init, path }) =>
+  Effect.gen(function* () {
+    const request = yield* openApi(disconnected)
+    const response = yield* request(path, init)
+    expect(response.status).toBe(httpBadGateway)
+    expect(yield* responseJson(response)).toMatchObject({ error: 'ExternalError' })
+  }),
+)
+
+live.each(requests)('returns 502 for $method $path when the aggregate worker is unavailable', ({ init, path }) =>
+  Effect.gen(function* () {
+    const request = yield* openApi(unavailableWorkflows)
+    const response = yield* request(path, init)
+    expect(response.status).toBe(httpBadGateway)
+    expect(yield* responseJson(response)).toMatchObject({ error: 'ExternalError' })
+  }),
+)
+
+live.each([
+  { init: { body: createBody, headers: textOrigin, method: 'POST' }, path: runsPath },
+  { init: { body: 'not JSON', headers: textOrigin, method: 'POST' }, path: runsPath },
+  { init: { headers: textOrigin, method: 'POST' }, path: resumePath },
+])('rejects browser-originated POST $path before calling Workflows', ({ init, path }) =>
+  Effect.gen(function* () {
+    const createRun = vi.fn<Workflows['Service']['createRun']>(unavailable)
+    const resumeRun = vi.fn<Workflows['Service']['resumeRun']>(unavailable)
+    const request = yield* openApi({ ...unavailableWorkflows, createRun, resumeRun })
+    const response = yield* request(path, init)
+    expect(response.status).toBe(httpForbidden)
+    expect(yield* responseJson(response)).toStrictEqual({
+      error: 'Forbidden',
+      message: 'Browser-originated control mutations are not allowed',
+    })
+    expect(createRun).not.toHaveBeenCalled()
+    expect(resumeRun).not.toHaveBeenCalled()
+  }),
+)
