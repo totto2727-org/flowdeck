@@ -1,8 +1,8 @@
 import { BrowserCrypto } from '@effect/platform-browser'
 import { live } from '@effect/vitest'
 import { Machine } from '@typeonce/effect-machine'
-import { Array, Cause, Context, DateTime, Deferred, Effect, Exit, HashSet, Schema } from 'effect'
-import { describe, expect, test, vi } from 'vite-plus/test'
+import { Array, Cause, Context, DateTime, Deferred, Effect, Exit, Fiber, HashSet, Ref, Schema, SemVer } from 'effect'
+import { describe, expect, vi } from 'vite-plus/test'
 
 import { ExternalError, InvalidSnapshot } from '@/core/feature/workflow/domain/errors'
 import type { GraphDefinition, Run, RunStatus } from '@/core/feature/workflow/domain/model'
@@ -21,8 +21,9 @@ import {
   WorkflowCheckpoint,
 } from './managed-runtime.ts'
 
-const decodeVersion = Schema.decodeUnknownSync(Schema.SemVerFromString)
-const version = decodeVersion('1.0.0')
+const version = SemVer.parseUnsafe('1.0.0')
+// oxlint-disable-next-line rules/prefer-non-unknown-decode -- The machine's native encoder returns a raw wire value.
+const decodeJson = Schema.decodeUnknownEffect(Schema.JsonObject)
 const runId = 'run_00000000-0000-4000-8000-000000000001'
 const executionId = 'execution_00000000-0000-4000-8000-000000000001'
 const unavailable = new ExternalError({ kind: 'storage', operation: 'test commit', cause: 'offline' })
@@ -30,7 +31,7 @@ const graph: GraphDefinition = { graphId: 'managed-test-1', schemaVersion: 1, no
 
 class NativeResource extends Context.Service<NativeResource, Readonly<{ call: () => void }>>()('test/NativeResource') {}
 
-const makeHarness = (multipleCheckpoints = false) => {
+const makeHarness = Effect.fn(function* (multipleCheckpoints = false) {
   const external = vi.fn()
   const resourceInitialized = vi.fn(() => ({}))
   const resourceCalled = vi.fn()
@@ -160,7 +161,6 @@ const makeHarness = (multipleCheckpoints = false) => {
           : states.matches(state, 'Failed')
             ? 'failed'
             : 'running'
-  const decodeJson = Schema.decodeUnknownEffect(Schema.JsonObject)
   const program = {
     decode: (encoded: Schema.JsonObject['Type']) =>
       Machine.decodeSnapshot(native, encoded).pipe(
@@ -194,7 +194,8 @@ const makeHarness = (multipleCheckpoints = false) => {
     mapError: (error: unknown): WorkflowFailure =>
       error instanceof ExternalError ? error : new InvalidSnapshot({ message: 'Native test execution failed' }),
   }
-  const initial = Effect.runSync(Machine.planInitial(native)).state
+  const initial = yield* Machine.planInitial(native)
+  const machine = yield* program.encode(initial.state)
   let current: Run = {
     runId,
     workflowId: 'managed-test',
@@ -202,7 +203,7 @@ const makeHarness = (multipleCheckpoints = false) => {
     graphId: graph.graphId,
     status: 'pending',
     revision: 0,
-    snapshot: encodeManagedSnapshot({ schemaVersion: 1, version, machine: Effect.runSync(program.encode(initial)) }),
+    snapshot: encodeManagedSnapshot({ schemaVersion: 1, version, machine }),
     createdAt: DateTime.makeUnsafe('2026-11-01T00:00:00Z'),
     updatedAt: DateTime.makeUnsafe('2026-11-01T00:00:00Z'),
   }
@@ -272,12 +273,12 @@ const makeHarness = (multipleCheckpoints = false) => {
       beforeCommit = callback
     },
   }
-}
+})
 
 describe('request-scoped managed native runtime', () => {
   live('automatically reaches waiting, then resumes in a new runtime and ACKs final state once', () =>
     Effect.gen(function* () {
-      const harness = makeHarness()
+      const harness = yield* makeHarness()
       const first = yield* harness.executor()
       yield* first.start(runId)
       expect(harness.current().status).toBe('waiting')
@@ -299,55 +300,54 @@ describe('request-scoped managed native runtime', () => {
     }),
   )
 
-  test('does not call external effects until the checkpoint commit ACK', async () => {
-    const harness = makeHarness()
-    const ack = Deferred.makeUnsafe<void>()
-    const saving = Deferred.makeUnsafe<void>()
-    harness.beforeCommit(() => Deferred.succeed(saving, undefined).pipe(Effect.andThen(Deferred.await(ack))))
-    const executor = await Effect.runPromise(harness.executor())
-    const pending = Effect.runPromise(executor.start(runId))
-    await Effect.runPromise(Deferred.await(saving))
-    expect(harness.external).not.toHaveBeenCalled()
-    await Effect.runPromise(Deferred.succeed(ack, undefined))
-    await pending
-    expect(harness.external).toHaveBeenCalledExactlyOnceWith('A')
-  })
+  live('does not call external effects until the checkpoint commit ACK', () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness()
+      const ack = yield* Deferred.make<true>()
+      const saving = yield* Deferred.make<true>()
+      harness.beforeCommit(() =>
+        Deferred.succeed(saving, true).pipe(Effect.andThen(Deferred.await(ack)), Effect.asVoid),
+      )
+      const executor = yield* harness.executor()
+      const pending = yield* Effect.forkScoped(executor.start(runId))
+      yield* Deferred.await(saving)
+      expect(harness.external).not.toHaveBeenCalled()
+      yield* Deferred.succeed(ack, true)
+      yield* Fiber.join(pending)
+      expect(harness.external).toHaveBeenCalledExactlyOnceWith('A')
+    }),
+  )
 
-  test('does not return a final response before the final boundary commit ACK', async () => {
-    const harness = makeHarness()
-    const executor = await Effect.runPromise(harness.executor())
-    await Effect.runPromise(executor.start(runId))
-    const ack = Deferred.makeUnsafe<void>()
-    const saving = Deferred.makeUnsafe<void>()
-    harness.beforeCommit((command) =>
-      command.status === 'completed'
-        ? Deferred.succeed(saving, undefined).pipe(Effect.andThen(Deferred.await(ack)))
-        : Effect.void,
-    )
-    let replied = false
-    const pending = Effect.runPromise(
-      executor.resume(runId).pipe(
-        Effect.tap(() =>
-          Effect.sync(() => {
-            replied = true
-          }),
-        ),
-      ),
-    )
-    await Effect.runPromise(Deferred.await(saving))
-    expect(replied).toBe(false)
-    expect(harness.current().status).toBe('running')
-    expect(harness.commits()).toHaveLength(3)
-    await Effect.runPromise(Deferred.succeed(ack, undefined))
-    await pending
-    expect(replied).toBe(true)
-    expect(harness.current().status).toBe('completed')
-    expect(harness.commits()).toHaveLength(4)
-  })
+  live('does not return a final response before the final boundary commit ACK', () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness()
+      const executor = yield* harness.executor()
+      yield* executor.start(runId)
+      const ack = yield* Deferred.make<true>()
+      const saving = yield* Deferred.make<true>()
+      harness.beforeCommit((command) =>
+        command.status === 'completed'
+          ? Deferred.succeed(saving, true).pipe(Effect.andThen(Deferred.await(ack)), Effect.asVoid)
+          : Effect.void,
+      )
+      const replied = yield* Ref.make(false)
+      const command = executor.resume(runId).pipe(Effect.tap(() => Ref.set(replied, true)))
+      const pending = yield* Effect.forkScoped(command)
+      yield* Deferred.await(saving)
+      expect(yield* Ref.get(replied)).toBe(false)
+      expect(harness.current().status).toBe('running')
+      expect(harness.commits()).toHaveLength(3)
+      yield* Deferred.succeed(ack, true)
+      yield* Fiber.join(pending)
+      expect(yield* Ref.get(replied)).toBe(true)
+      expect(harness.current().status).toBe('completed')
+      expect(harness.commits()).toHaveLength(4)
+    }),
+  )
 
   live('propagates the original checkpoint failure without a business failure or external submission', () =>
     Effect.gen(function* () {
-      const harness = makeHarness()
+      const harness = yield* makeHarness()
       harness.beforeCommit(() => Effect.fail(unavailable))
       const executor = yield* harness.executor()
       const result = yield* executor.start(runId).pipe(Effect.exit)
@@ -363,7 +363,7 @@ describe('request-scoped managed native runtime', () => {
 
   live('waits for the boundary ACK and can restore an earlier committed intent after boundary failure', () =>
     Effect.gen(function* () {
-      const harness = makeHarness()
+      const harness = yield* makeHarness()
       harness.beforeCommit((command) => (command.status === 'waiting' ? Effect.fail(unavailable) : Effect.void))
       const first = yield* harness.executor()
       const result = yield* first.start(runId).pipe(Effect.exit)
@@ -387,7 +387,7 @@ describe('request-scoped managed native runtime', () => {
 
   live('does not write revisions or events for unchanged polls and does not approve waiting on start', () =>
     Effect.gen(function* () {
-      const harness = makeHarness()
+      const harness = yield* makeHarness()
       const first = yield* harness.executor()
       yield* first.start(runId)
       harness.setFinish(false)
@@ -401,31 +401,36 @@ describe('request-scoped managed native runtime', () => {
     }),
   )
 
-  test('rejects mismatched graph, version, status and malformed native state before opening the runtime', async () => {
-    const harness = makeHarness()
-    const original = harness.current()
-    const executor = await Effect.runPromise(harness.executor())
-    const invalidRuns: Readonly<Run[]> = [
-      { ...original, graphId: 'different' },
-      { ...original, workflowVersion: decodeVersion('2.0.0') },
-      { ...original, status: 'waiting' satisfies RunStatus },
-      { ...original, snapshot: { schemaVersion: 1, version: '1.0.0', machine: { invalid: true } } },
-    ]
-    await Effect.forEach(invalidRuns, (run) =>
-      Effect.gen(function* () {
-        harness.replace(run)
-        const result = yield* executor.start(runId).pipe(Effect.exit)
-        expect(Exit.isFailure(result)).toBe(true)
-      }),
-    ).pipe(Effect.runPromise)
-    expect(harness.started).not.toHaveBeenCalled()
-    expect(harness.resumed).not.toHaveBeenCalled()
-    expect(harness.external).not.toHaveBeenCalled()
-  })
+  live('rejects mismatched graph, version, status and malformed native state before opening the runtime', () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness()
+      const original = harness.current()
+      const executor = yield* harness.executor()
+      const invalidRuns: Readonly<Run[]> = [
+        { ...original, graphId: 'different' },
+        { ...original, workflowVersion: SemVer.parseUnsafe('2.0.0') },
+        { ...original, status: 'waiting' },
+        { ...original, snapshot: { machine: { invalid: true }, schemaVersion: 1, version: '1.0.0' } },
+      ]
+      yield* Effect.forEach(
+        invalidRuns,
+        (run) =>
+          Effect.gen(function* () {
+            harness.replace(run)
+            const result = yield* executor.start(runId).pipe(Effect.exit)
+            expect(Exit.isFailure(result)).toBe(true)
+          }),
+        { discard: true },
+      )
+      expect(harness.started).not.toHaveBeenCalled()
+      expect(harness.resumed).not.toHaveBeenCalled()
+      expect(harness.external).not.toHaveBeenCalled()
+    }),
+  )
 
   live('persists different native checkpoints within one node without another node start', () =>
     Effect.gen(function* () {
-      const harness = makeHarness(true)
+      const harness = yield* makeHarness(true)
       const executor = yield* harness.executor()
       yield* executor.start(runId)
       expect(Array.map(harness.commits(), (commit) => commit.status)).toStrictEqual(['running', 'running', 'waiting'])
@@ -443,7 +448,7 @@ describe('request-scoped managed native runtime', () => {
 
   live('shares one volatile resource across nodes until ACK and recreates it for the next execution', () =>
     Effect.gen(function* () {
-      const harness = makeHarness(true)
+      const harness = yield* makeHarness(true)
       const executor = yield* harness.executor()
       yield* executor.start(runId)
       expect(harness.resourceInitialized).toHaveBeenCalledTimes(1)
@@ -460,7 +465,7 @@ describe('request-scoped managed native runtime', () => {
 
   live('preserves a native defect as the cause of an infrastructure failure', () =>
     Effect.gen(function* () {
-      const harness = makeHarness()
+      const harness = yield* makeHarness()
       const defect = new Error('defective persistence')
       harness.beforeCommit(() => Effect.die(defect))
       const executor = yield* harness.executor()
@@ -480,7 +485,7 @@ describe('request-scoped managed native runtime', () => {
 
   live('propagates transport failure from a native invoke without changing the waiting checkpoint', () =>
     Effect.gen(function* () {
-      const harness = makeHarness()
+      const harness = yield* makeHarness()
       const executor = yield* harness.executor()
       yield* executor.start(runId)
       const waiting = harness.current()
@@ -498,7 +503,7 @@ describe('request-scoped managed native runtime', () => {
 
   live('fails a later checkpoint before its external submission without committing business failure', () =>
     Effect.gen(function* () {
-      const harness = makeHarness(true)
+      const harness = yield* makeHarness(true)
       harness.beforeCommit((command) =>
         Array.isReadonlyArrayEmpty(command.events) ? Effect.fail(unavailable) : Effect.void,
       )
@@ -518,7 +523,7 @@ describe('request-scoped managed native runtime', () => {
 
   live('validates native task state construction before checkpointing or submitting the next effect', () =>
     Effect.gen(function* () {
-      const harness = makeHarness(true)
+      const harness = yield* makeHarness(true)
       harness.setInvalidPhase()
       const executor = yield* harness.executor()
       const result = yield* executor.start(runId).pipe(Effect.exit)
@@ -534,7 +539,7 @@ describe('request-scoped managed native runtime', () => {
 
   live('commits explicit native business failure and isolates defective post-ACK hooks', () =>
     Effect.gen(function* () {
-      const harness = makeHarness()
+      const harness = yield* makeHarness()
       harness.setBusinessFailure()
       const executor = yield* harness.executor({ afterCommit: () => Effect.die('observer failed') })
       yield* executor.start(runId)
@@ -547,7 +552,7 @@ describe('request-scoped managed native runtime', () => {
 
   live('restores a native checkpoint without Store, Crypto, or provider runtime dependencies', () =>
     Effect.gen(function* () {
-      const harness = makeHarness()
+      const harness = yield* makeHarness()
       const restored = yield* harness.restore()
       expect(restored).toBeDefined()
       expect(harness.started).not.toHaveBeenCalled()
@@ -558,7 +563,7 @@ describe('request-scoped managed native runtime', () => {
 
   live('serializes concurrent commands for the same run and ignores defective post-ACK hooks', () =>
     Effect.gen(function* () {
-      const harness = makeHarness()
+      const harness = yield* makeHarness()
       const executor = yield* harness.executor({ afterCommit: () => Effect.die('broken observer') })
       yield* Effect.all([executor.start(runId), executor.start(runId)], { concurrency: 'unbounded' })
       expect(harness.current().status).toBe('waiting')
