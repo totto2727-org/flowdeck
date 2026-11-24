@@ -31,6 +31,7 @@
     "@cloudflare/vitest-plugin": "^1.4.0",
     "@cloudflare/workers-types": "^5.20261008.1",
     "@effect/platform-node": "^4.0.6",
+    "@effect/vitest": "4.0.6",
     "@effront/tailwind": "^0.4.1",
     "@effront/vite": "^0.4.1",
     "@playwright/test": "^1.64.0",

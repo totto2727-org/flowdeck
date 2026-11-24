@@ -1,5 +1,6 @@
 import { ok } from 'node:assert/strict'
 
+import { live } from '@effect/vitest'
 import { Cause, Crypto, Effect, Exit, Logger, Option, References, Result, Schema } from 'effect'
 import { describe, expect, expectTypeOf, test } from 'vite-plus/test'
 
@@ -50,37 +51,39 @@ const encodeStandard = Schema.encodeSync(standardWire, { onExcessProperty: 'erro
 const encodePeer = Schema.encodeSync(Schema.fromJsonString(Schema.toCodecJson(Schema.Result(Schema.Json, Schema.Json))))
 
 describe('JSON RPC boundary', () => {
-  test('captures Crypto at initialization and responds repeatedly without operation-level provision', () => {
-    const respond = Effect.runSync(makeRpcResponse.pipe(Effect.provideService(Crypto.Crypto, crypto)))
-    const operation = Effect.fail(new NotFound({ resource: 'private' }))
-    const first = respond('first')(operation)
-    expectTypeOf(first).toEqualTypeOf<Effect.Effect<string>>()
-    const texts = Effect.runSync(
-      Effect.all([first, respond('second')(operation)]).pipe(
+  live('captures Crypto at initialization and responds repeatedly without operation-level provision', () =>
+    Effect.gen(function* () {
+      const respond = yield* makeRpcResponse.pipe(Effect.provideService(Crypto.Crypto, crypto))
+      const operation = Effect.fail(new NotFound({ resource: 'private' }))
+      const first = respond('first')(operation)
+      expectTypeOf(first).toEqualTypeOf<Effect.Effect<string>>()
+      const texts = yield* Effect.all([first, respond('second')(operation)]).pipe(
         Effect.provide(Logger.layer([Logger.make(() => undefined)])),
-      ),
-    )
-    const firstError = failure(Effect.runSyncExit(rpcResult('parent')(texts[0])))
-    const secondError = failure(Effect.runSyncExit(rpcResult('parent')(texts[1])))
-    ok(firstError instanceof RemoteWorkerError)
-    ok(secondError instanceof RemoteWorkerError)
-    expect(firstError.cause.instance).not.toBe(secondError.cause.instance)
-    expect(firstError.cause.status).toBe(404)
-    expect(secondError.cause.status).toBe(404)
-  })
-  test('round-trips JSON text without success logs', () => {
-    const value = { values: [null, true, 12, 'hello'], nested: { answer: 42 } }
-    const { entries, exit } = capture(Effect.succeed(value).pipe(rpcResponse('read')))
-    const text = success(exit)
-    expect(typeof text).toBe('string')
-    expect(Result.isResult(parse(text))).toBe(false)
-    const decoded = decodeStandard(text)
-    ok(Result.isSuccess(decoded))
-    expect(decoded.success).toStrictEqual(value)
-    expect(Effect.runSync(rpcResult('standard peer')(encodeStandard(Result.succeed(value))))).toStrictEqual(value)
-    expect(Effect.runSync(rpcResult('parent')(text))).toStrictEqual(value)
-    expect(entries).toHaveLength(0)
-  })
+      )
+      const firstError = failure(yield* Effect.exit(rpcResult('parent')(texts[0])))
+      const secondError = failure(yield* Effect.exit(rpcResult('parent')(texts[1])))
+      ok(firstError instanceof RemoteWorkerError)
+      ok(secondError instanceof RemoteWorkerError)
+      expect(firstError.cause.instance).not.toBe(secondError.cause.instance)
+      expect(firstError.cause.status).toBe(404)
+      expect(secondError.cause.status).toBe(404)
+    }),
+  )
+  live('round-trips JSON text without success logs', () =>
+    Effect.gen(function* () {
+      const value = { values: [null, true, 12, 'hello'], nested: { answer: 42 } }
+      const { entries, exit } = capture(Effect.succeed(value).pipe(rpcResponse('read')))
+      const text = success(exit)
+      expect(typeof text).toBe('string')
+      expect(Result.isResult(parse(text))).toBe(false)
+      const decoded = decodeStandard(text)
+      ok(Result.isSuccess(decoded))
+      expect(decoded.success).toStrictEqual(value)
+      expect(yield* rpcResult('standard peer')(encodeStandard(Result.succeed(value)))).toStrictEqual(value)
+      expect(yield* rpcResult('parent')(text)).toStrictEqual(value)
+      expect(entries).toHaveLength(0)
+    }),
+  )
 
   test('requires a validated problem cause and disallows non-JSON success types', () => {
     expectTypeOf<ConstructorParameters<typeof RemoteWorkerError>[0]>().toEqualTypeOf<
@@ -134,38 +137,42 @@ describe('JSON RPC boundary', () => {
     expect(entries[0]!.annotations).toMatchObject({ operation: 'child', errorId: local.cause.instance })
   })
 
-  test('retains nested original stack and cyclic causes only in the origin log', () => {
-    const original = new Error('private credentials')
-    original.stack = 'Error: private credentials\n at childOnly (secret.ts:99:1)'
-    original.cause = original
-    const error = new ExternalError({ operation: 'query', kind: 'storage', cause: original })
-    const { entries, exit } = capture(Effect.fail(error).pipe(rpcResponse('child')))
-    expect(entries).toHaveLength(1)
-    expect(Cause.findErrorOption(entries[0]!.cause)).toStrictEqual(Option.some(error))
-    expect(original.stack).toContain('childOnly')
-    const text = success(exit)
-    expect(text).not.toContain('childOnly')
-    expect(text).not.toContain('credentials')
-    const local = failure(Effect.runSyncExit(rpcResult('parent')(text)))
-    expect(local.stack).not.toContain('childOnly')
-  })
+  live('retains nested original stack and cyclic causes only in the origin log', () =>
+    Effect.gen(function* () {
+      const original = new Error('private credentials')
+      original.stack = 'Error: private credentials\n at childOnly (secret.ts:99:1)'
+      original.cause = original
+      const error = new ExternalError({ operation: 'query', kind: 'storage', cause: original })
+      const { entries, exit } = capture(Effect.fail(error).pipe(rpcResponse('child')))
+      expect(entries).toHaveLength(1)
+      expect(Cause.findErrorOption(entries[0]!.cause)).toStrictEqual(Option.some(error))
+      expect(original.stack).toContain('childOnly')
+      const text = success(exit)
+      expect(text).not.toContain('childOnly')
+      expect(text).not.toContain('credentials')
+      const local = failure(yield* Effect.exit(rpcResult('parent')(text)))
+      expect(local.stack).not.toContain('childOnly')
+    }),
+  )
 
-  test('classifies invalid outbound JSON as internal while preserving input validation as invalid request', () => {
-    const outgoing = capture(Effect.succeed(Number.NaN).pipe(rpcResponse('encode output')))
-    const outgoingError = failure(Effect.runSyncExit(rpcResult('parent')(success(outgoing.exit))))
-    ok(outgoingError instanceof RemoteWorkerError)
-    expect(outgoingError.cause.status).toBe(500)
-    expect(outgoingError.cause.title).toBe('internal')
-    expect(outgoing.entries).toHaveLength(1)
-    expect(Cause.hasDies(outgoing.entries[0]!.cause)).toBe(true)
-    const incoming = capture(Schema.decodeUnknownEffect(Schema.String)(12).pipe(rpcResponse('decode input')))
-    const incomingError = failure(Effect.runSyncExit(rpcResult('parent')(success(incoming.exit))))
-    ok(incomingError instanceof RemoteWorkerError)
-    expect(incomingError.cause.status).toBe(400)
-    expect(incomingError.cause.title).toBe('invalid-request')
-    expect(incoming.entries).toHaveLength(1)
-    expect(Cause.hasFails(incoming.entries[0]!.cause)).toBe(true)
-  })
+  live('classifies invalid outbound JSON as internal while preserving input validation as invalid request', () =>
+    Effect.gen(function* () {
+      const outgoing = capture(Effect.succeed(Number.NaN).pipe(rpcResponse('encode output')))
+      const outgoingError = failure(yield* Effect.exit(rpcResult('parent')(success(outgoing.exit))))
+      ok(outgoingError instanceof RemoteWorkerError)
+      expect(outgoingError.cause.status).toBe(500)
+      expect(outgoingError.cause.title).toBe('internal')
+      expect(outgoing.entries).toHaveLength(1)
+      expect(Cause.hasDies(outgoing.entries[0]!.cause)).toBe(true)
+      const incoming = capture(Schema.decodeUnknownEffect(Schema.String)(12).pipe(rpcResponse('decode input')))
+      const incomingError = failure(yield* Effect.exit(rpcResult('parent')(success(incoming.exit))))
+      ok(incomingError instanceof RemoteWorkerError)
+      expect(incomingError.cause.status).toBe(400)
+      expect(incomingError.cause.title).toBe('invalid-request')
+      expect(incoming.entries).toHaveLength(1)
+      expect(Cause.hasFails(incoming.entries[0]!.cause)).toBe(true)
+    }),
+  )
 
   test('sanitizes defects and success serialization defects', () => {
     const defect = capture(Effect.die(new Error('private defect')).pipe(rpcResponse('defect')))
@@ -199,29 +206,31 @@ describe('JSON RPC boundary', () => {
     expect(Cause.pretty(Cause.fail(error))).not.toContain('private token')
   })
 
-  test('strips unknown problem extensions and rejects non-UUID correlation instances', () => {
-    const text = success(capture(Effect.fail(new Conflict({ message: 'private' })).pipe(rpcResponse('child'))).exit)
-    const reply = decodeStandard(text)
-    ok(Result.isFailure(reply))
-    const extended = failure(
-      Effect.runSyncExit(
-        rpcResult('parent')(
-          encodePeer(Result.fail({ ...reply.failure, stack: 'private stack', future: { secret: 'private token' } })),
+  live('strips unknown problem extensions and rejects non-UUID correlation instances', () =>
+    Effect.gen(function* () {
+      const text = success(capture(Effect.fail(new Conflict({ message: 'private' })).pipe(rpcResponse('child'))).exit)
+      const reply = decodeStandard(text)
+      ok(Result.isFailure(reply))
+      const extended = failure(
+        yield* Effect.exit(
+          rpcResult('parent')(
+            encodePeer(Result.fail({ ...reply.failure, stack: 'private stack', future: { secret: 'private token' } })),
+          ),
         ),
-      ),
-    )
-    ok(extended instanceof RemoteWorkerError)
-    expect(extended.cause).toStrictEqual(reply.failure)
-    expect(extended.cause).not.toHaveProperty('stack')
-    expect(extended.cause).not.toHaveProperty('future')
-    expect(
-      failure(
-        Effect.runSyncExit(
-          rpcResult('parent')(encodePeer(Result.fail({ ...reply.failure, instance: 'urn:uuid:invalid' }))),
+      )
+      ok(extended instanceof RemoteWorkerError)
+      expect(extended.cause).toStrictEqual(reply.failure)
+      expect(extended.cause).not.toHaveProperty('stack')
+      expect(extended.cause).not.toHaveProperty('future')
+      expect(
+        failure(
+          yield* Effect.exit(
+            rpcResult('parent')(encodePeer(Result.fail({ ...reply.failure, instance: 'urn:uuid:invalid' }))),
+          ),
         ),
-      ),
-    ).toBeInstanceOf(ExternalError)
-  })
+      ).toBeInstanceOf(ExternalError)
+    }),
+  )
 
   test('preserves interruption without logging or producing a reply', () => {
     const { entries, exit } = capture(Effect.interrupt.pipe(rpcResponse('cancel')))
@@ -230,18 +239,20 @@ describe('JSON RPC boundary', () => {
     expect(entries).toHaveLength(0)
   })
 
-  test('creates fresh correlation IDs at each hop while logging the previous problem', () => {
-    const child = capture(Effect.fail(new NotFound({ resource: 'private' })).pipe(rpcResponse('child')))
-    const childText = success(child.exit)
-    const parentError = failure(Effect.runSyncExit(rpcResult('call child')(childText)))
-    ok(parentError instanceof RemoteWorkerError)
-    const parent = capture(Effect.fail(parentError).pipe(rpcResponse('parent')))
-    const grandparent = failure(Effect.runSyncExit(rpcResult('call parent')(success(parent.exit))))
-    ok(grandparent instanceof RemoteWorkerError)
-    expect(grandparent.cause.instance).not.toBe(parentError.cause.instance)
-    expect({ ...grandparent.cause, instance: parentError.cause.instance }).toStrictEqual(parentError.cause)
-    expect(Cause.pretty(parent.entries[0]!.cause)).toContain(parentError.cause.instance)
-    expect(parent.entries).toHaveLength(1)
-    expect(parse(success(parent.exit))).not.toHaveProperty('stack')
-  })
+  live('creates fresh correlation IDs at each hop while logging the previous problem', () =>
+    Effect.gen(function* () {
+      const child = capture(Effect.fail(new NotFound({ resource: 'private' })).pipe(rpcResponse('child')))
+      const childText = success(child.exit)
+      const parentError = failure(yield* Effect.exit(rpcResult('call child')(childText)))
+      ok(parentError instanceof RemoteWorkerError)
+      const parent = capture(Effect.fail(parentError).pipe(rpcResponse('parent')))
+      const grandparent = failure(yield* Effect.exit(rpcResult('call parent')(success(parent.exit))))
+      ok(grandparent instanceof RemoteWorkerError)
+      expect(grandparent.cause.instance).not.toBe(parentError.cause.instance)
+      expect({ ...grandparent.cause, instance: parentError.cause.instance }).toStrictEqual(parentError.cause)
+      expect(Cause.pretty(parent.entries[0]!.cause)).toContain(parentError.cause.instance)
+      expect(parent.entries).toHaveLength(1)
+      expect(parse(success(parent.exit))).not.toHaveProperty('stack')
+    }),
+  )
 })

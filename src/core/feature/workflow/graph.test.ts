@@ -1,3 +1,4 @@
+import { live } from '@effect/vitest'
 import { Machine } from '@typeonce/effect-machine'
 import { Effect } from 'effect'
 import { describe, expect, test, vi } from 'vite-plus/test'
@@ -41,78 +42,78 @@ const makeWorkflow = (execute: (phase: string) => void) =>
   })
 
 describe('executable native Machine graph', () => {
-  test('projects the same native completion edge that automatically invokes the next business node', async () => {
-    const execute = vi.fn()
-    const native = makeWorkflow(execute)
-    const graph = projectMachineGraph({
-      graphId: 'executable-graph-1',
-      nodes: Machine.stateNodes(native),
-      transitions: Machine.transitionDefinitions(native),
-    })
-    expect(execute).not.toHaveBeenCalled()
-    expect(graph.nodes).toStrictEqual([
-      { nodeId: 'implement', label: 'Implement task', kind: 'task' },
-      { nodeId: 'verify', label: 'Verify task', kind: 'task' },
-    ])
-    expect(graph.edges).toStrictEqual([
-      { edgeId: 'implement-verify', source: 'implement', target: 'verify', label: 'implementation complete' },
-    ])
-    await Effect.runPromise(
-      Effect.scoped(
+  live('projects the same native completion edge that automatically invokes the next business node', () =>
+    Effect.gen(function* () {
+      const execute = vi.fn()
+      const native = makeWorkflow(execute)
+      const graph = projectMachineGraph({
+        graphId: 'executable-graph-1',
+        nodes: Machine.stateNodes(native),
+        transitions: Machine.transitionDefinitions(native),
+      })
+      expect(execute).not.toHaveBeenCalled()
+      expect(graph.nodes).toStrictEqual([
+        { nodeId: 'implement', label: 'Implement task', kind: 'task' },
+        { nodeId: 'verify', label: 'Verify task', kind: 'task' },
+      ])
+      expect(graph.edges).toStrictEqual([
+        { edgeId: 'implement-verify', source: 'implement', target: 'verify', label: 'implementation complete' },
+      ])
+      yield* Effect.scoped(
         Effect.gen(function* () {
           const ref = yield* Machine.start(native)
           yield* ref.join
         }),
-      ).pipe(Effect.timeout('2 seconds')),
-    )
-    expect(execute.mock.calls).toStrictEqual([['implement'], ['verify']])
-  })
+      ).pipe(Effect.timeout('2 seconds'))
+      expect(execute.mock.calls).toStrictEqual([['implement'], ['verify']])
+    }),
+  )
 
-  test('projects through unannotated native allocation invokes without executing them during introspection', async () => {
-    const allocate = vi.fn()
-    const root = Machine.state({
-      states: {
-        approval: { annotations: { title: 'Approval', description: 'checkpoint' } },
-        allocate: {},
-        publish: { annotations: { title: 'Publish', description: 'task' } },
-        completed: { type: 'final' },
-      },
-    })
-    const native = Machine.make({
-      root,
-      events: Machine.events({ Resume: {} }),
-      effects: {
-        allocate: Effect.sync(allocate),
-        publish: Effect.void,
-      },
-    }).handle({
-      initial: { target: 'approval' },
-      states: {
-        approval: { on: { Resume: { target: 'allocate' } } },
-        allocate: { invoke: { src: 'allocate', onDone: { target: 'publish' } } },
-        publish: { invoke: { src: 'publish', onDone: { target: 'completed' } } },
-        completed: {},
-      },
-    })
-    expect(
-      projectMachineGraph({
-        graphId: 'allocation-1',
-        nodes: Machine.stateNodes(native),
-        transitions: Machine.transitionDefinitions(native),
-      }).edges,
-    ).toStrictEqual([{ edgeId: 'approval-publish', source: 'approval', target: 'publish', label: 'Resume' }])
-    expect(allocate).not.toHaveBeenCalled()
-    await Effect.runPromise(
-      Effect.scoped(
+  live('projects through unannotated native allocation invokes without executing them during introspection', () =>
+    Effect.gen(function* () {
+      const allocate = vi.fn()
+      const root = Machine.state({
+        states: {
+          approval: { annotations: { title: 'Approval', description: 'checkpoint' } },
+          allocate: {},
+          publish: { annotations: { title: 'Publish', description: 'task' } },
+          completed: { type: 'final' },
+        },
+      })
+      const native = Machine.make({
+        root,
+        events: Machine.events({ Resume: {} }),
+        effects: {
+          allocate: Effect.sync(allocate),
+          publish: Effect.void,
+        },
+      }).handle({
+        initial: { target: 'approval' },
+        states: {
+          approval: { on: { Resume: { target: 'allocate' } } },
+          allocate: { invoke: { src: 'allocate', onDone: { target: 'publish' } } },
+          publish: { invoke: { src: 'publish', onDone: { target: 'completed' } } },
+          completed: {},
+        },
+      })
+      expect(
+        projectMachineGraph({
+          graphId: 'allocation-1',
+          nodes: Machine.stateNodes(native),
+          transitions: Machine.transitionDefinitions(native),
+        }).edges,
+      ).toStrictEqual([{ edgeId: 'approval-publish', source: 'approval', target: 'publish', label: 'Resume' }])
+      expect(allocate).not.toHaveBeenCalled()
+      yield* Effect.scoped(
         Effect.gen(function* () {
           const ref = yield* Machine.start(native)
           yield* ref.send({ _tag: 'Resume' })
           yield* ref.join
         }),
-      ).pipe(Effect.timeout('2 seconds')),
-    )
-    expect(allocate).toHaveBeenCalledTimes(1)
-  })
+      ).pipe(Effect.timeout('2 seconds'))
+      expect(allocate).toHaveBeenCalledTimes(1)
+    }),
+  )
 
   test('combines native alternatives between the same visible nodes without adding a second topology', () => {
     const root = Machine.state({

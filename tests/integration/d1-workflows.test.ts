@@ -1,6 +1,7 @@
 import { readD1Migrations } from '@cloudflare/vitest-plugin'
 import type { D1Database } from '@cloudflare/workers-types'
 import { BrowserCrypto } from '@effect/platform-browser'
+import { live } from '@effect/vitest'
 import { defineQuery } from '@totto2727/reylo'
 import { QueryDecodeError, QueryExecutor } from '@totto2727/reylo/effect'
 import type { PreparedStatement } from 'alchemy/Cloudflare/D1'
@@ -201,23 +202,25 @@ describe('D1 persisted run store', () => {
     expect(unexpected).not.toHaveBeenCalled()
   })
 
-  test('maps a published Reylo cardinality failure to a storage failure without losing its original cause', async () => {
-    const query = defineQuery<{}, { value: number }, 'one', 'sqlite'>({
-      dialect: 'sqlite',
-      sql: 'SELECT 1 AS value UNION ALL SELECT 2 AS value',
-      params: [],
-      columns: [['value', 'int']],
-      cardinality: 'one',
-    })
-    const result = freshQueries().run(query)
-    const queryError = await Effect.runPromise(result.pipe(Effect.flip))
-    expect(queryError).toBeInstanceOf(QueryDecodeError)
-    const error = await Effect.runPromise(execute('read one value', Effect.fail(queryError)).pipe(Effect.flip))
-    expect(error).toBeInstanceOf(ExternalError)
-    expect(error.cause).toBe(queryError.cause)
-    expect(error).toMatchObject({ operation: 'read one value', kind: 'storage' })
-    expect(error.cause).toMatchObject({ message: expect.stringContaining('Expected exactly one row, got 2') })
-  })
+  live('maps a published Reylo cardinality failure to a storage failure without losing its original cause', () =>
+    Effect.gen(function* () {
+      const query = defineQuery<{}, { value: number }, 'one', 'sqlite'>({
+        dialect: 'sqlite',
+        sql: 'SELECT 1 AS value UNION ALL SELECT 2 AS value',
+        params: [],
+        columns: [['value', 'int']],
+        cardinality: 'one',
+      })
+      const result = freshQueries().run(query)
+      const queryError = yield* result.pipe(Effect.flip)
+      expect(queryError).toBeInstanceOf(QueryDecodeError)
+      const error = yield* execute('read one value', Effect.fail(queryError)).pipe(Effect.flip)
+      expect(error).toBeInstanceOf(ExternalError)
+      expect(error.cause).toBe(queryError.cause)
+      expect(error).toMatchObject({ operation: 'read one value', kind: 'storage' })
+      expect(error.cause).toMatchObject({ message: expect.stringContaining('Expected exactly one row, got 2') })
+    }),
+  )
 
   test('retains a preparation failure before constructing or executing an atomic write batch', async () => {
     const query = defineQuery<{ value: number }, never, 'none', 'sqlite'>({
@@ -558,22 +561,21 @@ describe('D1 persisted run store', () => {
     await expect(Effect.runPromise(store.getEvents(before.runId, { _tag: 'All' }))).resolves.toStrictEqual([])
   })
 
-  test('orders random run IDs by explicit creation time rather than ID value', async () => {
-    const older = {
-      ...newRun('run_ffffffff-ffff-4fff-8fff-ffffffffffff'),
-      createdAt: DateTime.makeUnsafe('2026-01-01T00:00:00.000Z'),
-    }
-    const newer = {
-      ...newRun('run_00000000-0000-4000-8000-000000000000'),
-      createdAt: DateTime.makeUnsafe('2026-01-02T00:00:00.000Z'),
-    }
-    await Effect.runPromise(store.create(newer, demoGraph(version1), demoDefinition.summary.name))
-    await Effect.runPromise(store.create(older, demoGraph(version1), demoDefinition.summary.name))
-    expect(Array.map(await Effect.runPromise(store.listRuns), (run) => run.runId)).toStrictEqual([
-      newer.runId,
-      older.runId,
-    ])
-  })
+  live('orders random run IDs by explicit creation time rather than ID value', () =>
+    Effect.gen(function* () {
+      const older = {
+        ...newRun('run_ffffffff-ffff-4fff-8fff-ffffffffffff'),
+        createdAt: DateTime.makeUnsafe('2026-01-01T00:00:00.000Z'),
+      }
+      const newer = {
+        ...newRun('run_00000000-0000-4000-8000-000000000000'),
+        createdAt: DateTime.makeUnsafe('2026-01-02T00:00:00.000Z'),
+      }
+      yield* store.create(newer, demoGraph(version1), demoDefinition.summary.name)
+      yield* store.create(older, demoGraph(version1), demoDefinition.summary.name)
+      expect(Array.map(yield* store.listRuns, (run) => run.runId)).toStrictEqual([newer.runId, older.runId])
+    }),
+  )
 
   test('rejects duplicate event IDs inside a new commit without changing receipts, state or events', async () => {
     await seed()

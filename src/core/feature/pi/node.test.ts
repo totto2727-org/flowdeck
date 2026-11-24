@@ -1,4 +1,5 @@
 import { BrowserCrypto } from '@effect/platform-browser'
+import { live } from '@effect/vitest'
 import { Effect } from 'effect'
 import { describe, expect, test, vi } from 'vite-plus/test'
 
@@ -16,13 +17,13 @@ const execution: PiExecution = {
 const runId = 'run_00000000-0000-4000-8000-000000000003'
 
 describe('shared Pi node effects', () => {
-  test('submits a generic turn without selecting workflow nodes or emitting business checkpoints', async () => {
-    const checkpoint = vi.fn(() => Effect.void)
-    const submitTurn = vi.fn<PiSandbox['Service']['submitTurn']>(() =>
-      Effect.succeed({ commandId: execution.commandId, status: 'running' }),
-    )
-    const result = await Effect.runPromise(
-      Effect.gen(function* () {
+  live('submits a generic turn without selecting workflow nodes or emitting business checkpoints', () =>
+    Effect.gen(function* () {
+      const checkpoint = vi.fn(() => Effect.void)
+      const submitTurn = vi.fn<PiSandbox['Service']['submitTurn']>(() =>
+        Effect.succeed({ commandId: execution.commandId, status: 'running' }),
+      )
+      const result = yield* Effect.gen(function* () {
         const effects = yield* makePiNodeEffects
         return yield* effects.submit({ execution, prompt: 'Perform an arbitrary task.' })
       }).pipe(
@@ -36,15 +37,15 @@ describe('shared Pi node effects', () => {
         Effect.provide(ResourceStore.layer),
         Effect.provide(BrowserCrypto.layer),
         Effect.scoped,
-      ),
-    )
-    expect(result).toStrictEqual({ _tag: 'Waiting' })
-    expect(checkpoint).not.toHaveBeenCalled()
-    expect(submitTurn).toHaveBeenCalledExactlyOnceWith(runId, {
-      commandId: execution.commandId,
-      prompt: 'Perform an arbitrary task.',
-    })
-  })
+      )
+      expect(result).toStrictEqual({ _tag: 'Waiting' })
+      expect(checkpoint).not.toHaveBeenCalled()
+      expect(submitTurn).toHaveBeenCalledExactlyOnceWith(runId, {
+        commandId: execution.commandId,
+        prompt: 'Perform an arbitrary task.',
+      })
+    }),
+  )
 
   test('preserves caller-owned node identity in event drafts', () => {
     expect(piNodeEvent('review-release', execution, 'node.succeeded', { output: 'ready' })).toStrictEqual({

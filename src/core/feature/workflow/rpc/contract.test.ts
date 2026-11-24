@@ -1,4 +1,5 @@
 import { BrowserCrypto } from '@effect/platform-browser'
+import { live } from '@effect/vitest'
 import { makeRpcStub } from 'alchemy/Cloudflare/Workers'
 import { ErrorTag } from 'alchemy/Rpc'
 import { Cause, Context, Effect, Exit, Layer, Logger, Option, Schema } from 'effect'
@@ -26,34 +27,34 @@ const response = <A extends Schema.Json>(value: A) =>
   Effect.runSync(Effect.succeed(value).pipe(rpcResponse('child.test'), Effect.provide(BrowserCrypto.layer)))
 
 describe('workflow RPC value contracts', () => {
-  test('classifies invalid server-produced domain values as internal errors rather than bad requests', () => {
-    const valid = Schema.decodeUnknownSync(RpcRunsResponse)({
-      runs: [
-        {
-          runId: 'run_00000000-0000-4000-8000-000000000001',
-          workflowId: 'example',
-          workflowVersion: '1.0.0',
-          graphId: 'example_v1',
-          status: 'pending',
-          revision: 0,
-          snapshot: {},
-          createdAt: '2026-11-08T00:00:00.000Z',
-          updatedAt: '2026-11-08T00:00:00.000Z',
-        },
-      ],
-    })
-    const output = { runs: valid.runs.map((run) => ({ ...run, revision: -1 })) }
-    const reply = Effect.runSync(
-      encodeRunsResponse(output).pipe(
+  live('classifies invalid server-produced domain values as internal errors rather than bad requests', () =>
+    Effect.gen(function* () {
+      const valid = Schema.decodeUnknownSync(RpcRunsResponse)({
+        runs: [
+          {
+            runId: 'run_00000000-0000-4000-8000-000000000001',
+            workflowId: 'example',
+            workflowVersion: '1.0.0',
+            graphId: 'example_v1',
+            status: 'pending',
+            revision: 0,
+            snapshot: {},
+            createdAt: '2026-11-08T00:00:00.000Z',
+            updatedAt: '2026-11-08T00:00:00.000Z',
+          },
+        ],
+      })
+      const output = { runs: valid.runs.map((run) => ({ ...run, revision: -1 })) }
+      const reply = yield* encodeRunsResponse(output).pipe(
         rpcResponse('Workflow.listRuns'),
         Effect.provide(BrowserCrypto.layer),
         Effect.provide(Logger.layer([Logger.make(() => undefined)])),
-      ),
-    )
-    const failure = Effect.runSync(rpcValue('Workflow.listRuns', RpcRunsResponse)(reply).pipe(Effect.flip))
-    expect(failure).toBeInstanceOf(RemoteWorkerError)
-    expect(failure).toMatchObject({ cause: { title: 'internal', status: 500 } })
-  })
+      )
+      const failure = yield* rpcValue('Workflow.listRuns', RpcRunsResponse)(reply).pipe(Effect.flip)
+      expect(failure).toBeInstanceOf(RemoteWorkerError)
+      expect(failure).toMatchObject({ cause: { title: 'internal', status: 500 } })
+    }),
+  )
 
   test('exposes JSON text rather than domain values or typed failures on the wire', () => {
     expectTypeOf<Effect.Success<ReturnType<WireWorkflowService['listRuns']>>>().toEqualTypeOf<string>()
@@ -62,35 +63,39 @@ describe('workflow RPC value contracts', () => {
     expectTypeOf<Effect.Error<ReturnType<WireWorkflowExecutor['start']>>>().toEqualTypeOf<never>()
   })
 
-  test('decodes the successful operation value after validating the envelope', () => {
-    expect(
-      Effect.runSync(rpcValue('Workflow.listWorkflows', RpcWorkflowsResponse)(response({ workflows: [] }))),
-    ).toStrictEqual({
-      workflows: [],
-    })
-  })
+  live('decodes the successful operation value after validating the envelope', () =>
+    Effect.gen(function* () {
+      expect(
+        yield* rpcValue('Workflow.listWorkflows', RpcWorkflowsResponse)(response({ workflows: [] })),
+      ).toStrictEqual({
+        workflows: [],
+      })
+    }),
+  )
 
-  test('accepts only JSON null as a successful command acknowledgement', () => {
-    expect(Effect.runSync(rpcCommandResult('DemoWorkflow.start')(response(null)))).toBeUndefined()
-    const result = Effect.runSyncExit(rpcCommandResult('DemoWorkflow.start')(response({ unexpected: true })))
-    expect(result).toMatchObject({ _tag: 'Failure' })
-  })
+  live('accepts only JSON null as a successful command acknowledgement', () =>
+    Effect.gen(function* () {
+      expect(yield* rpcCommandResult('DemoWorkflow.start')(response(null))).toBeUndefined()
+      const result = yield* Effect.exit(rpcCommandResult('DemoWorkflow.start')(response({ unexpected: true })))
+      expect(result).toMatchObject({ _tag: 'Failure' })
+    }),
+  )
 
-  test('treats an invalid operation value as a local service failure without retaining peer data', () => {
-    const result = Effect.runSync(
-      rpcValue(
+  live('treats an invalid operation value as a local service failure without retaining peer data', () =>
+    Effect.gen(function* () {
+      const result = yield* rpcValue(
         'Workflow.listWorkflows',
         RpcWorkflowsResponse,
-      )(response({ private: 'private peer data' })).pipe(Effect.flip),
-    )
-    expect(result).toMatchObject({
-      _tag: 'ExternalError',
-      kind: 'service',
-      operation: 'Workflow.listWorkflows',
-      cause: { message: 'RPC response does not match the expected value schema' },
-    })
-    expect(String(result.cause)).not.toContain('private peer data')
-  })
+      )(response({ private: 'private peer data' })).pipe(Effect.flip)
+      expect(result).toMatchObject({
+        _tag: 'ExternalError',
+        kind: 'service',
+        operation: 'Workflow.listWorkflows',
+        cause: { message: 'RPC response does not match the expected value schema' },
+      })
+      expect(String(result.cause)).not.toContain('private peer data')
+    }),
+  )
 })
 
 describe('native SDK RPC client boundary', () => {
@@ -106,21 +111,17 @@ describe('native SDK RPC client boundary', () => {
     ).resolves.toBeUndefined()
   })
 
-  test('does not retain malformed successful SDK reply bytes during application decoding', async () => {
-    const rpc = makeRpcStub<WireWorkflowService>(Effect.succeed({ listRuns: async () => 'PRIVATE_PEER_BYTES' }))
-    const local = await Effect.runPromise(
-      rpc
+  live('does not retain malformed successful SDK reply bytes during application decoding', () =>
+    Effect.gen(function* () {
+      const rpc = makeRpcStub<WireWorkflowService>(Effect.succeed({ listRuns: async () => 'PRIVATE_PEER_BYTES' }))
+      const local = yield* rpc
         .listRuns()
-        .pipe(
-          rpcCall('Workflow.listRuns'),
-          Effect.flatMap(rpcValue('Workflow.listRuns', RpcRunsResponse)),
-          Effect.flip,
-        ),
-    )
-    expect(local).toBeInstanceOf(ExternalError)
-    expect(local).toMatchObject({ cause: { message: 'Invalid RPC response' } })
-    expect(Cause.pretty(Cause.fail(local))).not.toContain('PRIVATE_PEER_BYTES')
-  })
+        .pipe(rpcCall('Workflow.listRuns'), Effect.flatMap(rpcValue('Workflow.listRuns', RpcRunsResponse)), Effect.flip)
+      expect(local).toBeInstanceOf(ExternalError)
+      expect(local).toMatchObject({ cause: { message: 'Invalid RPC response' } })
+      expect(Cause.pretty(Cause.fail(local))).not.toContain('PRIVATE_PEER_BYTES')
+    }),
+  )
 
   test.each(['SDK error envelope', 'rejected call', 'SDK defect'] as const)(
     'discards origin diagnostics from a %s before the parent HTTP operation logs',
@@ -193,37 +194,33 @@ describe('native SDK RPC client boundary', () => {
     },
   )
 
-  test('preserves validated application problems after the SDK call boundary', async () => {
-    const text = await Effect.runPromise(
-      Effect.fail(new Conflict({ message: 'private conflict' })).pipe(
+  live('preserves validated application problems after the SDK call boundary', () =>
+    Effect.gen(function* () {
+      const text = yield* Effect.fail(new Conflict({ message: 'private conflict' })).pipe(
         rpcResponse('child'),
         Effect.provide(BrowserCrypto.layer),
         Effect.provide(Logger.layer([Logger.make(() => undefined)])),
-      ),
-    )
-    const rpc = makeRpcStub<WireWorkflowService>(Effect.succeed({ listRuns: async () => text }))
-    const local = await Effect.runPromise(
-      rpc
+      )
+      const rpc = makeRpcStub<WireWorkflowService>(Effect.succeed({ listRuns: async () => text }))
+      const local = yield* rpc
         .listRuns()
-        .pipe(
-          rpcCall('Workflow.listRuns'),
-          Effect.flatMap(rpcValue('Workflow.listRuns', RpcRunsResponse)),
-          Effect.flip,
-        ),
-    )
-    expect(local).toBeInstanceOf(RemoteWorkerError)
-    expect(local).toMatchObject({
-      operation: 'Workflow.listRuns',
-      cause: { title: 'conflict', status: 409 },
-    })
-    expect(Cause.pretty(Cause.fail(local))).not.toContain('private conflict')
-  })
+        .pipe(rpcCall('Workflow.listRuns'), Effect.flatMap(rpcValue('Workflow.listRuns', RpcRunsResponse)), Effect.flip)
+      expect(local).toBeInstanceOf(RemoteWorkerError)
+      expect(local).toMatchObject({
+        operation: 'Workflow.listRuns',
+        cause: { title: 'conflict', status: 409 },
+      })
+      expect(Cause.pretty(Cause.fail(local))).not.toContain('private conflict')
+    }),
+  )
 
-  test('preserves a cancellation-only cause without creating a local service failure', () => {
-    const exit = Effect.runSyncExit(Effect.interrupt.pipe(rpcCall('cancelled SDK call')))
-    expect(Exit.isFailure(exit)).toBe(true)
-    if (Exit.isFailure(exit)) {
-      expect(Cause.hasInterruptsOnly(exit.cause)).toBe(true)
-    }
-  })
+  live('preserves a cancellation-only cause without creating a local service failure', () =>
+    Effect.gen(function* () {
+      const exit = yield* Effect.exit(Effect.interrupt.pipe(rpcCall('cancelled SDK call')))
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) {
+        expect(Cause.hasInterruptsOnly(exit.cause)).toBe(true)
+      }
+    }),
+  )
 })

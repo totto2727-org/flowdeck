@@ -1,4 +1,5 @@
 import { BrowserCrypto } from '@effect/platform-browser'
+import { live } from '@effect/vitest'
 import { Effect, Schema } from 'effect'
 import { TestCrypto } from 'effect/testing'
 import { describe, expect, test } from 'vite-plus/test'
@@ -52,20 +53,22 @@ describe('prefixed cryptographic random identities', () => {
     expect(Schema.is(schema)(`run_${uuid}`)).toBe(false)
   })
 
-  test('keeps factories independent and generates a fresh ID when their Effects are rerun', async () => {
-    const repository = makePrefixedUUIDv4('repository')
-    const task = makePrefixedUUIDv4('task')
-    const nextRepository = repository.make
-    const [first, second, taskId] = await Effect.runPromise(
-      Effect.all([nextRepository, nextRepository, task.make]).pipe(Effect.provide(BrowserCrypto.layer)),
-    )
-    expect(first).not.toBe(second)
-    expect(Schema.is(repository.schema)(first)).toBe(true)
-    expect(Schema.is(repository.schema)(second)).toBe(true)
-    expect(Schema.is(task.schema)(taskId)).toBe(true)
-    expect(Schema.is(repository.schema)(taskId)).toBe(false)
-    expect(Schema.is(task.schema)(first)).toBe(false)
-  })
+  live('keeps factories independent and generates a fresh ID when their Effects are rerun', () =>
+    Effect.gen(function* () {
+      const repository = makePrefixedUUIDv4('repository')
+      const task = makePrefixedUUIDv4('task')
+      const nextRepository = repository.make
+      const [first, second, taskId] = yield* Effect.all([nextRepository, nextRepository, task.make]).pipe(
+        Effect.provide(BrowserCrypto.layer),
+      )
+      expect(first).not.toBe(second)
+      expect(Schema.is(repository.schema)(first)).toBe(true)
+      expect(Schema.is(repository.schema)(second)).toBe(true)
+      expect(Schema.is(task.schema)(taskId)).toBe(true)
+      expect(Schema.is(repository.schema)(taskId)).toBe(false)
+      expect(Schema.is(task.schema)(first)).toBe(false)
+    }),
+  )
 
   test.each(prefixes)('round-trips %s and uses the official v4 check for its suffix', (kind) => {
     const { schema } = makePrefixedUUIDv4(kind)

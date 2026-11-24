@@ -1,3 +1,4 @@
+import { live } from '@effect/vitest'
 import { Array, Context, Deferred, Effect, Fiber, Option, Ref } from 'effect'
 import { describe, expect, expectTypeOf, test } from 'vite-plus/test'
 
@@ -107,9 +108,9 @@ describe('ResourceStore', () => {
     )
   })
 
-  test('releases a failed attempt before retry and retains the successful resource until runtime closure', async () => {
-    const releases = await Effect.runPromise(
-      Effect.gen(function* () {
+  live('releases a failed attempt before retry and retains the successful resource until runtime closure', () =>
+    Effect.gen(function* () {
+      const releases = yield* Effect.gen(function* () {
         const finalized = yield* Ref.make<Readonly<string[]>>([])
         yield* Effect.scoped(
           Effect.gen(function* () {
@@ -128,14 +129,14 @@ describe('ResourceStore', () => {
           }),
         )
         return yield* Ref.get(finalized)
-      }),
-    )
-    expect(releases).toStrictEqual(['failed', 'successful'])
-  })
+      })
+      expect(releases).toStrictEqual(['failed', 'successful'])
+    }),
+  )
 
-  test('releases an interrupted attempt before retry and retains the successful resource until runtime closure', async () => {
-    const releases = await Effect.runPromise(
-      Effect.gen(function* () {
+  live('releases an interrupted attempt before retry and retains the successful resource until runtime closure', () =>
+    Effect.gen(function* () {
+      const releases = yield* Effect.gen(function* () {
         const finalized = yield* Ref.make<Readonly<string[]>>([])
         yield* Effect.scoped(
           Effect.gen(function* () {
@@ -160,14 +161,14 @@ describe('ResourceStore', () => {
           }),
         )
         return yield* Ref.get(finalized)
-      }),
-    )
-    expect(releases).toStrictEqual(['interrupted', 'successful'])
-  })
+      })
+      expect(releases).toStrictEqual(['interrupted', 'successful'])
+    }),
+  )
 
-  test('keeps resource finalizers alive until the owning runtime closes', async () => {
-    const releases = await Effect.runPromise(
-      Effect.gen(function* () {
+  live('keeps resource finalizers alive until the owning runtime closes', () =>
+    Effect.gen(function* () {
+      const releases = yield* Effect.gen(function* () {
         const finalized = yield* Ref.make(0)
         yield* Effect.scoped(
           Effect.gen(function* () {
@@ -181,10 +182,10 @@ describe('ResourceStore', () => {
           }),
         )
         return yield* Ref.get(finalized)
-      }),
-    )
-    expect(releases).toBe(1)
-  })
+      })
+      expect(releases).toBe(1)
+    }),
+  )
 
   test('isolates resources between fresh runtime stores', async () => {
     await run(

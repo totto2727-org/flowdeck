@@ -1,5 +1,6 @@
 import { runInNewContext } from 'node:vm'
 
+import { live } from '@effect/vitest'
 import { Effect, Predicate } from 'effect'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
@@ -112,16 +113,18 @@ describe('theme browser boundary', () => {
     expect(notify).toHaveBeenCalledTimes(2)
   })
 
-  test('keeps the toggle functional when persistence is denied', () => {
-    const boundary = browser(null, true)
-    vi.stubGlobal('document', boundary.document)
-    vi.stubGlobal('window', boundary.window)
-    expect(() => Effect.runSync(selectTheme('light'))).not.toThrow()
-    expect(browserTheme()).toBe('light')
-    expect(boundary.classes.has('dark')).toBe(false)
-    expect(boundary.meta.content).toBe('#f7f9f8')
-    expect(boundary.values.size).toBe(0)
-    Effect.runSync(selectTheme('dark'))
-    expect(browserTheme()).toBe('dark')
-  })
+  live('keeps the toggle functional when persistence is denied', () =>
+    Effect.gen(function* () {
+      const boundary = browser(null, true)
+      vi.stubGlobal('document', boundary.document)
+      vi.stubGlobal('window', boundary.window)
+      expect(() => Effect.runSync(selectTheme('light'))).not.toThrow()
+      expect(browserTheme()).toBe('light')
+      expect(boundary.classes.has('dark')).toBe(false)
+      expect(boundary.meta.content).toBe('#f7f9f8')
+      expect(boundary.values.size).toBe(0)
+      yield* selectTheme('dark')
+      expect(browserTheme()).toBe('dark')
+    }),
+  )
 })

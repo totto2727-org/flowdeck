@@ -1,3 +1,4 @@
+import { live } from '@effect/vitest'
 import {
   WorkerEnvironment,
   WorkerExecutionContext,
@@ -79,54 +80,51 @@ describe('frontend request composition', () => {
     },
   )
 
-  test('keeps independently constructed Control clients bound to their own request environment', async () => {
-    const firstFetch = vi.fn(async () => Response.json(catalog('First request')))
-    const secondFetch = vi.fn(async () => Response.json(catalog('Second request')))
-    const firstApi = await Effect.runPromise(
-      ControlApi.pipe(
+  live('keeps independently constructed Control clients bound to their own request environment', () =>
+    Effect.gen(function* () {
+      const firstFetch = vi.fn(async () => Response.json(catalog('First request')))
+      const secondFetch = vi.fn(async () => Response.json(catalog('Second request')))
+      const firstApi = yield* ControlApi.pipe(
         Effect.provide(
           completeLayer({ FLOWDECK_ACCESS_AUD: 'flowdeck-audience', CONTROL: { fetch: firstFetch } }, admitted()),
         ),
-      ),
-    )
-    const secondApi = await Effect.runPromise(
-      ControlApi.pipe(
+      )
+      const secondApi = yield* ControlApi.pipe(
         Effect.provide(
           completeLayer({ FLOWDECK_ACCESS_AUD: 'flowdeck-audience', CONTROL: { fetch: secondFetch } }, admitted()),
         ),
-      ),
-    )
-    // Calls have no ambient HttpClient or WorkerEnvironment. Construction captured each capability.
-    const [first, second, firstAgain] = await Effect.runPromise(
-      Effect.all([firstApi.workflows, secondApi.workflows, firstApi.workflows], { concurrency: 'unbounded' }),
-    )
-    expect(first.workflows).toMatchObject([{ name: 'First request' }])
-    expect(second.workflows).toMatchObject([{ name: 'Second request' }])
-    expect(firstAgain).toStrictEqual(first)
-    expect(firstFetch).toHaveBeenCalledTimes(2)
-    expect(secondFetch).toHaveBeenCalledTimes(1)
-  })
+      )
+      // Calls have no ambient HttpClient or WorkerEnvironment. Construction captured each capability.
+      const [first, second, firstAgain] = yield* Effect.all(
+        [firstApi.workflows, secondApi.workflows, firstApi.workflows],
+        { concurrency: 'unbounded' },
+      )
+      expect(first.workflows).toMatchObject([{ name: 'First request' }])
+      expect(second.workflows).toMatchObject([{ name: 'Second request' }])
+      expect(firstAgain).toStrictEqual(first)
+      expect(firstFetch).toHaveBeenCalledTimes(2)
+      expect(secondFetch).toHaveBeenCalledTimes(1)
+    }),
+  )
 
-  test('uses the native binding only at the HTTP adapter and preserves mutation method and JSON body', async () => {
-    const seen: Array<{ method: string; url: string; body: unknown }> = []
-    const fetch = vi.fn(async (request: Request) => {
-      seen.push({ method: request.method, url: request.url, body: await request.json() })
-      return Response.json({ error: 'unavailable' }, { status: 503 })
-    })
-    const api = await Effect.runPromise(
-      ControlApi.pipe(
+  live('uses the native binding only at the HTTP adapter and preserves mutation method and JSON body', () =>
+    Effect.gen(function* () {
+      const seen: Array<{ method: string; url: string; body: unknown }> = []
+      const fetch = vi.fn(async (request: Request) => {
+        seen.push({ method: request.method, url: request.url, body: await request.json() })
+        return Response.json({ error: 'unavailable' }, { status: 503 })
+      })
+      const api = yield* ControlApi.pipe(
         Effect.provide(completeLayer({ FLOWDECK_ACCESS_AUD: 'flowdeck-audience', CONTROL: { fetch } }, admitted())),
-      ),
-    )
-    // The real domain codec emits SemVer as a string before the adapter converts the request.
-    const result = await Effect.runPromise(
-      api
+      )
+      // The real domain codec emits SemVer as a string before the adapter converts the request.
+      const result = yield* api
         .start({ workflowId: 'demo', version: Schema.decodeUnknownSync(Schema.SemVerFromString)('1.0.0') })
-        .pipe(Effect.result),
-    )
-    expect(result).toMatchObject({ _tag: 'Failure', failure: { _tag: 'ControlError' } })
-    expect(seen).toStrictEqual([
-      { method: 'POST', url: 'https://control.internal/api/runs', body: { workflowId: 'demo', version: '1.0.0' } },
-    ])
-  })
+        .pipe(Effect.result)
+      expect(result).toMatchObject({ _tag: 'Failure', failure: { _tag: 'ControlError' } })
+      expect(seen).toStrictEqual([
+        { method: 'POST', url: 'https://control.internal/api/runs', body: { workflowId: 'demo', version: '1.0.0' } },
+      ])
+    }),
+  )
 })
