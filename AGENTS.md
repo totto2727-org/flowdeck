@@ -119,10 +119,10 @@ Log the original failure with a unique error ID before sending an RFC 9457 probl
 Do not revive child exceptions or propagate their stacks and internal causes across RPC.
 See [RPC boundaries](docs/rpc-boundaries.md).
 
-| Error contract                                                                                                                              | Enforcement                                                                                                                                 |
-| ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| Domain `Conflict` has only a message. `StorageConflict` requires an operation and cause. Do not add an optional cause to merge these cases. | Constructor type assertions in `src/core/feature/workflow/domain/errors.test.ts`, checked by `check:tsc`; D1 and RPC/HTTP regression tests. |
-| RPC replies contain JSON only. Child diagnostics stay in child logs, correlated by the problem's `instance`.                                | JSON-only RPC service signatures and `rpcResponse` type assertions; codec, HTTP, and real native Worker RPC boundary tests.                 |
+| Error contract                                                                                                                              | Enforcement                                                                                                                                |
+| ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Domain `Conflict` has only a message. `StorageConflict` requires an operation and cause. Do not add an optional cause to merge these cases. | Constructor type assertions in `src/core/feature/workflow/domain/errors.test.ts`, checked by `check:vp`; D1 and RPC/HTTP regression tests. |
+| RPC replies contain JSON only. Child diagnostics stay in child logs, correlated by the problem's `instance`.                                | JSON-only RPC service signatures and `rpcResponse` type assertions; codec, HTTP, and real native Worker RPC boundary tests.                |
 
 Keep workflow effects independent from deployment configuration.
 Select infrastructure-specific implementations only when injecting dependencies at the final composition boundary.
@@ -152,8 +152,7 @@ Use `vp run check` for complete TypeScript 7.1 Content Mapper checking plus Vite
 `vite.config.ts` loads selected `@totto2727/oxlint` rules while preserving the Vite+ native lint defaults.
 Use Effect predicates and collection helpers in application code. Give a specific reason for any inline lint exception at a runtime boundary.
 Do not enable the complete preset without checking its import rules, runtime interpreters, and synchronous codecs against the existing architecture.
-The `check:tsc` task is temporary: Vite+ 1.4.0 cannot load this project's SQL Content Mappers.
-Remove that task, its dependency, and the `typeCheck: false` opt-out when `vp check` supports them.
+The `check:vp` and `fix:vp` tasks select `tsrs-lint` as Vite+'s TypeScript backend and enable execution of the installed Reylo SQL Content Mapper.
 Use `fix` for Atlas HCL formatting and `check` for definition validation with an in-memory development database.
 Keep existing `check` and `test` task names; do not add automatic migration checksum or schema drift validation.
 Use the published `@totto2727/reylo` and `@totto2727/reylo-sqlite` packages at matching versions.

@@ -8,6 +8,9 @@ import { defineConfig } from 'vite-plus'
 
 const ignorePatterns = await generateIgnorePatterns(new URL('.', import.meta.url))
 
+// Vite+ can use tsrs for type-aware lint and type checking. Permit the installed Reylo SQL Content Mapper.
+const typeChecker = 'OXLINT_TSGOLINT_PATH=./node_modules/.bin/tsrs-lint TSRS_LINT_RUN_EXTERNAL_CODE=1'
+
 // Keep the retained Rust implementation byte-for-byte unchanged until its separate removal PR.
 const retainedRustFormatting = [
   '.agents/skills/develop-flowdeck-workflows/**',
@@ -61,9 +64,7 @@ export default defineConfig({
       'rules/no-type-predicate': 'error',
       'rules/require-disable-reason': 'error',
     },
-    // Temporary: Vite+ 1.4.0's checker cannot load SQL Content Mappers (TS2307).
-    // Remove this opt-out and check:tsc when vp check supports them.
-    options: { typeAware: true, typeCheck: false },
+    options: { typeAware: true, typeCheck: true },
   },
   test: {
     include: ['src/**/*.test.ts', 'tests/**/*.test.ts'],
@@ -85,13 +86,11 @@ export default defineConfig({
           'node --import @totto2727/reylo/register node_modules/alchemy/bin/cli.js dev --config alchemy.run.ts --no-input',
         cache: false,
       },
-      // Temporary: remove this task when vp check supports SQL Content Mappers.
-      'check:tsc': { command: 'tsc --noEmit --runExternalCode' },
       'check:atlas': { command: 'atlas schema validate --env schema' },
-      'check:vp': { command: 'vp check' },
-      check: { command: '', dependsOn: ['check:vp', 'check:tsc', 'check:atlas'] },
+      'check:vp': { command: `${typeChecker} vp check` },
+      check: { command: '', dependsOn: ['check:vp', 'check:atlas'] },
       'fix:atlas': { command: 'atlas schema fmt atlas.hcl schema' },
-      'fix:vp': { command: 'vp check --fix' },
+      'fix:vp': { command: `${typeChecker} vp check --fix` },
       fix: { command: '', dependsOn: ['fix:vp', 'fix:atlas'] },
       test: { command: 'vp test run' },
       e2e: {

@@ -40,18 +40,16 @@ Do not use `atlas schema apply` or create `.db` files for analysis, validation, 
 No D1 credentials, Wrangler-managed database, or network database service is required for SQL analysis.
 Do not commit `.atlas/` or `.reylo/`.
 
-`vp run check` depends on `check:tsc`, which runs the official TypeScript 7.1 compiler with `--runExternalCode` and the registered Reylo Content Mapper, then runs Vite+ formatting checks and type-aware lint.
-That flag permits the installed mapper to execute during compilation.
-This is temporary: Vite+ 1.4.0 still reports `TS2307` for the project's SQL imports with its full type check enabled.
-When `vp check` supports SQL Content Mappers, enable its full type check and remove the temporary `check:tsc` task and dependency.
+`vp run check` runs Vite+ formatting checks, type-aware lint, and TypeScript 7.1 type checking.
+The Vite+ task selects the installed `tsrs-lint` backend through `OXLINT_TSGOLINT_PATH`.
+`TSRS_LINT_RUN_EXTERNAL_CODE=1` allows that backend to load the installed Reylo Content Mapper and infer types for SQL imports.
 `vp run fix` also formats `atlas.hcl` and schema HCL with `atlas schema fmt atlas.hcl schema`.
 `vp run check` validates the HCL definition with `atlas schema validate --env schema`.
 The `schema` environment in [`atlas.hcl`](../atlas.hcl) defines the HCL directory and in-memory SQLite development database.
 This loads the definition without comparing schemas, checking migration checksums, applying migrations, or creating a database file.
 `vp run test` runs the application tests without additional migration checksum or schema drift checks.
 Do not substitute ambient `any` declarations for SQL inference.
-The canonical check still type-checks the complete project through TypeScript 7.1.
-Use `vp run check`, not standalone `vp check`, for the complete check.
+Use `vp run check` to apply both the configured TypeScript backend and Atlas validation.
 
 The official `@totto2727/reylo/vite` plugin handles SQL modules in Vite/Vitest and Alchemy's Rolldown Worker bundles.
 `vp run dev` also preloads the official `@totto2727/reylo/register` Node hook because Alchemy evaluates resource modules before bundling Workers.
