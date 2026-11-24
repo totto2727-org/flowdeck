@@ -290,7 +290,7 @@ describe('D1 persisted run store', () => {
         Layer.provide(Layer.succeed(D1Client, { ...client, prepare: () => statement })),
       )
       const queries = yield* DatabaseQueries.pipe(Effect.provide(queryLayer))
-      const read = execute('read value', queries.run(query))
+      const read = queries.read('read value', query)
       const fiber = yield* Effect.forkScoped(read)
       const outcome = yield* Fiber.await(fiber)
       expect(Exit.hasInterrupts(outcome)).toBe(true)

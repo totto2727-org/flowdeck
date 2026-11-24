@@ -8,6 +8,9 @@ import type getEventsQuery from './queries/get-events.sql'
 import type getRunQuery from './queries/get-run.sql'
 import { CommitAck, CommitCommand } from './store.ts'
 
+// oxlint-disable-next-line unicorn/no-null -- Reylo must bind SQLite NULL for an absent execution or revision limit.
+export const sqlNull = null
+
 const EventIds = Schema.Array(EventId).check(Schema.isUnique())
 const Json = Schema.fromJsonString(Schema.Json)
 const encodeJson = Schema.encodeEffect(Json)

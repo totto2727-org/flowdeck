@@ -82,8 +82,10 @@ The workflow-owned `DatabaseQueriesLive` applies storage failure translation to 
 `D1StoreLive` requires `DatabaseQueries`; Worker, run Durable Object, and test composition roots supply both Layers with their selected database Layer.
 `D1StoreLive` constructs the `Store` service from separate operation factories that capture those query capabilities once.
 Service methods do not provide or rebuild their dependencies when called.
-`d1-store.ts` defines each run, graph, event, creation, and commit operation separately; `d1-store-codecs.ts` owns persisted value conversion.
-`src/core/feature/workflow/services/database-queries.ts` is the workflow persistence facade, and its sibling `database.ts` interprets workflow constraint failures.
+`d1-store.ts` assembles the read, creation, and commit operations.
+`d1-store-codecs.ts` owns persisted value conversion.
+`src/core/feature/workflow/services/database-queries.ts` captures the workflow query service.
+Its sibling `database.ts` interprets workflow constraint failures.
 `src/core/feature/d1/batch.ts` owns prepared batch execution and knows nothing about workflow trigger names, receipts, or errors.
 Reylo owns parameter encoding, result decoding, and inferred cardinality; Alchemy executes queries through `PreparedStatement.all`.
 Reylo depends on neither Alchemy nor D1 and does not own Flowdeck's storage error mapping.
