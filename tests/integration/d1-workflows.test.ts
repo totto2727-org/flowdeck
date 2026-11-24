@@ -6,7 +6,7 @@ import { defineQuery } from '@totto2727/reylo'
 import { QueryDecodeError, QueryExecutor } from '@totto2727/reylo/effect'
 import type { PreparedStatement } from 'alchemy/Cloudflare/D1'
 import { makeRpcStub } from 'alchemy/Cloudflare/Workers'
-import { Array, Crypto, DateTime, Effect, Exit, Layer, Predicate, Schema, SemVer } from 'effect'
+import { Array, Crypto, DateTime, Effect, Exit, Fiber, Layer, Predicate, Result, Schema, SemVer } from 'effect'
 import { HttpRouter } from 'effect/http'
 import { TestCrypto } from 'effect/testing'
 import { Miniflare } from 'miniflare'
@@ -27,6 +27,7 @@ import { LifecycleHook } from '@/core/feature/workflow/lifecycle'
 import { D1StoreLive } from '@/core/feature/workflow/services/d1-store'
 import { execute } from '@/core/feature/workflow/services/database'
 import { DatabaseQueries, DatabaseQueriesLive } from '@/core/feature/workflow/services/database-queries'
+import type { makeDatabaseQueries } from '@/core/feature/workflow/services/database-queries'
 import { EventRange, Store } from '@/core/feature/workflow/services/store'
 import type { CommitCommand, StoreService } from '@/core/feature/workflow/services/store'
 import { WorkflowRegistry } from '@/core/feature/workflow/services/workflow-definition'
@@ -46,9 +47,15 @@ import {
 const version1 = SemVer.parseUnsafe('1.0.0')
 const version2 = SemVer.parseUnsafe('2.0.0')
 const now = DateTime.makeUnsafe('2026-10-17T12:00:00.000Z')
-const encodeDemo = Schema.encodeSync(Schema.toCodecJson(DemoSnapshot))
-const decodeJsonObject = Schema.decodeUnknownSync(Schema.JsonObject)
-const snapshotJson = (snapshot: DemoSnapshot) => decodeJsonObject(encodeDemo(snapshot))
+const encodeDemo = Schema.encodeResult(Schema.toCodecJson(DemoSnapshot))
+const isJsonObject = Schema.is(Schema.JsonObject)
+const snapshotJson = (snapshot: DemoSnapshot): Schema.JsonObject => {
+  const encoded = Result.getOrThrow(encodeDemo(snapshot))
+  if (!isJsonObject(encoded)) {
+    throw new TypeError('The encoded demo fixture must be a JSON object')
+  }
+  return encoded
+}
 const newRun = (runId: string, version: WorkflowVersion = version1): Run => ({
   runId,
   workflowId: 'demo',
@@ -87,15 +94,13 @@ let database: D1Database
 let store: StoreService
 let storeLayer: Layer.Layer<Store>
 const freshStore = () => Effect.runSync(Store.pipe(Effect.provide(storeLayer)))
-const freshQueries = () =>
-  Effect.runSync(
-    DatabaseQueries.pipe(
-      Effect.provide(
-        DatabaseQueriesLive.pipe(
-          Layer.provide(AlchemyQueryExecutorLive),
-          Layer.provide(NativeD1Client),
-          Layer.provide(Layer.succeed(D1Binding, database)),
-        ),
+const freshQueries = (): Effect.Effect<Effect.Success<typeof makeDatabaseQueries>> =>
+  DatabaseQueries.pipe(
+    Effect.provide(
+      DatabaseQueriesLive.pipe(
+        Layer.provide(AlchemyQueryExecutorLive),
+        Layer.provide(NativeD1Client),
+        Layer.provide(Layer.succeed(D1Binding, database)),
       ),
     ),
   )
@@ -179,31 +184,34 @@ const api = (registry?: Readonly<RegisteredWorkflow[]>) =>
   )
 
 describe('D1 persisted run store', () => {
-  test('uses the published Reylo decoder and captured Alchemy executor despite a conflicting caller context', async () => {
-    const lookup = defineQuery<{ active: boolean }, { active: boolean; document: { name: string } }, 'one', 'sqlite'>({
-      dialect: 'sqlite',
-      sql: `SELECT :active AS active, '{"name":"Flowdeck"}' AS document`,
-      params: ['active'],
-      inputs: { active: { type: { kind: 'scalar', name: 'BOOLEAN' }, nullable: false } },
-      columns: [
-        ['active', 'bool'],
-        ['document', 'json'],
-      ],
-      cardinality: 'one',
-    })
-    const queries = freshQueries()
-    const result = queries.run(lookup, { active: true })
-    expectTypeOf<Effect.Services<typeof result>>().toEqualTypeOf<never>()
-    const unexpected = vi.fn(() => Effect.die('The caller executor must not be used'))
-    const expected = { active: true, document: { name: 'Flowdeck' } }
-    await expect(Effect.runPromise(result)).resolves.toStrictEqual(expected)
-    expect(
-      await Effect.runPromise(
-        result.pipe(Effect.provideService(QueryExecutor, { dialect: 'sqlite', execute: unexpected })),
-      ),
-    ).toStrictEqual(expected)
-    expect(unexpected).not.toHaveBeenCalled()
-  })
+  live('uses the published Reylo decoder and captured Alchemy executor despite a conflicting caller context', () =>
+    Effect.gen(function* () {
+      const lookup = defineQuery<{ active: boolean }, { active: boolean; document: { name: string } }, 'one', 'sqlite'>(
+        {
+          cardinality: 'one',
+          columns: [
+            ['active', 'bool'],
+            ['document', 'json'],
+          ],
+          dialect: 'sqlite',
+          inputs: { active: { nullable: false, type: { kind: 'scalar', name: 'BOOLEAN' } } },
+          params: ['active'],
+          sql: `SELECT :active AS active, '{"name":"Flowdeck"}' AS document`,
+        },
+      )
+      const queries = yield* freshQueries()
+      const result = queries.run(lookup, { active: true })
+      expectTypeOf<Effect.Services<typeof result>>().toEqualTypeOf<never>()
+      const unexpected = vi.fn(() => Effect.die('The caller executor must not be used'))
+      const expected = { active: true, document: { name: 'Flowdeck' } }
+      const observed = yield* result
+      const underConflictingContext = yield* result.pipe(
+        Effect.provideService(QueryExecutor, { dialect: 'sqlite', execute: unexpected }),
+      )
+      expect([observed, underConflictingContext]).toStrictEqual([expected, expected])
+      expect(unexpected).not.toHaveBeenCalled()
+    }),
+  )
 
   live('maps a published Reylo cardinality failure to a storage failure without losing its original cause', () =>
     Effect.gen(function* () {
@@ -214,7 +222,8 @@ describe('D1 persisted run store', () => {
         columns: [['value', 'int']],
         cardinality: 'one',
       })
-      const result = freshQueries().run(query)
+      const queries = yield* freshQueries()
+      const result = queries.run(query)
       const queryError = yield* result.pipe(Effect.flip)
       expect(queryError).toBeInstanceOf(QueryDecodeError)
       const error = yield* execute('read one value', Effect.fail(queryError)).pipe(Effect.flip)
@@ -225,92 +234,86 @@ describe('D1 persisted run store', () => {
     }),
   )
 
-  test('retains a preparation failure before constructing or executing an atomic write batch', async () => {
-    const query = defineQuery<{ value: number }, never, 'none', 'sqlite'>({
-      dialect: 'sqlite',
-      sql: 'INSERT INTO workflows (workflow_id, name) VALUES (:value, :value)',
-      params: ['value'],
-      inputs: { value: { type: { kind: 'scalar', name: 'INTEGER' }, nullable: false } },
-      columns: [],
-      cardinality: 'none',
-    })
-    const cause = new Error('Input accessor failed')
-    const input = {
-      get value(): number {
-        throw cause
-      },
-    }
-    const error = await Effect.runPromise(freshQueries().prepare(query, input).pipe(Effect.flip))
-    expect(error).toBeInstanceOf(ExternalError)
-    expect(error.cause).toBe(cause)
-    await expect(Effect.runPromise(store.listRuns)).resolves.toStrictEqual([])
-    await expect(database.prepare('SELECT count(*) AS count FROM workflows').first()).resolves.toStrictEqual({
-      count: 0,
-    })
-  })
+  live('retains a preparation failure before constructing or executing an atomic write batch', () =>
+    Effect.gen(function* () {
+      const query = defineQuery<{ value: number }, never, 'none', 'sqlite'>({
+        cardinality: 'none',
+        columns: [],
+        dialect: 'sqlite',
+        inputs: { value: { nullable: false, type: { kind: 'scalar', name: 'INTEGER' } } },
+        params: ['value'],
+        sql: 'INSERT INTO workflows (workflow_id, name) VALUES (:value, :value)',
+      })
+      const cause = new Error('Input accessor failed')
+      const input = {
+        get value(): number {
+          throw cause
+        },
+      }
+      const queries = yield* freshQueries()
+      const error = yield* queries.prepare(query, input).pipe(Effect.flip)
+      expect(error).toBeInstanceOf(ExternalError)
+      expect(error.cause).toBe(cause)
+      const runs = yield* store.listRuns
+      expect(runs).toStrictEqual([])
+      const count = yield* Effect.promise(async () =>
+        database.prepare('SELECT count(*) AS count FROM workflows').first(),
+      )
+      expect(count).toStrictEqual({ count: 0 })
+    }),
+  )
 
-  test('preserves read interruption through the Alchemy executor and published query runner', async () => {
-    const client = Effect.runSync(
-      D1Client.pipe(Effect.provide(NativeD1Client.pipe(Layer.provide(Layer.succeed(D1Binding, database))))),
-    )
-    const statement = client.prepare('SELECT 1 AS value')
-    const bind = vi.spyOn(statement, 'bind').mockReturnValue(statement)
-    const interrupt = vi.spyOn(statement, 'all').mockReturnValue(Effect.interrupt)
-    const query = defineQuery<{}, { value: number }, 'one', 'sqlite'>({
-      dialect: 'sqlite',
-      sql: 'SELECT 1 AS value',
-      params: [],
-      columns: [['value', 'int']],
-      cardinality: 'one',
-    })
-    const queries = Effect.runSync(
-      DatabaseQueries.pipe(
-        Effect.provide(
-          DatabaseQueriesLive.pipe(
-            Layer.provide(AlchemyQueryExecutorLive),
-            Layer.provide(
-              Layer.succeed(D1Client, {
-                ...client,
-                prepare: () => statement,
-              }),
-            ),
-          ),
-        ),
-      ),
-    )
-    try {
-      const exit = await Effect.runPromiseExit(execute('read value', queries.run(query)))
-      expect(Exit.hasInterrupts(exit)).toBe(true)
-    } finally {
-      interrupt.mockRestore()
-      bind.mockRestore()
-    }
-  })
+  live('preserves read interruption through the Alchemy executor and published query runner', () =>
+    Effect.gen(function* () {
+      const clientLayer = NativeD1Client.pipe(Layer.provide(Layer.succeed(D1Binding, database)))
+      const client = yield* D1Client.pipe(Effect.provide(clientLayer))
+      const statement = client.prepare('SELECT 1 AS value')
+      const bind = vi.spyOn(statement, 'bind').mockReturnValue(statement)
+      const interrupt = vi.spyOn(statement, 'all').mockReturnValue(Effect.interrupt)
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          interrupt.mockRestore()
+          bind.mockRestore()
+        }),
+      )
+      const query = defineQuery<{}, { value: number }, 'one', 'sqlite'>({
+        cardinality: 'one',
+        columns: [['value', 'int']],
+        dialect: 'sqlite',
+        params: [],
+        sql: 'SELECT 1 AS value',
+      })
+      const queryLayer = DatabaseQueriesLive.pipe(
+        Layer.provide(AlchemyQueryExecutorLive),
+        Layer.provide(Layer.succeed(D1Client, { ...client, prepare: () => statement })),
+      )
+      const queries = yield* DatabaseQueries.pipe(Effect.provide(queryLayer))
+      const read = execute('read value', queries.run(query))
+      const fiber = yield* Effect.forkScoped(read)
+      const outcome = yield* Fiber.await(fiber)
+      expect(Exit.hasInterrupts(outcome)).toBe(true)
+    }),
+  )
 
-  test('captures an externally composed query service without requiring a database at Store construction', async () => {
-    expectTypeOf(D1StoreLive).toEqualTypeOf<Layer.Layer<Store, never, DatabaseQueries>>()
-    const queries = Effect.runSync(
-      DatabaseQueries.pipe(
-        Effect.provide(
-          DatabaseQueriesLive.pipe(
-            Layer.provide(AlchemyQueryExecutorLive),
-            Layer.provide(NativeD1Client),
-            Layer.provide(Layer.succeed(D1Binding, database)),
-          ),
-        ),
-      ),
-    )
-    const supplied = Effect.runSync(
-      Store.pipe(Effect.provide(D1StoreLive.pipe(Layer.provide(Layer.succeed(DatabaseQueries, queries))))),
-    )
-    const initial = newRun(command().runId)
-    await Effect.runPromise(supplied.create(initial, demoGraph(version1), demoDefinition.summary.name))
-    await expect(Effect.runPromise(supplied.getRun(initial.runId))).resolves.toStrictEqual(initial)
-    await expect(Effect.runPromise(supplied.listRuns)).resolves.toStrictEqual([initial])
-    await expect(Effect.runPromise(supplied.getGraph(initial.graphId))).resolves.toStrictEqual(demoGraph(version1))
-    await expect(Effect.runPromise(supplied.commit(command()))).resolves.toMatchObject({ revision: 1 })
-    await expect(Effect.runPromise(supplied.getEvents(initial.runId, EventRange.All()))).resolves.toHaveLength(1)
-  })
+  live('captures an externally composed query service without requiring a database at Store construction', () =>
+    Effect.gen(function* () {
+      expectTypeOf(D1StoreLive).toEqualTypeOf<Layer.Layer<Store, never, DatabaseQueries>>()
+      const queries = yield* freshQueries()
+      const layer = D1StoreLive.pipe(Layer.provide(Layer.succeed(DatabaseQueries, queries)))
+      const supplied = yield* Store.pipe(Effect.provide(layer))
+      const initial = newRun(command().runId)
+      const graph = demoGraph(version1)
+      yield* supplied.create(initial, graph, demoDefinition.summary.name)
+      const detail = yield* supplied.getRun(initial.runId)
+      const runs = yield* supplied.listRuns
+      const storedGraph = yield* supplied.getGraph(initial.graphId)
+      expect({ detail, runs, storedGraph }).toStrictEqual({ detail: initial, runs: [initial], storedGraph: graph })
+      const committed = yield* supplied.commit(command())
+      const events = yield* supplied.getEvents(initial.runId, EventRange.All())
+      expect(committed).toMatchObject({ revision: 1 })
+      expect(events).toHaveLength(1)
+    }),
+  )
 
   test('captures workflow service dependencies once and runs every operation without a caller context', async () => {
     const workflows = Effect.runSync(
