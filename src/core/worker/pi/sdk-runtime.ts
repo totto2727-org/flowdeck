@@ -1,7 +1,6 @@
 import { getWorkspace, withWorkspace } from '@cloudflare/computer'
 import type { WorkspaceOptions } from '@cloudflare/computer'
 import { ContainerBackend, withWorkspaceContainer } from '@cloudflare/computer/backends/container'
-import type { WebSocket as WorkerWebSocket } from '@cloudflare/workers-types'
 import { createRegistry, Harness } from '@earendil-works/pi-durable'
 import { PiHarness } from 'agents/harness/pi'
 import { Lifecycle } from 'agents/lifecycle'
@@ -16,6 +15,7 @@ import { Store } from '@/core/feature/workflow/services/store'
 
 import { makeHarnessSandbox } from './feature/harness-sandbox.ts'
 import { makePiModels } from './feature/models.ts'
+import { sdkWebSocketEvents } from './feature/sdk-websocket.ts'
 import { CONTAINER_BACKEND, createWorkspaceTools } from './feature/workspace.ts'
 
 const Environment = Schema.Struct({
@@ -167,12 +167,7 @@ export const makePiSdk = Effect.gen(function* () {
         }
         return response
       }),
-    webSocketMessage: (socket: WorkerWebSocket, message: string | ArrayBuffer) =>
-      Effect.promise(() => lifecycle.webSocketMessage(socket as unknown as WebSocket, message)),
-    webSocketClose: (socket: WorkerWebSocket, code: number, reason: string, wasClean: boolean) =>
-      Effect.promise(() => lifecycle.webSocketClose(socket as unknown as WebSocket, code, reason, wasClean)),
-    webSocketError: (socket: WorkerWebSocket, error: unknown) =>
-      Effect.promise(() => lifecycle.webSocketError(socket as unknown as WebSocket, error)),
     lifecycle,
+    ...sdkWebSocketEvents(lifecycle),
   }
 })
