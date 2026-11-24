@@ -1,4 +1,4 @@
-import { DateTime, Schema, SemVer } from 'effect'
+import { DateTime, Result, Schema, SemVer } from 'effect'
 import { describe, expect, test } from 'vite-plus/test'
 
 import {
@@ -8,6 +8,10 @@ import {
 } from '@/core/feature/workflow/domain/model'
 
 import { presentDetail, presentRun, presentWorkflow } from './view-model.ts'
+
+const decodeRun = Schema.decodeResult(Schema.toCodecJson(DomainRun))
+const decodeWorkflowSummary = Schema.decodeResult(Schema.toCodecJson(DomainWorkflowSummary))
+const decodeRunDetail = Schema.decodeResult(Schema.toCodecJson(DomainRunDetail))
 
 const runJson = {
   runId: 'run_00000000-0000-4000-8000-000000000001',
@@ -19,11 +23,11 @@ const runJson = {
   snapshot: {},
   createdAt: '2026-10-31T00:00:00.000Z',
   updatedAt: '2026-10-31T00:00:00.000Z',
-}
+} as const
 
 describe('frontend view boundary', () => {
   test('presents official JSON versions without changing domain values', () => {
-    const run = Schema.decodeUnknownSync(Schema.toCodecJson(DomainRun))(runJson)
+    const run = Result.getOrThrow(decodeRun(runJson))
     expect(presentRun(run)).toStrictEqual(runJson)
     expect(SemVer.isSemVer(run.workflowVersion)).toBe(true)
     expect(DateTime.isUtc(run.createdAt)).toBe(true)
@@ -33,7 +37,7 @@ describe('frontend view boundary', () => {
 
   test('presents all catalog versions as DOM option strings', () => {
     const json = { workflowId: 'demo', name: 'Demo', versions: ['1.0.0', '2.13.7-rc.1+build.42'], inputs: [] }
-    const workflow = Schema.decodeUnknownSync(Schema.toCodecJson(DomainWorkflowSummary))(json)
+    const workflow = Result.getOrThrow(decodeWorkflowSummary(json))
     expect(presentWorkflow(workflow)).toStrictEqual(json)
     expect(SemVer.isSemVer(workflow.versions[0])).toBe(true)
   })
@@ -79,8 +83,8 @@ describe('frontend view boundary', () => {
         ],
         edges: [],
       },
-    }
-    const detail = Schema.decodeUnknownSync(Schema.toCodecJson(DomainRunDetail))(json)
+    } as const
+    const detail = Result.getOrThrow(decodeRunDetail(json))
     expect(presentDetail(detail)).toStrictEqual(json)
     expect(presentDetail(detail).run).toStrictEqual(presentRun(detail.run))
     expect(SemVer.isSemVer(detail.run.workflowVersion)).toBe(true)
