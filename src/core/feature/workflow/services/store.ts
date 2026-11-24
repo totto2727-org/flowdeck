@@ -1,7 +1,9 @@
-import { Context, Data, Effect, Schema } from 'effect'
+import type { Effect } from 'effect'
+import { Context, Data, Schema } from 'effect'
 
 import type { Conflict, NotFound, ExternalError, StorageConflict } from '@/core/feature/workflow/domain/errors'
-import { CommitId, GraphId, RunId } from '@/core/feature/workflow/domain/identity'
+import type { GraphId } from '@/core/feature/workflow/domain/identity'
+import { CommitId, RunId } from '@/core/feature/workflow/domain/identity'
 import { PendingRunEvent, PositiveInt, Run } from '@/core/feature/workflow/domain/model'
 import type { GraphDefinition, RunEvent } from '@/core/feature/workflow/domain/model'
 

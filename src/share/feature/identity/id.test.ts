@@ -33,14 +33,14 @@ describe('user-defined identities', () => {
     '',
     '../run',
     'a/b',
-    'a\\b',
+    String.raw`a\b`,
     'two words',
     ' run',
     'run ',
     '\trun',
     'run\t',
-    '\u00a0run',
-    'run\u00a0',
+    '\u00A0run',
+    'run\u00A0',
     'a\n',
     'a\r\n',
     'a\u2028',
@@ -58,7 +58,9 @@ describe('user-defined identities', () => {
 describe('prefixed cryptographic random identities', () => {
   test.each(['', '../run', 'two words', '日本語'])(
     'rejects unsafe factory prefix %s at schema construction',
-    (prefix) => expect(() => makePrefixedUUIDv4(prefix)).toThrow(),
+    (prefix) => {
+      expect(() => makePrefixedUUIDv4(prefix)).toThrow()
+    },
   )
 
   test('supports a caller-selected safe prefix without changing the factory', () => {

@@ -4,6 +4,7 @@ import { describe, expect, test, vi } from 'vite-plus/test'
 
 import { Dashboard } from './dashboard.tsx'
 
+// oxlint-disable-next-line vitest/prefer-import-in-mock -- Client tests substitute simple functions for the production server-function objects and their native metadata.
 vi.mock('./server', () => ({
   loadDashboard: vi.fn(),
   resumeRun: vi.fn(),

@@ -172,7 +172,7 @@ describe('native SDK RPC client boundary', () => {
           createRun: unused,
           resumeRun: unused,
         }
-        const entries: Array<Logger.Options<unknown>> = []
+        const entries: Logger.Options<unknown>[] = []
         const logger = Logger.make((entry) => entries.push(entry))
         const handler = HttpRouter.toWebHandler(
           ApiRoutes.pipe(HttpRouter.provideRequest(Layer.succeed(Workflows, workflows))),

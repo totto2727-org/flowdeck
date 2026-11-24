@@ -21,7 +21,7 @@ const run = {
   updatedAt: '2026-10-31T00:00:00.000Z',
 }
 
-describe('ControlApi', () => {
+describe('controlApi', () => {
   live('decodes valid prefixed run identities and named graph identities', () =>
     Effect.gen(function* () {
       const api = yield* makeControlApi.pipe(

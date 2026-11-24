@@ -6,7 +6,8 @@ import { defineQuery } from '@totto2727/reylo'
 import { QueryDecodeError, QueryExecutor } from '@totto2727/reylo/effect'
 import type { PreparedStatement } from 'alchemy/Cloudflare/D1'
 import { makeRpcStub } from 'alchemy/Cloudflare/Workers'
-import { Array, Crypto, Data, DateTime, Effect, Exit, Fiber, Layer, Predicate, Schema, SemVer } from 'effect'
+import type { Crypto } from 'effect'
+import { Array, Data, DateTime, Effect, Exit, Fiber, Layer, Predicate, Schema, SemVer } from 'effect'
 import { HttpRouter } from 'effect/http'
 import { TestCrypto } from 'effect/testing'
 import { Miniflare } from 'miniflare'
@@ -182,7 +183,9 @@ class DisconnectedWorkflow extends Data.TaggedError('DisconnectedWorkflow')<{ me
 const disconnectedRegistry = Effect.fn(function* (method: 'start' | 'resume') {
   // The SDK converts the native promise rejection at the individual service-binding boundary.
   const binding = makeRpcStub<WorkflowBinding['Service']>({
-    [method]: async () => Promise.reject(new DisconnectedWorkflow({ message: 'Individual worker disconnected' })),
+    [method]: async () => {
+      throw new DisconnectedWorkflow({ message: 'Individual worker disconnected' })
+    },
   })
   return yield* makeWorkflowRegistry.pipe(
     Effect.provideService(WorkflowBinding, binding),
@@ -211,7 +214,7 @@ const api = (registry?: Readonly<RegisteredWorkflow[]>) =>
     ),
   )
 
-describe('D1 persisted run store', () => {
+describe('d1 persisted run store', () => {
   live('uses the published Reylo decoder and captured Alchemy executor despite a conflicting caller context', () =>
     Effect.gen(function* () {
       const lookup = defineQuery<{ active: boolean }, { active: boolean; document: { name: string } }, 'one', 'sqlite'>(
@@ -857,7 +860,7 @@ describe('D1 persisted run store', () => {
 describe('demo cold restoration', () => {
   live('observes lifecycle hooks only after the matching snapshot and complete event batch are readable in D1', () =>
     Effect.gen(function* () {
-      const runId = command().runId
+      const { runId } = command()
       yield* seedEffect(runId)
       let observations: Readonly<
         {
@@ -906,7 +909,7 @@ describe('demo cold restoration', () => {
 
   live('does not dispatch lifecycle hooks when D1 rejects the checkpoint revision', () =>
     Effect.gen(function* () {
-      const runId = command().runId
+      const { runId } = command()
       yield* seedEffect(runId)
       const persisted = store
       const afterCommit = vi.fn(() => Effect.void)
@@ -933,7 +936,7 @@ describe('demo cold restoration', () => {
     'captures demo dependencies once and executes %s without a caller context',
     (version) =>
       Effect.gen(function* () {
-        const runId = command().runId
+        const { runId } = command()
         yield* seedEffect(runId, version)
         const executor = yield* makeDemoExecutor.pipe(
           Effect.provide(
@@ -1190,7 +1193,7 @@ describe('interrupted workflow recovery', () => {
 
   live('keeps the persisted checkpoint unchanged when an individual resume RPC rejects', () =>
     Effect.gen(function* () {
-      const runId = command().runId
+      const { runId } = command()
       yield* seedEffect(runId)
       yield* provideTestServices(startRun(runId))
       const waiting = yield* store.getRun(runId)
@@ -1209,7 +1212,7 @@ describe('interrupted workflow recovery', () => {
   )
 })
 
-describe('Effect HTTP API', () => {
+describe('effect HTTP API', () => {
   live('rejects bare UUIDv4 run IDs at persistence and HTTP boundaries', () =>
     Effect.gen(function* () {
       const id = '00000000-0000-4000-8000-000000000003'

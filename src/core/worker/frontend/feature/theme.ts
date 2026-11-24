@@ -22,7 +22,9 @@ export const browserTheme = (): Theme => (document.documentElement.dataset['them
 
 export const subscribeTheme = (notify: () => void) => {
   window.addEventListener(themeChangeEvent, notify)
-  return () => window.removeEventListener(themeChangeEvent, notify)
+  return () => {
+    window.removeEventListener(themeChangeEvent, notify)
+  }
 }
 
 export const selectTheme = (theme: Theme): Effect.Effect<void> =>
@@ -36,5 +38,7 @@ export const selectTheme = (theme: Theme): Effect.Effect<void> =>
       window.dispatchEvent(new Event(themeChangeEvent))
     })
     // A denied write must not prevent the current page from switching themes.
-    yield* Effect.try(() => window.localStorage.setItem(themeStorageKey, theme)).pipe(Effect.ignore)
+    yield* Effect.try(() => {
+      window.localStorage.setItem(themeStorageKey, theme)
+    }).pipe(Effect.ignore)
   })

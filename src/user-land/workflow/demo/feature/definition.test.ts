@@ -80,6 +80,7 @@ describe('demo definition', () => {
       expect(yield* Effect.flip(restoreDemo({ ...run, ...change }))).toMatchObject({ _tag: 'InvalidSnapshot' })
     }),
   )
+
   test('requires native execution identities to use the owned execution schema', () => {
     const prepare = Schema.decodeUnknownSync(DemoData.cases.prepare)
     expect(

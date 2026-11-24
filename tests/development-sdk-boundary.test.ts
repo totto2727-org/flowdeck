@@ -23,7 +23,7 @@ const caller = `export default { async fetch(request, env) {
   return Response.json(await stub.inspect())
 } }`
 
-describe('Alchemy Effect DO and official native SDK raw boundary', () => {
+describe('alchemy Effect DO and official native SDK raw boundary', () => {
   let miniflare: Miniflare
 
   beforeAll(async () => {
@@ -54,7 +54,7 @@ describe('Alchemy Effect DO and official native SDK raw boundary', () => {
         minify: false,
         outDir: fileURLToPath(new URL('../tmp/development-sdk-build', import.meta.url)),
         lib: {
-          entry: fileURLToPath(new URL('./fixtures/development-sdk-worker.ts', import.meta.url)),
+          entry: fileURLToPath(new URL('fixtures/development-sdk-worker.ts', import.meta.url)),
           formats: ['es'],
         },
         rolldownOptions: { external: (id) => id.startsWith('cloudflare:') || id.startsWith('node:') },

@@ -16,7 +16,7 @@ const crypto = Crypto.make({
   digest: (_algorithm, bytes) => Effect.succeed(bytes),
 })
 const capture = <A, E>(effect: Effect.Effect<A, E, HttpServerRequest.HttpServerRequest | Crypto.Crypto>) => {
-  const entries: Array<Logger.Options<unknown> & Readonly<{ annotations: Readonly<Record<string, unknown>> }>> = []
+  const entries: (Logger.Options<unknown> & Readonly<{ annotations: Readonly<Record<string, unknown>> }>)[] = []
   const logger = Logger.make((entry) =>
     entries.push({ ...entry, annotations: entry.fiber.getRef(References.CurrentLogAnnotations) }),
   )
@@ -57,6 +57,7 @@ describe('operation failure logging', () => {
     expect(exit.value).not.toContain('D1 execution failed')
     expect(entries[0]!.annotations).toMatchObject({ errorId: local.cause.instance })
   })
+
   test.each(['domain', 'storage'] as const)(
     'returns the same sanitized HTTP conflict after RPC for a %s conflict',
     async (kind) => {
@@ -79,7 +80,7 @@ describe('operation failure logging', () => {
         createRun: unavailable,
         resumeRun: unavailable,
       }
-      const entries: Array<Logger.Options<unknown>> = []
+      const entries: Logger.Options<unknown>[] = []
       const logger = Logger.make((entry) => entries.push(entry))
       const handler = HttpRouter.toWebHandler(
         ApiRoutes.pipe(HttpRouter.provideRequest(Layer.succeed(Workflows, workflows))),
@@ -104,6 +105,7 @@ describe('operation failure logging', () => {
       }
     },
   )
+
   test.each(['typed failure', 'defect'] as const)(
     'logs a real Control request %s once with the original stack',
     async (failure) => {
@@ -118,7 +120,7 @@ describe('operation failure logging', () => {
         createRun: unavailable,
         resumeRun: unavailable,
       }
-      const entries: Array<Logger.Options<unknown>> = []
+      const entries: Logger.Options<unknown>[] = []
       const logger = Logger.make((entry) => entries.push(entry))
       const handler = HttpRouter.toWebHandler(
         ApiRoutes.pipe(HttpRouter.provideRequest(Layer.succeed(Workflows, workflows))),

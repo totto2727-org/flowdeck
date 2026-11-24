@@ -1,6 +1,6 @@
 import type { PiHarness } from 'agents/harness/pi'
 import { ROOT_SESSION } from 'agents/harness/pi'
-import { DurableObjectState } from 'alchemy/Cloudflare/Workers'
+import type { DurableObjectState } from 'alchemy/Cloudflare/Workers'
 import type { RuntimeContext } from 'alchemy/RuntimeContext'
 import { Array, Effect, Result, Schema, Semaphore } from 'effect'
 

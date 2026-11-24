@@ -9,7 +9,7 @@ export const WorkflowVersion = Schema.SemVer
 export type WorkflowVersion = typeof WorkflowVersion.Type
 export const RunStatus = Schema.Literals(['pending', 'running', 'waiting', 'completed', 'failed'])
 export type RunStatus = typeof RunStatus.Type
-export const JsonObject = Schema.JsonObject
+export const { JsonObject } = Schema
 export type JsonObject = typeof JsonObject.Type
 
 export const GraphNode = Schema.Struct({

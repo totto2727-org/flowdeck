@@ -288,8 +288,8 @@ describe('request-scoped managed native runtime', () => {
       yield* replacement.resume(runId)
       expect(harness.current().status).toBe('completed')
       expect(harness.external.mock.calls).toStrictEqual([['A'], ['B']])
-      expect(harness.started).toHaveBeenCalledTimes(1)
-      expect(harness.resumed).toHaveBeenCalledTimes(1)
+      expect(harness.started).toHaveBeenCalledOnce()
+      expect(harness.resumed).toHaveBeenCalledOnce()
       expect(harness.commits()).toHaveLength(4)
       expect(
         Array.filter(
@@ -391,7 +391,7 @@ describe('request-scoped managed native runtime', () => {
       const first = yield* harness.executor()
       yield* first.start(runId)
       harness.setFinish(false)
-      const revision = harness.current().revision
+      const { revision } = harness.current()
       const replacement = yield* harness.executor()
       yield* replacement.start(runId)
       yield* replacement.resume(runId)
@@ -451,10 +451,10 @@ describe('request-scoped managed native runtime', () => {
       const harness = yield* makeHarness(true)
       const executor = yield* harness.executor()
       yield* executor.start(runId)
-      expect(harness.resourceInitialized).toHaveBeenCalledTimes(1)
+      expect(harness.resourceInitialized).toHaveBeenCalledOnce()
       expect(harness.resourceCalled).toHaveBeenCalledTimes(2)
       expect(harness.resourceCalled.mock.calls[0]?.[0]).toBe(harness.resourceCalled.mock.calls[1]?.[0])
-      expect(harness.resourceReleased).toHaveBeenCalledTimes(1)
+      expect(harness.resourceReleased).toHaveBeenCalledOnce()
       yield* executor.resume(runId)
       expect(harness.resourceInitialized).toHaveBeenCalledTimes(2)
       expect(harness.resourceCalled).toHaveBeenCalledTimes(3)

@@ -18,7 +18,9 @@ export function ThemeToggle({ disabled }: Readonly<{ disabled: boolean }>) {
       aria-label='Dark mode'
       aria-pressed={theme === 'dark'}
       disabled={disabled}
-      onClick={() => Effect.runSync(selectTheme(theme === 'dark' ? 'light' : 'dark'))}
+      onClick={() => {
+        Effect.runSync(selectTheme(theme === 'dark' ? 'light' : 'dark'))
+      }}
     >
       {theme === 'dark' ? <Moon aria-hidden='true' /> : <Sun aria-hidden='true' />}
       <span>{theme === 'dark' ? 'Dark' : 'Light'}</span>

@@ -9,8 +9,7 @@ import type { Run } from '@/core/feature/workflow/domain/model'
 import { developmentDefinition } from './definition.ts'
 import { DevelopmentMachine, DevelopmentStates } from './development-machine.ts'
 import { restoreDevelopment } from './development.ts'
-import { DevelopmentCreateRun } from './input.ts'
-import { developmentVersion } from './input.ts'
+import { DevelopmentCreateRun, developmentVersion } from './input.ts'
 
 const decodeJsonObject = Schema.decodeUnknownSync(JsonObject)
 const decodeDevelopmentCreateRun = Schema.decodeUnknownSync(DevelopmentCreateRun)

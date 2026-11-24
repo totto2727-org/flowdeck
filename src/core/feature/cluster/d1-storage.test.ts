@@ -86,7 +86,7 @@ afterEach(async () => {
   await miniflare.dispose()
 })
 
-describe('D1 Cluster machine checkpoints', () => {
+describe('d1 Cluster machine checkpoints', () => {
   test('requires only the captured D1 client', () => {
     expectTypeOf<Layer.Services<typeof D1ClusterMachineStorage>>().toEqualTypeOf<D1Client>()
   })
@@ -155,7 +155,7 @@ describe('D1 Cluster machine checkpoints', () => {
         const storage = yield* storageWithClient(client)
         expect(yield* storage.commit(address(), checkpoint())).toStrictEqual(ClusterMachine.CommitResult.Committed())
         expect(prepare).toHaveBeenCalledTimes(2)
-        expect(batch).toHaveBeenCalledTimes(1)
+        expect(batch).toHaveBeenCalledOnce()
         expect(batch.mock.calls[0]?.[0]).toHaveLength(2)
         expect(read).not.toHaveBeenCalled()
         prepare.mockClear()
@@ -164,8 +164,8 @@ describe('D1 Cluster machine checkpoints', () => {
           checkpoint: Option.some(checkpoint()),
           processed: true,
         })
-        expect(prepare).toHaveBeenCalledTimes(1)
-        expect(read).toHaveBeenCalledTimes(1)
+        expect(prepare).toHaveBeenCalledOnce()
+        expect(read).toHaveBeenCalledOnce()
         expect(batch).not.toHaveBeenCalled()
       } finally {
         prepare.mockRestore()

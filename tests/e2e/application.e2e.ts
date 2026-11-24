@@ -60,6 +60,7 @@ Array.map(['1.0.0', '2.0.0'] as const, (version) => {
     await expect(page.getByText(`Resume continues this run with ${version}.`, { exact: false })).toBeVisible()
 
     const runs = page.getByRole('list', { name: 'Persisted runs' })
+    // oxlint-disable-next-line unicorn/prefer-dom-node-text-content -- Use the rendered run label that the browser exposes to readers.
     const runLabel = await runs.getByRole('button', { pressed: true }).locator('code').innerText()
     const graph = page.getByRole('region', { name: 'Workflow graph', exact: true })
     await expect(page.getByRole('main')).toHaveAttribute('aria-busy', 'false')

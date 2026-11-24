@@ -2,7 +2,7 @@ import * as BrowserCrypto from '@effect/platform-browser/BrowserCrypto'
 import { QueryDatabaseBinding } from 'alchemy/Cloudflare/D1'
 import { Layer } from 'effect'
 
-import { WorkflowRegistry } from '@/core/feature/workflow/services/workflow-definition'
+import type { WorkflowRegistry } from '@/core/feature/workflow/services/workflow-definition'
 import { Workflows } from '@/core/feature/workflow/services/workflows'
 
 import { WorkflowStoreLive } from './database.ts'

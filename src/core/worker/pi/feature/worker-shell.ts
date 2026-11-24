@@ -39,7 +39,7 @@ export const makeWorkerShellWorkspace = Effect.gen(function* () {
               HOST: {
                 getWorkspace: async () => {
                   const stub = await host.__getWorkspaceStub()
-                  const assets = stub.assets
+                  const { assets } = stub
                   /*
                    * Computer's WorkspaceStub has an always-present getter that
                    * can return undefined. Its ShellWorker instead declares an
@@ -52,7 +52,9 @@ export const makeWorkerShellWorkspace = Effect.gen(function* () {
                     git: stub.git,
                     artifacts: stub.artifacts,
                     ...(Predicate.isUndefined(assets) ? {} : { assets }),
-                    [Symbol.dispose]: () => stub[Symbol.dispose](),
+                    [Symbol.dispose]: () => {
+                      stub[Symbol.dispose]()
+                    },
                   }
                 },
               },
@@ -68,7 +70,10 @@ export const makeWorkerShellWorkspace = Effect.gen(function* () {
      * Release the volatile client only. Never delete SQLite, destroy the host,
      * or stop a durable run when its execution/activation Scope ends.
      */
-    (client) => Effect.sync(() => client[Symbol.dispose]()),
+    (client) =>
+      Effect.sync(() => {
+        client[Symbol.dispose]()
+      }),
   )
   return { host, workspace }
 })

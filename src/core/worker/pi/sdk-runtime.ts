@@ -26,8 +26,8 @@ const Environment = Schema.Struct({
 const decodeEnvironment = Schema.decodeUnknownEffect(Environment)
 const decodeRunId = Schema.decodeUnknownEffect(RunId)
 const LEASE_JOB = 'workspace-lease'
-const RENEW_AFTER_MS = 5 * 60 * 60 * 1_000
-const INACTIVITY_MS = 6 * 60 * 60 * 1_000
+const RENEW_AFTER_MS = 5 * 60 * 60 * 1000
+const INACTIVITY_MS = 6 * 60 * 60 * 1000
 
 class ContainerHost extends withWorkspaceContainer(class extends DurableObject<typeof Environment.Type> {}) {
   readonly backend = new ContainerBackend({
@@ -96,7 +96,7 @@ export const makePiSdk = Effect.gen(function* () {
       // oxlint-disable-next-line rules/no-effect-runtime-run -- The native SDK calls Promise callbacks with no Effect runtime and reuses the captured activation context.
       Effect.runPromise(
         Effect.gen(function* () {
-          const active = yield* state.storage.get<unknown>('active-run-id')
+          const active = yield* state.storage.get('active-run-id')
           if (Predicate.isUndefined(active)) {
             return undefined
           }

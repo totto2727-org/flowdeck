@@ -14,7 +14,7 @@ const fixture = (backendId = CONTAINER_BACKEND) =>
       stat: vi.fn(async () => ({
         size: 5,
         mtime: 0,
-        mode: 0o100644,
+        mode: 0o10_0644,
         isFile: true,
         isDirectory: false,
       })),
@@ -44,7 +44,7 @@ const fixture = (backendId = CONTAINER_BACKEND) =>
     },
   }) satisfies CreatePiToolsOptions['workspace']
 
-describe('Pi workspace tools', () => {
+describe('pi workspace tools', () => {
   test.each(
     Array.flatMap([CONTAINER_BACKEND, WORKER_SHELL_BACKEND], (backendId) =>
       Array.map(

@@ -22,7 +22,7 @@ const crypto = Crypto.make({
   digest: (_algorithm, bytes) => Effect.succeed(bytes),
 })
 const capture = <A, E>(effect: Effect.Effect<A, E, Crypto.Crypto>) => {
-  const entries: Array<Logger.Options<unknown> & Readonly<{ annotations: Readonly<Record<string, unknown>> }>> = []
+  const entries: (Logger.Options<unknown> & Readonly<{ annotations: Readonly<Record<string, unknown>> }>)[] = []
   const exit = Effect.runSyncExit(
     effect.pipe(
       Effect.provideService(Crypto.Crypto, crypto),
@@ -51,7 +51,7 @@ const decodeStandard = Schema.decodeUnknownSync(standardWire, { onExcessProperty
 const encodeStandard = Schema.encodeSync(standardWire, { onExcessProperty: 'error' })
 const encodePeer = Schema.encodeSync(Schema.fromJsonString(Schema.toCodecJson(Schema.Result(Schema.Json, Schema.Json))))
 
-describe('JSON RPC boundary', () => {
+describe('json RPC boundary', () => {
   live('captures Crypto at initialization and responds repeatedly without operation-level provision', () =>
     Effect.gen(function* () {
       const respond = yield* makeRpcResponse.pipe(Effect.provideService(Crypto.Crypto, crypto))
@@ -75,7 +75,7 @@ describe('JSON RPC boundary', () => {
       const value = { values: [null, true, 12, 'hello'], nested: { answer: 42 } }
       const { entries, exit } = capture(Effect.succeed(value).pipe(rpcResponse('read')))
       const text = success(exit)
-      expect(typeof text).toBe('string')
+      expect(text).toBeTypeOf('string')
       expect(Result.isResult(parse(text))).toBe(false)
       const decoded = decodeStandard(text)
       ok(Result.isSuccess(decoded))

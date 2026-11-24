@@ -46,7 +46,10 @@ const handle = (request: globalThis.Request) =>
       Effect.promise(() =>
         workspace.runtime.exec(path === '/unsupported' ? 'node --version' : 'cat /persist.txt', { encoding: 'utf8' }),
       ),
-      (execution) => Effect.sync(() => execution[Symbol.dispose]()),
+      (execution) =>
+        Effect.sync(() => {
+          execution[Symbol.dispose]()
+        }),
     )
     return Response.json(yield* Effect.promise(() => exec.result()))
   })

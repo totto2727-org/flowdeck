@@ -36,7 +36,7 @@ let miniflare: Miniflare
 
 // Miniflare exposes native RPC at runtime but types getWorker as a Fetcher only.
 // Derive the RPC surface from the bundled fixture instead of inventing a second contract.
-const entrypoint = async (name: string): Promise<Pick<Fetcher<Parent, never>, 'start' | 'logs'>> =>
+const entrypoint = async (name: string): Promise<Pick<Fetcher<Parent>, 'start' | 'logs'>> =>
   (await miniflare.getWorker(name)) as unknown as Pick<Service<Parent>, 'start' | 'logs'>
 
 beforeAll(async () => {
@@ -50,7 +50,7 @@ beforeAll(async () => {
       outDir: fileURLToPath(new URL('../tmp/rpc-boundary-build', import.meta.url)),
       minify: false,
       lib: {
-        entry: fileURLToPath(new URL('./fixtures/rpc-boundary-worker.ts', import.meta.url)),
+        entry: fileURLToPath(new URL('fixtures/rpc-boundary-worker.ts', import.meta.url)),
         formats: ['es'],
         fileName: 'rpc-boundary-worker',
       },
@@ -88,7 +88,7 @@ describe('native Worker RPC JSON boundary', () => {
     const parent = await entrypoint('parent')
     const child = await entrypoint('child')
     const response = await parent.start('success')
-    expect(typeof response).toBe('string')
+    expect(response).toBeTypeOf('string')
     const reply = decodeReply(response)
     ok(Result.isSuccess(reply))
     expect(reply.success).toStrictEqual({ answer: 42, values: [null, true, 'ok'] })
@@ -102,7 +102,7 @@ describe('native Worker RPC JSON boundary', () => {
       const parent = await entrypoint('parent')
       const child = await entrypoint('child')
       const response = await parent.start(scenario)
-      expect(typeof response).toBe('string')
+      expect(response).toBeTypeOf('string')
       const reply = decodeReply(response)
       ok(Result.isFailure(reply))
       expect(reply.failure).toStrictEqual({

@@ -3,7 +3,8 @@ import type { D1Database } from '@cloudflare/workers-types'
 import { BrowserCrypto } from '@effect/platform-browser'
 import { live } from '@effect/vitest'
 import { Machine } from '@typeonce/effect-machine'
-import { Array, Crypto, DateTime, Effect, Layer, Option, Predicate, Schema, SemVer } from 'effect'
+import type { Crypto } from 'effect'
+import { Array, DateTime, Effect, Layer, Option, Predicate, Schema, SemVer } from 'effect'
 import { HttpRouter } from 'effect/http'
 import { TestCrypto } from 'effect/testing'
 import { Miniflare } from 'miniflare'
@@ -178,7 +179,7 @@ const events = () => Effect.runPromise(store.getEvents(initialRun.runId, { _tag:
 const start = () => execute(startDevelopmentRun(initialRun.runId))
 const resume = () => execute(resumeDevelopmentRun(initialRun.runId))
 const finishTurn = (node: 'implement' | 'verify') => {
-  const commandId = submissions[node === 'implement' ? 0 : 1]!.input.commandId
+  const { commandId } = submissions[node === 'implement' ? 0 : 1]!.input
   receipts = { ...receipts, [commandId]: { commandId, status: 'completed', text: `${node} result` } }
 }
 const offline = (): Effect.Effect<never, ExternalError> =>
@@ -485,7 +486,7 @@ describe('development workflow with canonical D1 checkpoints', () => {
     'commits a %s receipt as a business failure and retains the container',
     async (status) => {
       await start()
-      const commandId = submissions[0]!.input.commandId
+      const { commandId } = submissions[0]!.input
       receipts = {
         [commandId]: { commandId, status, error: status === 'failed' ? 'sdk_failure' : 'runtime_interrupted' },
       }
@@ -578,7 +579,7 @@ describe('development workflow with canonical D1 checkpoints', () => {
     finishTurn('implement')
     await resume()
     finishTurn('verify')
-    const complete = sandbox.complete
+    const { complete } = sandbox
     sandbox = { ...sandbox, complete: offline }
     await expect(resume()).rejects.toMatchObject({ _tag: 'ExternalError', kind: 'service' })
     const persisted = await current()
@@ -599,7 +600,7 @@ describe('development workflow with canonical D1 checkpoints', () => {
 
   test('rejects a receipt with a different command identity without submitting again', async () => {
     await start()
-    const commandId = submissions[0]!.input.commandId
+    const { commandId } = submissions[0]!.input
     receipts = {
       [commandId]: {
         commandId: 'command_00000000-0000-4000-8000-000000000099',
@@ -699,6 +700,7 @@ describe('development CreateRun trust boundary', () => {
       }),
     ).toStrictEqual(input)
   })
+
   test.each([
     'http://github.com/example/project',
     'https://gitlab.com/example/project',
@@ -711,6 +713,7 @@ describe('development CreateRun trust boundary', () => {
       Schema.decodeUnknownSync(Schema.toCodecJson(DevelopmentCreateRun))({ ...input, version: '1.0.0', repository }),
     ).toThrow()
   })
+
   test.each(['', '   ', 'x'.repeat(16_001)])('rejects empty or oversized task', (task) => {
     expect(() =>
       Schema.decodeUnknownSync(Schema.toCodecJson(DevelopmentCreateRun))({
@@ -721,6 +724,7 @@ describe('development CreateRun trust boundary', () => {
       }),
     ).toThrow()
   })
+
   test.each(['v1', 'v2', '1.0.1', '2.0.0'])('rejects unsupported version %s', (version) => {
     expect(() =>
       Schema.decodeUnknownSync(Schema.toCodecJson(DevelopmentCreateRun))({

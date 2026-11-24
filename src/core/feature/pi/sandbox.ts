@@ -1,4 +1,5 @@
-import { Context, Effect } from 'effect'
+import type { Effect } from 'effect'
+import { Context } from 'effect'
 
 import type { ExternalError } from '@/core/feature/workflow/domain/errors'
 import type { RunId } from '@/core/feature/workflow/domain/identity'

@@ -17,7 +17,7 @@ describe('official DO-only Pi workspace', () => {
         target: 'esnext',
         write: false,
         outDir: fileURLToPath(new URL('../../../../tmp/worker-shell-build', import.meta.url)),
-        lib: { entry: fileURLToPath(new URL('./worker-shell.fixture.ts', import.meta.url)), formats: ['es'] },
+        lib: { entry: fileURLToPath(new URL('worker-shell.fixture.ts', import.meta.url)), formats: ['es'] },
         rolldownOptions: { external: (id) => id.startsWith('cloudflare:') || id.startsWith('node:') },
       },
     })

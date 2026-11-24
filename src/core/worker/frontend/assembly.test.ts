@@ -103,13 +103,13 @@ describe('frontend request composition', () => {
       expect(second.workflows).toMatchObject([{ name: 'Second request' }])
       expect(firstAgain).toStrictEqual(first)
       expect(firstFetch).toHaveBeenCalledTimes(2)
-      expect(secondFetch).toHaveBeenCalledTimes(1)
+      expect(secondFetch).toHaveBeenCalledOnce()
     }),
   )
 
   live('uses the native binding only at the HTTP adapter and preserves mutation method and JSON body', () =>
     Effect.gen(function* () {
-      const seen: Array<{ method: string; url: string; body: unknown }> = []
+      const seen: { method: string; url: string; body: unknown }[] = []
       const fetch = vi.fn(async (request: Request) => {
         seen.push({ method: request.method, url: request.url, body: await request.json() })
         return Response.json({ error: 'unavailable' }, { status: 503 })

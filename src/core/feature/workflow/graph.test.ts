@@ -21,8 +21,12 @@ const makeWorkflow = (execute: (phase: string) => void) =>
     root: states,
     events: Machine.events({}),
     effects: {
-      implement: Effect.sync(() => execute('implement')),
-      verify: Effect.sync(() => execute('verify')),
+      implement: Effect.sync(() => {
+        execute('implement')
+      }),
+      verify: Effect.sync(() => {
+        execute('verify')
+      }),
     },
     branches: { handoff: { verify: { target: 'verify', title: 'implementation complete' } } },
   }).handle({
@@ -111,7 +115,7 @@ describe('executable native Machine graph', () => {
           yield* ref.join
         }),
       ).pipe(Effect.timeout('2 seconds'))
-      expect(allocate).toHaveBeenCalledTimes(1)
+      expect(allocate).toHaveBeenCalledOnce()
     }),
   )
 

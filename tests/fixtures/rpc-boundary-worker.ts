@@ -1,13 +1,16 @@
 import { BrowserCrypto } from '@effect/platform-browser'
 import { WorkerEntrypoint } from 'cloudflare:workers'
-import { Cause, Effect, Logger, Option, Predicate, References, Schema } from 'effect'
+import type { Schema } from 'effect'
+import { Cause, Effect, Logger, Option, Predicate, References } from 'effect'
 
 import { ExternalError, NotFound } from '@/core/feature/workflow/domain/errors'
 import { rpcResponse, rpcResult } from '@/core/feature/workflow/rpc/boundary'
 import { RemoteWorkerError } from '@/core/feature/workflow/rpc/problem'
 
 type Scenario = 'success' | 'failure' | 'not-found' | 'defect'
-type ChildBinding = { start(scenario: Scenario): Promise<string> }
+interface ChildBinding {
+  start(scenario: Scenario): Promise<string>
+}
 
 const entries: Schema.Json[] = []
 const logger = Logger.make((entry) => {

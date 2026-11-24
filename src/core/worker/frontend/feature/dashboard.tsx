@@ -57,7 +57,9 @@ function Events({
             type='checkbox'
             checked={nodeOnly}
             disabled={Predicate.isNull(selectedNode)}
-            onChange={(event) => setNodeOnly(event.target.checked)}
+            onChange={(event) => {
+              setNodeOnly(event.target.checked)
+            }}
           />
           Selected node only
         </label>
@@ -217,7 +219,9 @@ function SelectedRun({
               size='sm'
               variant={view === 'events' ? 'secondary' : 'ghost'}
               aria-pressed={view === 'events'}
-              onClick={() => setView('events')}
+              onClick={() => {
+                setView('events')
+              }}
             >
               Events{' '}
               <span className='ml-1 inline-flex min-w-[20px] items-center justify-center rounded-sm bg-[#edf2ee] px-1.25 align-middle text-[10px] leading-[18px] font-medium text-[#65816c] dark:bg-secondary dark:text-[#b0e6c6]'>
@@ -229,7 +233,9 @@ function SelectedRun({
               size='sm'
               variant={view === 'state' ? 'secondary' : 'ghost'}
               aria-pressed={view === 'state'}
-              onClick={() => setView('state')}
+              onClick={() => {
+                setView('state')
+              }}
             >
               State{' '}
               <span className='ml-1 inline-flex min-w-[20px] items-center justify-center rounded-sm bg-[#edf2ee] px-1.25 align-middle text-[10px] leading-[18px] font-medium text-[#65816c] dark:bg-secondary dark:text-[#b0e6c6]'>
@@ -303,7 +309,7 @@ export function Dashboard({ initial }: Readonly<{ initial: DashboardData }>) {
       )
     })
   }
-  const refresh = (): void =>
+  const refresh = (): void => {
     invoke(
       () => loadDashboard(data.selected?.run.runId ?? null),
       (value) => {
@@ -311,7 +317,8 @@ export function Dashboard({ initial }: Readonly<{ initial: DashboardData }>) {
         setMessage('Dashboard refreshed from the control plane.')
       },
     )
-  const chooseRun = (runId: RunId): void =>
+  }
+  const chooseRun = (runId: RunId): void => {
     invoke(
       () => selectRun(runId),
       (detail) => {
@@ -319,6 +326,7 @@ export function Dashboard({ initial }: Readonly<{ initial: DashboardData }>) {
         setMessage(`Selected run ${shortId(runId)}.`)
       },
     )
+  }
   const start = (): void => {
     if (!workflow || !Array.contains(workflow.versions, version)) {
       return
@@ -560,7 +568,9 @@ export function Dashboard({ initial }: Readonly<{ initial: DashboardData }>) {
                 id='workflow-version'
                 value={version}
                 disabled={pending || !workflow}
-                onChange={(event) => setVersion(event.target.value)}
+                onChange={(event) => {
+                  setVersion(event.target.value)
+                }}
               >
                 {Array.map(workflow?.versions ?? [], (item) => (
                   <option key={item} value={item}>
@@ -581,7 +591,9 @@ export function Dashboard({ initial }: Readonly<{ initial: DashboardData }>) {
                         maxLength={input.maxLength}
                         required={input.required}
                         disabled={pending}
-                        onChange={(event) => setInputs(Record.set(inputs, input.name, event.target.value))}
+                        onChange={(event) => {
+                          setInputs(Record.set(inputs, input.name, event.target.value))
+                        }}
                       />
                     ) : (
                       <input
@@ -593,7 +605,9 @@ export function Dashboard({ initial }: Readonly<{ initial: DashboardData }>) {
                         maxLength={input.maxLength}
                         required={input.required}
                         disabled={pending}
-                        onChange={(event) => setInputs(Record.set(inputs, input.name, event.target.value))}
+                        onChange={(event) => {
+                          setInputs(Record.set(inputs, input.name, event.target.value))
+                        }}
                       />
                     )}
                   </Fragment>
@@ -641,7 +655,9 @@ export function Dashboard({ initial }: Readonly<{ initial: DashboardData }>) {
                         className='block w-full border-0 border-l-[3px] border-l-transparent bg-card px-[15px] py-4 text-left transition-colors duration-150 hover:bg-[#f7faf8] aria-pressed:border-l-[#32845b] aria-pressed:bg-[#f0f7f2] dark:hover:bg-secondary dark:hover:text-[#b0e6c6] dark:aria-pressed:border-l-primary dark:aria-pressed:bg-secondary dark:aria-pressed:text-[#b0e6c6] max-[620px]:px-[18px] max-[620px]:py-3.5 [&_time]:block [&_time]:text-[9px] [&_time]:wrap-anywhere [&_time]:text-[#7d8c82] dark:[&_time]:text-muted-foreground'
                         aria-pressed={data.selected?.run.runId === run.runId}
                         disabled={pending}
-                        onClick={() => chooseRun(run.runId)}
+                        onClick={() => {
+                          chooseRun(run.runId)
+                        }}
                       >
                         <span className='flex items-center justify-between gap-2 [&_code]:text-[12px] [&_code]:font-[550] [&_[data-slot=badge]]:text-[9px]'>
                           <code>#{shortId(run.runId)}</code>

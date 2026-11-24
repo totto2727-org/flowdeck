@@ -1,6 +1,7 @@
 import { live } from '@effect/vitest'
 import { WorkerEnvironment } from 'alchemy/Cloudflare/Workers'
-import { Effect, Result, Schema, Scope } from 'effect'
+import type { Scope } from 'effect'
+import { Effect, Result, Schema } from 'effect'
 import { HttpEffect } from 'effect/http'
 import { describe, expect, expectTypeOf, vi } from 'vite-plus/test'
 
@@ -13,7 +14,7 @@ const catalog = (name: string) => ({
   workflows: [{ workflowId: 'demo', name, versions: ['1.0.0'], inputs: [] }],
 })
 
-describe('Control runtime initialization', () => {
+describe('control runtime initialization', () => {
   live(
     'constructs one reusable HTTP handler before request bindings exist and resolves each binding at call time',
     () =>
@@ -46,7 +47,7 @@ describe('Control runtime initialization', () => {
           }),
         )
         expect(firstRpc).toHaveBeenCalledTimes(2)
-        expect(secondRpc).toHaveBeenCalledTimes(1)
+        expect(secondRpc).toHaveBeenCalledOnce()
       }),
   )
 })

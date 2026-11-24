@@ -17,7 +17,7 @@ const resource = { read: () => 'native reference' }
 const run = <A, E>(effect: Effect.Effect<A, E, import('effect/Scope').Scope>): Promise<A> =>
   Effect.runPromise(Effect.scoped(effect))
 
-describe('ResourceStore', () => {
+describe(ResourceStore, () => {
   test('is lazy and retains native references without serializing them', async () => {
     await run(
       Effect.gen(function* () {
@@ -49,7 +49,9 @@ describe('ResourceStore', () => {
           { concurrency: 'unbounded' },
         )
         expect(results).toHaveLength(8)
-        Array.forEach(results, (value) => expect(value).toBe(resource))
+        Array.forEach(results, (value) => {
+          expect(value).toBe(resource)
+        })
         expect(yield* Ref.get(calls)).toBe(1)
       }),
     )

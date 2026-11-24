@@ -112,8 +112,12 @@ export function RunGraph({
             aria-pressed={selectedNode === node.nodeId}
             aria-label={`${node.label}, ${node.kind}, ${node.state}`}
             aria-controls='node-inspector'
-            onClick={() => onSelect(node.nodeId)}
-            onKeyDown={(event) => navigate(event, node.nodeId)}
+            onClick={() => {
+              onSelect(node.nodeId)
+            }}
+            onKeyDown={(event) => {
+              navigate(event, node.nodeId)
+            }}
             style={{ left: node.position.x, top: node.position.y, width: node.size.width, minHeight: node.size.height }}
           >
             <span className='flex items-center gap-1.5 text-[8px] tracking-[0.6px] text-[#91a196] uppercase dark:text-muted-foreground'>

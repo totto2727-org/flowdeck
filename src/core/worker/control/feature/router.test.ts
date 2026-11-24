@@ -50,7 +50,7 @@ const unavailableWorkflows: Workflows['Service'] = {
 }
 
 // Native requests exercise Control's public HTTP boundary with only its aggregate service supplied.
-describe('Control aggregate Workflow service boundary', () => {
+describe('control aggregate Workflow service boundary', () => {
   test('serializes domain SemVer catalog values as HTTP strings', async () => {
     const workflows = [
       {
@@ -145,6 +145,7 @@ describe('Control aggregate Workflow service boundary', () => {
     })
     expect(decodeRpcWorkflowsResponse(structuredClone(encodedCatalog))).toStrictEqual(catalog)
   })
+
   test.each([
     '00000000-0000-4000-8000-000000000001',
     'not-a-run-id',

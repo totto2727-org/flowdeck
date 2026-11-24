@@ -130,7 +130,7 @@ describe('workflow-neutral wire schemas', () => {
     () => 1,
     { nested: undefined },
     { nested: () => 1 },
-    { nested: NaN },
+    { nested: Number.NaN },
     { nested: Infinity },
   ])('rejects non-object or non-JSON snapshot %j', (snapshot) => {
     expect(() => decodeRun({ ...run, snapshot })).toThrow()

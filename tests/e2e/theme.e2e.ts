@@ -39,7 +39,9 @@ test('saved light preference is applied without hydration errors', async ({ page
     pageErrors = Array.append(pageErrors, error.message)
   })
   // Browser persistence and DOM access are the Playwright/browser boundary.
-  await page.addInitScript(() => window.localStorage.setItem('flowdeck.theme', 'light'))
+  await page.addInitScript(() => {
+    window.localStorage.setItem('flowdeck.theme', 'light')
+  })
   await page.goto('/')
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
   await expect(page.getByRole('button', { name: 'Dark mode', exact: true })).toHaveAttribute('aria-pressed', 'false')
