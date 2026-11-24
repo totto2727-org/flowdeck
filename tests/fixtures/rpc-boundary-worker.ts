@@ -67,8 +67,8 @@ export default class Parent extends WorkerEntrypoint<{ CHILD: ChildBinding }> {
     return respond(
       'parent.start',
       Effect.tryPromise({
-        try: () => this.env.CHILD.start(scenario),
         catch: (cause) => new ExternalError({ operation: 'child transport', kind: 'service', cause }),
+        try: () => this.env.CHILD.start(scenario),
       }).pipe(Effect.flatMap(rpcResult('child.start'))),
     )
   }

@@ -138,8 +138,8 @@ export const makePiSdk = Effect.gen(function* () {
   const lifecycle = new Lifecycle(host).use(harness)
   const io = <A>(evaluate: () => Promise<A>) =>
     Effect.tryPromise({
-      try: evaluate,
       catch: (cause) => new ExternalError({ operation: 'access Pi sandbox', cause, kind: 'service' }),
+      try: evaluate,
     })
   const sandbox = yield* makeHarnessSandbox({
     harness,

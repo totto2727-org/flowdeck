@@ -88,7 +88,7 @@ describe('ControlApi', () => {
         Effect.provideService(HttpClient.HttpClient, clientReturning({ error: 'unavailable' }, 503)),
       )
       const message = yield* api.workflows.pipe(
-        Effect.match({ onSuccess: () => '', onFailure: (error) => error.message }),
+        Effect.match({ onFailure: (error) => error.message, onSuccess: () => '' }),
       )
       expect(message).toContain('control plane')
     }),

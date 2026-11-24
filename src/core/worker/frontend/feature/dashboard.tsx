@@ -286,8 +286,8 @@ export function Dashboard({ initial }: Readonly<{ initial: DashboardData }>) {
     transition(async () => {
       await Effect.runPromise(
         Effect.tryPromise({
-          try: call,
           catch: () => 'The connection was interrupted. Refresh to check the current persisted state before retrying.',
+          try: call,
         }).pipe(
           Effect.match({
             onFailure: setError,

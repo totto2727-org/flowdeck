@@ -38,9 +38,9 @@ export const makeWorkerShellPiSdk = (options: WorkerShellPiOptions) =>
       modelId: options.model.id,
       initialize: () =>
         Effect.tryPromise({
-          try: () => lifecycle.start(),
           catch: (cause) =>
             new ExternalError({ operation: 'initialize Worker shell Pi resource', kind: 'service', cause }),
+          try: () => lifecycle.start(),
         }),
     })
     return {
