@@ -28,9 +28,13 @@ const decode = (response: unknown) =>
         : decodeRemoteProblem(reply.failure).pipe(Effect.map(Result.fail)),
     ),
   )
-const decodeProblem = Schema.decodeUnknownSync(Rfc9457ProblemDetails, { onExcessProperty: 'error' })
+const decodeProblem = Schema.decodeEffect(Rfc9457ProblemDetails, { onExcessProperty: 'error' })
 
-const classify = (error: unknown): Omit<Rfc9457ProblemDetails, 'instance'> => {
+type ProblemClassification = {
+  [Problem in Rfc9457ProblemDetails as Problem['title']]: Omit<Problem, 'instance'>
+}[Rfc9457ProblemDetails['title']]
+
+const classify = (error: unknown): ProblemClassification => {
   if (error instanceof RemoteWorkerError) {
     const validated = decodeRemoteProblemOption(error.cause)
     if (Option.isSome(validated)) {
@@ -114,9 +118,11 @@ export const makeRpcResponse = Effect.map(
             return Effect.interrupt
           }
           return Effect.gen(function* () {
-            const errorId = `urn:uuid:${yield* crypto.randomUUIDv4().pipe(Effect.orDie)}`
+            const uuid = yield* crypto.randomUUIDv4().pipe(Effect.orDie)
+            const errorId: Rfc9457ProblemDetails['instance'] = `urn:uuid:${uuid}`
             const error = Option.getOrUndefined(Cause.findErrorOption(cause))
-            const problem = decodeProblem({ ...classify(error), instance: errorId })
+            const classification = classify(error)
+            const problem = yield* decodeProblem({ ...classification, instance: errorId }).pipe(Effect.orDie)
             yield* Effect.logError('RPC operation failed', cause).pipe(
               Effect.annotateLogs({ operation, errorId: problem.instance }),
             )

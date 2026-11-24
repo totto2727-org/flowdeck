@@ -8,6 +8,7 @@ import {
   MutableHashMap,
   Option,
   Ref,
+  Result,
   Schema,
   Semaphore,
   SemVer,
@@ -48,12 +49,15 @@ export const ManagedSnapshot = Schema.Struct({
 })
 export type ManagedSnapshot = typeof ManagedSnapshot.Type
 const snapshotCodec = Schema.toCodecJson(ManagedSnapshot)
-const decodeSnapshot = Schema.decodeUnknownEffect(snapshotCodec)
-const encodeSnapshot = Schema.encodeSync(snapshotCodec)
-const decodeObject = Schema.decodeUnknownSync(JsonObject)
+const decodeSnapshot = Schema.decodeEffect(snapshotCodec)
+const encodeSnapshot = Schema.encodeResult(snapshotCodec)
+const decodeObject = Schema.decodeUnknownResult(JsonObject)
 const equivalentSnapshot = Schema.toEquivalence(JsonObject)
 
-export const encodeManagedSnapshot = (snapshot: ManagedSnapshot): JsonObject => decodeObject(encodeSnapshot(snapshot))
+export const encodeManagedSnapshot = (snapshot: ManagedSnapshot): JsonObject => {
+  const encoded = Result.getOrThrow(encodeSnapshot(snapshot))
+  return Result.getOrThrow(decodeObject(encoded))
+}
 
 /** Stable dependencies are acquired by Definition.program once, before any command Scope. */
 export interface ManagedProgram<State, NativeError, Output> {
