@@ -3,7 +3,7 @@ import type { Plugin } from 'vite-plus'
 const ALCHEMY_ENTRY_PREFIX = '\0virtual:alchemy-entry:'
 const WORKSPACE_PROXY_EXPORT = "export { WorkspaceProxy } from '@cloudflare/computer'"
 
-/** Preserve the one SDK-native export required by Computer's Container backend. */
+// Preserve the SDK-native export required by Computer's Container backend.
 export const workspaceProxyBuild = (): Plugin => ({
   name: 'flowdeck:workspace-proxy',
   /*
@@ -18,8 +18,10 @@ export const workspaceProxyBuild = (): Plugin => ({
    */
   transform(code, id) {
     if (!id.startsWith(ALCHEMY_ENTRY_PREFIX) || code.includes(WORKSPACE_PROXY_EXPORT)) {
+      // oxlint-disable-next-line unicorn/no-null -- The Rolldown hook uses null for an unchanged module.
       return null
     }
+    // oxlint-disable-next-line unicorn/no-null -- Appending an export preserves the existing source mappings.
     return { code: `${code}\n${WORKSPACE_PROXY_EXPORT}\n`, map: null }
   },
 })
