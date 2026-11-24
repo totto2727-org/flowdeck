@@ -57,7 +57,7 @@ describe('development operation wire schemas', () => {
     expect(() => decodeSessionId('replacement-session')).toThrow()
   })
 
-  test.each([
+  live.each([
     'implement.intent',
     'implement.awaiting',
     'implement.polling',
@@ -66,45 +66,47 @@ describe('development operation wire schemas', () => {
     'verify.awaiting',
     'verify.polling',
     'verify.completing',
-  ])('validates command and execution identities in native %s checkpoints', async (path) => {
-    const initial = await Effect.runPromise(Machine.decodeSnapshot(DevelopmentMachine, initialSnapshot.machine))
-    const encoded = await Effect.runPromise(Machine.encodeSnapshot(DevelopmentMachine, initial))
-    const parent = String.startsWith('implement.')(path) ? 'implement' : 'verify'
-    const tag = Option.getOrThrow(Array.last(String.split('.')(path)))
-    const value = {
-      _tag: tag,
-      commandId,
-      executionId: 'execution_3d360c7a-4b1a-4df3-9633-861a220bf5b7',
-      attempt: 1,
-      ...(tag === 'accepted' || tag === 'completing' ? { result: 'done' } : {}),
-    }
-    const active = [
-      ...Array.filter(encoded.active, (entry) => String.isEmpty(entry.path)),
-      { path: parent },
-      { path, value },
-    ]
-    const wire = { ...encoded, active }
-    const restored = await Effect.runPromise(Machine.decodeSnapshot(DevelopmentMachine, wire))
-    await expect(Effect.runPromise(Machine.encodeSnapshot(DevelopmentMachine, restored))).resolves.toMatchObject({
-      active,
-    })
-    await expect(
-      Effect.runPromise(
-        Machine.decodeSnapshot(DevelopmentMachine, {
-          ...wire,
-          active: [...Array.dropRight(active, 1), { path, value: { ...value, commandId: 'run:verify:1' } }],
-        }),
-      ),
-    ).rejects.toMatchObject({ _tag: 'MachineSchemaDecodeError' })
-    await expect(
-      Effect.runPromise(
-        Machine.decodeSnapshot(DevelopmentMachine, {
-          ...wire,
-          active: [...Array.dropRight(active, 1), { path, value: { ...value, executionId: commandId } }],
-        }),
-      ),
-    ).rejects.toMatchObject({ _tag: 'MachineSchemaDecodeError' })
-  })
+  ])('validates command and execution identities in native %s checkpoints', (path) =>
+    Effect.gen(function* () {
+      const initial = yield* Machine.decodeSnapshot(DevelopmentMachine, initialSnapshot.machine)
+      const encoded = yield* Machine.encodeSnapshot(DevelopmentMachine, initial)
+      const parent = String.startsWith('implement.')(path) ? 'implement' : 'verify'
+      const tag = Option.getOrThrow(Array.last(String.split('.')(path)))
+      const value = {
+        _tag: tag,
+        commandId,
+        executionId: 'execution_3d360c7a-4b1a-4df3-9633-861a220bf5b7',
+        attempt: 1,
+        ...(tag === 'accepted' || tag === 'completing' ? { result: 'done' } : {}),
+      }
+      const active = [
+        ...Array.filter(encoded.active, (entry) => String.isEmpty(entry.path)),
+        { path: parent },
+        { path, value },
+      ]
+      const wire = { ...encoded, active }
+      const restored = yield* Machine.decodeSnapshot(DevelopmentMachine, wire)
+      expect(yield* Machine.encodeSnapshot(DevelopmentMachine, restored)).toMatchObject({
+        active,
+      })
+      expect(
+        yield* Effect.flip(
+          Machine.decodeSnapshot(DevelopmentMachine, {
+            ...wire,
+            active: [...Array.dropRight(active, 1), { path, value: { ...value, commandId: 'run:verify:1' } }],
+          }),
+        ),
+      ).toMatchObject({ _tag: 'MachineSchemaDecodeError' })
+      expect(
+        yield* Effect.flip(
+          Machine.decodeSnapshot(DevelopmentMachine, {
+            ...wire,
+            active: [...Array.dropRight(active, 1), { path, value: { ...value, executionId: commandId } }],
+          }),
+        ),
+      ).toMatchObject({ _tag: 'MachineSchemaDecodeError' })
+    }),
+  )
 
   live('round-trips native versions and repository values through both snapshot codecs', () =>
     Effect.gen(function* () {

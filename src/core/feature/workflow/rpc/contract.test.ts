@@ -124,75 +124,78 @@ describe('native SDK RPC client boundary', () => {
     }),
   )
 
-  test.each(['SDK error envelope', 'rejected call', 'SDK defect'] as const)(
+  live.each(['SDK error envelope', 'rejected call', 'SDK defect'] as const)(
     'discards origin diagnostics from a %s before the parent HTTP operation logs',
-    async (scenario) => {
-      const origin = new Error('PRIVATE_ORIGIN_MESSAGE', { cause: { password: 'PRIVATE_ORIGIN_SECRET' } })
-      origin.stack = 'Error: PRIVATE_ORIGIN_MESSAGE\n at PRIVATE_ORIGIN_STACK (child.ts:1:1)'
-      const peer = {
-        listRuns: async () => {
-          if (scenario === 'rejected call') {
-            throw origin
-          }
-          return {
-            _tag: ErrorTag,
-            error: {
-              _tag: 'ExternalError',
-              message: origin.message,
-              stack: origin.stack,
-              cause: origin.cause,
-            },
-          }
-        },
-      }
-      const rpc = makeRpcStub<WireWorkflowService>(
-        scenario === 'SDK defect' ? Effect.die(origin) : Effect.succeed(peer),
-      )
-      const listRuns = () =>
-        rpc
-          .listRuns()
-          .pipe(rpcCall('Workflow.listRuns'), Effect.flatMap(rpcValue('Workflow.listRuns', RpcRunsResponse)))
-      const local = await Effect.runPromise(listRuns().pipe(Effect.flip))
-      expect(local).toBeInstanceOf(ExternalError)
-      expect(local).toMatchObject({
-        cause: { message: 'RPC service call failed' },
-        kind: 'service',
-        operation: 'Workflow.listRuns',
-      })
-      expect(local.cause).toBeInstanceOf(Error)
-      expect(local.cause).not.toBe(origin)
-      expect(Cause.pretty(Cause.fail(local))).not.toContain('PRIVATE_ORIGIN')
-
-      const unused = (): Effect.Effect<never> => Effect.die('Unused regression operation')
-      const workflows: Workflows['Service'] = {
-        listRuns,
-        listWorkflows: unused,
-        getRunDetail: unused,
-        createRun: unused,
-        resumeRun: unused,
-      }
-      const entries: Array<Logger.Options<unknown>> = []
-      const logger = Logger.make((entry) => entries.push(entry))
-      const handler = HttpRouter.toWebHandler(
-        ApiRoutes.pipe(HttpRouter.provideRequest(Layer.succeed(Workflows, workflows))),
-      )
-      try {
-        const reply = await handler.handler(
-          new Request('http://localhost/api/runs'),
-          Context.make(Logger.CurrentLoggers, new Set([logger])),
+    (scenario) =>
+      Effect.gen(function* () {
+        const origin = new Error('PRIVATE_ORIGIN_MESSAGE', { cause: { password: 'PRIVATE_ORIGIN_SECRET' } })
+        origin.stack = 'Error: PRIVATE_ORIGIN_MESSAGE\n at PRIVATE_ORIGIN_STACK (child.ts:1:1)'
+        const peer = {
+          listRuns: async () => {
+            if (scenario === 'rejected call') {
+              throw origin
+            }
+            return {
+              _tag: ErrorTag,
+              error: {
+                _tag: 'ExternalError',
+                message: origin.message,
+                stack: origin.stack,
+                cause: origin.cause,
+              },
+            }
+          },
+        }
+        const rpc = makeRpcStub<WireWorkflowService>(
+          scenario === 'SDK defect' ? Effect.die(origin) : Effect.succeed(peer),
         )
-        expect(reply.status).toBe(502)
-        await expect(reply.text()).resolves.not.toContain('PRIVATE_ORIGIN')
-        expect(entries).toHaveLength(1)
-        const logged = Option.getOrThrow(Cause.findErrorOption(entries[0]!.cause))
-        expect(logged).toBeInstanceOf(ExternalError)
-        expect(logged).toMatchObject({ cause: { message: 'RPC service call failed' } })
-        expect(JSON.stringify(logged)).not.toContain('PRIVATE_ORIGIN')
-        expect(Cause.pretty(entries[0]!.cause)).not.toContain('PRIVATE_ORIGIN')
-      } finally {
-        await handler.dispose()
-      }
-    },
+        const listRuns = () =>
+          rpc
+            .listRuns()
+            .pipe(rpcCall('Workflow.listRuns'), Effect.flatMap(rpcValue('Workflow.listRuns', RpcRunsResponse)))
+        const local = yield* listRuns().pipe(Effect.flip)
+        expect(local).toBeInstanceOf(ExternalError)
+        expect(local).toMatchObject({
+          cause: { message: 'RPC service call failed' },
+          kind: 'service',
+          operation: 'Workflow.listRuns',
+        })
+        expect(local.cause).toBeInstanceOf(Error)
+        expect(local.cause).not.toBe(origin)
+        expect(Cause.pretty(Cause.fail(local))).not.toContain('PRIVATE_ORIGIN')
+
+        const unused = (): Effect.Effect<never> => Effect.die('Unused regression operation')
+        const workflows: Workflows['Service'] = {
+          listRuns,
+          listWorkflows: unused,
+          getRunDetail: unused,
+          createRun: unused,
+          resumeRun: unused,
+        }
+        const entries: Array<Logger.Options<unknown>> = []
+        const logger = Logger.make((entry) => entries.push(entry))
+        const handler = HttpRouter.toWebHandler(
+          ApiRoutes.pipe(HttpRouter.provideRequest(Layer.succeed(Workflows, workflows))),
+        )
+        try {
+          const reply = yield* Effect.promise(async () =>
+            handler.handler(
+              new Request('http://localhost/api/runs'),
+              Context.make(Logger.CurrentLoggers, new Set([logger])),
+            ),
+          )
+          expect(reply.status).toBe(502)
+          yield* Effect.promise(async () => expect(reply.text()).resolves.not.toContain('PRIVATE_ORIGIN'))
+          expect(entries).toHaveLength(1)
+          const logged = Option.getOrThrow(Cause.findErrorOption(entries[0]!.cause))
+          expect(logged).toBeInstanceOf(ExternalError)
+          expect(logged).toMatchObject({ cause: { message: 'RPC service call failed' } })
+          expect(JSON.stringify(logged)).not.toContain('PRIVATE_ORIGIN')
+          expect(Cause.pretty(entries[0]!.cause)).not.toContain('PRIVATE_ORIGIN')
+        } finally {
+          yield* Effect.promise(async () => handler.dispose())
+        }
+      }),
   )
 
   live('preserves validated application problems after the SDK call boundary', () =>

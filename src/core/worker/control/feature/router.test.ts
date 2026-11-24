@@ -1,5 +1,6 @@
 import { ok } from 'node:assert/strict'
 
+import { live } from '@effect/vitest'
 import { makeRpcStub } from 'alchemy/Cloudflare/Workers'
 import { RpcCallError } from 'alchemy/Rpc'
 import { Crypto, Effect, Layer, Predicate, Schema, DateTime } from 'effect'
@@ -199,7 +200,7 @@ describe('Control aggregate Workflow service boundary', () => {
     }
   })
 
-  test.each([
+  live.each([
     [new NotFound({ resource: 'private graph' }), 404, 'NotFound'],
     [new Conflict({ message: 'private conflict' }), 409, 'Conflict'],
     [
@@ -224,33 +225,39 @@ describe('Control aggregate Workflow service boundary', () => {
     [new Error('private unexpected failure'), 500, 'ExternalError'],
   ] as const)(
     'maps a fresh local error from remote %s to HTTP %s without reviving its cause',
-    async (error, status, code) => {
-      const responseText = await Effect.runPromise(
-        Effect.fail(error).pipe(rpcResponse('Workflow.resumeRun'), Effect.provideService(Crypto.Crypto, crypto)),
-      )
-      expect(responseText).not.toContain('private')
-      expect(responseText).not.toContain('stack')
-      const local = await Effect.runPromise(Effect.flip(rpcResult('Control.resumeRun')(responseText)))
-      ok(local instanceof RemoteWorkerError)
-      expect(local).not.toBe(error)
-      const handler = api({
-        ...unavailableWorkflows,
-        resumeRun: () => Effect.fail(local),
-      })
-      try {
-        const response = await handler.handler(
-          new Request('http://localhost/api/runs/run_00000000-0000-4000-8000-000000000001/resume', { method: 'POST' }),
+    ([error, status, code]) =>
+      Effect.gen(function* () {
+        const responseText = yield* Effect.fail(error).pipe(
+          rpcResponse('Workflow.resumeRun'),
+          Effect.provideService(Crypto.Crypto, crypto),
         )
-        expect(response.status).toBe(status)
-        const body = await response.json()
-        expect(body).toStrictEqual({ error: code, message: local.cause.detail })
-        expect(JSON.stringify(body)).not.toContain('private')
-        expect(body).not.toHaveProperty('stack')
-        expect(body).not.toHaveProperty('cause')
-      } finally {
-        await handler.dispose()
-      }
-    },
+        expect(responseText).not.toContain('private')
+        expect(responseText).not.toContain('stack')
+        const local = yield* Effect.flip(rpcResult('Control.resumeRun')(responseText))
+        ok(local instanceof RemoteWorkerError)
+        expect(local).not.toBe(error)
+        const handler = api({
+          ...unavailableWorkflows,
+          resumeRun: () => Effect.fail(local),
+        })
+        try {
+          const response = yield* Effect.promise(async () =>
+            handler.handler(
+              new Request('http://localhost/api/runs/run_00000000-0000-4000-8000-000000000001/resume', {
+                method: 'POST',
+              }),
+            ),
+          )
+          expect(response.status).toBe(status)
+          const body = yield* Effect.promise(async () => response.json())
+          expect(body).toStrictEqual({ error: code, message: local.cause.detail })
+          expect(JSON.stringify(body)).not.toContain('private')
+          expect(body).not.toHaveProperty('stack')
+          expect(body).not.toHaveProperty('cause')
+        } finally {
+          yield* Effect.promise(async () => handler.dispose())
+        }
+      }),
   )
 
   test.each([

@@ -23,24 +23,24 @@ describe('final application composition', () => {
     await expect(selectedApplication({ ALCHEMY_DEV: 'false' })).resolves.toBe('production')
   })
 
-  test('injects fixed local settings without bypassing the common authorization', async () => {
-    const security = await Effect.runPromise(FrontendSecurity.pipe(Effect.provide(LocalSecurity)))
-    expect(security.dev).toStrictEqual({
-      access: developmentAccess,
-      host: '127.0.0.1',
-      port: 4380,
-      strictPort: true,
-    })
-    const expected = await Effect.runPromise(accessAudienceFromEnvironment(security.env))
-    expect(expected).toStrictEqual({ aud: developmentAccess.aud })
-    await expect(
-      Effect.runPromise(authorizeAccess(expected, Effect.succeed({ aud: developmentAccess.aud }))),
-    ).resolves.toBeUndefined()
-    await expect(Effect.runPromise(authorizeAccess(expected, Effect.succeed(undefined)))).rejects.toMatchObject({
-      _tag: 'AccessDenied',
-      status: 401,
-    })
-  })
+  live('injects fixed local settings without bypassing the common authorization', () =>
+    Effect.gen(function* () {
+      const security = yield* FrontendSecurity.pipe(Effect.provide(LocalSecurity))
+      expect(security.dev).toStrictEqual({
+        access: developmentAccess,
+        host: '127.0.0.1',
+        port: 4380,
+        strictPort: true,
+      })
+      const expected = yield* accessAudienceFromEnvironment(security.env)
+      expect(expected).toStrictEqual({ aud: developmentAccess.aud })
+      expect(yield* authorizeAccess(expected, Effect.succeed({ aud: developmentAccess.aud }))).toBeUndefined()
+      expect(yield* Effect.flip(authorizeAccess(expected, Effect.succeed(undefined)))).toMatchObject({
+        _tag: 'AccessDenied',
+        status: 401,
+      })
+    }),
+  )
 
   live('provides no deployment resource props at the fixed runtime capture boundary', () =>
     Effect.gen(function* () {

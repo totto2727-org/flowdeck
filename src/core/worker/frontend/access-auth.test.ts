@@ -24,19 +24,23 @@ describe('frontend Access admission', () => {
     }),
   )
 
-  test('rejects requests without native Access admission', async () => {
-    await expect(Effect.runPromise(authorizeAccess(production, Effect.succeed(undefined)))).rejects.toMatchObject({
-      _tag: 'AccessDenied',
-      status: 401,
-    })
-  })
+  live('rejects requests without native Access admission', () =>
+    Effect.gen(function* () {
+      expect(yield* Effect.flip(authorizeAccess(production, Effect.succeed(undefined)))).toMatchObject({
+        _tag: 'AccessDenied',
+        status: 401,
+      })
+    }),
+  )
 
-  test('rejects admission from another Access application', async () => {
-    await expect(Effect.runPromise(authorizeAccess(production, admitted('other-audience')))).rejects.toMatchObject({
-      _tag: 'AccessDenied',
-      status: 403,
-    })
-  })
+  live('rejects admission from another Access application', () =>
+    Effect.gen(function* () {
+      expect(yield* Effect.flip(authorizeAccess(production, admitted('other-audience')))).toMatchObject({
+        _tag: 'AccessDenied',
+        status: 403,
+      })
+    }),
+  )
 
   live('does not fetch or revalidate a trusted identity', () =>
     Effect.gen(function* () {
@@ -48,14 +52,15 @@ describe('frontend Access admission', () => {
     }),
   )
 
-  test.each([{}, { FLOWDECK_ACCESS_AUD: '' }, { FLOWDECK_ACCESS_AUD: 42 }])(
+  live.each([{}, { FLOWDECK_ACCESS_AUD: '' }, { FLOWDECK_ACCESS_AUD: 42 }])(
     'fails closed when application configuration is missing or invalid: %j',
-    async (environment) => {
-      await expect(Effect.runPromise(accessAudienceFromEnvironment(environment))).rejects.toMatchObject({
-        _tag: 'AccessDenied',
-        status: 503,
-      })
-    },
+    (environment) =>
+      Effect.gen(function* () {
+        expect(yield* Effect.flip(accessAudienceFromEnvironment(environment))).toMatchObject({
+          _tag: 'AccessDenied',
+          status: 503,
+        })
+      }),
   )
 })
 
@@ -73,17 +78,20 @@ describe('production Access resource inputs', () => {
     }),
   )
 
-  test.each(['', '*', 'iac-prod-must-authenticate-with-saml', 'not-a-uuid'])(
+  live.each(['', '*', 'iac-prod-must-authenticate-with-saml', 'not-a-uuid'])(
     'rejects an invalid existing policy identity: %j',
-    async (value) => {
-      const provider = ConfigProvider.fromUnknown({ FLOWDECK_ACCESS_POLICY_ID: value })
-      await expect(Effect.runPromise(accessPolicyId.parse(provider))).rejects.toMatchObject({ _tag: 'ConfigError' })
-    },
+    (value) =>
+      Effect.gen(function* () {
+        const provider = ConfigProvider.fromUnknown({ FLOWDECK_ACCESS_POLICY_ID: value })
+        expect(yield* Effect.flip(accessPolicyId.parse(provider))).toMatchObject({ _tag: 'ConfigError' })
+      }),
   )
 
-  test('requires an existing policy rather than creating a fallback', async () => {
-    await expect(Effect.runPromise(accessPolicyId.parse(ConfigProvider.fromUnknown({})))).rejects.toMatchObject({
-      _tag: 'ConfigError',
-    })
-  })
+  live('requires an existing policy rather than creating a fallback', () =>
+    Effect.gen(function* () {
+      expect(yield* Effect.flip(accessPolicyId.parse(ConfigProvider.fromUnknown({})))).toMatchObject({
+        _tag: 'ConfigError',
+      })
+    }),
+  )
 })
