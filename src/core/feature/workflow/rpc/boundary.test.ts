@@ -14,7 +14,8 @@ import {
 } from '@/core/feature/workflow/domain/errors'
 
 import { makeRpcResponse, rpcResponse, rpcResult } from './boundary.ts'
-import { RemoteWorkerError, Rfc9457ProblemDetails } from './problem.ts'
+import { RemoteWorkerError, Rfc9457ProblemDetailsSchema } from './problem.ts'
+import type { Rfc9457ProblemDetails } from './problem.ts'
 
 const crypto = Crypto.make({
   randomBytes: (size) => globalThis.crypto.getRandomValues(new Uint8Array(size)),
@@ -45,7 +46,7 @@ const failure = <A, E>(exit: Exit.Exit<A, E>): E => {
   return Option.getOrThrow(Cause.findErrorOption(exit.cause))
 }
 const parse = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Json))
-const standardWire = Schema.fromJsonString(Schema.toCodecJson(Schema.Result(Schema.Json, Rfc9457ProblemDetails)))
+const standardWire = Schema.fromJsonString(Schema.toCodecJson(Schema.Result(Schema.Json, Rfc9457ProblemDetailsSchema)))
 const decodeStandard = Schema.decodeUnknownSync(standardWire, { onExcessProperty: 'error' })
 const encodeStandard = Schema.encodeSync(standardWire, { onExcessProperty: 'error' })
 const encodePeer = Schema.encodeSync(Schema.fromJsonString(Schema.toCodecJson(Schema.Result(Schema.Json, Schema.Json))))
@@ -130,7 +131,7 @@ describe('JSON RPC boundary', () => {
       `https://github.com/totto2727-org/flowdeck/blob/main/docs/rpc-boundaries.md#${local.cause.title}`,
     )
     expect(local.cause.status).toBe(status)
-    expect(Schema.is(Rfc9457ProblemDetails)(local.cause)).toBe(true)
+    expect(Schema.is(Rfc9457ProblemDetailsSchema)(local.cause)).toBe(true)
     expect(local.cause).not.toHaveProperty('stack')
     expect(local.cause).not.toHaveProperty('cause')
     expect(local.stack).not.toContain('private')

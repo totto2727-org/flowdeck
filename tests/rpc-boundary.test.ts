@@ -6,12 +6,12 @@ import { Miniflare } from 'miniflare'
 import { build } from 'vite-plus'
 import { afterEach, beforeAll, beforeEach, describe, expect, test } from 'vite-plus/test'
 
-import { Rfc9457ProblemDetails } from '@/core/feature/workflow/rpc/problem'
+import { Rfc9457ProblemDetailsSchema } from '@/core/feature/workflow/rpc/problem'
 
 import type Parent from './fixtures/rpc-boundary-worker.ts'
 
 const decodeReply = Schema.decodeUnknownSync(
-  Schema.fromJsonString(Schema.toCodecJson(Schema.Result(Schema.Json, Rfc9457ProblemDetails))),
+  Schema.fromJsonString(Schema.toCodecJson(Schema.Result(Schema.Json, Rfc9457ProblemDetailsSchema))),
   { onExcessProperty: 'error' },
 )
 const decodeLogs = Schema.decodeUnknownSync(
@@ -25,7 +25,7 @@ const decodeLogs = Schema.decodeUnknownSync(
         originalStack: Schema.String,
         remoteError: Schema.Boolean,
         externalError: Schema.Boolean,
-        priorProblem: Schema.NullOr(Rfc9457ProblemDetails),
+        priorProblem: Schema.NullOr(Rfc9457ProblemDetailsSchema),
       }),
     ),
   ),
