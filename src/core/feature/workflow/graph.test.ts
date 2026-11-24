@@ -3,53 +3,14 @@ import { Machine } from '@typeonce/effect-machine'
 import { Effect } from 'effect'
 import { describe, expect, test, vi } from 'vite-plus/test'
 
+import { allocationGraph, alternativeGraph, executableGraph, resume } from './graph-machine.fixture.ts'
 import { projectMachineGraph } from './graph.ts'
 
-const states = Machine.state({
-  states: {
-    implement: {
-      annotations: { title: 'Implement task', description: 'task' },
-      states: { submit: {}, accepted: { type: 'final' } },
-    },
-    verify: { annotations: { title: 'Verify task', description: 'task' } },
-    completed: { type: 'final' },
-  },
-})
-const makeWorkflow = (execute: (phase: string) => void) =>
-  Machine.make({
-    id: 'executable-graph',
-    root: states,
-    events: Machine.events({}),
-    effects: {
-      implement: Effect.sync(() => {
-        execute('implement')
-      }),
-      verify: Effect.sync(() => {
-        execute('verify')
-      }),
-    },
-    branches: { handoff: { verify: { target: 'verify', title: 'implementation complete' } } },
-  }).handle({
-    initial: { target: 'implement' },
-    states: {
-      implement: {
-        initial: { target: 'implement.submit' },
-        states: {
-          submit: { invoke: { src: 'implement', onDone: { target: 'implement.accepted' } } },
-          accepted: {},
-        },
-        onDone: { branches: 'handoff', resolve: ({ select }) => select.verify() },
-      },
-      verify: { invoke: { src: 'verify', onDone: { target: 'completed' } } },
-      completed: {},
-    },
-  })
-
 describe('executable native Machine graph', () => {
-  live('projects the same native completion edge that automatically invokes the next business node', () =>
+  live('projects the same completion edge that automatically invokes the next business node', () =>
     Effect.gen(function* () {
-      const execute = vi.fn()
-      const native = makeWorkflow(execute)
+      const execute = vi.fn<(phase: string) => void>()
+      const native = yield* executableGraph(execute)
       const graph = projectMachineGraph({
         graphId: 'executable-graph-1',
         nodes: Machine.stateNodes(native),
@@ -63,79 +24,40 @@ describe('executable native Machine graph', () => {
       expect(graph.edges).toStrictEqual([
         { edgeId: 'implement-verify', label: 'implementation complete', source: 'implement', target: 'verify' },
       ])
-      yield* Effect.scoped(
-        Effect.gen(function* () {
-          const ref = yield* Machine.start(native)
-          yield* ref.join
-        }),
-      ).pipe(Effect.timeout('2 seconds'))
+      yield* Effect.gen(function* () {
+        const ref = yield* Machine.start(native)
+        yield* ref.join
+      }).pipe(Effect.scoped, Effect.timeout('2 seconds'))
       expect(execute.mock.calls).toStrictEqual([['implement'], ['verify']])
     }),
   )
+})
 
-  live('projects through unannotated native allocation invokes without executing them during introspection', () =>
+describe('unannotated native Machine graph paths', () => {
+  live('projects through allocation invokes without executing them during introspection', () =>
     Effect.gen(function* () {
-      const allocate = vi.fn()
-      const root = Machine.state({
-        states: {
-          approval: { annotations: { title: 'Approval', description: 'checkpoint' } },
-          allocate: {},
-          publish: { annotations: { title: 'Publish', description: 'task' } },
-          completed: { type: 'final' },
-        },
+      const allocate = vi.fn<() => void>()
+      const native = yield* allocationGraph(allocate)
+      const graph = projectMachineGraph({
+        graphId: 'allocation-1',
+        nodes: Machine.stateNodes(native),
+        transitions: Machine.transitionDefinitions(native),
       })
-      const native = Machine.make({
-        root,
-        events: Machine.events({ Resume: {} }),
-        effects: {
-          allocate: Effect.sync(allocate),
-          publish: Effect.void,
-        },
-      }).handle({
-        initial: { target: 'approval' },
-        states: {
-          approval: { on: { Resume: { target: 'allocate' } } },
-          allocate: { invoke: { src: 'allocate', onDone: { target: 'publish' } } },
-          publish: { invoke: { src: 'publish', onDone: { target: 'completed' } } },
-          completed: {},
-        },
-      })
-      expect(
-        projectMachineGraph({
-          graphId: 'allocation-1',
-          nodes: Machine.stateNodes(native),
-          transitions: Machine.transitionDefinitions(native),
-        }).edges,
-      ).toStrictEqual([{ edgeId: 'approval-publish', label: 'Resume', source: 'approval', target: 'publish' }])
+      expect(graph.edges).toStrictEqual([
+        { edgeId: 'approval-publish', label: 'Resume', source: 'approval', target: 'publish' },
+      ])
       expect(allocate).not.toHaveBeenCalled()
-      yield* Effect.scoped(
-        Effect.gen(function* () {
-          const ref = yield* Machine.start(native)
-          yield* ref.send({ _tag: 'Resume' })
-          yield* ref.join
-        }),
-      ).pipe(Effect.timeout('2 seconds'))
+      yield* Effect.gen(function* () {
+        const ref = yield* Machine.start(native)
+        yield* ref.send(resume)
+        yield* ref.join
+      }).pipe(Effect.scoped, Effect.timeout('2 seconds'))
       expect(allocate).toHaveBeenCalledOnce()
     }),
   )
 
-  test('combines native alternatives between the same visible nodes without adding a second topology', () => {
-    const root = Machine.state({
-      states: {
-        approval: { annotations: { title: 'Approval', description: 'checkpoint' } },
-        publish: { annotations: { title: 'Publish', description: 'task' } },
-        completed: { type: 'final' },
-      },
-    })
-    const events = Machine.events({ Resume: {}, Approve: {} })
-    const native = Machine.make({ root, events }).handle({
-      initial: { target: 'approval' },
-      states: {
-        approval: { on: { Resume: { target: 'publish' }, Approve: { target: 'publish' } } },
-        publish: {},
-        completed: {},
-      },
-    })
+  test('combines native alternatives between the same visible nodes in declared order', () => {
+    const native = alternativeGraph
     const graph = projectMachineGraph({
       graphId: 'alternatives-graph-1',
       nodes: Machine.stateNodes(native),
