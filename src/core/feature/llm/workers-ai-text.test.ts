@@ -5,7 +5,7 @@ import { RuntimeContext } from 'alchemy/RuntimeContext'
 import { Deferred, Effect, Exit, Fiber, Result, Schema } from 'effect'
 import { describe, expect, expectTypeOf, it, vi } from 'vite-plus/test'
 
-import { makeWorkersAiText, WorkersAiText, WorkersAiTextModel, workersAiTextModel } from './workers-ai-text'
+import { makeWorkersAiText, WorkersAiText, WorkersAiTextModel, workersAiTextModel } from './workers-ai-text.ts'
 
 // Only inference is synthetic. Alchemy's actual AIBinding and native Machine runtime execute below.
 const makeText = (run: (model: string, inputs: unknown) => Promise<unknown>) =>

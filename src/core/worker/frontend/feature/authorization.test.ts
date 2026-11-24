@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vite-plus/test'
 
 import { AccessDenied } from '@/core/worker/frontend/access-auth'
 
-import { frontendAuthorization } from './authorization'
+import { frontendAuthorization } from './authorization.ts'
 
 describe('frontend HTTP authorization middleware', () => {
   it.each([401, 403, 503] as const)('returns %s without executing the application', async (status) => {

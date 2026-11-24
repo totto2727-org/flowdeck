@@ -19,7 +19,7 @@ import { RpcCreateRun, RpcRunDetail, RpcWorkflowsResponse } from '@/core/feature
 import { RemoteWorkerError } from '@/core/feature/workflow/rpc/problem'
 import { Workflows } from '@/core/feature/workflow/services/workflows'
 
-import { ApiRoutes } from './router'
+import { ApiRoutes } from './router.ts'
 
 const crypto = Crypto.make({
   randomBytes: (size) => globalThis.crypto.getRandomValues(new Uint8Array(size)),

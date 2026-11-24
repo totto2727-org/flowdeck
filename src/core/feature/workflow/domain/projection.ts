@@ -1,7 +1,7 @@
 import { Array, HashMap, Match, Number, Option, Order, Predicate } from 'effect'
 
-import type { NodeId } from './identity'
-import type { GraphDefinition, NodeVisualState, RunEvent, Shapes } from './model'
+import type { NodeId } from './identity.ts'
+import type { GraphDefinition, NodeVisualState, RunEvent, Shapes } from './model.ts'
 
 const LAYOUT_ORIGIN = { x: 48, y: 72 }
 const NODE_SIZE = { width: 224, height: 100 }

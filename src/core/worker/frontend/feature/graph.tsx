@@ -5,9 +5,9 @@ import { useRef, type KeyboardEvent } from 'react'
 
 import type { NodeId } from '@/core/feature/workflow/domain/identity'
 
-import { Badge } from './components/generated/badge'
-import { graphSize, latestExecution, nextNode, nodeEvents, renderJson } from './presentation'
-import type { RunDetail } from './view-model'
+import { Badge } from './components/generated/badge.tsx'
+import { graphSize, latestExecution, nextNode, nodeEvents, renderJson } from './presentation.ts'
+import type { RunDetail } from './view-model.ts'
 
 /**
  * Geometry-only inline-style boundary: the persisted graph projection supplies arbitrary

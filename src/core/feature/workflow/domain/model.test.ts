@@ -1,7 +1,7 @@
 import { Array, DateTime, Schema, SemVer } from 'effect'
 import { describe, expect, it } from 'vite-plus/test'
 
-import { CreateRun, GraphDefinition, NodeShape, Run, RunEvent, RunState, WorkflowVersion } from './model'
+import { CreateRun, GraphDefinition, NodeShape, Run, RunEvent, RunState, WorkflowVersion } from './model.ts'
 
 const uuid = '00000000-0000-4000-8000-000000000003'
 const uuid7 = '01890f2e-7b55-7cc1-8c5a-000000000001'

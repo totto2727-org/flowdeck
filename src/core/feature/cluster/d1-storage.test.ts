@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from 'v
 import { D1Client } from '@/core/feature/d1/client'
 import { D1Binding, NativeD1Client } from '@/core/feature/d1/native'
 
-import { D1ClusterMachineStorage } from './d1-storage'
+import { D1ClusterMachineStorage } from './d1-storage.ts'
 
 // This data-only fixture verifies Cluster persistence independently of any application workflow runtime.
 const StorageTestMachine = Machine.make({

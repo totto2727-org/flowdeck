@@ -3,7 +3,7 @@ import { Context, Effect } from 'effect'
 import type { RunId } from '@/core/feature/workflow/domain/identity'
 import type { CreateRun, Run, RunDetail, WorkflowSummary } from '@/core/feature/workflow/domain/model'
 
-import type { WorkflowFailure } from './failures'
+import type { WorkflowFailure } from './failures.ts'
 
 export type WorkflowService<R = never> = {
   readonly listWorkflows: () => Effect.Effect<

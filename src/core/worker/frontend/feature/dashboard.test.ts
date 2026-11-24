@@ -2,7 +2,7 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vite-plus/test'
 
-import { Dashboard } from './dashboard'
+import { Dashboard } from './dashboard.tsx'
 
 vi.mock('./server', () => ({
   loadDashboard: vi.fn(),

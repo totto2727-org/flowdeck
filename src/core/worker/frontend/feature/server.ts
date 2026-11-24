@@ -5,8 +5,8 @@ import { Array, Effect, Predicate, Schema } from 'effect'
 import { RunId } from '@/core/feature/workflow/domain/identity'
 import { CreateRun } from '@/core/feature/workflow/domain/model'
 
-import { ControlApi, type ControlError } from './control-api'
-import { EFFRONT } from './effront'
+import { ControlApi, type ControlError } from './control-api.ts'
+import { EFFRONT } from './effront.ts'
 import {
   presentDetail,
   presentRun,
@@ -14,7 +14,7 @@ import {
   type Run,
   type RunDetail,
   type WorkflowSummary,
-} from './view-model'
+} from './view-model.ts'
 
 export interface DashboardData {
   readonly workflows: ReadonlyArray<WorkflowSummary>

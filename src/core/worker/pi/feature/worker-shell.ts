@@ -4,7 +4,7 @@ import { DurableObjectState } from 'alchemy/Cloudflare/Workers'
 import { DurableObject } from 'cloudflare:workers'
 import { Effect, Predicate } from 'effect'
 
-import { WORKER_SHELL_BACKEND } from './workspace'
+import { WORKER_SHELL_BACKEND } from './workspace.ts'
 
 // The official external-runtime connector runs this official shell in the host
 // isolate. Unlike Loader mode, it does not clone Capnweb WorkspaceStub through

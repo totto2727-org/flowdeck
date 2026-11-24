@@ -2,9 +2,9 @@ import { Effect } from 'effect'
 
 import { Control } from '@/core/worker/control/definition'
 
-import { FrontendSecurity } from './access'
-import { frontendRequest, FrontendRequestLayer } from './assembly'
-import { Frontend } from './definition'
+import { FrontendSecurity } from './access.ts'
+import { frontendRequest, FrontendRequestLayer } from './assembly.ts'
+import { Frontend } from './definition.ts'
 
 /** A native binding is decoded and resolved only while a request is executing. */
 export default Frontend.make(

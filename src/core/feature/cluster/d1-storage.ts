@@ -4,7 +4,7 @@ import { ClusterError, type EntityAddress } from 'effect/cluster'
 
 import { AlchemyQueryExecutorLive, makeD1Queries } from '@/core/feature/d1/reylo'
 
-import { decodeRequestId, decodeSnapshot, encodeRequestId, encodeSnapshot } from './d1-storage-codecs'
+import { decodeRequestId, decodeSnapshot, encodeRequestId, encodeSnapshot } from './d1-storage-codecs.ts'
 import insertRequestQuery from './queries/insert-request.sql'
 import loadQuery from './queries/load.sql'
 import upsertCheckpointQuery from './queries/upsert-checkpoint.sql'

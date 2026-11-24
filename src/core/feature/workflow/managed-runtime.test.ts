@@ -16,7 +16,7 @@ import {
   restoreManagedSnapshot,
   ResumeEvent,
   WorkflowCheckpoint,
-} from './managed-runtime'
+} from './managed-runtime.ts'
 
 const decodeVersion = Schema.decodeUnknownSync(Schema.SemVerFromString)
 const version = decodeVersion('1.0.0')

@@ -8,10 +8,10 @@ import {
   developmentGraphFor,
   developmentWorkflow,
   initialDevelopmentSnapshot,
-} from './development'
-import { DevelopmentCreateRun } from './input'
+} from './development.ts'
+import { DevelopmentCreateRun } from './input.ts'
 
-export { DevelopmentCreateRun, DevelopmentTask, PublicRepository } from './input'
+export { DevelopmentCreateRun, DevelopmentTask, PublicRepository } from './input.ts'
 
 const PreparationInput = Schema.Struct({
   ...DevelopmentCreateRun.fields,

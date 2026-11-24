@@ -5,9 +5,9 @@ import { describe, expect, it } from 'vite-plus/test'
 
 import { type EventDraft, resumeEvent, WorkflowCheckpoint } from '@/core/feature/workflow/managed-runtime'
 
-import { demoBoundaryEvents } from './node'
-import { demoVersion1Machine, demoVersion1States } from './version-1'
-import { demoVersion2Machine, demoVersion2States } from './version-2'
+import { demoBoundaryEvents } from './node.ts'
+import { demoVersion1Machine, demoVersion1States } from './version-1.ts'
+import { demoVersion2Machine, demoVersion2States } from './version-2.ts'
 
 const implementations = [
   { native: demoVersion1Machine, states: demoVersion1States, draft: 'draft:v1' },

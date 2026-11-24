@@ -9,7 +9,7 @@ import { Conflict, ExternalError } from '@/core/feature/workflow/domain/errors'
 import { Workflows } from '@/core/feature/workflow/services/workflows'
 import { ApiRoutes } from '@/core/worker/control/feature/router'
 
-import { rpcResponse } from './boundary'
+import { rpcResponse } from './boundary.ts'
 import {
   RpcRunsResponse,
   RpcWorkflowsResponse,
@@ -19,8 +19,8 @@ import {
   rpcValue,
   type WireWorkflowExecutor,
   type WireWorkflowService,
-} from './contract'
-import { RemoteWorkerError } from './problem'
+} from './contract.ts'
+import { RemoteWorkerError } from './problem.ts'
 
 const response = <A extends Schema.Json>(value: A) =>
   Effect.runSync(Effect.succeed(value).pipe(rpcResponse('child.test'), Effect.provide(BrowserCrypto.layer)))

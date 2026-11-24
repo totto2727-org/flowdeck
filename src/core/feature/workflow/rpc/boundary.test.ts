@@ -12,8 +12,8 @@ import {
   StorageConflict,
 } from '@/core/feature/workflow/domain/errors'
 
-import { makeRpcResponse, rpcResponse, rpcResult } from './boundary'
-import { RemoteWorkerError, Rfc9457ProblemDetails } from './problem'
+import { makeRpcResponse, rpcResponse, rpcResult } from './boundary.ts'
+import { RemoteWorkerError, Rfc9457ProblemDetails } from './problem.ts'
 
 const crypto = Crypto.make({
   randomBytes: (size) => globalThis.crypto.getRandomValues(new Uint8Array(size)),

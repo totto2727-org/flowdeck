@@ -2,7 +2,7 @@ import { Machine } from '@typeonce/effect-machine'
 import { Effect } from 'effect'
 import { describe, expect, it, vi } from 'vite-plus/test'
 
-import { projectMachineGraph } from './graph'
+import { projectMachineGraph } from './graph.ts'
 
 const states = Machine.state({
   states: {

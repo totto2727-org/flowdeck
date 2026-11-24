@@ -18,9 +18,9 @@ import {
   encodeVersion,
   fromJson,
   json,
-} from './d1-store-codecs'
-import { execute } from './database'
-import { DatabaseQueries } from './database-queries'
+} from './d1-store-codecs.ts'
+import { DatabaseQueries } from './database-queries.ts'
+import { execute } from './database.ts'
 import getAckQuery from './queries/get-ack.sql'
 import getEventsQuery from './queries/get-events.sql'
 import getGraphQuery from './queries/get-graph.sql'
@@ -35,7 +35,7 @@ import insertWorkflowQuery from './queries/insert-workflow.sql'
 import listRunsQuery from './queries/list-runs.sql'
 import updateRunQuery from './queries/update-run.sql'
 import updateStateQuery from './queries/update-state.sql'
-import { type CommitCommand, type EventRange, Store, type StoreService } from './store'
+import { type CommitCommand, type EventRange, Store, type StoreService } from './store.ts'
 
 const makeGetRun = Effect.gen(function* () {
   const { run: query } = yield* DatabaseQueries

@@ -13,8 +13,8 @@ import {
   renderJson,
   runRecoveryAction,
   shortId,
-} from './presentation'
-import type { RunEvent } from './view-model'
+} from './presentation.ts'
+import type { RunEvent } from './view-model.ts'
 
 const firstExecution = 'execution_00000000-0000-4000-8000-000000000001'
 const secondExecution = 'execution_00000000-0000-4000-8000-000000000002'

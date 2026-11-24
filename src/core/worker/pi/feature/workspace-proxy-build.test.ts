@@ -4,7 +4,7 @@ import { Array, Option } from 'effect'
 import { build } from 'vite-plus'
 import { describe, expect, it } from 'vite-plus/test'
 
-import { workspaceProxyBuild } from './workspace-proxy-build'
+import { workspaceProxyBuild } from './workspace-proxy-build.ts'
 
 describe('workspaceProxyBuild scope', () => {
   it.each(['/source/worker.ts', '\0virtual:another-entry:test', '/source/virtual:alchemy-entry:test'])(

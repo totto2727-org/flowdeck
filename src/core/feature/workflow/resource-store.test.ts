@@ -1,7 +1,7 @@
 import { Array, Context, Deferred, Effect, Fiber, Option, Ref } from 'effect'
 import { describe, expect, expectTypeOf, it } from 'vite-plus/test'
 
-import { ResourceStore } from './resource-store'
+import { ResourceStore } from './resource-store.ts'
 
 class NativeResource extends Context.Service<NativeResource, { readonly read: () => string }>()(
   'test/NativeResource',

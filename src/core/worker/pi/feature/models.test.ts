@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vite-plus/test'
 
-import { makePiModels } from './models'
+import { makePiModels } from './models.ts'
 
 describe('development models', () => {
   it('registers only the fixed Gateway model without exposing the credential on the model', () => {

@@ -5,8 +5,8 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
 
-import { browserTheme, selectTheme, serverTheme, subscribeTheme, themeBootstrap, themeStorageKey } from './theme'
-import { ThemeToggle } from './theme-toggle'
+import { ThemeToggle } from './theme-toggle.tsx'
+import { browserTheme, selectTheme, serverTheme, subscribeTheme, themeBootstrap, themeStorageKey } from './theme.ts'
 
 function browser(stored: string | null = null, storageDenied = false) {
   const values = new Map<string, string>(Predicate.isNull(stored) ? [] : [[themeStorageKey, stored]])

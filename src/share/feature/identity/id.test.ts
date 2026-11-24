@@ -3,7 +3,7 @@ import { Effect, Schema } from 'effect'
 import { TestCrypto } from 'effect/testing'
 import { describe, expect, it } from 'vite-plus/test'
 
-import { makePrefixedUUIDv4, UserDefinedId } from './id'
+import { makePrefixedUUIDv4, UserDefinedId } from './id.ts'
 
 const uuid = '3d360c7a-4b1a-4df3-9633-861a220bf5b7'
 const prefixes = ['run', 'execution', 'event', 'commit', 'command', 'repository']

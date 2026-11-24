@@ -1,10 +1,10 @@
 import { Array, Effect, Layer } from 'effect'
 
-import { ControlApi } from './control-api'
-import { Dashboard } from './dashboard'
-import { EFFRONT } from './effront'
-import { themeBootstrap } from './theme'
-import { presentRun, presentWorkflow } from './view-model'
+import { ControlApi } from './control-api.ts'
+import { Dashboard } from './dashboard.tsx'
+import { EFFRONT } from './effront.ts'
+import { themeBootstrap } from './theme.ts'
+import { presentRun, presentWorkflow } from './view-model.ts'
 
 import './styles/app.css'
 

@@ -2,7 +2,7 @@ import { Array, DateTime, Effect, SemVer } from 'effect'
 import { HttpClient, HttpClientResponse } from 'effect/http'
 import { describe, expect, it } from 'vite-plus/test'
 
-import { makeControlApi } from './control-api'
+import { makeControlApi } from './control-api.ts'
 
 /** Transport fixtures exercise the real Effect client and schema boundary, not dashboard data. */
 const clientReturning = (body: unknown, status = 200) =>

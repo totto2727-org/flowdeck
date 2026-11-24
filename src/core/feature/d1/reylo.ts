@@ -2,8 +2,8 @@ import type { ParamsArg, StandardQueryV1 } from '@totto2727/reylo'
 import * as QueryEffect from '@totto2727/reylo/effect'
 import { Effect, Layer } from 'effect'
 
-import { makeD1Batch } from './batch'
-import { D1Client } from './client'
+import { makeD1Batch } from './batch.ts'
+import { D1Client } from './client.ts'
 
 export const AlchemyQueryExecutorLive = Layer.effect(
   QueryEffect.QueryExecutor,

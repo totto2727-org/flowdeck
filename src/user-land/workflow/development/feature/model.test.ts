@@ -4,9 +4,9 @@ import { describe, expect, it } from 'vite-plus/test'
 
 import { CommandId, SessionId, TurnReceipt, TurnRequest } from '@/core/feature/pi/model'
 
-import { DevelopmentSnapshot, DevelopmentSnapshotJson, initialDevelopmentSnapshot } from './development'
-import { DevelopmentMachine, DevelopmentStates } from './development-machine'
-import { developmentVersion, PublicRepository } from './input'
+import { DevelopmentMachine, DevelopmentStates } from './development-machine.ts'
+import { DevelopmentSnapshot, DevelopmentSnapshotJson, initialDevelopmentSnapshot } from './development.ts'
+import { developmentVersion, PublicRepository } from './input.ts'
 
 const encodeDevelopmentSnapshot = Schema.encodeSync(DevelopmentSnapshotJson)
 const decodeDevelopmentSnapshot = Schema.decodeUnknownSync(DevelopmentSnapshotJson)

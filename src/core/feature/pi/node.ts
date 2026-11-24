@@ -4,9 +4,9 @@ import { makeExecutionIdGenerator, ExecutionId } from '@/core/feature/workflow/d
 import { WorkflowCheckpoint, type EventDraft } from '@/core/feature/workflow/managed-runtime'
 import { ResourceStore } from '@/core/feature/workflow/resource-store'
 
-import { CommandId, makeCommandIdGenerator } from './model'
-import type { TurnReceipt } from './model'
-import { PiSandbox } from './sandbox'
+import { CommandId, makeCommandIdGenerator } from './model.ts'
+import type { TurnReceipt } from './model.ts'
+import { PiSandbox } from './sandbox.ts'
 
 export const PiExecutionFields = {
   executionId: ExecutionId,

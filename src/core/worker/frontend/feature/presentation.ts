@@ -3,7 +3,7 @@ import { Array, Match, Number, Option, Order, Schema, String } from 'effect'
 import type { NodeId } from '@/core/feature/workflow/domain/identity'
 import type { RunStatus, Shapes } from '@/core/feature/workflow/domain/model'
 
-import type { RunEvent } from './view-model'
+import type { RunEvent } from './view-model.ts'
 
 const jsonIndentationSpaces = 2
 const shortIdLength = 8

@@ -5,7 +5,7 @@ import { developmentAccess, FrontendSecurity, LocalSecurity, RuntimeSecurity } f
 import { authorizeAccess } from '@/core/worker/frontend/access-auth'
 import { accessAudienceFromEnvironment } from '@/core/worker/frontend/assembly'
 
-import { applicationMode } from './composition'
+import { applicationMode } from './composition.ts'
 
 const selectedApplication = (values: Record<string, string>) =>
   Effect.runPromise(

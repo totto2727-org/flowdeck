@@ -4,7 +4,7 @@ import { AssistantEntry, createRegistry, Harness, MemoryStorage, ToolTask } from
 import { Array, Option } from 'effect'
 import { describe, expect, it, vi } from 'vite-plus/test'
 
-import { CONTAINER_BACKEND, createWorkspaceTools, WORKER_SHELL_BACKEND } from './workspace'
+import { CONTAINER_BACKEND, createWorkspaceTools, WORKER_SHELL_BACKEND } from './workspace.ts'
 
 // Synthetic storage/runtime boundary: these checks do not start a Container or test persistence.
 const fixture = (backendId = CONTAINER_BACKEND) =>

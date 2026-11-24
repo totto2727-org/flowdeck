@@ -10,7 +10,7 @@ import { describe, expect, it, vi } from 'vite-plus/test'
 
 import { ControlApi } from '@/core/worker/frontend/feature/control-api'
 
-import { frontendRequest, FrontendRequestLayer } from './assembly'
+import { frontendRequest, FrontendRequestLayer } from './assembly.ts'
 
 /** Only the platform admission is substituted. The real request Layer and HTTP adapter run below. */
 const host = (environment: Record<string, unknown>, admission: WorkerExecutionContextAccess | undefined) =>

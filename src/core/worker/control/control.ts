@@ -14,8 +14,8 @@ import {
 } from '@/core/feature/workflow/rpc/contract'
 import { Workflows } from '@/core/feature/workflow/services/workflows'
 
-import { Control } from './definition'
-import { ApiRoutes } from './feature/router'
+import { Control } from './definition.ts'
+import { ApiRoutes } from './feature/router.ts'
 
 const decodeWorkflowsResponse = rpcValue('Workflow.listWorkflows', RpcWorkflowsResponse)
 const decodeRunsResponse = rpcValue('Workflow.listRuns', RpcRunsResponse)

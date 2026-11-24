@@ -19,8 +19,8 @@ import {
   type EventDraft,
 } from '@/core/feature/workflow/managed-runtime'
 
-import { DevelopmentMachine, DevelopmentStates, type DevelopmentNativeState } from './development-machine'
-import { developmentVersion, type DevelopmentCreateRun, type DevelopmentWorkflowVersion } from './input'
+import { DevelopmentMachine, DevelopmentStates, type DevelopmentNativeState } from './development-machine.ts'
+import { developmentVersion, type DevelopmentCreateRun, type DevelopmentWorkflowVersion } from './input.ts'
 
 export { ManagedSnapshot as DevelopmentSnapshot } from '@/core/feature/workflow/managed-runtime'
 export const DevelopmentSnapshotJson = Schema.toCodecJson(ManagedSnapshot)

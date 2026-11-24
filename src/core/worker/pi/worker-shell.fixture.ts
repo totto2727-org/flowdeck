@@ -8,8 +8,8 @@ import { HttpServerResponse } from 'effect/http'
 
 import { Store } from '@/core/feature/workflow/services/store'
 
-import { makeWorkerShellWorkspace } from './feature/worker-shell'
-import { makeWorkerShellPiSdk } from './worker-shell-runtime'
+import { makeWorkerShellWorkspace } from './feature/worker-shell.ts'
+import { makeWorkerShellPiSdk } from './worker-shell-runtime.ts'
 
 const unexpected = Effect.die(new Error('Unexpected workflow persistence access'))
 const store = Store.of({

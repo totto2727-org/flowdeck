@@ -6,7 +6,7 @@ import { GraphDefinition, JsonObject, Run, RunEvent } from '@/core/feature/workf
 
 import type getEventsQuery from './queries/get-events.sql'
 import type getRunQuery from './queries/get-run.sql'
-import { CommitAck, CommitCommand } from './store'
+import { CommitAck, CommitCommand } from './store.ts'
 
 const EventIds = Schema.Array(EventId).check(Schema.isUnique())
 const Json = Schema.fromJsonString(Schema.Json)

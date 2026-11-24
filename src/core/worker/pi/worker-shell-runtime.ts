@@ -6,9 +6,9 @@ import { Effect } from 'effect'
 
 import { ExternalError } from '@/core/feature/workflow/domain/errors'
 
-import { makeHarnessSandbox } from './feature/harness-sandbox'
-import { makeWorkerShellWorkspace } from './feature/worker-shell'
-import { createWorkspaceTools, WORKER_SHELL_BACKEND } from './feature/workspace'
+import { makeHarnessSandbox } from './feature/harness-sandbox.ts'
+import { makeWorkerShellWorkspace } from './feature/worker-shell.ts'
+import { createWorkspaceTools, WORKER_SHELL_BACKEND } from './feature/workspace.ts'
 
 /** Model dependencies are supplied independently from workspace provisioning. */
 export interface WorkerShellPiOptions {

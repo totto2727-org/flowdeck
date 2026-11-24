@@ -3,7 +3,7 @@ import { Context, Effect } from 'effect'
 import type { ExternalError } from '@/core/feature/workflow/domain/errors'
 import type { RunId } from '@/core/feature/workflow/domain/identity'
 
-import type { CommandId, Session, TurnReceipt, TurnRequest } from './model'
+import type { CommandId, Session, TurnReceipt, TurnRequest } from './model.ts'
 
 /** The composition root supplies one native container handle per run, never per node. */
 export class PiSandbox extends Context.Service<

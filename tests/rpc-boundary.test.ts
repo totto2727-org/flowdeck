@@ -8,7 +8,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vite-plu
 
 import { Rfc9457ProblemDetails } from '@/core/feature/workflow/rpc/problem'
 
-import type Parent from './fixtures/rpc-boundary-worker'
+import type Parent from './fixtures/rpc-boundary-worker.ts'
 
 const decodeReply = Schema.decodeUnknownSync(
   Schema.fromJsonString(Schema.toCodecJson(Schema.Result(Schema.Json, Rfc9457ProblemDetails))),

@@ -13,8 +13,8 @@ import { D1StoreLive } from '@/core/feature/workflow/services/d1-store'
 import { DatabaseQueriesLive } from '@/core/feature/workflow/services/database-queries'
 import { Database } from '@/core/worker/database'
 
-import { DemoWorkflow } from './definition'
-import { DemoExecutor, makeDemoExecutor } from './feature/demo'
+import { DemoWorkflow } from './definition.ts'
+import { DemoExecutor, makeDemoExecutor } from './feature/demo.ts'
 
 const decodeRunId = Schema.decodeUnknownEffect(RunId)
 

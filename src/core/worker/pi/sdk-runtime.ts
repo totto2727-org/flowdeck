@@ -12,9 +12,9 @@ import { ExternalError } from '@/core/feature/workflow/domain/errors'
 import { RunId } from '@/core/feature/workflow/domain/identity'
 import { Store } from '@/core/feature/workflow/services/store'
 
-import { makeHarnessSandbox } from './feature/harness-sandbox'
-import { makePiModels } from './feature/models'
-import { CONTAINER_BACKEND, createWorkspaceTools } from './feature/workspace'
+import { makeHarnessSandbox } from './feature/harness-sandbox.ts'
+import { makePiModels } from './feature/models.ts'
+import { CONTAINER_BACKEND, createWorkspaceTools } from './feature/workspace.ts'
 
 const Environment = Schema.Struct({
   CLOUDFLARE_ACCOUNT_ID: Schema.String,

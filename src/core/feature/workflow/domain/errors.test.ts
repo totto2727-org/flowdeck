@@ -1,6 +1,6 @@
 import { expect, expectTypeOf, it } from 'vite-plus/test'
 
-import { Conflict, ExternalError, StorageConflict } from './errors'
+import { Conflict, ExternalError, StorageConflict } from './errors.ts'
 
 it('represents a domain conflict without an external cause', () => {
   expectTypeOf<ConstructorParameters<typeof Conflict>[0]>().toEqualTypeOf<{ readonly message: string }>()

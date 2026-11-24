@@ -3,7 +3,7 @@ import { Context, Effect, Schema } from 'effect'
 import type { RunId } from '@/core/feature/workflow/domain/identity'
 import type { CreateRun, GraphDefinition, JsonObject, WorkflowSummary } from '@/core/feature/workflow/domain/model'
 
-import type { WorkflowFailure } from './failures'
+import type { WorkflowFailure } from './failures.ts'
 
 /** Each workflow owns input validation, supported versions, and its initial checkpoint. */
 export interface WorkflowDefinition {

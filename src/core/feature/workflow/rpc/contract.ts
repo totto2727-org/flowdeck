@@ -4,7 +4,7 @@ import { ExternalError } from '@/core/feature/workflow/domain/errors'
 import type { RunId } from '@/core/feature/workflow/domain/identity'
 import { CreateRun, RunDetail, RunsResponse, WorkflowsResponse } from '@/core/feature/workflow/domain/model'
 
-import { rpcResult } from './boundary'
+import { rpcResult } from './boundary.ts'
 
 export const RpcCreateRun = Schema.toCodecJson(CreateRun)
 export const RpcRunDetail = Schema.toCodecJson(RunDetail)

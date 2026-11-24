@@ -4,7 +4,7 @@ import { Effect, Schema } from 'effect'
 import { PiExecutionFields, PiNodeEffects, piExecutionData, piNodeEvent, type PiResult } from '@/core/feature/pi/node'
 import { ResumeEvent, WorkflowCheckpoint, type EventDraft } from '@/core/feature/workflow/managed-runtime'
 
-import { DevelopmentCreateRun, DevelopmentTask, DevelopmentWorkflowVersion, PublicRepository } from './input'
+import { DevelopmentCreateRun, DevelopmentTask, DevelopmentWorkflowVersion, PublicRepository } from './input.ts'
 
 const execution = { fields: PiExecutionFields }
 const result = { fields: { ...PiExecutionFields, result: Schema.String } }

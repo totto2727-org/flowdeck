@@ -4,7 +4,7 @@ import { Context, Effect, Layer } from 'effect'
 
 import { makeD1Queries } from '@/core/feature/d1/reylo'
 
-import { execute } from './database'
+import { execute } from './database.ts'
 
 export const makeDatabaseQueries = Effect.gen(function* () {
   const queries = yield* makeD1Queries

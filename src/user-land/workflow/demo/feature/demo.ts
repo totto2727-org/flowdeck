@@ -6,10 +6,10 @@ import { type GraphDefinition, type Run, type WorkflowSummary } from '@/core/fea
 import { encodeManagedSnapshot, ManagedSnapshot, makeManagedExecutor } from '@/core/feature/workflow/managed-runtime'
 import { Store } from '@/core/feature/workflow/services/store'
 
-import { DemoWorkflowVersion, demoVersion1, demoVersion2 } from './input'
-import { demoStatus } from './node'
-import { decodeDemoVersion1, demoVersion1Definition, encodeDemoVersion1, initialDemoVersion1 } from './version-1'
-import { decodeDemoVersion2, demoVersion2Definition, encodeDemoVersion2, initialDemoVersion2 } from './version-2'
+import { DemoWorkflowVersion, demoVersion1, demoVersion2 } from './input.ts'
+import { demoStatus } from './node.ts'
+import { decodeDemoVersion1, demoVersion1Definition, encodeDemoVersion1, initialDemoVersion1 } from './version-1.ts'
+import { decodeDemoVersion2, demoVersion2Definition, encodeDemoVersion2, initialDemoVersion2 } from './version-2.ts'
 
 export { ManagedSnapshot as DemoSnapshot } from '@/core/feature/workflow/managed-runtime'
 const decodeVersion = Schema.decodeUnknownEffect(DemoWorkflowVersion)

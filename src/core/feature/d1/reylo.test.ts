@@ -9,10 +9,10 @@ import { Array, Effect, Exit, Layer } from 'effect'
 import { Miniflare } from 'miniflare'
 import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from 'vite-plus/test'
 
-import { makeD1Batch } from './batch'
-import { D1Client } from './client'
-import { D1Binding, NativeD1Client } from './native'
-import { AlchemyQueryExecutorLive, makeD1Queries } from './reylo'
+import { makeD1Batch } from './batch.ts'
+import { D1Client } from './client.ts'
+import { D1Binding, NativeD1Client } from './native.ts'
+import { AlchemyQueryExecutorLive, makeD1Queries } from './reylo.ts'
 
 const insertValue = defineQuery<{ value: number }, never, 'none', 'sqlite'>({
   dialect: 'sqlite',

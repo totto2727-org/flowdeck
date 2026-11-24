@@ -3,10 +3,10 @@ import { describe, expect, it } from 'vite-plus/test'
 
 import { GraphDefinition, type Run } from '@/core/feature/workflow/domain/model'
 
-import { demoDefinition } from './definition'
-import { demoGraph, DemoSnapshot, encodeDemoSnapshot, initialSnapshot, restoreDemo } from './demo'
-import { DemoCreateRun, demoVersion1, demoVersion2 } from './input'
-import { DemoData } from './node'
+import { demoDefinition } from './definition.ts'
+import { demoGraph, DemoSnapshot, encodeDemoSnapshot, initialSnapshot, restoreDemo } from './demo.ts'
+import { DemoCreateRun, demoVersion1, demoVersion2 } from './input.ts'
+import { DemoData } from './node.ts'
 
 const snapshotCodec = Schema.toCodecJson(DemoSnapshot)
 const fixture = (version: typeof demoVersion1): Run => ({

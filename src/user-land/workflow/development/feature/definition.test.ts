@@ -4,11 +4,11 @@ import { describe, expect, it } from 'vite-plus/test'
 
 import { JsonObject, type Run } from '@/core/feature/workflow/domain/model'
 
-import { developmentDefinition } from './definition'
-import { restoreDevelopment } from './development'
-import { DevelopmentMachine, DevelopmentStates } from './development-machine'
-import { DevelopmentCreateRun } from './input'
-import { developmentVersion } from './input'
+import { developmentDefinition } from './definition.ts'
+import { DevelopmentMachine, DevelopmentStates } from './development-machine.ts'
+import { restoreDevelopment } from './development.ts'
+import { DevelopmentCreateRun } from './input.ts'
+import { developmentVersion } from './input.ts'
 
 const input = {
   workflowId: 'jcode-development',

@@ -3,8 +3,8 @@ import type { Effect, Scope } from 'effect'
 import type { HttpServerRequest } from 'effect/http'
 import { expectTypeOf, it } from 'vite-plus/test'
 
-import type { ControlApi } from './control-api'
-import type { makeWebWorker } from './worker'
+import type { ControlApi } from './control-api.ts'
+import type { makeWebWorker } from './worker.ts'
 
 type FrontendFetch = Effect.Success<typeof makeWebWorker>['fetch']
 

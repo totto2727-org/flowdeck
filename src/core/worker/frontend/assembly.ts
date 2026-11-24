@@ -6,7 +6,7 @@ import { frontendAuthorization } from '@/core/worker/frontend/feature/authorizat
 import { ControlApi, makeControlApi } from '@/core/worker/frontend/feature/control-api'
 import { makeWebWorker, WebWorker } from '@/core/worker/frontend/feature/worker'
 
-import { AccessDenied, authorizeAccess } from './access-auth'
+import { AccessDenied, authorizeAccess } from './access-auth.ts'
 
 const AccessEnvironment = Schema.Struct({ FLOWDECK_ACCESS_AUD: Schema.NonEmptyString })
 const decodeAccessEnvironment = Schema.decodeUnknownEffect(AccessEnvironment)

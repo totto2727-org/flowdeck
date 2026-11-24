@@ -4,8 +4,8 @@ import { Effect } from 'effect'
 import { Moon, Sun } from 'lucide-react'
 import { useSyncExternalStore } from 'react'
 
-import { Button } from './components/generated/button'
-import { browserTheme, selectTheme, serverTheme, subscribeTheme } from './theme'
+import { Button } from './components/generated/button.tsx'
+import { browserTheme, selectTheme, serverTheme, subscribeTheme } from './theme.ts'
 
 export function ThemeToggle({ disabled }: { readonly disabled: boolean }) {
   const theme = useSyncExternalStore(subscribeTheme, browserTheme, serverTheme)

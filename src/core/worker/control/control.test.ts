@@ -3,7 +3,7 @@ import { Effect, Result, Schema, Scope } from 'effect'
 import { HttpEffect } from 'effect/http'
 import { describe, expect, expectTypeOf, it, vi } from 'vite-plus/test'
 
-import { makeControl } from './control'
+import { makeControl } from './control.ts'
 
 const encodeReply = Schema.encodeSync(
   Schema.fromJsonString(Schema.toCodecJson(Schema.Result(Schema.Json, Schema.Json))),

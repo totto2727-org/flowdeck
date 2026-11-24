@@ -26,6 +26,7 @@ import { WorkflowRegistry } from '@/core/feature/workflow/services/workflow-defi
 import { Workflows } from '@/core/feature/workflow/services/workflows'
 import { ApiRoutes } from '@/core/worker/control/feature/router'
 
+import { DevelopmentMachine, DevelopmentStates } from './development-machine.ts'
 import {
   DevelopmentSnapshotJson,
   developmentGraph,
@@ -34,9 +35,8 @@ import {
   restoreDevelopment,
   resumeDevelopmentRun,
   startDevelopmentRun,
-} from './development'
-import { DevelopmentMachine, DevelopmentStates } from './development-machine'
-import { DevelopmentCreateRun, developmentVersion } from './input'
+} from './development.ts'
+import { DevelopmentCreateRun, developmentVersion } from './input.ts'
 
 const input = {
   workflowId: 'jcode-development',

@@ -5,8 +5,8 @@ import { Layer } from 'effect'
 import { WorkflowRegistry } from '@/core/feature/workflow/services/workflow-definition'
 import { Workflows } from '@/core/feature/workflow/services/workflows'
 
-import { WorkflowStoreLive } from './database'
-import { makeWorkflows } from './workflow'
+import { WorkflowStoreLive } from './database.ts'
+import { makeWorkflows } from './workflow.ts'
 
 /** The composition root supplies the installed workflows without coupling the runtime to them. */
 export const makeWorkflowRuntime = <E, R>(registry: Layer.Layer<WorkflowRegistry, E, R>) =>

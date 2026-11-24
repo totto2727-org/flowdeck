@@ -1,9 +1,9 @@
 import { ConfigProvider, Effect } from 'effect'
 import { describe, expect, it } from 'vite-plus/test'
 
-import { accessPolicyId, frontendHostname } from './access'
-import { authorizeAccess } from './access-auth'
-import { accessAudienceFromEnvironment } from './assembly'
+import { authorizeAccess } from './access-auth.ts'
+import { accessPolicyId, frontendHostname } from './access.ts'
+import { accessAudienceFromEnvironment } from './assembly.ts'
 
 const production = { aud: 'flowdeck-audience' }
 const admitted = (aud = 'flowdeck-audience') => Effect.succeed({ aud })

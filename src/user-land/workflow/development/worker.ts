@@ -21,8 +21,8 @@ import { workspaceProxyBuild } from '@/core/worker/pi/feature/workspace-proxy-bu
 import { PiRun } from '@/core/worker/pi/run'
 import { PiSdk } from '@/core/worker/pi/sdk-service'
 
-import { DevelopmentWorkflow } from './definition'
-import { DevelopmentExecutor, makeDevelopmentExecutor } from './feature/development'
+import { DevelopmentWorkflow } from './definition.ts'
+import { DevelopmentExecutor, makeDevelopmentExecutor } from './feature/development.ts'
 
 const decodeRunId = Schema.decodeUnknownEffect(RunId)
 

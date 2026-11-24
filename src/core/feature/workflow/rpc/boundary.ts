@@ -9,7 +9,7 @@ import {
   StorageConflict,
 } from '@/core/feature/workflow/domain/errors'
 
-import { RemoteWorkerError, Rfc9457ProblemDetails } from './problem'
+import { RemoteWorkerError, Rfc9457ProblemDetails } from './problem.ts'
 
 const RpcReply = Schema.Result(Schema.Json, Rfc9457ProblemDetails)
 const wire = Schema.fromJsonString(Schema.toCodecJson(RpcReply))

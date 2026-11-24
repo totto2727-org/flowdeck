@@ -1,6 +1,6 @@
 import { Schema, Tuple } from 'effect'
 
-import { EdgeId, EventId, ExecutionId, GraphId, NodeId, RunId, WorkflowId } from './identity'
+import { EdgeId, EventId, ExecutionId, GraphId, NodeId, RunId, WorkflowId } from './identity.ts'
 
 const Revision = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 export const PositiveInt = Schema.Int.check(Schema.isGreaterThan(0))

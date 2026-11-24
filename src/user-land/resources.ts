@@ -6,7 +6,7 @@ import { Frontend } from '@/core/worker/frontend/definition'
 import { DemoWorkflow } from '@/user-land/workflow/demo/definition'
 import { DevelopmentWorkflow } from '@/user-land/workflow/development/definition'
 
-import { ApplicationLayer } from './composition'
+import { ApplicationLayer } from './composition.ts'
 
 export { Database } from '@/core/worker/database'
 export { Control, DemoWorkflow, DevelopmentWorkflow, Frontend, Workflow }

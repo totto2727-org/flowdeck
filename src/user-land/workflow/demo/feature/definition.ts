@@ -2,10 +2,10 @@ import { Effect, Schema } from 'effect'
 
 import type { WorkflowDefinition } from '@/core/feature/workflow/services/workflow-definition'
 
-import { demoGraph, demoWorkflow, encodeDemoSnapshot, initialSnapshot } from './demo'
-import { DemoCreateRun } from './input'
+import { demoGraph, demoWorkflow, encodeDemoSnapshot, initialSnapshot } from './demo.ts'
+import { DemoCreateRun } from './input.ts'
 
-export { DemoCreateRun, DemoWorkflowVersion } from './input'
+export { DemoCreateRun, DemoWorkflowVersion } from './input.ts'
 
 const decodeInput = Schema.decodeUnknownEffect(DemoCreateRun)
 

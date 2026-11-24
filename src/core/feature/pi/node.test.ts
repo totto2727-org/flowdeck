@@ -5,8 +5,8 @@ import { describe, expect, it, vi } from 'vite-plus/test'
 import { WorkflowCheckpoint } from '@/core/feature/workflow/managed-runtime'
 import { ResourceStore } from '@/core/feature/workflow/resource-store'
 
-import { makePiNodeEffects, piNodeEvent, type PiExecution } from './node'
-import { PiSandbox } from './sandbox'
+import { makePiNodeEffects, piNodeEvent, type PiExecution } from './node.ts'
+import { PiSandbox } from './sandbox.ts'
 
 const execution: PiExecution = {
   executionId: 'execution_00000000-0000-4000-8000-000000000001',

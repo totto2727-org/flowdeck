@@ -6,7 +6,7 @@ import { JsonObject } from '@/core/feature/workflow/domain/model'
 import { projectMachineGraph } from '@/core/feature/workflow/graph'
 import { ResumeEvent, WorkflowCheckpoint } from '@/core/feature/workflow/managed-runtime'
 
-import { demoVersion2 } from './input'
+import { demoVersion2 } from './input.ts'
 import {
   approvalData,
   DemoData,
@@ -18,7 +18,7 @@ import {
   invalidDemoSnapshot,
   nodeEvent,
   publish,
-} from './node'
+} from './node.ts'
 
 // Crypto failures are infrastructure defects, never business-state transitions.
 const allocateExecution = makeExecutionId.pipe(Effect.orDie)

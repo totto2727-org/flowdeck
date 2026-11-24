@@ -7,7 +7,7 @@ import {
   WorkflowSummary as DomainWorkflowSummary,
 } from '@/core/feature/workflow/domain/model'
 
-import { presentDetail, presentRun, presentWorkflow } from './view-model'
+import { presentDetail, presentRun, presentWorkflow } from './view-model.ts'
 
 const runJson = {
   runId: 'run_00000000-0000-4000-8000-000000000001',

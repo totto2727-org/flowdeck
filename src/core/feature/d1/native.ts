@@ -2,7 +2,7 @@ import type { D1Database } from '@cloudflare/workers-types'
 import { makeQueryDatabaseClientFrom } from 'alchemy/Cloudflare/D1'
 import { Context, Effect, Layer } from 'effect'
 
-import { D1Client } from './client'
+import { D1Client } from './client.ts'
 
 export class D1Binding extends Context.Service<D1Binding, D1Database>()('flowdeck/D1Binding') {}
 

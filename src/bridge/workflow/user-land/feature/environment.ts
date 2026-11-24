@@ -5,7 +5,7 @@ import { rpcCall, rpcCommandResult, type WireWorkflowExecutor } from '@/core/fea
 import { DemoWorkflow } from '@/user-land/workflow/demo/definition'
 import { DevelopmentWorkflow } from '@/user-land/workflow/development/definition'
 
-import { DevelopmentWorkflowBinding, WorkflowBinding } from './workflow-binding'
+import { DevelopmentWorkflowBinding, WorkflowBinding } from './workflow-binding.ts'
 
 export const workflowEnvironment = Effect.gen(function* () {
   return { DEMO: yield* DemoWorkflow, DEVELOPMENT: yield* DevelopmentWorkflow }

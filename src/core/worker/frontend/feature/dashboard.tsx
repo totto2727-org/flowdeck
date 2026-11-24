@@ -6,14 +6,14 @@ import { Fragment, useState, useSyncExternalStore, useTransition } from 'react'
 
 import type { NodeId, RunId } from '@/core/feature/workflow/domain/identity'
 
-import { Badge } from './components/generated/badge'
-import { Button } from './components/generated/button'
-import { Card, CardContent } from './components/generated/card'
-import { NodeInspector, RunGraph } from './graph'
-import { eventLabel, orderedEvents, renderJson, runRecoveryAction, shortId } from './presentation'
-import { loadDashboard, resumeRun, selectRun, startRun, type DashboardData, type Result } from './server'
-import { ThemeToggle } from './theme-toggle'
-import type { RunDetail, RunEvent } from './view-model'
+import { Badge } from './components/generated/badge.tsx'
+import { Button } from './components/generated/button.tsx'
+import { Card, CardContent } from './components/generated/card.tsx'
+import { NodeInspector, RunGraph } from './graph.tsx'
+import { eventLabel, orderedEvents, renderJson, runRecoveryAction, shortId } from './presentation.ts'
+import { loadDashboard, resumeRun, selectRun, startRun, type DashboardData, type Result } from './server.ts'
+import { ThemeToggle } from './theme-toggle.tsx'
+import type { RunDetail, RunEvent } from './view-model.ts'
 
 function Status({ value }: { readonly value: string }) {
   return (

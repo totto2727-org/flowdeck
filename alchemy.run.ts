@@ -2,7 +2,7 @@ import { ALCHEMY_DEV, localState, Stack } from 'alchemy'
 import { providers, state as cloudflareState } from 'alchemy/Cloudflare'
 import { Effect, Layer } from 'effect'
 
-import { WorkerResources } from './alchemy'
+import { WorkerResources } from './alchemy.ts'
 
 /** Select infrastructure state only at the deployment entry point. */
 export const DeploymentState = Layer.unwrap(
