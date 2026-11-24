@@ -10,9 +10,8 @@ export class ControlError extends Data.TaggedError('ControlError')<{
   readonly message: string
 }> {}
 
-const makeRequest = <A>(schema: Schema.Codec<A, unknown>) => {
-  const decodeResponse = HttpClientResponse.schemaBodyJson(Schema.toCodecJson(schema))
-  return Effect.map(
+const makeRequest = <A, E>(decodeResponse: (response: HttpClientResponse.HttpClientResponse) => Effect.Effect<A, E>) =>
+  Effect.map(
     HttpClient.HttpClient,
     (client) => (outgoing: HttpClientRequest.HttpClientRequest) =>
       client.execute(outgoing).pipe(
@@ -24,10 +23,12 @@ const makeRequest = <A>(schema: Schema.Codec<A, unknown>) => {
         ),
       ),
   )
-}
-const makeWorkflowsRequest = makeRequest(WorkflowsResponse)
-const makeRunsRequest = makeRequest(RunsResponse)
-const makeRunDetailRequest = makeRequest(RunDetail)
+const decodeWorkflowsResponse = HttpClientResponse.schemaBodyJson(Schema.toCodecJson(WorkflowsResponse))
+const decodeRunsResponse = HttpClientResponse.schemaBodyJson(Schema.toCodecJson(RunsResponse))
+const decodeRunDetail = HttpClientResponse.schemaBodyJson(Schema.toCodecJson(RunDetail))
+const makeWorkflowsRequest = makeRequest(decodeWorkflowsResponse)
+const makeRunsRequest = makeRequest(decodeRunsResponse)
+const makeRunDetailRequest = makeRequest(decodeRunDetail)
 
 /** The only data capability exposed to Effront. Transport is supplied by the Worker. */
 export class ControlApi extends Context.Service<
