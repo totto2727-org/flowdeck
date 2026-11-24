@@ -1,5 +1,6 @@
 import type { ParamsArg, StandardQueryV1 } from '@totto2727/reylo'
 import * as QueryEffect from '@totto2727/reylo/effect'
+import type { PreparedStatement } from 'alchemy/Cloudflare/D1'
 import { Effect, Layer } from 'effect'
 
 import { makeD1Batch } from './batch.ts'
@@ -31,9 +32,9 @@ export const makeD1Queries = Effect.gen(function* () {
   const prepare = <Input, Output>(
     query: StandardQueryV1<Input, Output, 'sqlite'>,
     ...input: ParamsArg<NoInfer<Input>>
-  ) =>
+  ): Effect.Effect<PreparedStatement, QueryEffect.QueryPreparationError> =>
     QueryEffect.prepare(query, ...input).pipe(
       Effect.map((statement) => database.prepare(statement.text).bind(...statement.values)),
     )
-  return { run, prepare, batch: yield* makeD1Batch }
+  return { batch: yield* makeD1Batch, prepare, run }
 })

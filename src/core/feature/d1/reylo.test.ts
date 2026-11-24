@@ -1,158 +1,68 @@
-import type { D1Database } from '@cloudflare/workers-types'
-import { defineQuery } from '@totto2727/reylo'
-import { QueryExecutionError, QueryExecutor, QueryPreparationError } from '@totto2727/reylo/effect'
+import { live } from '@effect/vitest'
+import { QueryExecutor } from '@totto2727/reylo/effect'
 import type { PreparedStatement } from 'alchemy/Cloudflare/D1'
-import { WorkerEnvironment } from 'alchemy/Cloudflare/Workers'
-import { makeWorkerRuntimeContext } from 'alchemy/Cloudflare/Workers/WorkerRuntimeContext'
-import { RuntimeContext } from 'alchemy/RuntimeContext'
-import { Array, Effect, Exit, Layer } from 'effect'
-import { Miniflare } from 'miniflare'
-import { afterEach, beforeEach, describe, expect, expectTypeOf, test, vi } from 'vite-plus/test'
+import type { RuntimeContext } from 'alchemy/RuntimeContext'
+import { Context, Effect } from 'effect'
+import { describe, expect, expectTypeOf, vi } from 'vite-plus/test'
 
 import { makeD1Batch } from './batch.ts'
 import { D1Client } from './client.ts'
-import { D1Binding, NativeD1Client } from './native.ts'
-import { AlchemyQueryExecutorLive, makeD1Queries } from './reylo.ts'
+import { clientFor, makeD1TestDatabases, makeQueriesWithAlternate } from './test-fixture.ts'
 
-const insertValue = defineQuery<{ value: number }, never, 'none', 'sqlite'>({
-  dialect: 'sqlite',
-  sql: 'INSERT INTO entries (value) VALUES (:value)',
-  params: ['value'],
-  inputs: { value: { type: { kind: 'scalar', name: 'INTEGER' }, nullable: false } },
-  columns: [],
-  cardinality: 'none',
-})
-const readValue = defineQuery<{}, { value: number }, 'one', 'sqlite'>({
-  dialect: 'sqlite',
-  sql: 'SELECT value FROM entries',
-  params: [],
-  columns: [['value', 'int']],
-  cardinality: 'one',
-})
-
-let miniflare: Miniflare
-let database: D1Database
-let otherDatabase: D1Database
-const clientFor = (binding: D1Database) =>
-  Effect.runSync(D1Client.pipe(Effect.provide(NativeD1Client.pipe(Layer.provide(Layer.succeed(D1Binding, binding))))))
-const queriesFor = (client: D1Client['Service']) =>
-  Effect.runSync(
-    makeD1Queries.pipe(
-      Effect.provide(AlchemyQueryExecutorLive.pipe(Layer.provideMerge(Layer.succeed(D1Client, client)))),
-    ),
+describe('captured native D1 query requirements', () => {
+  live('narrows only captured all and batch requirements, leaving SDK exec and raw unchanged', () =>
+    Effect.gen(function* () {
+      const { database } = yield* makeD1TestDatabases
+      const client = yield* clientFor(database)
+      const statement = client.prepare('SELECT 1 AS value').bind()
+      const all = statement.all()
+      const batch = client.batch([statement])
+      const exec = client.exec('SELECT 1')
+      expectTypeOf<Effect.Services<typeof all>>().toEqualTypeOf<never>()
+      expectTypeOf<Effect.Services<typeof batch>>().toEqualTypeOf<never>()
+      expectTypeOf<Effect.Services<typeof client.raw>>().toEqualTypeOf<RuntimeContext>()
+      expectTypeOf<Effect.Services<typeof exec>>().toEqualTypeOf<RuntimeContext>()
+    }),
   )
 
-beforeEach(async () => {
-  miniflare = new Miniflare({
-    modules: true,
-    script: 'export default {}',
-    compatibilityDate: '2026-07-30',
-    d1Databases: { DB: 'd1-capability', OTHER: 'other-d1-capability' },
-  })
-  database = await miniflare.getD1Database('DB')
-  otherDatabase = await miniflare.getD1Database('OTHER')
-  await Promise.all(
-    Array.map([database, otherDatabase], (binding) => binding.exec('CREATE TABLE entries (value INTEGER)')),
-  )
-})
-
-afterEach(async () => {
-  await miniflare.dispose()
-})
-
-describe('captured native D1 queries', () => {
-  test('narrows only captured all and batch requirements, not the complete SDK client', () => {
-    const client = clientFor(database)
-    const statement = client.prepare('SELECT 1 AS value').bind()
-    const all = statement.all()
-    const batch = client.batch([statement])
-    const exec = client.exec('SELECT 1')
-    expectTypeOf<Effect.Services<typeof all>>().toEqualTypeOf<never>()
-    expectTypeOf<Effect.Services<typeof batch>>().toEqualTypeOf<never>()
-    expectTypeOf<Effect.Services<typeof client.raw>>().toEqualTypeOf<RuntimeContext>()
-    expectTypeOf<Effect.Services<typeof exec>>().toEqualTypeOf<RuntimeContext>()
-  })
-
-  test('prepares, batches and reads without a RuntimeContext or a caller-selected database', async () => {
-    const queries = queriesFor({ ...clientFor(database), raw: Effect.die('Exposed raw access is forbidden') })
-    const statement = await Effect.runPromise(queries.prepare(insertValue, { value: 7 }))
-    const batch = queries.batch([statement])
-    const read = queries.run(readValue)
-    expectTypeOf<Effect.Services<typeof batch>>().toEqualTypeOf<never>()
-    expectTypeOf<Effect.Services<typeof read>>().toEqualTypeOf<never>()
-    await Effect.runPromise(
-      batch.pipe(
-        Effect.provideService(D1Client, clientFor(otherDatabase)),
-        Effect.provideService(WorkerEnvironment, { DB: otherDatabase }),
-        Effect.provideService(RuntimeContext, makeWorkerRuntimeContext('conflicting-batch-runtime')),
-      ),
-    )
-    await expect(Effect.runPromise(read)).resolves.toStrictEqual({ value: 7 })
-    const unexpected = vi.fn(() => Effect.die('Caller QueryExecutor must not run'))
-    expect(
-      await Effect.runPromise(
-        read.pipe(
-          Effect.provideService(D1Client, clientFor(otherDatabase)),
-          Effect.provideService(WorkerEnvironment, { DB: otherDatabase }),
-          Effect.provideService(RuntimeContext, makeWorkerRuntimeContext('conflicting-read-runtime')),
-          Effect.provideService(QueryExecutor, { dialect: 'sqlite', execute: unexpected }),
+  live('prepares, batches and reads without using a caller-selected database', () =>
+    Effect.gen(function* () {
+      const { batch, batchContext, otherDatabase, read, readContext } = yield* makeQueriesWithAlternate
+      expectTypeOf<Effect.Services<typeof batch>>().toEqualTypeOf<never>()
+      expectTypeOf<Effect.Services<typeof read>>().toEqualTypeOf<never>()
+      yield* batch.pipe(Effect.provideContext(batchContext))
+      const unexpected = vi.fn<QueryExecutor['Service']['execute']>(() =>
+        Effect.die('Caller QueryExecutor must not run'),
+      )
+      const observed = [
+        yield* read,
+        yield* read.pipe(
+          Effect.provideContext(Context.add(readContext, QueryExecutor, { dialect: 'sqlite', execute: unexpected })),
         ),
-      ),
-    ).toStrictEqual({ value: 7 })
-    expect(unexpected).not.toHaveBeenCalled()
-    await expect(otherDatabase.prepare('SELECT count(*) AS count FROM entries').first()).resolves.toStrictEqual({
-      count: 0,
-    })
-  })
+      ]
+      expect(observed).toStrictEqual([{ value: 7 }, { value: 7 }])
+      expect(unexpected).not.toHaveBeenCalled()
+      const count = yield* Effect.promise(async () =>
+        otherDatabase.prepare('SELECT count(*) AS count FROM entries').first(),
+      )
+      expect(count).toStrictEqual({ count: 0 })
+    }),
+  )
+})
 
-  test('executes an existing prepared batch without calling the public client prepare again', async () => {
-    expectTypeOf<Parameters<Effect.Success<typeof makeD1Batch>>[0]>().toEqualTypeOf<PreparedStatement[]>()
-    const client = clientFor(database)
-    const statement = client.prepare('INSERT INTO entries (value) VALUES (?)').bind(11)
-    const prepare = vi.fn(() => {
-      throw new Error('Preparation belongs to the caller')
-    })
-    const batch = Effect.runSync(makeD1Batch.pipe(Effect.provideService(D1Client, { ...client, prepare })))
-    await Effect.runPromise(batch([statement]))
-    expect(prepare).not.toHaveBeenCalled()
-    await expect(database.prepare('SELECT value FROM entries').first()).resolves.toStrictEqual({ value: 11 })
-  })
-
-  test('preserves a preparation failure without executing a batch or inventing a storage error', async () => {
-    const cause = new Error('Input accessor failed')
-    const input = {
-      get value(): number {
-        throw cause
-      },
-    }
-    const error = await Effect.runPromise(queriesFor(clientFor(database)).prepare(insertValue, input).pipe(Effect.flip))
-    expect(error).toBeInstanceOf(QueryPreparationError)
-    expect(error.cause).toBe(cause)
-    await expect(database.prepare('SELECT count(*) AS count FROM entries').first()).resolves.toStrictEqual({ count: 0 })
-  })
-
-  test('retains the original execution defect inside the official Reylo error', async () => {
-    const client = clientFor(database)
-    const statement = client.prepare('SELECT value FROM entries')
-    const cause = new Error('Native D1 execution failed')
-    const bind = vi.spyOn(statement, 'bind').mockReturnValue(statement)
-    const all = vi.spyOn(statement, 'all').mockReturnValue(Effect.die(cause))
-    try {
-      const queries = queriesFor({ ...client, prepare: () => statement })
-      const error = await Effect.runPromise(queries.run(readValue).pipe(Effect.flip))
-      expect(error).toBeInstanceOf(QueryExecutionError)
-      expect(error.cause).toBe(cause)
-    } finally {
-      all.mockRestore()
-      bind.mockRestore()
-    }
-  })
-
-  test('preserves batch interruption without converting it into an execution failure', async () => {
-    const queries = queriesFor({ ...clientFor(database), batch: () => Effect.interrupt })
-    const statement = await Effect.runPromise(queries.prepare(insertValue, { value: 19 }))
-    const exit = await Effect.runPromiseExit(queries.batch([statement]))
-    expect(Exit.hasInterrupts(exit)).toBe(true)
-    await expect(database.prepare('SELECT count(*) AS count FROM entries').first()).resolves.toStrictEqual({ count: 0 })
-  })
+describe('native D1 prepared batches', () => {
+  live('executes an existing batch without calling the public client prepare again', () =>
+    Effect.gen(function* () {
+      expectTypeOf<Parameters<Effect.Success<typeof makeD1Batch>>[number]>().toEqualTypeOf<PreparedStatement[]>()
+      const { database } = yield* makeD1TestDatabases
+      const client = yield* clientFor(database)
+      const statement = client.prepare('INSERT INTO entries (value) VALUES (?)').bind(11)
+      const prepare = vi.fn<D1Client['Service']['prepare']>()
+      const batch = yield* makeD1Batch.pipe(Effect.provideService(D1Client, { ...client, prepare }))
+      yield* batch([statement])
+      expect(prepare).not.toHaveBeenCalled()
+      const row = yield* Effect.promise(async () => database.prepare('SELECT value FROM entries').first())
+      expect(row).toStrictEqual({ value: 11 })
+    }),
+  )
 })

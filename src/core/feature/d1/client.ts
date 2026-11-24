@@ -4,8 +4,8 @@ import { Context } from 'effect'
 import type { Effect } from 'effect'
 
 interface BoundD1Statement extends PreparedStatement {
-  bind(...values: Parameters<PreparedStatement['bind']>): BoundD1Statement
-  all<T = unknown>(): Effect.Effect<D1Result<T>>
+  all: <T = unknown>() => Effect.Effect<D1Result<T>>
+  bind: (...values: Parameters<PreparedStatement['bind']>) => BoundD1Statement
 }
 
 interface BoundD1Client extends QueryDatabaseClient {
@@ -24,5 +24,6 @@ export class D1Client extends Context.Service<D1Client, BoundD1Client>()('flowde
    * QueryDatabaseLocal and HTTP/deferred database-ID clients are NOT safe here:
    * their compatible SDK type does not prove execution is context-independent.
    */
-  static fromBinding = (client: QueryDatabaseClient): BoundD1Client => client as BoundD1Client
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Alchemy declares RuntimeContext for these operations even when the resolver is already captured.
+  public static fromBinding = (client: QueryDatabaseClient): BoundD1Client => client as BoundD1Client
 }
