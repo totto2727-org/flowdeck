@@ -6,7 +6,7 @@ import { defineQuery } from '@totto2727/reylo'
 import { QueryDecodeError, QueryExecutor } from '@totto2727/reylo/effect'
 import type { PreparedStatement } from 'alchemy/Cloudflare/D1'
 import { makeRpcStub } from 'alchemy/Cloudflare/Workers'
-import { Array, Crypto, DateTime, Effect, Exit, Fiber, Layer, Predicate, Result, Schema, SemVer } from 'effect'
+import { Array, Crypto, Data, DateTime, Effect, Exit, Fiber, Layer, Predicate, Result, Schema, SemVer } from 'effect'
 import { HttpRouter } from 'effect/http'
 import { TestCrypto } from 'effect/testing'
 import { Miniflare } from 'miniflare'
@@ -49,6 +49,8 @@ const version2 = SemVer.parseUnsafe('2.0.0')
 const now = DateTime.makeUnsafe('2026-10-17T12:00:00.000Z')
 const encodeDemo = Schema.encodeResult(Schema.toCodecJson(DemoSnapshot))
 const isJsonObject = Schema.is(Schema.JsonObject)
+// oxlint-disable-next-line rules/prefer-non-unknown-decode -- The native HTTP response body has no trusted shape.
+const decodeHttpRunDetail = Schema.decodeUnknownEffect(Schema.toCodecJson(RunDetail))
 const snapshotJson = (snapshot: DemoSnapshot): Schema.JsonObject => {
   const encoded = Result.getOrThrow(encodeDemo(snapshot))
   if (!isJsonObject(encoded)) {
@@ -93,7 +95,7 @@ let miniflare: Miniflare
 let database: D1Database
 let store: StoreService
 let storeLayer: Layer.Layer<Store>
-const freshStore = (): StoreService => Effect.runSync(Store.pipe(Effect.provide(storeLayer)))
+const freshStore = Effect.suspend(() => Store.pipe(Effect.provide(storeLayer)))
 const freshQueries = (): Effect.Effect<Effect.Success<typeof makeDatabaseQueries>> =>
   DatabaseQueries.pipe(
     Effect.provide(
@@ -125,22 +127,23 @@ beforeEach(async () => {
     Layer.provide(NativeD1Client),
     Layer.provide(Layer.succeed(D1Binding, database)),
   )
-  store = freshStore()
+  // oxlint-disable-next-line rules/no-effect-runtime-run -- Vitest's native setup hook owns one database layer per test.
+  store = Effect.runSync(freshStore)
 })
 afterEach(async () => {
   await miniflare.dispose()
 })
+const isolatedExit = Effect.fn(function* <A, E>(effect: Effect.Effect<A, E>) {
+  const fiber = yield* Effect.forkScoped(effect)
+  return yield* Fiber.await(fiber)
+})
 const provideTestServices = <A, E>(effect: Effect.Effect<A, E, Store | Crypto.Crypto>): Effect.Effect<A, E> =>
   effect.pipe(Effect.provideService(Store, store), Effect.provide(BrowserCrypto.layer))
-const run = async <A, E>(effect: Effect.Effect<A, E, Store | Crypto.Crypto>): Promise<A> =>
-  Effect.runPromise(provideTestServices(effect))
 const seedEffect = (
   runId = 'run_00000000-0000-4000-8000-000000000001',
   version: WorkflowVersion = version1,
 ): ReturnType<StoreService['create']> =>
   store.create(newRun(runId, version), demoGraph(version), demoDefinition.summary.name)
-const seed = async (runId?: string, version?: WorkflowVersion): Promise<void> =>
-  Effect.runPromise(seedEffect(runId, version))
 
 /*
  * A Layer substitutes only the static binding boundary. Its worker implementation
@@ -149,9 +152,13 @@ const seed = async (runId?: string, version?: WorkflowVersion): Promise<void> =>
 const testBinding = (): Layer.Layer<WorkflowBinding> =>
   Layer.succeed(WorkflowBinding, {
     start: (runId) =>
-      startRun(runId).pipe(Effect.provideService(Store, freshStore()), Effect.provide(BrowserCrypto.layer)),
+      Effect.flatMap(freshStore, (persisted) =>
+        startRun(runId).pipe(Effect.provideService(Store, persisted), Effect.provide(BrowserCrypto.layer)),
+      ),
     resume: (runId) =>
-      resumeRun(runId).pipe(Effect.provideService(Store, freshStore()), Effect.provide(BrowserCrypto.layer)),
+      Effect.flatMap(freshStore, (persisted) =>
+        resumeRun(runId).pipe(Effect.provideService(Store, persisted), Effect.provide(BrowserCrypto.layer)),
+      ),
   })
 const unavailableDevelopmentBinding = Layer.succeed(DevelopmentWorkflowBinding, {
   start: () =>
@@ -171,6 +178,19 @@ const unavailableDevelopmentBinding = Layer.succeed(DevelopmentWorkflowBinding, 
       }),
     ),
 })
+class DisconnectedWorkflow extends Data.TaggedError('DisconnectedWorkflow')<{ message: string }> {}
+
+const disconnectedRegistry = Effect.fn(function* (method: 'start' | 'resume') {
+  // The SDK converts the native promise rejection at the individual service-binding boundary.
+  const binding = makeRpcStub<WorkflowBinding['Service']>({
+    [method]: async () => Promise.reject(new DisconnectedWorkflow({ message: 'Individual worker disconnected' })),
+  })
+  return yield* makeWorkflowRegistry.pipe(
+    Effect.provideService(WorkflowBinding, binding),
+    Effect.provide(unavailableDevelopmentBinding),
+  )
+})
+
 const api = (registry?: Readonly<RegisteredWorkflow[]>) =>
   HttpRouter.toWebHandler(
     ApiRoutes.pipe(
@@ -359,36 +379,42 @@ describe('D1 persisted run store', () => {
     }),
   )
 
-  test('executes already prepared statements without preparing inside batch', async () => {
-    expectTypeOf<Parameters<Effect.Success<typeof makeD1Batch>>[0]>().toEqualTypeOf<PreparedStatement[]>()
-    const client = Effect.runSync(
-      D1Client.pipe(Effect.provide(NativeD1Client.pipe(Layer.provide(Layer.succeed(D1Binding, database))))),
-    )
-    const prepared = client
-      .prepare('INSERT INTO workflows (workflow_id, name) VALUES (?, ?)')
-      .bind('prepared', 'Prepared')
-    const prepare = vi.fn(() => {
-      throw new Error('Preparation must happen before batch')
-    })
-    const batch = Effect.runSync(makeD1Batch.pipe(Effect.provideService(D1Client, { ...client, prepare })))
-    await Effect.runPromise(batch([prepared]))
-    expect(prepare).not.toHaveBeenCalled()
-    await expect(
-      database.prepare('SELECT name FROM workflows WHERE workflow_id = ?').bind('prepared').first(),
-    ).resolves.toStrictEqual({ name: 'Prepared' })
-  })
+  live('executes already prepared statements without preparing inside batch', () =>
+    Effect.gen(function* () {
+      expectTypeOf<Parameters<Effect.Success<typeof makeD1Batch>>[0]>().toEqualTypeOf<PreparedStatement[]>()
+      const client = yield* D1Client.pipe(
+        Effect.provide(NativeD1Client.pipe(Layer.provide(Layer.succeed(D1Binding, database)))),
+      )
+      const prepared = client
+        .prepare('INSERT INTO workflows (workflow_id, name) VALUES (?, ?)')
+        .bind('prepared', 'Prepared')
+      const prepare = vi.fn(() => {
+        throw new Error('Preparation must happen before batch')
+      })
+      const batch = yield* makeD1Batch.pipe(Effect.provideService(D1Client, { ...client, prepare }))
+      yield* batch([prepared])
+      expect(prepare).not.toHaveBeenCalled()
+      yield* Effect.promise(async () =>
+        expect(
+          database.prepare('SELECT name FROM workflows WHERE workflow_id = ?').bind('prepared').first(),
+        ).resolves.toStrictEqual({ name: 'Prepared' }),
+      )
+    }),
+  )
 
-  test('keeps each store bound to its own Layer-provided database', async () => {
-    const otherDatabase = await miniflare.getD1Database('OTHER')
-    const migrations = await readD1Migrations('migrations')
-    await otherDatabase.batch(
-      Array.map(
-        Array.flatMap(migrations, (migration) => migration.queries),
-        (query) => otherDatabase.prepare(query),
-      ),
-    )
-    const otherStore = Effect.runSync(
-      Store.pipe(
+  live('keeps each store bound to its own Layer-provided database', () =>
+    Effect.gen(function* () {
+      const otherDatabase = yield* Effect.promise(async () => miniflare.getD1Database('OTHER'))
+      const migrations = yield* Effect.promise(async () => readD1Migrations('migrations'))
+      yield* Effect.promise(async () =>
+        otherDatabase.batch(
+          Array.map(
+            Array.flatMap(migrations, (migration) => migration.queries),
+            (query) => otherDatabase.prepare(query),
+          ),
+        ),
+      )
+      const otherStore = yield* Store.pipe(
         Effect.provide(
           D1StoreLive.pipe(
             Layer.provide(DatabaseQueriesLive),
@@ -397,22 +423,22 @@ describe('D1 persisted run store', () => {
             Layer.provide(Layer.succeed(D1Binding, otherDatabase)),
           ),
         ),
-      ),
-    )
-    const otherRunId = 'run_00000000-0000-4000-8000-000000000002'
-    await Effect.runPromise(otherStore.create(newRun(otherRunId), demoGraph(version1), demoDefinition.summary.name))
-    await expect(Effect.runPromise(store.listRuns)).resolves.toStrictEqual([])
-    await seed()
-    await expect(Effect.runPromise(store.listRuns)).resolves.toMatchObject([{ runId: command().runId }])
-    await expect(Effect.runPromise(otherStore.listRuns)).resolves.toMatchObject([{ runId: otherRunId }])
-  })
+      )
+      const otherRunId = 'run_00000000-0000-4000-8000-000000000002'
+      yield* otherStore.create(newRun(otherRunId), demoGraph(version1), demoDefinition.summary.name)
+      expect(yield* store.listRuns).toStrictEqual([])
+      yield* seedEffect()
+      expect(yield* store.listRuns).toMatchObject([{ runId: command().runId }])
+      expect(yield* otherStore.listRuns).toMatchObject([{ runId: otherRunId }])
+    }),
+  )
 
-  test('preserves executor interruption without converting it into a storage failure', async () => {
-    const client = Effect.runSync(
-      D1Client.pipe(Effect.provide(NativeD1Client.pipe(Layer.provide(Layer.succeed(D1Binding, database))))),
-    )
-    const interrupted = Effect.runSync(
-      Store.pipe(
+  live('preserves executor interruption without converting it into a storage failure', () =>
+    Effect.gen(function* () {
+      const client = yield* D1Client.pipe(
+        Effect.provide(NativeD1Client.pipe(Layer.provide(Layer.succeed(D1Binding, database)))),
+      )
+      const interrupted = yield* Store.pipe(
         Effect.provide(
           D1StoreLive.pipe(
             Layer.provide(DatabaseQueriesLive),
@@ -425,35 +451,33 @@ describe('D1 persisted run store', () => {
             ),
           ),
         ),
-      ),
-    )
-    const exit = await Effect.runPromiseExit(
-      interrupted.create(newRun(command().runId), demoGraph(version1), demoDefinition.summary.name),
-    )
-    expect(Exit.hasInterrupts(exit)).toBe(true)
-    await expect(Effect.runPromise(store.listRuns)).resolves.toStrictEqual([])
-  })
+      )
+      const exit = yield* isolatedExit(
+        interrupted.create(newRun(command().runId), demoGraph(version1), demoDefinition.summary.name),
+      )
+      expect(Exit.hasInterrupts(exit)).toBe(true)
+      expect(yield* store.listRuns).toStrictEqual([])
+    }),
+  )
 
   live('uses Alchemy executors without evaluating the raw client binding', () =>
     Effect.gen(function* () {
-      const client = Effect.runSync(
-        D1Client.pipe(Effect.provide(NativeD1Client.pipe(Layer.provide(Layer.succeed(D1Binding, database))))),
+      const client = yield* D1Client.pipe(
+        Effect.provide(NativeD1Client.pipe(Layer.provide(Layer.succeed(D1Binding, database)))),
       )
       const raw = vi.fn(() => {
         throw new Error('Raw access is forbidden')
       })
-      store = Effect.runSync(
-        Store.pipe(
-          Effect.provide(
-            D1StoreLive.pipe(
-              Layer.provide(DatabaseQueriesLive),
-              Layer.provide(AlchemyQueryExecutorLive),
-              Layer.provide(
-                Layer.succeed(D1Client, {
-                  ...client,
-                  raw: Effect.sync(raw),
-                }),
-              ),
+      store = yield* Store.pipe(
+        Effect.provide(
+          D1StoreLive.pipe(
+            Layer.provide(DatabaseQueriesLive),
+            Layer.provide(AlchemyQueryExecutorLive),
+            Layer.provide(
+              Layer.succeed(D1Client, {
+                ...client,
+                raw: Effect.sync(raw),
+              }),
             ),
           ),
         ),
@@ -463,7 +487,7 @@ describe('D1 persisted run store', () => {
       expect(yield* store.getGraph(demoGraph(version1).graphId)).toStrictEqual(demoGraph(version1))
       expect(yield* store.commit(command())).toMatchObject({ revision: 1 })
       expect(yield* store.getRun(command().runId)).toMatchObject({ revision: 1 })
-      expect(yield* store.getEvents(command().runId, { _tag: 'All' })).toHaveLength(1)
+      expect(yield* store.getEvents(command().runId, EventRange.All())).toHaveLength(1)
       expect(raw).not.toHaveBeenCalled()
     }),
   )
@@ -479,85 +503,100 @@ describe('D1 persisted run store', () => {
     }),
   )
 
-  test.each([
+  live.each([
     { runId: '00000000-0000-4000-8000-000000000001' },
     { workflowId: '../demo' },
     { graphId: 'demo:1.0.0:graph:1' },
-  ])('rejects invalid run identity before writing: %j', async (identity) => {
-    await expect(
-      Effect.runPromise(
-        store.create(
-          { ...newRun('run_00000000-0000-4000-8000-000000000001'), ...identity },
-          demoGraph(version1),
-          demoDefinition.summary.name,
+  ])('rejects invalid run identity before writing: %j', (identity) =>
+    Effect.gen(function* () {
+      expect(
+        yield* Effect.flip(
+          store.create(
+            { ...newRun('run_00000000-0000-4000-8000-000000000001'), ...identity },
+            demoGraph(version1),
+            demoDefinition.summary.name,
+          ),
         ),
-      ),
-    ).rejects.toMatchObject({ _tag: 'ExternalError', kind: 'storage' })
-    await expect(Effect.runPromise(store.listRuns)).resolves.toStrictEqual([])
-  })
+      ).toMatchObject({ _tag: 'ExternalError', kind: 'storage' })
+      expect(yield* store.listRuns).toStrictEqual([])
+    }),
+  )
 
-  test('persists a version string but returns a real SemVer domain value', async () => {
-    await seed()
-    const row = await database
-      .prepare('SELECT workflow_version FROM runs WHERE run_id = ?')
-      .bind('run_00000000-0000-4000-8000-000000000001')
-      .first<{ workflow_version: string }>()
-    expect(row?.workflow_version).toBe('1.0.0')
-    const restored = await Effect.runPromise(freshStore().getRun('run_00000000-0000-4000-8000-000000000001'))
-    expect(SemVer.isSemVer(restored.workflowVersion)).toBe(true)
-    expect(SemVer.equals(restored.workflowVersion, version1)).toBe(true)
-  })
+  live('persists a version string but returns a real SemVer domain value', () =>
+    Effect.gen(function* () {
+      yield* seedEffect()
+      const row = yield* Effect.promise(async () =>
+        database
+          .prepare('SELECT workflow_version FROM runs WHERE run_id = ?')
+          .bind('run_00000000-0000-4000-8000-000000000001')
+          .first<{ workflow_version: string }>(),
+      )
+      expect(row?.workflow_version).toBe('1.0.0')
+      const restored = yield* (yield* freshStore).getRun('run_00000000-0000-4000-8000-000000000001')
+      expect(SemVer.isSemVer(restored.workflowVersion)).toBe(true)
+      expect(SemVer.equals(restored.workflowVersion, version1)).toBe(true)
+    }),
+  )
 
-  test('persists timestamp strings and nullable SQL node identity but restores DateTime and event variants', async () => {
-    await seed()
-    const eventId = 'event_00000000-0000-4000-8000-000000000002'
-    const runEvent = { eventId, type: 'run.started', payload: {}, createdAt: now } as const
-    await Effect.runPromise(store.commit(command({ events: [runEvent, ...command().events] })))
-    const row = await database
-      .prepare('SELECT created_at, updated_at FROM runs WHERE run_id = ?')
-      .bind(command().runId)
-      .first()
-    expect(row).toStrictEqual({ created_at: DateTime.formatIso(now), updated_at: DateTime.formatIso(now) })
-    const physical = await database
-      .prepare('SELECT node_id, execution_id, attempt, created_at FROM run_events WHERE event_id = ?')
-      .bind(eventId)
-      .first()
-    expect(physical).toStrictEqual({
-      node_id: null,
-      execution_id: null,
-      attempt: null,
-      created_at: DateTime.formatIso(now),
-    })
-    const restored = freshStore()
-    await expect(Effect.runPromise(restored.getRun(command().runId))).resolves.toMatchObject({
-      createdAt: now,
-      updatedAt: now,
-    })
-    await expect(Effect.runPromise(restored.getEvents(command().runId, { _tag: 'All' }))).resolves.toStrictEqual([
-      { ...runEvent, runId: command().runId, sequence: 1 },
-      { ...Array.getUnsafe(command().events, 0), runId: command().runId, sequence: 2 },
-    ])
-  })
+  live('persists timestamp strings and nullable SQL node identity but restores DateTime and event variants', () =>
+    Effect.gen(function* () {
+      yield* seedEffect()
+      const eventId = 'event_00000000-0000-4000-8000-000000000002'
+      const runEvent = { eventId, type: 'run.started', payload: {}, createdAt: now } as const
+      yield* store.commit(command({ events: [runEvent, ...command().events] }))
+      const row = yield* Effect.promise(async () =>
+        database.prepare('SELECT created_at, updated_at FROM runs WHERE run_id = ?').bind(command().runId).first(),
+      )
+      expect(row).toStrictEqual({ created_at: DateTime.formatIso(now), updated_at: DateTime.formatIso(now) })
+      const physical = yield* Effect.promise(async () =>
+        database
+          .prepare('SELECT node_id, execution_id, attempt, created_at FROM run_events WHERE event_id = ?')
+          .bind(eventId)
+          .first(),
+      )
+      expect(physical).toStrictEqual({
+        node_id: null,
+        execution_id: null,
+        attempt: null,
+        created_at: DateTime.formatIso(now),
+      })
+      const restored = yield* freshStore
+      expect(yield* restored.getRun(command().runId)).toMatchObject({
+        createdAt: now,
+        updatedAt: now,
+      })
+      expect(yield* restored.getEvents(command().runId, EventRange.All())).toStrictEqual([
+        { ...runEvent, runId: command().runId, sequence: 1 },
+        { ...Array.getUnsafe(command().events, 0), runId: command().runId, sequence: 2 },
+      ])
+    }),
+  )
 
-  test('rejects an obsolete persisted version instead of normalizing it', async () => {
-    await seed()
-    // Corrupt only this isolated database to exercise the read boundary beyond immutable-write guards.
-    await database.prepare('DROP TRIGGER run_identity_immutable').run()
-    await database
-      .prepare('INSERT INTO workflow_versions (workflow_id, version, graph_id) VALUES (?, ?, ?)')
-      .bind('demo', 'v1', demoGraph(version1).graphId)
-      .run()
-    await database
-      .prepare('UPDATE runs SET workflow_version = ? WHERE run_id = ?')
-      .bind('v1', 'run_00000000-0000-4000-8000-000000000001')
-      .run()
-    await expect(Effect.runPromise(store.getRun('run_00000000-0000-4000-8000-000000000001'))).rejects.toMatchObject({
-      _tag: 'ExternalError',
-      kind: 'storage',
-    })
-  })
+  live('rejects an obsolete persisted version instead of normalizing it', () =>
+    Effect.gen(function* () {
+      yield* seedEffect()
+      // Corrupt only this isolated database to exercise the read boundary beyond immutable-write guards.
+      yield* Effect.promise(async () => database.prepare('DROP TRIGGER run_identity_immutable').run())
+      yield* Effect.promise(async () =>
+        database
+          .prepare('INSERT INTO workflow_versions (workflow_id, version, graph_id) VALUES (?, ?, ?)')
+          .bind('demo', 'v1', demoGraph(version1).graphId)
+          .run(),
+      )
+      yield* Effect.promise(async () =>
+        database
+          .prepare('UPDATE runs SET workflow_version = ? WHERE run_id = ?')
+          .bind('v1', 'run_00000000-0000-4000-8000-000000000001')
+          .run(),
+      )
+      expect(yield* Effect.flip(store.getRun('run_00000000-0000-4000-8000-000000000001'))).toMatchObject({
+        _tag: 'ExternalError',
+        kind: 'storage',
+      })
+    }),
+  )
 
-  test.each([
+  live.each([
     { commitId: '00000000-0000-4000-8000-000000000001' },
     { runId: '00000000-0000-4000-8000-000000000001' },
     { events: [{ ...Array.getUnsafe(command().events, 0), eventId: 'event-1' }] },
@@ -567,16 +606,18 @@ describe('D1 persisted run store', () => {
         { ...Array.getUnsafe(command().events, 0), executionId: 'command_00000000-0000-4000-8000-000000000001' },
       ],
     },
-  ])('rejects invalid commit identities atomically: %j', async (identity) => {
-    await seed()
-    const before = await Effect.runPromise(store.getRun('run_00000000-0000-4000-8000-000000000001'))
-    await expect(Effect.runPromise(store.commit(command(identity)))).rejects.toMatchObject({
-      _tag: 'ExternalError',
-      kind: 'storage',
-    })
-    await expect(Effect.runPromise(store.getRun(before.runId))).resolves.toStrictEqual(before)
-    await expect(Effect.runPromise(store.getEvents(before.runId, { _tag: 'All' }))).resolves.toStrictEqual([])
-  })
+  ])('rejects invalid commit identities atomically: %j', (identity) =>
+    Effect.gen(function* () {
+      yield* seedEffect()
+      const before = yield* store.getRun('run_00000000-0000-4000-8000-000000000001')
+      expect(yield* Effect.flip(store.commit(command(identity)))).toMatchObject({
+        _tag: 'ExternalError',
+        kind: 'storage',
+      })
+      expect(yield* store.getRun(before.runId)).toStrictEqual(before)
+      expect(yield* store.getEvents(before.runId, EventRange.All())).toStrictEqual([])
+    }),
+  )
 
   live('orders random run IDs by explicit creation time rather than ID value', () =>
     Effect.gen(function* () {
@@ -610,7 +651,7 @@ describe('D1 persisted run store', () => {
       expect(yield* store.getRun('run_00000000-0000-4000-8000-000000000001')).toStrictEqual(
         newRun('run_00000000-0000-4000-8000-000000000001'),
       )
-      expect(yield* store.getEvents('run_00000000-0000-4000-8000-000000000001', { _tag: 'All' })).toStrictEqual([])
+      expect(yield* store.getEvents('run_00000000-0000-4000-8000-000000000001', EventRange.All())).toStrictEqual([])
       expect(yield* store.commit(command())).toStrictEqual({
         commitId: 'commit_00000000-0000-4000-8000-000000000001',
         eventCount: 1,
@@ -624,7 +665,7 @@ describe('D1 persisted run store', () => {
   live('persists run identity, graph and initial snapshot across store reconstruction', () =>
     Effect.gen(function* () {
       yield* seedEffect()
-      const restored = freshStore()
+      const restored = yield* freshStore
       expect(yield* restored.getRun('run_00000000-0000-4000-8000-000000000001')).toStrictEqual(
         newRun('run_00000000-0000-4000-8000-000000000001'),
       )
@@ -648,7 +689,7 @@ describe('D1 persisted run store', () => {
         snapshot: command().snapshot,
         status: 'running',
       })
-      expect(yield* store.getEvents('run_00000000-0000-4000-8000-000000000001', { _tag: 'All' })).toStrictEqual([
+      expect(yield* store.getEvents('run_00000000-0000-4000-8000-000000000001', EventRange.All())).toStrictEqual([
         { ...Array.getUnsafe(command().events, 0), runId: 'run_00000000-0000-4000-8000-000000000001', sequence: 1 },
       ])
     }),
@@ -662,7 +703,7 @@ describe('D1 persisted run store', () => {
       expect(yield* store.getRun('run_00000000-0000-4000-8000-000000000001')).toMatchObject({
         revision: 1,
       })
-      expect(yield* store.getEvents('run_00000000-0000-4000-8000-000000000001', { _tag: 'All' })).toHaveLength(1)
+      expect(yield* store.getEvents('run_00000000-0000-4000-8000-000000000001', EventRange.All())).toHaveLength(1)
     }),
   )
 
@@ -742,7 +783,7 @@ describe('D1 persisted run store', () => {
         revision: 1,
         snapshot: command().snapshot,
       })
-      expect(yield* store.getEvents('run_00000000-0000-4000-8000-000000000001', { _tag: 'All' })).toHaveLength(1)
+      expect(yield* store.getEvents('run_00000000-0000-4000-8000-000000000001', EventRange.All())).toHaveLength(1)
       // The rejected receipt must not reserve its ID or revision.
       expect(
         yield* store.commit(
@@ -792,7 +833,7 @@ describe('D1 persisted run store', () => {
       expect(
         yield* store.getEvents('run_00000000-0000-4000-8000-000000000001', { _tag: 'ThroughRevision', revision: 1 }),
       ).toHaveLength(1)
-      expect(yield* store.getEvents('run_00000000-0000-4000-8000-000000000001', { _tag: 'All' })).toHaveLength(2)
+      expect(yield* store.getEvents('run_00000000-0000-4000-8000-000000000001', EventRange.All())).toHaveLength(2)
     }),
   )
 
@@ -827,31 +868,29 @@ describe('demo cold restoration', () => {
           storedEventIds: Readonly<string[]>
         }[]
       > = []
-      const executor = Effect.runSync(
-        makeDemoExecutor.pipe(
-          Effect.provide(
-            Layer.mergeAll(
-              Layer.succeed(Store, store),
-              BrowserCrypto.layer,
-              Layer.succeed(LifecycleHook, {
-                afterCommit: (events, ack) =>
-                  Effect.gen(function* () {
-                    const persisted = yield* store.getRun(ack.runId).pipe(Effect.orDie)
-                    const committed = yield* store
-                      .getEvents(ack.runId, EventRange.ThroughRevision({ revision: ack.revision }))
-                      .pipe(Effect.orDie)
-                    observations = Array.append(observations, {
-                      revision: ack.revision,
-                      persisted,
-                      eventIds: Array.map(events, (event) => event.eventId),
-                      storedEventIds: Array.map(
-                        Array.filter(committed, (event) => event.sequence >= ack.firstSequence),
-                        (event) => event.eventId,
-                      ),
-                    })
-                  }),
-              }),
-            ),
+      const executor = yield* makeDemoExecutor.pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            Layer.succeed(Store, store),
+            BrowserCrypto.layer,
+            Layer.succeed(LifecycleHook, {
+              afterCommit: (events, ack) =>
+                Effect.gen(function* () {
+                  const persisted = yield* store.getRun(ack.runId).pipe(Effect.orDie)
+                  const committed = yield* store
+                    .getEvents(ack.runId, EventRange.ThroughRevision({ revision: ack.revision }))
+                    .pipe(Effect.orDie)
+                  observations = Array.append(observations, {
+                    revision: ack.revision,
+                    persisted,
+                    eventIds: Array.map(events, (event) => event.eventId),
+                    storedEventIds: Array.map(
+                      Array.filter(committed, (event) => event.sequence >= ack.firstSequence),
+                      (event) => event.eventId,
+                    ),
+                  })
+                }),
+            }),
           ),
         ),
       )
@@ -866,13 +905,13 @@ describe('demo cold restoration', () => {
     }),
   )
 
-  test('does not dispatch lifecycle hooks when D1 rejects the checkpoint revision', async () => {
-    const runId = command().runId
-    await seed(runId)
-    const persisted = store
-    const afterCommit = vi.fn(() => Effect.void)
-    const executor = Effect.runSync(
-      makeDemoExecutor.pipe(
+  live('does not dispatch lifecycle hooks when D1 rejects the checkpoint revision', () =>
+    Effect.gen(function* () {
+      const runId = command().runId
+      yield* seedEffect(runId)
+      const persisted = store
+      const afterCommit = vi.fn(() => Effect.void)
+      const executor = yield* makeDemoExecutor.pipe(
         Effect.provide(
           Layer.mergeAll(
             Layer.succeed(Store, {
@@ -883,41 +922,40 @@ describe('demo cold restoration', () => {
             BrowserCrypto.layer,
           ),
         ),
-      ),
-    )
-    await expect(Effect.runPromise(executor.start(runId))).rejects.toBeDefined()
-    expect(afterCommit).not.toHaveBeenCalled()
-    await expect(Effect.runPromise(persisted.getRun(runId))).resolves.toMatchObject({ revision: 0, status: 'pending' })
-    await expect(Effect.runPromise(persisted.getEvents(runId, EventRange.All()))).resolves.toStrictEqual([])
-  })
+      )
+      expect(yield* Effect.flip(executor.start(runId))).toBeDefined()
+      expect(afterCommit).not.toHaveBeenCalled()
+      expect(yield* persisted.getRun(runId)).toMatchObject({ revision: 0, status: 'pending' })
+      expect(yield* persisted.getEvents(runId, EventRange.All())).toStrictEqual([])
+    }),
+  )
 
-  test.each([version1, version2] as const)(
+  live.each([version1, version2] as const)(
     'captures demo dependencies once and executes %s without a caller context',
-    async (version) => {
-      const runId = command().runId
-      await seed(runId, version)
-      const executor = Effect.runSync(
-        makeDemoExecutor.pipe(
+    (version) =>
+      Effect.gen(function* () {
+        const runId = command().runId
+        yield* seedEffect(runId, version)
+        const executor = yield* makeDemoExecutor.pipe(
           Effect.provide(
             Layer.mergeAll(
               Layer.succeed(Store, store),
               TestCrypto.layer('captured-demo-executor').pipe(Layer.provide(BrowserCrypto.layer)),
             ),
           ),
-        ),
-      )
-      await Effect.runPromise(executor.start(runId))
-      await expect(Effect.runPromise(freshStore().getRun(runId))).resolves.toMatchObject({
-        revision: 2,
-        status: 'waiting',
-      })
-      await Effect.runPromise(executor.resume(runId))
-      await expect(Effect.runPromise(freshStore().getRun(runId))).resolves.toMatchObject({
-        revision: 4,
-        status: 'completed',
-      })
-      await expect(Effect.runPromise(store.getEvents(runId, { _tag: 'All' }))).resolves.toHaveLength(10)
-    },
+        )
+        yield* executor.start(runId)
+        expect(yield* (yield* freshStore).getRun(runId)).toMatchObject({
+          revision: 2,
+          status: 'waiting',
+        })
+        yield* executor.resume(runId)
+        expect(yield* (yield* freshStore).getRun(runId)).toMatchObject({
+          revision: 4,
+          status: 'completed',
+        })
+        expect(yield* store.getEvents(runId, EventRange.All())).toHaveLength(10)
+      }),
   )
 
   live('generates prefixed UUIDv4 execution, event and commit identities and ACKs an exact duplicate commit', () =>
@@ -935,7 +973,7 @@ describe('demo cold restoration', () => {
       yield* provideTestServices(startRun('run_00000000-0000-4000-8000-000000000001'))
       yield* provideTestServices(resumeRun('run_00000000-0000-4000-8000-000000000001'))
       expect(Array.every(commits, (input) => Schema.is(CommitId)(input.commitId))).toBe(true)
-      const events = yield* store.getEvents('run_00000000-0000-4000-8000-000000000001', { _tag: 'All' })
+      const events = yield* store.getEvents('run_00000000-0000-4000-8000-000000000001', EventRange.All())
       expect(Array.every(events, (event) => Schema.is(EventId)(event.eventId))).toBe(true)
       expect(
         Array.every(events, (event) => !('executionId' in event) || Schema.is(ExecutionId)(event.executionId)),
@@ -947,61 +985,58 @@ describe('demo cold restoration', () => {
         revision: 1,
       })
       expect(yield* store.getRun('run_00000000-0000-4000-8000-000000000001')).toStrictEqual(before)
-      expect(yield* store.getEvents('run_00000000-0000-4000-8000-000000000001', { _tag: 'All' })).toStrictEqual(events)
+      expect(yield* store.getEvents('run_00000000-0000-4000-8000-000000000001', EventRange.All())).toStrictEqual(events)
     }),
   )
 
-  test.each([version1, version2] as const)(
+  live.each([version1, version2] as const)(
     'restores the waiting %s version in a new service and completes only after explicit resume',
-    async (version) => {
-      await seed('run_00000000-0000-4000-8000-000000000001', version)
-      await run(startRun('run_00000000-0000-4000-8000-000000000001'))
-      const waiting = await Effect.runPromise(store.getRun('run_00000000-0000-4000-8000-000000000001'))
-      expect(waiting).toMatchObject({
-        status: 'waiting',
-        revision: 2,
-        workflowVersion: version,
-        snapshot: { version: SemVer.format(version), machine: { active: [{ path: '' }, { path: 'approval' }] } },
-      })
-      store = freshStore()
-      await run(startRun('run_00000000-0000-4000-8000-000000000001'))
-      await expect(Effect.runPromise(store.getRun('run_00000000-0000-4000-8000-000000000001'))).resolves.toStrictEqual(
-        waiting,
-      )
-      await run(resumeRun('run_00000000-0000-4000-8000-000000000001'))
-      const completed = await Effect.runPromise(store.getRun('run_00000000-0000-4000-8000-000000000001'))
-      expect(completed).toMatchObject({
-        status: 'completed',
-        revision: 4,
-        snapshot: {
-          version: SemVer.format(version),
-          machine: {
-            active: [
-              { path: '' },
-              {
-                path: 'completed',
-                value: {
-                  result: SemVer.equals(version, version1) ? 'published:draft:v1' : 'published:draft:v2:reviewed',
+    (version) =>
+      Effect.gen(function* () {
+        yield* seedEffect('run_00000000-0000-4000-8000-000000000001', version)
+        yield* provideTestServices(startRun('run_00000000-0000-4000-8000-000000000001'))
+        const waiting = yield* store.getRun('run_00000000-0000-4000-8000-000000000001')
+        expect(waiting).toMatchObject({
+          status: 'waiting',
+          revision: 2,
+          workflowVersion: version,
+          snapshot: { version: SemVer.format(version), machine: { active: [{ path: '' }, { path: 'approval' }] } },
+        })
+        store = yield* freshStore
+        yield* provideTestServices(startRun('run_00000000-0000-4000-8000-000000000001'))
+        expect(yield* store.getRun('run_00000000-0000-4000-8000-000000000001')).toStrictEqual(waiting)
+        yield* provideTestServices(resumeRun('run_00000000-0000-4000-8000-000000000001'))
+        const completed = yield* store.getRun('run_00000000-0000-4000-8000-000000000001')
+        expect(completed).toMatchObject({
+          status: 'completed',
+          revision: 4,
+          snapshot: {
+            version: SemVer.format(version),
+            machine: {
+              active: [
+                { path: '' },
+                {
+                  path: 'completed',
+                  value: {
+                    result: SemVer.equals(version, version1) ? 'published:draft:v1' : 'published:draft:v2:reviewed',
+                  },
                 },
-              },
-            ],
+              ],
+            },
           },
-        },
-      })
-      const events = await Effect.runPromise(
-        store.getEvents('run_00000000-0000-4000-8000-000000000001', { _tag: 'All' }),
-      )
-      expect(Array.map(events, (event) => event.sequence)).toStrictEqual(Array.range(1, 10))
-      expect(Array.filter(events, (event) => event.type === 'node.started' && event.nodeId === 'prepare')).toHaveLength(
-        1,
-      )
-      await expect(run(resumeRun('run_00000000-0000-4000-8000-000000000001'))).rejects.toMatchObject({
-        _tag: 'InvalidOperation',
-      })
-      await expect(Effect.runPromise(store.getRun('run_00000000-0000-4000-8000-000000000001'))).resolves.toStrictEqual(
-        completed,
-      )
-    },
+        })
+        const events = yield* store.getEvents('run_00000000-0000-4000-8000-000000000001', EventRange.All())
+        expect(Array.map(events, (event) => event.sequence)).toStrictEqual(Array.range(1, 10))
+        expect(
+          Array.filter(events, (event) => event.type === 'node.started' && event.nodeId === 'prepare'),
+        ).toHaveLength(1)
+        expect(
+          yield* Effect.flip(provideTestServices(resumeRun('run_00000000-0000-4000-8000-000000000001'))),
+        ).toMatchObject({
+          _tag: 'InvalidOperation',
+        })
+        expect(yield* store.getRun('run_00000000-0000-4000-8000-000000000001')).toStrictEqual(completed)
+      }),
   )
 
   live('recovers a committed running prepare checkpoint without duplicating its start event', () =>
@@ -1029,7 +1064,7 @@ describe('demo cold restoration', () => {
       const checkpoint = yield* persisted.getRun(command().runId)
       expect(checkpoint).toMatchObject({ revision: 1, status: 'running' })
       expect(yield* persisted.getEvents(command().runId, EventRange.All())).toHaveLength(2)
-      store = freshStore()
+      store = yield* freshStore
       yield* provideTestServices(resumeRun('run_00000000-0000-4000-8000-000000000001'))
       expect(yield* store.getRun('run_00000000-0000-4000-8000-000000000001')).toMatchObject({
         revision: 2,
@@ -1037,7 +1072,7 @@ describe('demo cold restoration', () => {
       })
       expect(
         Array.filter(
-          yield* store.getEvents('run_00000000-0000-4000-8000-000000000001', { _tag: 'All' }),
+          yield* store.getEvents('run_00000000-0000-4000-8000-000000000001', EventRange.All()),
           (event) => event.type === 'node.started' && event.nodeId === 'prepare',
         ),
       ).toHaveLength(1)
@@ -1053,7 +1088,7 @@ describe('demo cold restoration', () => {
       ).toMatchObject({
         _tag: 'InvalidSnapshot',
       })
-      expect(yield* store.getEvents('run_00000000-0000-4000-8000-000000000001', { _tag: 'All' })).toHaveLength(1)
+      expect(yield* store.getEvents('run_00000000-0000-4000-8000-000000000001', EventRange.All())).toHaveLength(1)
     }),
   )
 })
@@ -1076,7 +1111,7 @@ describe('interrupted workflow recovery', () => {
       ).toMatchObject({ _tag: 'InvalidOperation', message: 'The workflow is not registered' })
       expect(resume).not.toHaveBeenCalled()
       expect(yield* store.getRun(unsupported.runId)).toStrictEqual(unsupported)
-      expect(yield* store.getEvents(unsupported.runId, { _tag: 'All' })).toStrictEqual([])
+      expect(yield* store.getEvents(unsupported.runId, EventRange.All())).toStrictEqual([])
     }),
   )
 
@@ -1111,9 +1146,9 @@ describe('interrupted workflow recovery', () => {
         snapshot: { machine: { active: [{ path: '' }, { path: 'publish', value: { prepared: 'draft:v1' } }] } },
         status: 'running',
       })
-      store = freshStore()
+      store = yield* freshStore
       yield* provideTestServices(resumeRun('run_00000000-0000-4000-8000-000000000001'))
-      const events = yield* store.getEvents('run_00000000-0000-4000-8000-000000000001', { _tag: 'All' })
+      const events = yield* store.getEvents('run_00000000-0000-4000-8000-000000000001', EventRange.All())
       expect(Array.filter(events, (event) => event.type === 'node.started' && event.nodeId === 'publish')).toHaveLength(
         1,
       )
@@ -1132,88 +1167,66 @@ describe('interrupted workflow recovery', () => {
     }),
   )
 
-  test('leaves a recoverable pending run if its native static workflow RPC rejects', async () => {
-    // Promise rejection is the native service-binding boundary wrapped by the production Alchemy client.
-    const binding = makeRpcStub<WorkflowBinding['Service']>({
-      start: () => Promise.reject(new Error('Individual worker disconnected')),
-    })
-    await expect(
-      Effect.runPromise(
-        createRun({ workflowId: 'demo', version: version1 }).pipe(
-          Effect.provideService(Store, store),
-          Effect.provideService(
-            WorkflowRegistry,
-            await Effect.runPromise(
-              makeWorkflowRegistry.pipe(
-                Effect.provideService(WorkflowBinding, binding),
-                Effect.provide(unavailableDevelopmentBinding),
-              ),
-            ),
-          ),
-          Effect.provide(BrowserCrypto.layer),
-        ),
-      ),
-    ).rejects.toMatchObject({ _tag: 'ExternalError', kind: 'service' })
-    const runs = await Effect.runPromise(store.listRuns)
-    expect(runs).toHaveLength(1)
-    const pending = Array.getUnsafe(runs, 0)
-    expect(pending).toMatchObject({ revision: 0, status: 'pending' })
-    await run(resumeRun(pending.runId))
-    await expect(Effect.runPromise(store.getRun(pending.runId))).resolves.toMatchObject({
-      revision: 2,
-      status: 'waiting',
-    })
-  })
+  live('leaves a recoverable pending run if its native static workflow RPC rejects', () =>
+    Effect.gen(function* () {
+      const registry = yield* disconnectedRegistry('start')
+      const create = createRun({ version: version1, workflowId: 'demo' }).pipe(
+        Effect.provideService(Store, store),
+        Effect.provideService(WorkflowRegistry, registry),
+        Effect.provide(BrowserCrypto.layer),
+      )
+      const error = yield* Effect.flip(create)
+      expect(error).toBeInstanceOf(ExternalError)
+      expect(error).toHaveProperty('kind', 'service')
+      const runs = yield* store.listRuns
+      expect(runs).toMatchObject([{ revision: 0, status: 'pending' }])
+      const pending = Array.getUnsafe(runs, 0)
+      yield* provideTestServices(resumeRun(pending.runId))
+      expect(yield* store.getRun(pending.runId)).toMatchObject({ revision: 2, status: 'waiting' })
+    }),
+  )
 
-  test('keeps the persisted checkpoint unchanged when an individual resume RPC rejects', async () => {
-    await seed()
-    await run(startRun('run_00000000-0000-4000-8000-000000000001'))
-    const waiting = await Effect.runPromise(store.getRun('run_00000000-0000-4000-8000-000000000001'))
-    const events = await Effect.runPromise(store.getEvents('run_00000000-0000-4000-8000-000000000001', { _tag: 'All' }))
-    const binding = makeRpcStub<WorkflowBinding['Service']>({
-      resume: () => Promise.reject(new Error('Individual worker disconnected')),
-    })
-    await expect(
-      Effect.runPromise(
-        resumeWorkflowRun('run_00000000-0000-4000-8000-000000000001').pipe(
-          Effect.provideService(Store, store),
-          Effect.provideService(
-            WorkflowRegistry,
-            await Effect.runPromise(
-              makeWorkflowRegistry.pipe(
-                Effect.provideService(WorkflowBinding, binding),
-                Effect.provide(unavailableDevelopmentBinding),
-              ),
-            ),
-          ),
-        ),
-      ),
-    ).rejects.toMatchObject({ _tag: 'ExternalError', kind: 'service' })
-    await expect(Effect.runPromise(store.getRun('run_00000000-0000-4000-8000-000000000001'))).resolves.toStrictEqual(
-      waiting,
-    )
-    expect(
-      await Effect.runPromise(store.getEvents('run_00000000-0000-4000-8000-000000000001', { _tag: 'All' })),
-    ).toStrictEqual(events)
-  })
+  live('keeps the persisted checkpoint unchanged when an individual resume RPC rejects', () =>
+    Effect.gen(function* () {
+      const runId = command().runId
+      yield* seedEffect(runId)
+      yield* provideTestServices(startRun(runId))
+      const waiting = yield* store.getRun(runId)
+      const events = yield* store.getEvents(runId, EventRange.All())
+      const registry = yield* disconnectedRegistry('resume')
+      const resume = resumeWorkflowRun(runId).pipe(
+        Effect.provideService(Store, store),
+        Effect.provideService(WorkflowRegistry, registry),
+      )
+      const error = yield* Effect.flip(resume)
+      expect(error).toBeInstanceOf(ExternalError)
+      expect(error).toHaveProperty('kind', 'service')
+      expect(yield* store.getRun(runId)).toStrictEqual(waiting)
+      expect(yield* store.getEvents(runId, EventRange.All())).toStrictEqual(events)
+    }),
+  )
 })
 
 describe('Effect HTTP API', () => {
-  test('rejects bare UUIDv4 run IDs at persistence and HTTP boundaries', async () => {
-    const id = '00000000-0000-4000-8000-000000000003'
-    await expect(seed(id)).rejects.toMatchObject({ _tag: 'ExternalError' })
-    await expect(Effect.runPromise(store.listRuns)).resolves.toStrictEqual([])
-    const handler = api()
-    try {
-      const read = await handler.handler(new Request(`http://localhost/api/runs/${id}`))
-      expect(read.status).toBe(400)
-      const resumed = await handler.handler(new Request(`http://localhost/api/runs/${id}/resume`, { method: 'POST' }))
-      expect(resumed.status).toBe(400)
-      await expect(Effect.runPromise(store.listRuns)).resolves.toStrictEqual([])
-    } finally {
-      await handler.dispose()
-    }
-  })
+  live('rejects bare UUIDv4 run IDs at persistence and HTTP boundaries', () =>
+    Effect.gen(function* () {
+      const id = '00000000-0000-4000-8000-000000000003'
+      expect(yield* Effect.flip(seedEffect(id))).toMatchObject({ _tag: 'ExternalError' })
+      expect(yield* store.listRuns).toStrictEqual([])
+      const handler = api()
+      try {
+        const read = yield* Effect.promise(async () => handler.handler(new Request(`http://localhost/api/runs/${id}`)))
+        expect(read.status).toBe(400)
+        const resumed = yield* Effect.promise(async () =>
+          handler.handler(new Request(`http://localhost/api/runs/${id}/resume`, { method: 'POST' })),
+        )
+        expect(resumed.status).toBe(400)
+        expect(yield* store.listRuns).toStrictEqual([])
+      } finally {
+        yield* Effect.promise(async () => handler.dispose())
+      }
+    }),
+  )
 
   test('supports an arbitrary workflow through registry-only catalog, creation, detail and resume', async () => {
     const version = SemVer.parseUnsafe('3.4.5-beta.1+build.7')
@@ -1300,7 +1313,7 @@ describe('Effect HTTP API', () => {
     }
   })
 
-  test.each([
+  live.each([
     { workflowId: 'demo', version: 'v1' },
     { workflowId: 'demo', version: '1.0.0', unexpected: true },
     {
@@ -1311,165 +1324,195 @@ describe('Effect HTTP API', () => {
       unexpected: true,
     },
     { workflowId: 'jcode-development', version: '1.0.0', repository: 'https://evil.example/project', task: 'Valid' },
-  ])('rejects invalid workflow-owned input before persistence: %j', async (input) => {
-    const create = vi.spyOn(store, 'create')
-    const handler = api()
-    try {
-      const response = await handler.handler(
-        new Request('http://localhost/api/runs', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(input),
-        }),
-      )
-      expect(response.status).toBe(400)
-      expect(create).not.toHaveBeenCalled()
-      await expect(Effect.runPromise(store.listRuns)).resolves.toStrictEqual([])
-    } finally {
-      create.mockRestore()
-      await handler.dispose()
-    }
-  })
-  test('rejects browser-originated text/plain create requests without writing a run', async () => {
-    const handler = api()
-    try {
-      const response = await handler.handler(
-        new Request('http://localhost/api/runs', {
-          method: 'POST',
-          headers: { origin: 'https://evil.example', 'content-type': 'text/plain' },
-          body: '{"workflowId":"demo","version":"v1"}',
-        }),
-      )
-      expect(response.status).toBe(403)
-      await expect(Effect.runPromise(store.listRuns)).resolves.toStrictEqual([])
-    } finally {
-      await handler.dispose()
-    }
-  })
+  ])('rejects invalid workflow-owned input before persistence: %j', (input) =>
+    Effect.gen(function* () {
+      const create = vi.spyOn(store, 'create')
+      const handler = api()
+      try {
+        const response = yield* Effect.promise(async () =>
+          handler.handler(
+            new Request('http://localhost/api/runs', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify(input),
+            }),
+          ),
+        )
+        expect(response.status).toBe(400)
+        expect(create).not.toHaveBeenCalled()
+        expect(yield* store.listRuns).toStrictEqual([])
+      } finally {
+        create.mockRestore()
+        yield* Effect.promise(async () => handler.dispose())
+      }
+    }),
+  )
+  live('rejects browser-originated text/plain create requests without writing a run', () =>
+    Effect.gen(function* () {
+      const handler = api()
+      try {
+        const response = yield* Effect.promise(async () =>
+          handler.handler(
+            new Request('http://localhost/api/runs', {
+              method: 'POST',
+              headers: { origin: 'https://evil.example', 'content-type': 'text/plain' },
+              body: '{"workflowId":"demo","version":"v1"}',
+            }),
+          ),
+        )
+        expect(response.status).toBe(403)
+        expect(yield* store.listRuns).toStrictEqual([])
+      } finally {
+        yield* Effect.promise(async () => handler.dispose())
+      }
+    }),
+  )
 
-  test('rejects browser-originated resume requests without advancing the persisted checkpoint', async () => {
-    await seed()
-    await run(startRun('run_00000000-0000-4000-8000-000000000001'))
-    const waiting = await Effect.runPromise(store.getRun('run_00000000-0000-4000-8000-000000000001'))
-    const events = await Effect.runPromise(store.getEvents('run_00000000-0000-4000-8000-000000000001', { _tag: 'All' }))
-    const handler = api()
-    try {
-      const response = await handler.handler(
-        new Request('http://localhost/api/runs/run_00000000-0000-4000-8000-000000000001/resume', {
-          method: 'POST',
-          headers: { origin: 'https://evil.example', 'content-type': 'text/plain' },
-        }),
-      )
-      expect(response.status).toBe(403)
-      await expect(Effect.runPromise(store.getRun('run_00000000-0000-4000-8000-000000000001'))).resolves.toStrictEqual(
-        waiting,
-      )
-      expect(
-        await Effect.runPromise(store.getEvents('run_00000000-0000-4000-8000-000000000001', { _tag: 'All' })),
-      ).toStrictEqual(events)
-    } finally {
-      await handler.dispose()
-    }
-  })
+  live('rejects browser-originated resume requests without advancing the persisted checkpoint', () =>
+    Effect.gen(function* () {
+      yield* seedEffect()
+      yield* provideTestServices(startRun('run_00000000-0000-4000-8000-000000000001'))
+      const waiting = yield* store.getRun('run_00000000-0000-4000-8000-000000000001')
+      const events = yield* store.getEvents('run_00000000-0000-4000-8000-000000000001', EventRange.All())
+      const handler = api()
+      try {
+        const response = yield* Effect.promise(async () =>
+          handler.handler(
+            new Request('http://localhost/api/runs/run_00000000-0000-4000-8000-000000000001/resume', {
+              method: 'POST',
+              headers: { origin: 'https://evil.example', 'content-type': 'text/plain' },
+            }),
+          ),
+        )
+        expect(response.status).toBe(403)
+        expect(yield* store.getRun('run_00000000-0000-4000-8000-000000000001')).toStrictEqual(waiting)
+        expect(yield* store.getEvents('run_00000000-0000-4000-8000-000000000001', EventRange.All())).toStrictEqual(
+          events,
+        )
+      } finally {
+        yield* Effect.promise(async () => handler.dispose())
+      }
+    }),
+  )
 
-  test('lists bundled workflows and validates the create boundary', async () => {
-    const handler = api()
-    try {
-      const workflows = await handler.handler(new Request('http://localhost/api/workflows'))
-      expect(workflows.status).toBe(200)
-      await expect(workflows.json()).resolves.toStrictEqual({
-        workflows: [
-          { inputs: [], name: 'Release checkpoint', versions: ['1.0.0', '2.0.0'], workflowId: 'demo' },
-          expect.objectContaining({
-            workflowId: 'jcode-development',
-            name: 'Pi development',
-            versions: ['1.0.0'],
-            inputs: [
+  live('lists bundled workflows and validates the create boundary', () =>
+    Effect.gen(function* () {
+      const handler = api()
+      try {
+        const workflows = yield* Effect.promise(async () =>
+          handler.handler(new Request('http://localhost/api/workflows')),
+        )
+        expect(workflows.status).toBe(200)
+        yield* Effect.promise(async () =>
+          expect(workflows.json()).resolves.toStrictEqual({
+            workflows: [
+              { inputs: [], name: 'Release checkpoint', versions: ['1.0.0', '2.0.0'], workflowId: 'demo' },
               expect.objectContaining({
-                name: 'repository',
-                label: 'Public GitHub repository',
-                kind: 'text',
-                required: true,
-              }),
-              expect.objectContaining({
-                name: 'task',
-                label: 'Development task',
-                kind: 'textarea',
-                required: true,
-                maxLength: 16_000,
+                workflowId: 'jcode-development',
+                name: 'Pi development',
+                versions: ['1.0.0'],
+                inputs: [
+                  expect.objectContaining({
+                    name: 'repository',
+                    label: 'Public GitHub repository',
+                    kind: 'text',
+                    required: true,
+                  }),
+                  expect.objectContaining({
+                    name: 'task',
+                    label: 'Development task',
+                    kind: 'textarea',
+                    required: true,
+                    maxLength: 16_000,
+                  }),
+                ],
               }),
             ],
           }),
-        ],
-      })
-      const invalid = await handler.handler(
-        new Request('http://localhost/api/runs', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: '{"workflowId":"demo","version":"v9"}',
-        }),
-      )
-      expect(invalid.status).toBe(400)
-      const unsafeId = await handler.handler(
-        new Request('http://localhost/api/runs', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ workflowId: '../demo', version: '1.0.0' }),
-        }),
-      )
-      expect(unsafeId.status).toBe(400)
-      await expect(Effect.runPromise(store.listRuns)).resolves.toStrictEqual([])
-    } finally {
-      await handler.dispose()
-    }
-  })
-
-  test.each(['1.0.0', '2.0.0'])(
-    'creates, reads and resumes a persisted %s run, then protects the completed run',
-    async (version) => {
-      const handler = api()
-      try {
-        const created = await handler.handler(
-          new Request('http://localhost/api/runs', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ workflowId: 'demo', version }),
-          }),
         )
-        expect(created.status).toBe(201)
-        const body = await Effect.runPromise(
-          Schema.decodeUnknownEffect(Schema.toCodecJson(RunDetail))(await created.json()),
+        const invalid = yield* Effect.promise(async () =>
+          handler.handler(
+            new Request('http://localhost/api/runs', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: '{"workflowId":"demo","version":"v9"}',
+            }),
+          ),
         )
-        expect(Schema.is(RunId)(body.run.runId)).toBe(true)
-        expect(body.run.status).toBe('waiting')
-        const detail = await handler.handler(new Request(`http://localhost/api/runs/${body.run.runId}`))
-        expect(detail.status).toBe(200)
-        await expect(detail.json()).resolves.toMatchObject({
-          run: { status: 'waiting' },
-          shapes: { nodes: [{ state: 'succeeded' }, { state: 'waiting' }, { state: 'idle' }] },
-          state: { revision: 2 },
-        })
-        const listed = await handler.handler(new Request('http://localhost/api/runs'))
-        expect(listed.status).toBe(200)
-        await expect(listed.json()).resolves.toStrictEqual(
-          Schema.encodeSync(Schema.toCodecJson(RunsResponse))({ runs: [body.run] }),
+        expect(invalid.status).toBe(400)
+        const unsafeId = yield* Effect.promise(async () =>
+          handler.handler(
+            new Request('http://localhost/api/runs', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ workflowId: '../demo', version: '1.0.0' }),
+            }),
+          ),
         )
-        const resumed = await handler.handler(
-          new Request(`http://localhost/api/runs/${body.run.runId}/resume`, { method: 'POST' }),
-        )
-        expect(resumed.status).toBe(200)
-        await expect(resumed.json()).resolves.toMatchObject({
-          run: { status: 'completed', workflowVersion: version },
-          state: { revision: 4 },
-        })
-        const again = await handler.handler(
-          new Request(`http://localhost/api/runs/${body.run.runId}/resume`, { method: 'POST' }),
-        )
-        expect(again.status).toBe(409)
+        expect(unsafeId.status).toBe(400)
+        expect(yield* store.listRuns).toStrictEqual([])
       } finally {
-        await handler.dispose()
+        yield* Effect.promise(async () => handler.dispose())
       }
-    },
+    }),
+  )
+
+  live.each(['1.0.0', '2.0.0'])(
+    'creates, reads and resumes a persisted %s run, then protects the completed run',
+    (version) =>
+      Effect.gen(function* () {
+        const handler = api()
+        try {
+          const created = yield* Effect.promise(async () =>
+            handler.handler(
+              new Request('http://localhost/api/runs', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ workflowId: 'demo', version }),
+              }),
+            ),
+          )
+          expect(created.status).toBe(201)
+          const json: unknown = yield* Effect.promise(async () => created.json())
+          const body = yield* decodeHttpRunDetail(json)
+          expect(Schema.is(RunId)(body.run.runId)).toBe(true)
+          expect(body.run.status).toBe('waiting')
+          const detail = yield* Effect.promise(async () =>
+            handler.handler(new Request(`http://localhost/api/runs/${body.run.runId}`)),
+          )
+          expect(detail.status).toBe(200)
+          yield* Effect.promise(async () =>
+            expect(detail.json()).resolves.toMatchObject({
+              run: { status: 'waiting' },
+              shapes: { nodes: [{ state: 'succeeded' }, { state: 'waiting' }, { state: 'idle' }] },
+              state: { revision: 2 },
+            }),
+          )
+          const listed = yield* Effect.promise(async () => handler.handler(new Request('http://localhost/api/runs')))
+          expect(listed.status).toBe(200)
+          yield* Effect.promise(async () =>
+            expect(listed.json()).resolves.toStrictEqual(
+              Schema.encodeSync(Schema.toCodecJson(RunsResponse))({ runs: [body.run] }),
+            ),
+          )
+          const resumed = yield* Effect.promise(async () =>
+            handler.handler(new Request(`http://localhost/api/runs/${body.run.runId}/resume`, { method: 'POST' })),
+          )
+          expect(resumed.status).toBe(200)
+          yield* Effect.promise(async () =>
+            expect(resumed.json()).resolves.toMatchObject({
+              run: { status: 'completed', workflowVersion: version },
+              state: { revision: 4 },
+            }),
+          )
+          const again = yield* Effect.promise(async () =>
+            handler.handler(new Request(`http://localhost/api/runs/${body.run.runId}/resume`, { method: 'POST' })),
+          )
+          expect(again.status).toBe(409)
+        } finally {
+          yield* Effect.promise(async () => handler.dispose())
+        }
+      }),
   )
 
   test('returns 404 for a missing persisted run', async () => {
