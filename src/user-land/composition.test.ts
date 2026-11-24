@@ -1,3 +1,4 @@
+import { live } from '@effect/vitest'
 import { ConfigProvider, Effect } from 'effect'
 import { describe, expect, test } from 'vite-plus/test'
 
@@ -41,7 +42,9 @@ describe('final application composition', () => {
     })
   })
 
-  test('provides no deployment resource props at the fixed runtime capture boundary', async () => {
-    await expect(Effect.runPromise(FrontendSecurity.pipe(Effect.provide(RuntimeSecurity)))).resolves.toStrictEqual({})
-  })
+  live('provides no deployment resource props at the fixed runtime capture boundary', () =>
+    Effect.gen(function* () {
+      expect(yield* FrontendSecurity.pipe(Effect.provide(RuntimeSecurity))).toStrictEqual({})
+    }),
+  )
 })

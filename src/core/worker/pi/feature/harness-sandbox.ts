@@ -48,8 +48,10 @@ export const makeHarnessSandbox = (
               .pipe(Effect.mapError((cause) => new ExternalError({ operation: 'read Pi run', kind: 'storage', cause })))
             return session(run.status === 'completed' ? 'completed' : 'active')
           }).pipe(
-            // The SDK invokes native Promise callbacks outside Effect. Reenter the
-            // activation-owned context without rebuilding its Layer or closing its DO.
+            /*
+             * The SDK invokes native Promise callbacks outside Effect. Reenter the
+             * activation-owned context without rebuilding its Layer or closing its DO.
+             */
             Effect.provideContext(context),
             Effect.mapError(
               (cause) => new ExternalError({ operation: 'initialize Pi resource', kind: 'service', cause }),
@@ -85,8 +87,10 @@ export const makeHarnessSandbox = (
             if (Array.isReadonlyArrayNonEmpty(pending)) {
               throw new Error('Pi session still has pending work')
             }
-            // Completion is only an acknowledgement. Durable storage and any
-            // backend retention remain owned by the run and its native lifecycle.
+            /*
+             * Completion is only an acknowledgement. Durable storage and any
+             * backend retention remain owned by the run and its native lifecycle.
+             */
             return session('completed')
           }),
         ),

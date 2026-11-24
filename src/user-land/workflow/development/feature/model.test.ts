@@ -1,3 +1,4 @@
+import { live } from '@effect/vitest'
 import { Machine } from '@typeonce/effect-machine'
 import { Array, Effect, Option, Schema, String } from 'effect'
 import { describe, expect, test } from 'vite-plus/test'
@@ -105,22 +106,22 @@ describe('development operation wire schemas', () => {
     ).rejects.toMatchObject({ _tag: 'MachineSchemaDecodeError' })
   })
 
-  test('round-trips native versions and repository values through both snapshot codecs', async () => {
-    const encoded = encodeDevelopmentSnapshot(initialSnapshot)
-    expect(encoded).toMatchObject({ machine: { _tag: 'MachineSnapshot', version: 2 }, version: '1.0.0' })
-    expect(encoded).not.toHaveProperty('context')
-    const decoded = decodeDevelopmentSnapshot(encoded)
-    expect(decoded).toStrictEqual(initialSnapshot)
-    expect(Schema.is(DevelopmentSnapshot)(encoded)).toBe(false)
-    const state = await Effect.runPromise(Machine.decodeSnapshot(DevelopmentMachine, decoded.machine))
-    const root = Option.getOrThrow(DevelopmentStates.get(state, ''))
-    expect(root.version).toStrictEqual(developmentVersion)
-    expect(root.repository).toBeInstanceOf(URL)
-    expect(root.repository.href).toBe('https://github.com/example/project')
-    await expect(Effect.runPromise(Machine.encodeSnapshot(DevelopmentMachine, state))).resolves.toStrictEqual(
-      decoded.machine,
-    )
-  })
+  live('round-trips native versions and repository values through both snapshot codecs', () =>
+    Effect.gen(function* () {
+      const encoded = encodeDevelopmentSnapshot(initialSnapshot)
+      expect(encoded).toMatchObject({ machine: { _tag: 'MachineSnapshot', version: 2 }, version: '1.0.0' })
+      expect(encoded).not.toHaveProperty('context')
+      const decoded = decodeDevelopmentSnapshot(encoded)
+      expect(decoded).toStrictEqual(initialSnapshot)
+      expect(Schema.is(DevelopmentSnapshot)(encoded)).toBe(false)
+      const state = yield* Machine.decodeSnapshot(DevelopmentMachine, decoded.machine)
+      const root = Option.getOrThrow(DevelopmentStates.get(state, ''))
+      expect(root.version).toStrictEqual(developmentVersion)
+      expect(root.repository).toBeInstanceOf(URL)
+      expect(root.repository.href).toBe('https://github.com/example/project')
+      expect(yield* Machine.encodeSnapshot(DevelopmentMachine, state)).toStrictEqual(decoded.machine)
+    }),
+  )
 
   test('keeps native repository URLs in the domain and uses the official wire codec', () => {
     const codec = Schema.toCodecJson(PublicRepository)

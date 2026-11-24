@@ -173,7 +173,7 @@ describe('Control aggregate Workflow service boundary', () => {
     ['POST', '/api/runs/run_00000000-0000-4000-8000-000000000001/resume', undefined],
   ] as const)('returns 502 for %s %s when native RPC transport rejects', async (method, path, body) => {
     // Native promises model the Cloudflare RPC target, not an Effect service failure.
-    const reject = () => Promise.reject(new Error('Service binding disconnected'))
+    const reject = (): Promise<never> => Promise.reject(new Error('Service binding disconnected'))
     const handler = api(
       makeRpcStub<Workflows['Service']>({
         listWorkflows: reject,

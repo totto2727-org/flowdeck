@@ -76,17 +76,19 @@ export const makePiSdk = Effect.gen(function* () {
   const env = yield* WorkerEnvironment.pipe(Effect.flatMap(decodeEnvironment), Effect.orDie)
   const context = yield* Effect.context<DurableObjectState | import('alchemy/RuntimeContext').RuntimeContext>()
 
-  // Lifecycle's public constructor requires an actual native DurableObject host, and
-  // withWorkspaceContainer reads that host's native ctx. Alchemy deliberately exposes
-  // state.raw, not its generated host instance. Instantiate the official SDK mixins
-  // with that exact state here only. The deployed DO remains Alchemy's Effect bridge,
-  // application storage uses its Effect adapter, and no fake host or runtime is made.
-  // SDK callbacks re-enter this captured activation context because the native SDK
-  // invokes Promise callbacks outside Effect. No Layer is rebuilt per callback.
-  // Alchemy names its native types through @cloudflare/workers-types, while these
-  // SDKs use ambient Worker types mixed with the frontend DOM declarations. They
-  // describe the same workerd objects but disagree structurally on Request and
-  // WebSocket. Keep those declaration-only conversions at this SDK boundary.
+  /*
+   * Lifecycle's public constructor requires an actual native DurableObject host, and
+   * withWorkspaceContainer reads that host's native ctx. Alchemy deliberately exposes
+   * state.raw, not its generated host instance. Instantiate the official SDK mixins
+   * with that exact state here only. The deployed DO remains Alchemy's Effect bridge,
+   * application storage uses its Effect adapter, and no fake host or runtime is made.
+   * SDK callbacks re-enter this captured activation context because the native SDK
+   * invokes Promise callbacks outside Effect. No Layer is rebuilt per callback.
+   * Alchemy names its native types through @cloudflare/workers-types, while these
+   * SDKs use ambient Worker types mixed with the frontend DOM declarations. They
+   * describe the same workerd objects but disagree structurally on Request and
+   * WebSocket. Keep those declaration-only conversions at this SDK boundary.
+   */
   const host: SdkHost = new SdkHost(
     state.raw as unknown as ConstructorParameters<typeof DurableObject>[0],
     env,
@@ -122,9 +124,11 @@ export const makePiSdk = Effect.gen(function* () {
   const harness = new PiHarness({
     defaults: { model },
     harness: async ({ storage, context }) => {
-      // This must remain isolate-local. WorkspaceStub extends capnweb.RpcTarget,
-      // not Cloudflare's RpcTarget, and native service bindings cannot clone it.
-      // Only start/resume's JSON wire contract is exported by the outer Effect DO.
+      /*
+       * This must remain isolate-local. WorkspaceStub extends capnweb.RpcTarget,
+       * not Cloudflare's RpcTarget, and native service bindings cannot clone it.
+       * Only start/resume's JSON wire contract is exported by the outer Effect DO.
+       */
       const workspace = await getWorkspace(host)
       const registry = createRegistry()
       registry.install({ name: 'workspace', tools: createWorkspaceTools(workspace) })
@@ -142,8 +146,10 @@ export const makePiSdk = Effect.gen(function* () {
     modelId: model.id,
     initialize: (runId) =>
       Effect.gen(function* () {
-        // The machine-owned Pi node acquires its resource here. Activation only
-        // installs SDK descriptors, and cannot start a run or its workspace.
+        /*
+         * The machine-owned Pi node acquires its resource here. Activation only
+         * installs SDK descriptors, and cannot start a run or its workspace.
+         */
         yield* io(() => lifecycle.start())
         yield* state.storage.put('active-run-id', runId)
         const renewAt = (yield* Clock.currentTimeMillis) + RENEW_AFTER_MS

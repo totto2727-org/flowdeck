@@ -1,3 +1,4 @@
+import { live } from '@effect/vitest'
 import { Machine } from '@typeonce/effect-machine'
 import { DateTime, Effect, Option, Schema, SemVer, String } from 'effect'
 import { describe, expect, test } from 'vite-plus/test'
@@ -76,36 +77,39 @@ describe('development strict restore boundary', () => {
 })
 
 describe('development definition', () => {
-  test('prepares the workflow-owned graph and PiHarness snapshot', async () => {
-    await expect(Effect.runPromise(developmentDefinition.prepare(input))).resolves.toMatchObject({
-      graph: {
-        edges: [
-          { edgeId: 'implement-verify', source: 'implement', target: 'verify', label: 'implementation complete' },
-        ],
-        graphId: 'jcode-development-1_0_0-graph-1',
-        nodes: [
-          { nodeId: 'implement', label: 'Implement task', kind: 'task' },
-          { nodeId: 'verify', label: 'Verify and fix', kind: 'task' },
-        ],
-        schemaVersion: 1,
-      },
-      snapshot: {
-        machine: { _tag: 'MachineSnapshot', version: 2 },
-        schemaVersion: 1,
-        version: '1.0.0',
-      },
-    })
-  })
+  live('prepares the workflow-owned graph and PiHarness snapshot', () =>
+    Effect.gen(function* () {
+      expect(yield* developmentDefinition.prepare(input)).toMatchObject({
+        graph: {
+          edges: [
+            { edgeId: 'implement-verify', source: 'implement', target: 'verify', label: 'implementation complete' },
+          ],
+          graphId: 'jcode-development-1_0_0-graph-1',
+          nodes: [
+            { nodeId: 'implement', label: 'Implement task', kind: 'task' },
+            { nodeId: 'verify', label: 'Verify and fix', kind: 'task' },
+          ],
+          schemaVersion: 1,
+        },
+        snapshot: {
+          machine: { _tag: 'MachineSnapshot', version: 2 },
+          schemaVersion: 1,
+          version: '1.0.0',
+        },
+      })
+    }),
+  )
 
-  test.each(['https://github.com/example/project', 'https://github.com/example/project.git'])(
+  live.each(['https://github.com/example/project', 'https://github.com/example/project.git'])(
     'preserves the validated URL string %s',
-    async (repository) => {
-      const prepared = await Effect.runPromise(developmentDefinition.prepare({ ...input, repository }))
-      const state = await Effect.runPromise(Machine.decodeSnapshot(DevelopmentMachine, prepared.snapshot['machine']))
-      expect(Option.getOrThrow(DevelopmentStates.get(state, '')).repository.href).toBe(repository)
-      expect(DevelopmentStates.matches(state, 'implement.allocate')).toBe(true)
-      expect(prepared.snapshot).not.toHaveProperty('context')
-    },
+    (repository) =>
+      Effect.gen(function* () {
+        const prepared = yield* developmentDefinition.prepare({ ...input, repository })
+        const state = yield* Machine.decodeSnapshot(DevelopmentMachine, prepared.snapshot['machine'])
+        expect(Option.getOrThrow(DevelopmentStates.get(state, '')).repository.href).toBe(repository)
+        expect(DevelopmentStates.matches(state, 'implement.allocate')).toBe(true)
+        expect(prepared.snapshot).not.toHaveProperty('context')
+      }),
   )
 
   test.each([

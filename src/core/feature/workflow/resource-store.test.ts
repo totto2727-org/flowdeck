@@ -201,17 +201,19 @@ describe('ResourceStore', () => {
     )
   })
 
-  test('retains typed initializer dependencies through its service Layer', async () => {
-    const program = Effect.gen(function* () {
-      const store = yield* ResourceStore
-      const initialize = Effect.map(Configuration, ({ name }) => ({ read: () => name }))
-      const initialized = store.getOrTryInit(NativeResource, initialize)
-      expectTypeOf(initialized).toEqualTypeOf<Effect.Effect<Readonly<{ read: () => string }>, never, Configuration>>()
-      expectTypeOf(store.get(NativeResource)).toEqualTypeOf<
-        Effect.Effect<Option.Option<Readonly<{ read: () => string }>>>
-      >()
-      return (yield* initialized).read()
-    }).pipe(Effect.provide(ResourceStore.layer), Effect.provideService(Configuration, { name: 'configured' }))
-    await expect(Effect.runPromise(program)).resolves.toBe('configured')
-  })
+  live('retains typed initializer dependencies through its service Layer', () =>
+    Effect.gen(function* () {
+      const program = Effect.gen(function* () {
+        const store = yield* ResourceStore
+        const initialize = Effect.map(Configuration, ({ name }) => ({ read: () => name }))
+        const initialized = store.getOrTryInit(NativeResource, initialize)
+        expectTypeOf(initialized).toEqualTypeOf<Effect.Effect<Readonly<{ read: () => string }>, never, Configuration>>()
+        expectTypeOf(store.get(NativeResource)).toEqualTypeOf<
+          Effect.Effect<Option.Option<Readonly<{ read: () => string }>>>
+        >()
+        return (yield* initialized).read()
+      }).pipe(Effect.provide(ResourceStore.layer), Effect.provideService(Configuration, { name: 'configured' }))
+      expect(yield* program).toBe('configured')
+    }),
+  )
 })

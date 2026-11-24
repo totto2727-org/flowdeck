@@ -48,8 +48,10 @@ export const entrypoint = Effect.gen(function* () {
                 sqlite: state.raw.storage.sql.exec<{ value: number }>('SELECT 1 AS value').one().value,
               }
             }),
-          // The SDK stub is a Capnweb target. This deliberately probes its
-          // native wire incompatibility, not a production method or workaround.
+          /*
+           * The SDK stub is a Capnweb target. This deliberately probes its
+           * native wire incompatibility, not a production method or workaround.
+           */
           capnwebTarget: () =>
             Effect.promise(async () => {
               const workspace = new Workspace({ storage: state.raw.storage })
@@ -58,8 +60,10 @@ export const entrypoint = Effect.gen(function* () {
             }),
           proxyHealth: () =>
             Effect.promise(async () => {
-              // The build plugin adds this export to the generated entry, not
-              // this source module. Its real loopback is exercised by workerd.
+              /*
+               * The build plugin adds this export to the generated entry, not
+               * this source module. Its real loopback is exercised by workerd.
+               */
               const exports = state.raw.exports as {
                 WorkspaceProxy: (options: { props: WorkspaceProxyProps }) => Fetcher
               }

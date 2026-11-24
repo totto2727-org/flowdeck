@@ -30,7 +30,7 @@ export function RunGraph({
   const buttons = useRef<Record<string, HTMLButtonElement | null>>({})
   const size = graphSize(detail.shapes)
   const ids = Array.map(detail.shapes.nodes, (node) => node.nodeId)
-  const navigate = (event: KeyboardEvent<HTMLButtonElement>, nodeId: NodeId) => {
+  const navigate = (event: KeyboardEvent<HTMLButtonElement>, nodeId: NodeId): void => {
     const next = nextNode(ids, nodeId, event.key)
     if (Predicate.isUndefined(next)) {
       return

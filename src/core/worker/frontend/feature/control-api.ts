@@ -48,7 +48,7 @@ export const makeControlApi = Effect.gen(function* () {
   const requestWorkflows = yield* makeWorkflowsRequest
   const requestRuns = yield* makeRunsRequest
   const requestRunDetail = yield* makeRunDetailRequest
-  const url = (path: string) => `https://control.internal/api${path}`
+  const url = (path: string): string => `https://control.internal/api${path}`
   return ControlApi.of({
     workflows: requestWorkflows(HttpClientRequest.get(url('/workflows'))),
     runs: requestRuns(HttpClientRequest.get(url('/runs'))),

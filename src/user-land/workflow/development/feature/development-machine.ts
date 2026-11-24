@@ -34,7 +34,7 @@ export const DevelopmentStates = Machine.state({
 })
 export const DevelopmentEvents = Machine.eventsFromSchemas(ResumeEvent)
 
-const implementationPrompt = (state: Readonly<{ repository: URL; task: string }>) =>
+const implementationPrompt = (state: Readonly<{ repository: URL; task: string }>): string =>
   `Use Pi to clone the public GitHub repository ${state.repository.href} into /workspace/project. Work only in this fixed project workspace. Follow the target repository instructions. Use the official Vite+ CLI for JavaScript runtimes, package managers, dependencies, and tasks. Install it with the official installer if it is missing. Let vp env resolve the target project versions. Use nix develop or a minimal temporary nix shell only for non-JavaScript tools. Implement the following task. Do not push or deploy.\n\n${state.task}`
 const verificationPrompt =
   'Continue with Pi in the same /workspace/project repository and session. Follow the target repository instructions. Use the official Vite+ CLI for JavaScript runtimes, package managers, dependencies, and tasks. Install it with the official installer if it is missing. Let vp env resolve the target project versions. Use nix develop or a minimal temporary nix shell only for non-JavaScript tools. Run the project checks and tests, fix failures caused by the implementation, and report checks performed and remaining limitations. Do not push or deploy.'

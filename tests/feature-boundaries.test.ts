@@ -8,15 +8,15 @@ import { describe, expect, test } from 'vite-plus/test'
 
 const sourceRoot = resolve('src')
 const sources = Array.map(globSync('src/**/*.{ts,tsx}'), (file) => resolve(file))
-const within = (target: string, directory: string) => {
+const within = (target: string, directory: string): boolean => {
   const root = resolve(sourceRoot, directory)
   return target === root || target.startsWith(`${root}${sep}`)
 }
-const bridgeCore = (target: string) => {
+const bridgeCore = (target: string): boolean => {
   const parts = String.split(relative(sourceRoot, target), sep)
   return parts[0] === 'bridge' && parts[2] === 'core'
 }
-const localTarget = (file: string, specifier: string) =>
+const localTarget = (file: string, specifier: string): string | undefined =>
   specifier.startsWith('@/')
     ? resolve(sourceRoot, specifier.slice(2))
     : specifier.startsWith('.')
@@ -39,7 +39,7 @@ const dependencies = (() => {
   using compiler = new API()
   return Array.flatMap(sources, (file) => parseDependencies(compiler, file, readFileSync(file, 'utf8')))
 })()
-const coreTarget = (target: string) => within(target, 'core') || within(target, 'share') || bridgeCore(target)
+const coreTarget = (target: string): boolean => within(target, 'core') || within(target, 'share') || bridgeCore(target)
 const coreDependencies = Array.filter(dependencies, ({ file }) => within(file, 'core') || bridgeCore(file))
 const productionDependencies = Array.filter(dependencies, ({ file }) => !file.endsWith('.test.ts'))
 const featureDependencies = Array.filter(productionDependencies, ({ file }) => within(file, 'core/feature'))

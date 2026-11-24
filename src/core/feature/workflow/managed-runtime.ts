@@ -195,9 +195,11 @@ export const makeManagedExecutor = <State, NativeError, Output, Requirements>(
                 .pipe(Effect.ignoreCause({ log: 'Error', message: 'Lifecycle hook failed after managed commit' }))
             })
 
-          // An invoke starts in the native sender's turn. Yield before failing
-          // the host so native child ownership is registered before Scope teardown.
-          // The host cancels this suspended invoke, never a business onFailure path.
+          /*
+           * An invoke starts in the native sender's turn. Yield before failing
+           * the host so native child ownership is registered before Scope teardown.
+           * The host cancels this suspended invoke, never a business onFailure path.
+           */
           const fail = (error: WorkflowFailure): Effect.Effect<never> =>
             Effect.yieldNow.pipe(
               Effect.andThen(Deferred.fail(storageFailure, error)),
@@ -213,9 +215,11 @@ export const makeManagedExecutor = <State, NativeError, Output, Requirements>(
                 Effect.catch(fail),
               ),
           }
-          // This service closes over this command's ref-ready latch and CAS revision.
-          // A stable runtime Layer cannot supply per-command capabilities. All ordinary
-          // program dependencies were already captured above, once at construction.
+          /*
+           * This service closes over this command's ref-ready latch and CAS revision.
+           * A stable runtime Layer cannot supply per-command capabilities. All ordinary
+           * program dependencies were already captured above, once at construction.
+           */
           const opening = canonical.status === 'pending' ? program.start(state) : program.resume(state)
           const ref = yield* opening.pipe(
             Effect.provideService(WorkflowCheckpoint, checkpoint),
@@ -232,9 +236,11 @@ export const makeManagedExecutor = <State, NativeError, Output, Requirements>(
           yield* persist(boundary.state, program.boundaryEvents(boundary.state))
         }),
       ).pipe(
-        // One volatile resource scope covers the entire command, not just the
-        // native start/resume call. Lazy invokes share it until boundary ACK and
-        // native Scope closure. A new command receives a fresh resource scope.
+        /*
+         * One volatile resource scope covers the entire command, not just the
+         * native start/resume call. Lazy invokes share it until boundary ACK and
+         * native Scope closure. A new command receives a fresh resource scope.
+         */
         Effect.provide(ResourceStore.layer),
         Effect.catchDefect((cause) =>
           Effect.fail(

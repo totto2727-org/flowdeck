@@ -63,8 +63,10 @@ export const makePiNodeEffects = Effect.gen(function* () {
   const executionId = yield* makeExecutionIdGenerator
   const commandId = yield* makeCommandIdGenerator
 
-  // The DO owns the actual Harness. Cache only its capability handle in this
-  // request's volatile resource scope, never a conversation or serialized client.
+  /*
+   * The DO owns the actual Harness. Cache only its capability handle in this
+   * request's volatile resource scope, never a conversation or serialized client.
+   */
   const capability = Effect.flatMap(ResourceStore, (resources) =>
     resources.getOrTryInit(PiSandbox, Effect.succeed(sandbox)),
   )
@@ -86,8 +88,10 @@ export const makePiNodeEffects = Effect.gen(function* () {
             message: 'The original active Pi session is unavailable. Container retained for inspection.',
           })
         }
-        // Only authoritative absence of an unacknowledged intent permits this
-        // exact operation to be submitted. Awaiting polls never use this path.
+        /*
+         * Only authoritative absence of an unacknowledged intent permits this
+         * exact operation to be submitted. Awaiting polls never use this path.
+         */
         const existing = yield* provider.getTurn(checkpoint.runId, input.execution.commandId)
         const receipt =
           existing ??

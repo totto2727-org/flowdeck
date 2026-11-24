@@ -67,7 +67,7 @@ export const demoStatus = (state: DemoNativeState): RunStatus =>
       : states.matches(state, 'completed')
         ? 'completed'
         : 'running'
-export const demoBoundary = (state: DemoNativeState) =>
+export const demoBoundary = (state: DemoNativeState): boolean =>
   states.matches(state, 'approval') || states.matches(state, 'completed')
 export const demoBoundaryEvents = (state: DemoNativeState): Readonly<EventDraft[]> => {
   if (states.matches(state, 'approval')) {

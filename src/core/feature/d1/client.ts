@@ -14,13 +14,15 @@ interface BoundD1Client extends QueryDatabaseClient {
 }
 
 export class D1Client extends Context.Service<D1Client, BoundD1Client>()('flowdeck/D1Client') {
-  // Only use with QueryDatabaseBinding's captured WorkerEnvironment or the native
-  // adapter's already resolved D1 binding. The installed Alchemy statement and
-  // batch executors declare RuntimeContext but read only that captured resolver.
-  // This construction-boundary override narrows those excess requirements without
-  // supplying a fake Context or providing dependencies around individual queries.
-  // QueryDatabaseBinding still reads its captured environment at execution time.
-  // QueryDatabaseLocal and HTTP/deferred database-ID clients are NOT safe here:
-  // their compatible SDK type does not prove execution is context-independent.
+  /*
+   * Only use with QueryDatabaseBinding's captured WorkerEnvironment or the native
+   * adapter's already resolved D1 binding. The installed Alchemy statement and
+   * batch executors declare RuntimeContext but read only that captured resolver.
+   * This construction-boundary override narrows those excess requirements without
+   * supplying a fake Context or providing dependencies around individual queries.
+   * QueryDatabaseBinding still reads its captured environment at execution time.
+   * QueryDatabaseLocal and HTTP/deferred database-ID clients are NOT safe here:
+   * their compatible SDK type does not prove execution is context-independent.
+   */
   static fromBinding = (client: QueryDatabaseClient): BoundD1Client => client as BoundD1Client
 }

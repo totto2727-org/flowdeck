@@ -45,8 +45,10 @@ export const makeWorkerShellPiSdk = (options: WorkerShellPiOptions) =>
     })
     return {
       sandbox,
-      // This backend has no computerd upgrade endpoint. A 404 preserves the
-      // adapter shape without inventing a Container or inference protocol.
+      /*
+       * This backend has no computerd upgrade endpoint. A 404 preserves the
+       * adapter shape without inventing a Container or inference protocol.
+       */
       fetch: (_request: Request) => Effect.succeed(new Response('Not found', { status: 404 })),
       webSocketMessage: (socket: WorkerWebSocket, message: string | ArrayBuffer) =>
         Effect.promise(() => lifecycle.webSocketMessage(socket as unknown as WebSocket, message)),

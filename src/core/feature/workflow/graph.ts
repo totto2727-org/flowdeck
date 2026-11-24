@@ -28,8 +28,10 @@ export const projectMachineGraph = (
   }
   const owner = (path: string) =>
     Array.findLast(visible, (node) => path === node.nodeId || String.startsWith(`${node.nodeId}.`)(path))
-  // Allocation-only states can sit between visible nodes. Follow their static
-  // native edges without evaluating guards, resolvers, or invoked work.
+  /*
+   * Allocation-only states can sit between visible nodes. Follow their static
+   * native edges without evaluating guards, resolvers, or invoked work.
+   */
   const destinations = (path: string, visited: HashSet.HashSet<string>): Readonly<string[]> => {
     const visibleOwner = owner(path)
     if (Option.isSome(visibleOwner)) {

@@ -263,8 +263,8 @@ function SelectedRun({
 
 // SSR controls stay inert until React has attached their event handlers.
 const subscribeHydration = () => () => undefined
-const hydratedSnapshot = () => true
-const serverSnapshot = () => false
+const hydratedSnapshot = (): boolean => true
+const serverSnapshot = (): boolean => false
 
 export function Dashboard({ initial }: Readonly<{ initial: DashboardData }>) {
   const hydrated = useSyncExternalStore(subscribeHydration, hydratedSnapshot, serverSnapshot)
@@ -281,7 +281,7 @@ export function Dashboard({ initial }: Readonly<{ initial: DashboardData }>) {
   const visibleRuns = Array.filter(data.runs, (run) => run.workflowId === workflowId)
   const waiting = Array.length(Array.filter(data.runs, (run) => run.status === 'waiting'))
   const completed = Array.length(Array.filter(data.runs, (run) => run.status === 'completed'))
-  const invoke = <A,>(call: () => Promise<Result<A>>, success: (value: A) => void) => {
+  const invoke = <A,>(call: () => Promise<Result<A>>, success: (value: A) => void): void => {
     setError(null)
     transition(async () => {
       await Effect.runPromise(
@@ -303,7 +303,7 @@ export function Dashboard({ initial }: Readonly<{ initial: DashboardData }>) {
       )
     })
   }
-  const refresh = () =>
+  const refresh = (): void =>
     invoke(
       () => loadDashboard(data.selected?.run.runId ?? null),
       (value) => {
@@ -311,7 +311,7 @@ export function Dashboard({ initial }: Readonly<{ initial: DashboardData }>) {
         setMessage('Dashboard refreshed from the control plane.')
       },
     )
-  const chooseRun = (runId: RunId) =>
+  const chooseRun = (runId: RunId): void =>
     invoke(
       () => selectRun(runId),
       (detail) => {
@@ -319,7 +319,7 @@ export function Dashboard({ initial }: Readonly<{ initial: DashboardData }>) {
         setMessage(`Selected run ${shortId(runId)}.`)
       },
     )
-  const start = () => {
+  const start = (): void => {
     if (!workflow || !Array.contains(workflow.versions, version)) {
       return
     }
@@ -332,7 +332,7 @@ export function Dashboard({ initial }: Readonly<{ initial: DashboardData }>) {
       },
     )
   }
-  const resume = () => {
+  const resume = (): void => {
     const runId = data.selected?.run.runId
     if (!runId) {
       return

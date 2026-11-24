@@ -188,7 +188,7 @@ describe('JSON RPC boundary', () => {
     expect(success(serialized.exit)).not.toContain('private serializer')
   })
 
-  test.each([
+  live.each([
     'private token',
     '{"_tag":"Success","success":1,"secret":"private token"}',
     '{"_tag":"Success"}',
@@ -197,14 +197,16 @@ describe('JSON RPC boundary', () => {
     '{"_tag":"Failure","problem":{"status":500}}',
     Result.succeed('private token'),
     undefined,
-  ])('rejects malformed or non-text envelopes without retaining peer bytes', (response) => {
-    const error = failure(Effect.runSyncExit(rpcResult('decode')(response)))
-    ok(error instanceof ExternalError)
-    expect(error.kind).toBe('service')
-    expect(error.cause).toBeInstanceOf(Error)
-    expect(error.cause).toMatchObject({ message: 'Invalid RPC response' })
-    expect(Cause.pretty(Cause.fail(error))).not.toContain('private token')
-  })
+  ])('rejects malformed or non-text envelopes without retaining peer bytes', (response) =>
+    Effect.gen(function* () {
+      const error = failure(yield* Effect.exit(rpcResult('decode')(response)))
+      ok(error instanceof ExternalError)
+      expect(error.kind).toBe('service')
+      expect(error.cause).toBeInstanceOf(Error)
+      expect(error.cause).toMatchObject({ message: 'Invalid RPC response' })
+      expect(Cause.pretty(Cause.fail(error))).not.toContain('private token')
+    }),
+  )
 
   live('strips unknown problem extensions and rejects non-UUID correlation instances', () =>
     Effect.gen(function* () {

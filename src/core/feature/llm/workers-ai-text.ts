@@ -28,9 +28,11 @@ export const makeWorkersAiText = Effect.gen(function* () {
     input: WorkersAiTextInput,
     model: WorkersAiTextModel = workersAiTextModel,
   ) {
-    // Alchemy's native run method declares a runtime-context requirement. Capture it
-    // at construction so a Machine invoke cannot select a different caller runtime.
-    // This is only SDK context closure, not a second binding or inference executor.
+    /*
+     * Alchemy's native run method declares a runtime-context requirement. Capture it
+     * at construction so a Machine invoke cannot select a different caller runtime.
+     * This is only SDK context closure, not a second binding or inference executor.
+     */
     const output = yield* client.run(model, { ...input, stream: false }).pipe(Effect.provideContext(context))
     const text = yield* decodeTextOutput(output)
     return Predicate.isString(text) ? text : text.response

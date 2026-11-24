@@ -13,8 +13,8 @@ const graphEdgePadding = 40
 /** Read-only display serialization uses the same Effect codec as persisted JSON. */
 export const renderJson = Schema.encodeSync(Schema.fromJsonString(Schema.Json, { space: jsonIndentationSpaces }))
 
-export const eventLabel = (type: string) => String.replaceAll('.', ' ')(type)
-export const shortId = (id: string) => String.takeRight(id, shortIdLength)
+export const eventLabel = (type: string): string => String.replaceAll('.', ' ')(type)
+export const shortId = (id: string): string => String.takeRight(id, shortIdLength)
 export const orderedEvents = (events: Readonly<RunEvent[]>) =>
   Array.sort(
     events,

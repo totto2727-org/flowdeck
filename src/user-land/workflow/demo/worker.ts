@@ -42,9 +42,11 @@ const makeDemoRunRuntime = Effect.gen(function* () {
 export class FlowdeckRun extends DurableObject<FlowdeckRun>()(
   'FlowdeckRun',
   Effect.gen(function* () {
-    // QueryDatabase registers the static binding in Alchemy's construction phase.
-    // The returned complete Layer initializes the object services only once in
-    // the separate DO runtime phase, not when each RPC operation is called.
+    /*
+     * QueryDatabase registers the static binding in Alchemy's construction phase.
+     * The returned complete Layer initializes the object services only once in
+     * the separate DO runtime phase, not when each RPC operation is called.
+     */
     const runtime = yield* makeDemoRunRuntime
     return Effect.gen(function* () {
       const executor = yield* DemoExecutor

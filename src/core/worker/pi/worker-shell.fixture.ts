@@ -71,8 +71,10 @@ export const entrypoint = Effect.gen(function* () {
   return { RuntimeContext: runtime }
 })
 
-// Use the existing PiRun native binding identity with the same official bridge
-// construction used by its generated Alchemy entry, without provisioning infra.
+/*
+ * Use the existing PiRun native binding identity with the same official bridge
+ * construction used by its generated Alchemy entry, without provisioning infra.
+ */
 export const DevelopmentRun = makeDurableObjectBridge(DurableObject, {
   entrypoint,
   stack: { name: 'worker-shell-boundary', stage: 'test' },

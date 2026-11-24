@@ -100,17 +100,17 @@ describe('workflow RPC value contracts', () => {
 })
 
 describe('native SDK RPC client boundary', () => {
-  test('passes a successful SDK command reply to the application decoder unchanged', async () => {
-    const text = response(null)
-    const rpc = makeRpcStub<WireWorkflowExecutor>(Effect.succeed({ start: async () => text }))
-    await expect(
-      Effect.runPromise(
-        rpc
+  live('passes a successful SDK command reply to the application decoder unchanged', () =>
+    Effect.gen(function* () {
+      const text = response(null)
+      const rpc = makeRpcStub<WireWorkflowExecutor>(Effect.succeed({ start: async () => text }))
+      expect(
+        yield* rpc
           .start('run_00000000-0000-4000-8000-000000000001')
           .pipe(rpcCall('DemoWorkflow.start'), Effect.flatMap(rpcCommandResult('DemoWorkflow.start'))),
-      ),
-    ).resolves.toBeUndefined()
-  })
+      ).toBeUndefined()
+    }),
+  )
 
   live('does not retain malformed successful SDK reply bytes during application decoding', () =>
     Effect.gen(function* () {

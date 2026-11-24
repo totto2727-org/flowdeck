@@ -1,3 +1,4 @@
+import { live } from '@effect/vitest'
 import { DateTime, Effect, Schema, SemVer } from 'effect'
 import { describe, expect, test } from 'vite-plus/test'
 
@@ -27,28 +28,31 @@ const fixture = (version: typeof demoVersion1): Run => ({
 })
 
 describe('demo definition', () => {
-  test.each([demoVersion1, demoVersion2])('keeps the published definition %s stable', async (version) => {
-    const prepared = await Effect.runPromise(demoDefinition.prepare({ workflowId: 'demo', version }))
-    expect(prepared).toMatchSnapshot(`demo ${SemVer.format(version)}`)
-  })
-  test.each([demoVersion1, demoVersion2])(
+  live.each([demoVersion1, demoVersion2])('keeps the published definition %s stable', (version) =>
+    Effect.gen(function* () {
+      const prepared = yield* demoDefinition.prepare({ workflowId: 'demo', version })
+      expect(prepared).toMatchSnapshot(`demo ${SemVer.format(version)}`)
+    }),
+  )
+  live.each([demoVersion1, demoVersion2])(
     'prepares and restores the selected implementation without Crypto %s',
-    async (version) => {
-      const prepared = await Effect.runPromise(demoDefinition.prepare({ workflowId: 'demo', version }))
-      expect(prepared).toStrictEqual({
-        graph: demoGraph(version),
-        snapshot: {
-          schemaVersion: 1,
-          version: SemVer.format(version),
-          machine: { _tag: 'MachineSnapshot', active: [{ path: '' }, { path: 'Ready' }], version: 2 },
-        },
-      })
-      expect(Schema.is(GraphDefinition)(prepared.graph)).toBe(true)
-      expect(prepared.graph.graphId).toBe(
-        SemVer.equals(version, demoVersion1) ? 'demo-1_0_0-graph-1' : 'demo-2_0_0-graph-1',
-      )
-      await expect(Effect.runPromise(restoreDemo(fixture(version)))).resolves.toStrictEqual(initialSnapshot(version))
-    },
+    (version) =>
+      Effect.gen(function* () {
+        const prepared = yield* demoDefinition.prepare({ workflowId: 'demo', version })
+        expect(prepared).toStrictEqual({
+          graph: demoGraph(version),
+          snapshot: {
+            schemaVersion: 1,
+            version: SemVer.format(version),
+            machine: { _tag: 'MachineSnapshot', active: [{ path: '' }, { path: 'Ready' }], version: 2 },
+          },
+        })
+        expect(Schema.is(GraphDefinition)(prepared.graph)).toBe(true)
+        expect(prepared.graph.graphId).toBe(
+          SemVer.equals(version, demoVersion1) ? 'demo-1_0_0-graph-1' : 'demo-2_0_0-graph-1',
+        )
+        expect(yield* restoreDemo(fixture(version))).toStrictEqual(initialSnapshot(version))
+      }),
   )
   test.each(['v1', 'v2'])('rejects legacy snapshot version %s', async (version) => {
     await expect(Effect.runPromise(decodeSnapshotCodec({ _tag: 'Ready', schemaVersion: 1, version }))).rejects.toThrow()

@@ -7,7 +7,7 @@ import {
   WorkflowSummary as DomainWorkflowSummary,
 } from '@/core/feature/workflow/domain/model'
 
-// toCodecJson's Encoded type is Json, so compose official string codecs to retain typed DOM fields.
+// The encoded type returned by toCodecJson is Json. Use string codecs to retain typed DOM fields.
 const RunCodec = Schema.Struct({
   ...DomainRun.fields,
   workflowVersion: Schema.SemVerFromString,

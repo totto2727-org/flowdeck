@@ -170,8 +170,10 @@ const offline = () => Effect.fail(new ExternalError({ kind: 'service', operation
 const rejectCommit = () =>
   Effect.fail(new ExternalError({ kind: 'storage', operation: 'test checkpoint failure', cause: 'unavailable' }))
 
-// The maintained integration tests execute the public workflow entry against
-// real D1. Only the remote PiHarness/Container boundary is substituted.
+/*
+ * The maintained integration tests execute the public workflow entry against
+ * real D1. Only the remote PiHarness/Container boundary is substituted.
+ */
 describe('development workflow with canonical D1 checkpoints', () => {
   test('captures stable provider dependencies once and completes without caller context', async () => {
     const executor = await execute(makeDevelopmentExecutor)

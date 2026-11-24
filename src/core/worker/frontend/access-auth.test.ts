@@ -1,3 +1,4 @@
+import { live } from '@effect/vitest'
 import { ConfigProvider, Effect } from 'effect'
 import { describe, expect, test } from 'vite-plus/test'
 
@@ -9,15 +10,19 @@ const production = { aud: 'flowdeck-audience' }
 const admitted = (aud = 'flowdeck-audience') => Effect.succeed({ aud })
 
 describe('frontend Access admission', () => {
-  test('decodes the native audience at the request assembly boundary', async () => {
-    await expect(
-      Effect.runPromise(accessAudienceFromEnvironment({ FLOWDECK_ACCESS_AUD: 'flowdeck-audience' })),
-    ).resolves.toStrictEqual(production)
-  })
+  live('decodes the native audience at the request assembly boundary', () =>
+    Effect.gen(function* () {
+      expect(yield* accessAudienceFromEnvironment({ FLOWDECK_ACCESS_AUD: 'flowdeck-audience' })).toStrictEqual(
+        production,
+      )
+    }),
+  )
 
-  test('trusts native admission from the expected Access application', async () => {
-    await expect(Effect.runPromise(authorizeAccess(production, admitted()))).resolves.toBeUndefined()
-  })
+  live('trusts native admission from the expected Access application', () =>
+    Effect.gen(function* () {
+      expect(yield* authorizeAccess(production, admitted())).toBeUndefined()
+    }),
+  )
 
   test('rejects requests without native Access admission', async () => {
     await expect(Effect.runPromise(authorizeAccess(production, Effect.succeed(undefined)))).rejects.toMatchObject({
@@ -33,13 +38,15 @@ describe('frontend Access admission', () => {
     })
   })
 
-  test('does not fetch or revalidate a trusted identity', async () => {
-    const admission = Effect.succeed({
-      aud: 'flowdeck-audience',
-      getIdentity: () => Effect.die('Identity lookup is unnecessary for native admission.'),
-    })
-    await expect(Effect.runPromise(authorizeAccess(production, admission))).resolves.toBeUndefined()
-  })
+  live('does not fetch or revalidate a trusted identity', () =>
+    Effect.gen(function* () {
+      const admission = Effect.succeed({
+        aud: 'flowdeck-audience',
+        getIdentity: () => Effect.die('Identity lookup is unnecessary for native admission.'),
+      })
+      expect(yield* authorizeAccess(production, admission)).toBeUndefined()
+    }),
+  )
 
   test.each([{}, { FLOWDECK_ACCESS_AUD: '' }, { FLOWDECK_ACCESS_AUD: 42 }])(
     'fails closed when application configuration is missing or invalid: %j',
@@ -57,14 +64,14 @@ describe('production Access resource inputs', () => {
     expect(frontendHostname).toBe('flowdeck.totto2727.dev')
   })
 
-  test('accepts the existing Pulumi-managed policy identity', async () => {
-    const provider = ConfigProvider.fromUnknown({
-      FLOWDECK_ACCESS_POLICY_ID: '00000000-0000-4000-8000-000000000001',
-    })
-    await expect(Effect.runPromise(accessPolicyId.parse(provider))).resolves.toBe(
-      '00000000-0000-4000-8000-000000000001',
-    )
-  })
+  live('accepts the existing Pulumi-managed policy identity', () =>
+    Effect.gen(function* () {
+      const provider = ConfigProvider.fromUnknown({
+        FLOWDECK_ACCESS_POLICY_ID: '00000000-0000-4000-8000-000000000001',
+      })
+      expect(yield* accessPolicyId.parse(provider)).toBe('00000000-0000-4000-8000-000000000001')
+    }),
+  )
 
   test.each(['', '*', 'iac-prod-must-authenticate-with-saml', 'not-a-uuid'])(
     'rejects an invalid existing policy identity: %j',

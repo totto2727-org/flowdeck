@@ -37,8 +37,10 @@ const DevelopmentRunLive = PiRun.make(
       Layer.provide(AlchemyQueryExecutorLive),
       Layer.provide(Layer.succeed(D1Client, D1Client.fromBinding(database))),
     )
-    // Native Cloudflare classes can only load inside workerd, not during Node
-    // provisioning. This official SDK adapter loads once at actual activation.
+    /*
+     * Native Cloudflare classes can only load inside workerd, not during Node
+     * provisioning. This official SDK adapter loads once at actual activation.
+     */
     const SdkLive = Layer.effect(
       PiSdk,
       Effect.promise(() => import('@/core/worker/pi/sdk-runtime')).pipe(Effect.flatMap(({ makePiSdk }) => makePiSdk)),
@@ -52,8 +54,10 @@ const DevelopmentRunLive = PiRun.make(
     const RuntimeLive = Layer.effect(DevelopmentExecutor, makeDevelopmentExecutor).pipe(Layer.provideMerge(SandboxLive))
     return Effect.gen(function* () {
       const ambient = yield* Effect.context<DurableObjectState | RuntimeContext>()
-      // One complete service graph per activation. Native SDK callbacks and exported
-      // handlers enter its captured context, never rebuild Layers or inject at leaves.
+      /*
+       * One complete service graph per activation. Native SDK callbacks and exported
+       * handlers enter its captured context, never rebuild Layers or inject at leaves.
+       */
       const services = yield* Layer.build(RuntimeLive)
       const context = Context.merge(ambient, services)
       const sdk = Context.get(services, PiSdk)
@@ -64,9 +68,11 @@ const DevelopmentRunLive = PiRun.make(
           Effect.flatMap(execute),
           Effect.as(null),
           respond(operation),
-          // Cloudflare invokes an exported handler outside the activation Effect.
-          // This root-only reentry restores the already built context, as Alchemy's
-          // own DurableObjectBridge does for runtime event dispatch.
+          /*
+           * Cloudflare invokes an exported handler outside the activation Effect.
+           * This root-only reentry restores the already built context, as Alchemy's
+           * own DurableObjectBridge does for runtime event dispatch.
+           */
           Effect.provideContext(context),
         )
       return {
@@ -74,8 +80,10 @@ const DevelopmentRunLive = PiRun.make(
         resume: command('DevelopmentRun.resume', executor.resume),
         fetch: Request.pipe(
           Effect.flatMap((request) => sdk.fetch(request)),
-          // Preserve the SDK's native WebSocket upgrade Response and its webSocket
-          // handle. fromWeb would discard that runtime-owned upgrade capability.
+          /*
+           * Preserve the SDK's native WebSocket upgrade Response and its webSocket
+           * handle. fromWeb would discard that runtime-owned upgrade capability.
+           */
           Effect.map((response) => HttpServerResponse.raw(response, { status: response.status })),
         ),
         alarm: () => Effect.promise(() => sdk.lifecycle.alarm()),

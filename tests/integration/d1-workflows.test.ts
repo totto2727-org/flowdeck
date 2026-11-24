@@ -135,8 +135,10 @@ const run = <A, E>(effect: Effect.Effect<A, E, Store | Crypto.Crypto>) =>
 const seed = (runId = 'run_00000000-0000-4000-8000-000000000001', version: WorkflowVersion = version1) =>
   Effect.runPromise(store.create(newRun(runId, version), demoGraph(version), demoDefinition.summary.name))
 
-// A Layer substitutes only the static binding boundary. Its worker implementation
-// is the same exported workflow used by the actual Durable Object adapter.
+/*
+ * A Layer substitutes only the static binding boundary. Its worker implementation
+ * is the same exported workflow used by the actual Durable Object adapter.
+ */
 const testBinding = () =>
   Layer.succeed(WorkflowBinding, {
     start: (runId) =>
