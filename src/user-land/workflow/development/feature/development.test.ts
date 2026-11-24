@@ -1,6 +1,7 @@
 import { readD1Migrations } from '@cloudflare/vitest-plugin'
 import type { D1Database } from '@cloudflare/workers-types'
 import { BrowserCrypto } from '@effect/platform-browser'
+import { live } from '@effect/vitest'
 import { Machine } from '@typeonce/effect-machine'
 import { Array, Crypto, DateTime, Effect, Layer, Option, Predicate, Schema, SemVer } from 'effect'
 import { HttpRouter } from 'effect/http'
@@ -179,39 +180,43 @@ const rejectCommit = (): Effect.Effect<never, ExternalError> =>
  * real D1. Only the remote PiHarness/Container boundary is substituted.
  */
 describe('development workflow with canonical D1 checkpoints', () => {
-  test('captures stable provider dependencies once and completes without caller context', async () => {
-    const executor = await execute(makeDevelopmentExecutor)
-    sandbox = { ensureSession: offline, submitTurn: offline, getTurn: offline, complete: offline }
-    await Effect.runPromise(executor.start(initialRun.runId))
-    expect(matches((await current()).snapshot, 'implement.awaiting')).toBe(true)
-    finishTurn('implement')
-    await Effect.runPromise(executor.resume(initialRun.runId))
-    expect(matches((await current()).snapshot, 'verify.awaiting')).toBe(true)
-    finishTurn('verify')
-    await Effect.runPromise(executor.resume(initialRun.runId))
-    expect((await current()).status).toBe('completed')
-    expect(submissions).toHaveLength(2)
-    expect(completeCalls).toStrictEqual([initialRun.runId])
-  })
+  live('captures stable provider dependencies once and completes without caller context', () =>
+    Effect.gen(function* () {
+      const executor = yield* Effect.promise(async () => execute(makeDevelopmentExecutor))
+      sandbox = { ensureSession: offline, submitTurn: offline, getTurn: offline, complete: offline }
+      yield* executor.start(initialRun.runId)
+      expect(matches((yield* Effect.promise(async () => current())).snapshot, 'implement.awaiting')).toBe(true)
+      finishTurn('implement')
+      yield* executor.resume(initialRun.runId)
+      expect(matches((yield* Effect.promise(async () => current())).snapshot, 'verify.awaiting')).toBe(true)
+      finishTurn('verify')
+      yield* executor.resume(initialRun.runId)
+      expect((yield* Effect.promise(async () => current())).status).toBe('completed')
+      expect(submissions).toHaveLength(2)
+      expect(completeCalls).toStrictEqual([initialRun.runId])
+    }),
+  )
 
-  test.each([
+  live.each([
     'run_00000000-0000-4000-8000-000000000002:implement:1',
     '3d360c7a-4b1a-4df3-9633-861a220bf5b7',
     '01890f2e-7b55-7cc1-8c5a-000000000001',
     'not-a-uuid',
-  ])('rejects invalid persisted command identity %s before Pi access', async (commandId) => {
-    await start()
-    const before = await current()
-    const encoded = Schema.encodeSync(Schema.toCodecJson(JsonObject))(decodeSnapshot(before.snapshot).machine)
-    // The native wire is rewritten only at the trust boundary to simulate corrupt storage.
-    const corrupted = decodeJsonObject(
-      JSON.parse(JSON.stringify(encoded).replaceAll(submissions[0]!.input.commandId, commandId)),
-    )
-    await expect(
-      Effect.runPromise(restoreDevelopment({ ...before, snapshot: { ...before.snapshot, machine: corrupted } })),
-    ).rejects.toMatchObject({ _tag: 'InvalidSnapshot' })
-    expect(submissions).toHaveLength(1)
-  })
+  ])('rejects invalid persisted command identity %s before Pi access', (commandId) =>
+    Effect.gen(function* () {
+      yield* Effect.promise(async () => start())
+      const before = yield* Effect.promise(async () => current())
+      const encoded = Schema.encodeSync(Schema.toCodecJson(JsonObject))(decodeSnapshot(before.snapshot).machine)
+      // The native wire is rewritten only at the trust boundary to simulate corrupt storage.
+      const corrupted = decodeJsonObject(
+        JSON.parse(JSON.stringify(encoded).replaceAll(submissions[0]!.input.commandId, commandId)),
+      )
+      expect(
+        yield* Effect.flip(restoreDevelopment({ ...before, snapshot: { ...before.snapshot, machine: corrupted } })),
+      ).toMatchObject({ _tag: 'InvalidSnapshot' })
+      expect(submissions).toHaveLength(1)
+    }),
+  )
 
   test('routes create and read-only Resume through the static development binding', async () => {
     const provide = <A, E>(effect: Effect.Effect<A, E, Store | PiSandbox | Crypto.Crypto>): Effect.Effect<A, E> =>
@@ -273,20 +278,22 @@ describe('development workflow with canonical D1 checkpoints', () => {
     }
   })
 
-  test('persists native inputs, pinned version and immutable graph before starting', async () => {
-    await expect(current()).resolves.toStrictEqual(initialRun)
-    expect(rootOf(initialRun.snapshot)).toMatchObject({
-      runtime: 'pi-harness',
-      repository: input.repository,
-      task: input.task,
-    })
-    await expect(Effect.runPromise(store.getGraph(initialRun.graphId))).resolves.toStrictEqual(developmentGraph)
-    expect(matches(initialRun.snapshot, 'implement.allocate')).toBe(true)
-    expect(initialRun.snapshot).not.toHaveProperty('context')
-  })
+  live('persists native inputs, pinned version and immutable graph before starting', () =>
+    Effect.gen(function* () {
+      yield* Effect.promise(async () => expect(current()).resolves.toStrictEqual(initialRun))
+      expect(rootOf(initialRun.snapshot)).toMatchObject({
+        runtime: 'pi-harness',
+        repository: input.repository,
+        task: input.task,
+      })
+      expect(yield* store.getGraph(initialRun.graphId)).toStrictEqual(developmentGraph)
+      expect(matches(initialRun.snapshot, 'implement.allocate')).toBe(true)
+      expect(initialRun.snapshot).not.toHaveProperty('context')
+    }),
+  )
 
   describe.each([undefined, 'pi'] as const)('legacy runtime %s', (runtime) => {
-    test.each([
+    live.each([
       ['Ready', 'pending'],
       ['Starting', 'running'],
       ['PendingTurn', 'running'],
@@ -294,9 +301,9 @@ describe('development workflow with canonical D1 checkpoints', () => {
       ['Completing', 'running'],
       ['Completed', 'completed'],
       ['Failed', 'failed'],
-    ] as const)('rejects legacy %s without accessing Pi', async (_tag, status) => {
-      await Effect.runPromise(
-        store.commit({
+    ] as const)('rejects legacy %s without accessing Pi', ([_tag, status]) =>
+      Effect.gen(function* () {
+        yield* store.commit({
           commitId: 'commit_00000000-0000-4000-8000-000000000011',
           runId: initialRun.runId,
           expectedRevision: 0,
@@ -316,21 +323,21 @@ describe('development workflow with canonical D1 checkpoints', () => {
           },
           updatedAt: timestamp,
           events: [],
-        }),
-      )
-      const before = await current()
-      sandbox = {
-        ensureSession: () => Effect.die('must not access Pi'),
-        submitTurn: () => Effect.die('must not submit'),
-        getTurn: () => Effect.die('must not poll'),
-        complete: () => Effect.die('must not complete'),
-      }
-      await expect(Effect.runPromise(restoreDevelopment(before))).rejects.toMatchObject({ _tag: 'InvalidSnapshot' })
-      await expect(start()).rejects.toMatchObject({ _tag: 'InvalidSnapshot' })
-      await expect(resume()).rejects.toMatchObject({ _tag: 'InvalidSnapshot' })
-      await expect(current()).resolves.toStrictEqual(before)
-      await expect(events()).resolves.toStrictEqual([])
-    })
+        })
+        const before = yield* Effect.promise(async () => current())
+        sandbox = {
+          ensureSession: () => Effect.die('must not access Pi'),
+          submitTurn: () => Effect.die('must not submit'),
+          getTurn: () => Effect.die('must not poll'),
+          complete: () => Effect.die('must not complete'),
+        }
+        expect(yield* Effect.flip(restoreDevelopment(before))).toMatchObject({ _tag: 'InvalidSnapshot' })
+        yield* Effect.promise(async () => expect(start()).rejects.toMatchObject({ _tag: 'InvalidSnapshot' }))
+        yield* Effect.promise(async () => expect(resume()).rejects.toMatchObject({ _tag: 'InvalidSnapshot' }))
+        yield* Effect.promise(async () => expect(current()).resolves.toStrictEqual(before))
+        yield* Effect.promise(async () => expect(events()).resolves.toStrictEqual([]))
+      }),
+    )
   })
 
   test('commits stable command and execution identity before external initialization and submission', async () => {
@@ -595,19 +602,19 @@ describe('development workflow with canonical D1 checkpoints', () => {
     expect(submissions).toHaveLength(1)
   })
 
-  test('rejects historical completing checkpoints with missing command and execution identities', async () => {
-    const snapshot = {
-      _tag: 'Completing',
-      runtime: 'pi-harness',
-      schemaVersion: 1,
-      version: '1.0.0',
-      repository: input.repository.href,
-      task: input.task,
-      sessionId: '1',
-      result: 'historical result',
-    }
-    await Effect.runPromise(
-      store.commit({
+  live('rejects historical completing checkpoints with missing command and execution identities', () =>
+    Effect.gen(function* () {
+      const snapshot = {
+        _tag: 'Completing',
+        runtime: 'pi-harness',
+        schemaVersion: 1,
+        version: '1.0.0',
+        repository: input.repository.href,
+        task: input.task,
+        sessionId: '1',
+        result: 'historical result',
+      }
+      yield* store.commit({
         commitId: 'commit_00000000-0000-4000-8000-000000000012',
         runId: initialRun.runId,
         expectedRevision: 0,
@@ -615,15 +622,15 @@ describe('development workflow with canonical D1 checkpoints', () => {
         snapshot,
         updatedAt: timestamp,
         events: [],
-      }),
-    )
-    const before = await current()
-    await expect(Effect.runPromise(restoreDevelopment(before))).rejects.toMatchObject({ _tag: 'InvalidSnapshot' })
-    await expect(resume()).rejects.toMatchObject({ _tag: 'InvalidSnapshot' })
-    await expect(current()).resolves.toStrictEqual(before)
-    expect(submissions).toStrictEqual([])
-    expect(completeCalls).toStrictEqual([])
-  })
+      })
+      const before = yield* Effect.promise(async () => current())
+      expect(yield* Effect.flip(restoreDevelopment(before))).toMatchObject({ _tag: 'InvalidSnapshot' })
+      yield* Effect.promise(async () => expect(resume()).rejects.toMatchObject({ _tag: 'InvalidSnapshot' }))
+      yield* Effect.promise(async () => expect(current()).resolves.toStrictEqual(before))
+      expect(submissions).toStrictEqual([])
+      expect(completeCalls).toStrictEqual([])
+    }),
+  )
 
   test('fails when Pi completion is not acknowledged after verification', async () => {
     await start()
@@ -656,17 +663,19 @@ describe('development workflow with canonical D1 checkpoints', () => {
     await expect(current()).resolves.toStrictEqual(initialRun)
   })
 
-  test.each([
+  live.each([
     { workflowVersion: SemVer.make({ major: 2, minor: 0, patch: 0 }) },
     { graphId: 'different-graph' },
     { workflowId: 'demo' },
     { status: 'running' as const },
-  ])('rejects mismatched persisted identity or status before execution', async (changed) => {
-    await expect(Effect.runPromise(restoreDevelopment({ ...initialRun, ...changed }))).rejects.toMatchObject({
-      _tag: 'InvalidSnapshot',
-    })
-    expect(submissions).toStrictEqual([])
-  })
+  ])('rejects mismatched persisted identity or status before execution', (changed) =>
+    Effect.gen(function* () {
+      expect(yield* Effect.flip(restoreDevelopment({ ...initialRun, ...changed }))).toMatchObject({
+        _tag: 'InvalidSnapshot',
+      })
+      expect(submissions).toStrictEqual([])
+    }),
+  )
 })
 
 describe('development CreateRun trust boundary', () => {

@@ -44,36 +44,43 @@ describe('development strict restore boundary', () => {
     result: 'done',
   }
 
-  test.each(['"runtime":"pi"', '"runtime":null', '"runtime":false', '"other":"pi-harness"'])(
+  live.each(['"runtime":"pi"', '"runtime":null', '"runtime":false', '"other":"pi-harness"'])(
     'rejects malformed native runtime %s before accessing Pi',
-    async (runtime) => {
-      const prepared = await Effect.runPromise(developmentDefinition.prepare(input))
-      const snapshot = decodeJsonObject(
-        JSON.parse(String.replace('"runtime":"pi-harness"', runtime)(JSON.stringify(prepared.snapshot))),
-      )
-      await expect(
-        Effect.runPromise(restoreDevelopment({ ...run, status: 'pending', snapshot })),
-      ).rejects.toMatchObject({ _tag: 'InvalidSnapshot' })
-    },
+    (runtime) =>
+      Effect.gen(function* () {
+        const prepared = yield* developmentDefinition.prepare(input)
+        const snapshot = decodeJsonObject(
+          JSON.parse(String.replace('"runtime":"pi-harness"', runtime)(JSON.stringify(prepared.snapshot))),
+        )
+        expect(yield* Effect.flip(restoreDevelopment({ ...run, status: 'pending', snapshot }))).toMatchObject({
+          _tag: 'InvalidSnapshot',
+        })
+      }),
   )
 
-  test('rejects omitted runtime and command identities instead of restoring them', async () => {
-    await expect(Effect.runPromise(restoreDevelopment({ ...run, snapshot: completing }))).rejects.toMatchObject({
-      _tag: 'InvalidSnapshot',
-    })
-  })
+  live('rejects omitted runtime and command identities instead of restoring them', () =>
+    Effect.gen(function* () {
+      expect(yield* Effect.flip(restoreDevelopment({ ...run, snapshot: completing }))).toMatchObject({
+        _tag: 'InvalidSnapshot',
+      })
+    }),
+  )
 
-  test.each(['pi', 'pi-harness'])('rejects runtime %s with missing command identity', async (runtime) => {
-    await expect(
-      Effect.runPromise(restoreDevelopment({ ...run, snapshot: { ...completing, runtime } })),
-    ).rejects.toMatchObject({ _tag: 'InvalidSnapshot' })
-  })
+  live.each(['pi', 'pi-harness'])('rejects runtime %s with missing command identity', (runtime) =>
+    Effect.gen(function* () {
+      expect(yield* Effect.flip(restoreDevelopment({ ...run, snapshot: { ...completing, runtime } }))).toMatchObject({
+        _tag: 'InvalidSnapshot',
+      })
+    }),
+  )
 
-  test('rejects an invalid explicit runtime instead of treating it as missing', async () => {
-    await expect(
-      Effect.runPromise(restoreDevelopment({ ...run, snapshot: { ...completing, runtime: null } })),
-    ).rejects.toMatchObject({ _tag: 'InvalidSnapshot' })
-  })
+  live('rejects an invalid explicit runtime instead of treating it as missing', () =>
+    Effect.gen(function* () {
+      expect(
+        yield* Effect.flip(restoreDevelopment({ ...run, snapshot: { ...completing, runtime: null } })),
+      ).toMatchObject({ _tag: 'InvalidSnapshot' })
+    }),
+  )
 })
 
 describe('development definition', () => {
