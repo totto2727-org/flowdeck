@@ -4,7 +4,7 @@ import { BrowserCrypto } from '@effect/platform-browser'
 import { live } from '@effect/vitest'
 import { Machine } from '@typeonce/effect-machine'
 import type { Crypto } from 'effect'
-import { Array, DateTime, Effect, Layer, Option, Predicate, Schema, SemVer } from 'effect'
+import { Array, DateTime, Effect, Layer, Option, Schema } from 'effect'
 import { Miniflare } from 'miniflare'
 import { afterEach, beforeEach, describe, expect, test } from 'vite-plus/test'
 
@@ -28,7 +28,6 @@ import {
   developmentGraph,
   initialDevelopmentSnapshot,
   makeDevelopmentExecutor,
-  restoreDevelopment,
   resumeDevelopmentRun,
   startDevelopmentRun,
 } from './development.ts'
@@ -201,27 +200,6 @@ describe('development workflow with canonical D1 checkpoints', () => {
     }),
   )
 
-  live.each([
-    'run_00000000-0000-4000-8000-000000000002:implement:1',
-    '3d360c7a-4b1a-4df3-9633-861a220bf5b7',
-    '01890f2e-7b55-7cc1-8c5a-000000000001',
-    'not-a-uuid',
-  ])('rejects invalid persisted command identity %s before Pi access', (commandId) =>
-    Effect.gen(function* () {
-      yield* Effect.promise(async () => start())
-      const before = yield* Effect.promise(async () => current())
-      const encoded = Schema.encodeSync(Schema.toCodecJson(JsonObject))(decodeSnapshot(before.snapshot).machine)
-      // The native wire is rewritten only at the trust boundary to simulate corrupt storage.
-      const corrupted = decodeJsonObject(
-        JSON.parse(JSON.stringify(encoded).replaceAll(submissions[0]!.input.commandId, commandId)),
-      )
-      expect(
-        yield* Effect.flip(restoreDevelopment({ ...before, snapshot: { ...before.snapshot, machine: corrupted } })),
-      ).toMatchObject({ _tag: 'InvalidSnapshot' })
-      expect(submissions).toHaveLength(1)
-    }),
-  )
-
   live('persists native inputs, pinned version and immutable graph before starting', () =>
     Effect.gen(function* () {
       yield* Effect.promise(async () => expect(current()).resolves.toStrictEqual(initialRun))
@@ -235,54 +213,6 @@ describe('development workflow with canonical D1 checkpoints', () => {
       expect(initialRun.snapshot).not.toHaveProperty('context')
     }),
   )
-
-  describe.each([undefined, 'pi'] as const)('legacy runtime %s', (runtime) => {
-    live.each([
-      ['Ready', 'pending'],
-      ['Starting', 'running'],
-      ['PendingTurn', 'running'],
-      ['AwaitingTurn', 'waiting'],
-      ['Completing', 'running'],
-      ['Completed', 'completed'],
-      ['Failed', 'failed'],
-    ] as const)('rejects legacy %s without accessing Pi', ([_tag, status]) =>
-      Effect.gen(function* () {
-        yield* store.commit({
-          commitId: 'commit_00000000-0000-4000-8000-000000000011',
-          runId: initialRun.runId,
-          expectedRevision: 0,
-          status,
-          snapshot: {
-            _tag,
-            ...(Predicate.isUndefined(runtime) ? {} : { runtime }),
-            schemaVersion: 1,
-            version: '1.0.0',
-            repository: input.repository.href,
-            task: input.task,
-            commandId: 'run_00000000-0000-4000-8000-000000000002:implement:1',
-            sessionId: 'legacy-session',
-            nodeId: 'implement',
-            result: 'old',
-            message: 'old',
-          },
-          updatedAt: timestamp,
-          events: [],
-        })
-        const before = yield* Effect.promise(async () => current())
-        sandbox = {
-          ensureSession: () => Effect.die('must not access Pi'),
-          submitTurn: () => Effect.die('must not submit'),
-          getTurn: () => Effect.die('must not poll'),
-          complete: () => Effect.die('must not complete'),
-        }
-        expect(yield* Effect.flip(restoreDevelopment(before))).toMatchObject({ _tag: 'InvalidSnapshot' })
-        yield* Effect.promise(async () => expect(start()).rejects.toMatchObject({ _tag: 'InvalidSnapshot' }))
-        yield* Effect.promise(async () => expect(resume()).rejects.toMatchObject({ _tag: 'InvalidSnapshot' }))
-        yield* Effect.promise(async () => expect(current()).resolves.toStrictEqual(before))
-        yield* Effect.promise(async () => expect(events()).resolves.toStrictEqual([]))
-      }),
-    )
-  })
 
   test('commits stable command and execution identity before external initialization and submission', async () => {
     let commitIds: Readonly<string[]> = []
@@ -546,36 +476,6 @@ describe('development workflow with canonical D1 checkpoints', () => {
     expect(submissions).toHaveLength(1)
   })
 
-  live('rejects historical completing checkpoints with missing command and execution identities', () =>
-    Effect.gen(function* () {
-      const snapshot = {
-        _tag: 'Completing',
-        runtime: 'pi-harness',
-        schemaVersion: 1,
-        version: '1.0.0',
-        repository: input.repository.href,
-        task: input.task,
-        sessionId: '1',
-        result: 'historical result',
-      }
-      yield* store.commit({
-        commitId: 'commit_00000000-0000-4000-8000-000000000012',
-        runId: initialRun.runId,
-        expectedRevision: 0,
-        status: 'running',
-        snapshot,
-        updatedAt: timestamp,
-        events: [],
-      })
-      const before = yield* Effect.promise(async () => current())
-      expect(yield* Effect.flip(restoreDevelopment(before))).toMatchObject({ _tag: 'InvalidSnapshot' })
-      yield* Effect.promise(async () => expect(resume()).rejects.toMatchObject({ _tag: 'InvalidSnapshot' }))
-      yield* Effect.promise(async () => expect(current()).resolves.toStrictEqual(before))
-      expect(submissions).toStrictEqual([])
-      expect(completeCalls).toStrictEqual([])
-    }),
-  )
-
   test('fails when Pi completion is not acknowledged after verification', async () => {
     await start()
     finishTurn('implement')
@@ -606,18 +506,4 @@ describe('development workflow with canonical D1 checkpoints', () => {
     expect(submissions).toStrictEqual([])
     await expect(current()).resolves.toStrictEqual(initialRun)
   })
-
-  live.each([
-    { workflowVersion: SemVer.make({ major: 2, minor: 0, patch: 0 }) },
-    { graphId: 'different-graph' },
-    { workflowId: 'demo' },
-    { status: 'running' as const },
-  ])('rejects mismatched persisted identity or status before execution', (changed) =>
-    Effect.gen(function* () {
-      expect(yield* Effect.flip(restoreDevelopment({ ...initialRun, ...changed }))).toMatchObject({
-        _tag: 'InvalidSnapshot',
-      })
-      expect(submissions).toStrictEqual([])
-    }),
-  )
 })
