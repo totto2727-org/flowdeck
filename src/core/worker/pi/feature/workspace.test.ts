@@ -1,150 +1,61 @@
 import { createPiTools } from '@cloudflare/computer/tools/pi-ai'
-import type { CreatePiToolsOptions } from '@cloudflare/computer/tools/pi-ai'
-import { createModels } from '@earendil-works/pi-ai'
-import { AssistantEntry, createRegistry, Harness, MemoryStorage, ToolTask } from '@earendil-works/pi-durable'
-import { Array, Option } from 'effect'
-import { describe, expect, test, vi } from 'vite-plus/test'
+import { Array, Option, Predicate } from 'effect'
+import { describe, expect, test } from 'vite-plus/test'
 
+import { missingGreeting, replayWorkspaceTool, workspaceFixture } from './workspace.fixture.ts'
 import { CONTAINER_BACKEND, createWorkspaceTools, WORKER_SHELL_BACKEND } from './workspace.ts'
 
-// Synthetic storage/runtime boundary: these checks do not start a Container or test persistence.
-const fixture = (backendId = CONTAINER_BACKEND) =>
-  ({
-    fs: {
-      stat: vi.fn(async () => ({
-        size: 5,
-        mtime: 0,
-        mode: 0o10_0644,
-        isFile: true,
-        isDirectory: false,
-      })),
-      readFile: vi.fn(
-        async () =>
-          new ReadableStream<Uint8Array>({
-            start(controller) {
-              controller.enqueue(new TextEncoder().encode('hello'))
-              controller.close()
-            },
-          }),
-      ),
-      writeFile: vi.fn(async () => {}),
-      mkdir: vi.fn(async () => {}),
-      rm: vi.fn(async () => {}),
-      find: vi.fn(async () => []),
-      grep: vi.fn(async () => []),
-      readdir: vi.fn(async () => []),
-    },
-    runtime: {
-      backends: () => [
-        { id: backendId, protocol: 'command' as const, callable: false, description: 'Runs shell commands.' },
-      ],
-      exec: vi.fn(async () => ({
-        result: async () => ({ exitCode: 0, stdout: 'hello', stderr: '' }),
-      })),
-    },
-  }) satisfies CreatePiToolsOptions['workspace']
+const workspaceCalls = [
+  { arguments: { command: 'echo hello' }, fail: false, name: 'exec' },
+  { arguments: { command: 'echo hello' }, fail: true, name: 'exec' },
+  { arguments: { path: '/workspace' }, fail: false, name: 'ls' },
+  { arguments: { path: '/workspace/hello.txt' }, fail: false, name: 'read' },
+]
+const cases = Array.flatMap([CONTAINER_BACKEND, WORKER_SHELL_BACKEND], (backendId) =>
+  Array.map(workspaceCalls, (call) => ({ ...call, backendId })),
+)
 
-describe('pi workspace tools', () => {
-  test.each(
-    Array.flatMap([CONTAINER_BACKEND, WORKER_SHELL_BACKEND], (backendId) =>
-      Array.map(
-        [
-          { name: 'exec', arguments: { command: 'echo hello' }, fail: false },
-          { name: 'exec', arguments: { command: 'echo hello' }, fail: true },
-          { name: 'ls', arguments: { path: '/workspace' }, fail: false },
-          { name: 'read', arguments: { path: '/workspace/hello.txt' }, fail: false },
-        ],
-        (call) => ({ ...call, backendId }),
-      ),
-    ),
-  )('commits Computer $name output from $backendId to the durable model transcript (failure=$fail)', async (call) => {
-    const workspace = fixture(call.backendId)
-    if (call.fail) {
-      workspace.runtime.exec.mockRejectedValue(new Error('container unavailable'))
-    }
-    const context: Parameters<Harness['close']>[0] = {
-      abortSignal: undefined,
-      value: () => undefined,
-      toString: () => '[workspace regression]',
-    }
-    const registry = createRegistry()
-    registry.install({ name: 'workspace', tools: createWorkspaceTools(workspace, call.backendId) })
-    const harness = await Harness.open(new MemoryStorage(), { models: createModels(), registry }, context)
-    try {
-      const root = await harness.root(context)
-      const toolCall = { type: 'toolCall' as const, id: 'workspace-call', name: call.name, arguments: call.arguments }
-      const { execute } = createPiTools({ workspace, exec: { [call.backendId]: {} } })
-      const expected = await execute(toolCall)
-      const task = await root.commit(async (tx) => {
-        const assistant = await tx.appendEntry(AssistantEntry, root.id, {
-          model: [
-            {
-              role: 'assistant',
-              content: [toolCall],
-              api: 'openai-completions',
-              provider: 'test',
-              model: 'test',
-              stopReason: 'toolUse',
-              timestamp: 0,
-              usage: {
-                input: 0,
-                output: 0,
-                cacheRead: 0,
-                cacheWrite: 0,
-                totalTokens: 0,
-                cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-              },
-            },
-          ],
-        })
-        return tx.createTask(
-          ToolTask,
-          { kind: 'model', assistant: assistant.id, callId: toolCall.id },
-          {
-            ownership: { kind: 'conversation' },
-          },
-        )
-      }, context)
-      await expect(harness.waitForTask(task, context)).resolves.toMatchObject({
-        state: { outcome: { status: 'completed' } },
+describe('pi workspace tool replay', () => {
+  test.each(cases)(
+    'commits Computer $name output from $backendId to the durable model transcript (failure=$fail)',
+    async (call) => {
+      const { callId, expected, resultMessages, task } = await replayWorkspaceTool(call)
+      expect(task).toMatchObject({ state: { outcome: { status: 'completed' } } })
+      expect(resultMessages).toHaveLength(1)
+      expect(Array.getUnsafe(resultMessages, 0)).toMatchObject({
+        content: expected.content,
+        isError: expected.isError,
+        role: 'toolResult',
+        toolCallId: callId,
+        toolName: call.name,
       })
-      const view = await root.context(context)
-      expect(Array.filter(view.messages, (message) => message.role === 'toolResult')).toStrictEqual([
-        expect.objectContaining({
-          role: 'toolResult',
-          toolCallId: toolCall.id,
-          toolName: call.name,
-          content: expected.content,
-          isError: expected.isError,
-        }),
-      ])
       expect(expected.content).not.toStrictEqual([])
-      if (call.name === 'exec' && !call.fail) {
-        expect(expected.content).toStrictEqual([{ type: 'text', text: expect.stringContaining('hello') }])
-      }
-    } finally {
-      await harness.close(context)
-    }
-  })
+      expect(missingGreeting(call, expected)).toBe(false)
+    },
+  )
+})
 
+type Tool = ReturnType<typeof createWorkspaceTools>[number]
+type Declaration = Pick<Tool, 'constrainedSampling' | 'description' | 'name' | 'parameters'>
+
+const declaration = (tool: Tool): Declaration => ({
+  ...(Predicate.isTruthy(tool.constrainedSampling) ? { constrainedSampling: tool.constrainedSampling } : {}),
+  description: tool.description,
+  name: tool.name,
+  parameters: tool.parameters,
+})
+
+describe('pi workspace tool declarations', () => {
   test('preserves the official declarations and schema enforcement metadata', () => {
-    const workspace = fixture()
-    const { tools } = createPiTools({
-      workspace,
-      shell: { defaultBackend: CONTAINER_BACKEND, backends: { [CONTAINER_BACKEND]: {} } },
-    })
-    expect(
-      Array.map(createWorkspaceTools(workspace), (tool) => ({
-        name: tool.name,
-        description: tool.description,
-        parameters: tool.parameters,
-        ...(tool.constrainedSampling ? { constrainedSampling: tool.constrainedSampling } : {}),
-      })),
-    ).toStrictEqual(tools)
+    const workspace = workspaceFixture()
+    const { tools } = createPiTools({ exec: { [CONTAINER_BACKEND]: {} }, workspace })
+    const actual = Array.map(createWorkspaceTools(workspace), declaration)
+    expect(actual).toStrictEqual(tools)
   })
 
   test('keeps non-idempotent edit and shell commands unsafe to replay', () => {
-    expect(Array.map(createWorkspaceTools(fixture()), ({ name, replay }) => ({ name, replay }))).toStrictEqual([
+    const tools = createWorkspaceTools(workspaceFixture())
+    expect(Array.map(tools, ({ name, replay }) => ({ name, replay }))).toStrictEqual([
       { name: 'read', replay: 'safe' },
       { name: 'ls', replay: 'safe' },
       { name: 'find', replay: 'safe' },
@@ -157,15 +68,11 @@ describe('pi workspace tools', () => {
   })
 
   test('offers only the Container shell without JavaScript module arguments', () => {
-    const exec = Array.findFirst(createWorkspaceTools(fixture()), (tool) => tool.name === 'exec')
-    expect(exec).toMatchObject({
-      _tag: 'Some',
-      value: { description: expect.stringContaining('Runs shell commands.') },
-    })
-    if (Option.isSome(exec)) {
-      expect(exec.value.parameters).toHaveProperty('properties.command')
-      expect(exec.value.parameters).not.toHaveProperty('properties.backend')
-      expect(exec.value.parameters).not.toHaveProperty('properties.input')
-    }
+    const found = Array.findFirst(createWorkspaceTools(workspaceFixture()), (tool) => tool.name === 'exec')
+    const exec = Option.getOrThrow(found)
+    expect(exec.description).toContain('Runs shell commands.')
+    expect(exec.parameters).toHaveProperty('properties.command')
+    expect(exec.parameters).not.toHaveProperty('properties.backend')
+    expect(exec.parameters).not.toHaveProperty('properties.input')
   })
 })
