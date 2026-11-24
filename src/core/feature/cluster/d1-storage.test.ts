@@ -3,7 +3,7 @@ import type { D1Database } from '@cloudflare/workers-types'
 import { live } from '@effect/vitest'
 import { Machine } from '@typeonce/effect-machine'
 import { ClusterMachine } from '@typeonce/effect-machine/cluster'
-import { Fiber, Array, Effect, Exit, Layer, ManagedRuntime, Option } from 'effect'
+import { Array, Data, Effect, Exit, Fiber, Layer, Option, Predicate, Schema } from 'effect'
 import { ClusterError, EntityAddress, EntityId, EntityType, ShardId, Snowflake, TestRunner } from 'effect/cluster'
 import { Miniflare } from 'miniflare'
 import { afterEach, beforeEach, describe, expect, expectTypeOf, test, vi } from 'vite-plus/test'
@@ -19,10 +19,11 @@ const isolatedExit = Effect.fn(function* <A, E>(effect: Effect.Effect<A, E>) {
 })
 
 // This data-only fixture verifies Cluster persistence independently of any application workflow runtime.
+const Advance = Schema.TaggedStruct('Advance', {})
 const StorageTestMachine = Machine.make({
   id: 'cluster-storage-test',
   root: Machine.state({ states: { ready: {}, advanced: {}, completed: { type: 'final' } } }),
-  events: Machine.events({ Advance: {} }),
+  events: Machine.eventsFromSchemas(Advance),
 }).handle({
   initial: { target: 'ready' },
   states: {
@@ -49,16 +50,17 @@ const checkpoint = (requestId = request, path = 'ready'): ClusterMachine.Checkpo
 let miniflare: Miniflare
 let database: D1Database
 let storageLayer: Layer.Layer<ClusterMachine.Storage>
-const freshStorage = () => Effect.runSync(ClusterMachine.Storage.pipe(Effect.provide(storageLayer)))
-const nativeClient = () =>
-  Effect.runSync(D1Client.pipe(Effect.provide(NativeD1Client.pipe(Layer.provide(Layer.succeed(D1Binding, database))))))
+const freshStorage = Effect.suspend(() => ClusterMachine.Storage.pipe(Effect.provide(storageLayer)))
+const nativeClient = Effect.suspend(() => {
+  const binding = Layer.succeed(D1Binding, database)
+  const layers = NativeD1Client.pipe(Layer.provide(binding))
+  return D1Client.pipe(Effect.provide(layers))
+})
 
-const storageWithClient = (client: D1Client['Service']) =>
-  Effect.runSync(
-    ClusterMachine.Storage.pipe(
-      Effect.provide(D1ClusterMachineStorage.pipe(Layer.provide(Layer.succeed(D1Client, client)))),
-    ),
-  )
+const storageWithClient = (client: D1Client['Service']): Effect.Effect<ClusterMachine.Storage['Service']> => {
+  const provided = D1ClusterMachineStorage.pipe(Layer.provide(Layer.succeed(D1Client, client)))
+  return ClusterMachine.Storage.pipe(Effect.provide(provided))
+}
 
 beforeEach(async () => {
   miniflare = new Miniflare({
@@ -91,7 +93,7 @@ describe('D1 Cluster machine checkpoints', () => {
 
   live('loads an empty address without inventing a checkpoint or receipt', () =>
     Effect.gen(function* () {
-      expect(yield* freshStorage().load(address(), request)).toStrictEqual({
+      expect(yield* (yield* freshStorage).load(address(), request)).toStrictEqual({
         checkpoint: Option.none(),
         processed: false,
       })
@@ -100,12 +102,12 @@ describe('D1 Cluster machine checkpoints', () => {
 
   live('restores the latest checkpoint and all earlier receipts from a new service without rounding snowflakes', () =>
     Effect.gen(function* () {
-      const storage = freshStorage()
+      const storage = yield* freshStorage
       expect(yield* storage.commit(address(), checkpoint())).toStrictEqual(ClusterMachine.CommitResult.Committed())
       expect(yield* storage.commit(address(), checkpoint(laterRequest, 'advanced'))).toStrictEqual(
         ClusterMachine.CommitResult.Committed(),
       )
-      const restored = freshStorage()
+      const restored = yield* freshStorage
       expect(yield* restored.load(address(), request)).toStrictEqual({
         checkpoint: Option.some(checkpoint(laterRequest, 'advanced')),
         processed: true,
@@ -122,7 +124,7 @@ describe('D1 Cluster machine checkpoints', () => {
       expect(yield* restored.commit(address(), checkpoint(request, 'completed'))).toStrictEqual(
         ClusterMachine.CommitResult.Duplicate(),
       )
-      expect(yield* freshStorage().load(address(), laterRequest)).toStrictEqual({
+      expect(yield* (yield* freshStorage).load(address(), laterRequest)).toStrictEqual({
         checkpoint: Option.some(checkpoint(laterRequest, 'advanced')),
         processed: true,
       })
@@ -131,7 +133,7 @@ describe('D1 Cluster machine checkpoints', () => {
 
   live('commits with two native prepares and one batch without reads, then loads with one read', () =>
     Effect.gen(function* () {
-      const client = nativeClient()
+      const client = yield* nativeClient
       const nativePrepare = client.prepare.bind(client)
       const read = vi.fn()
       const prepare = vi.spyOn(client, 'prepare').mockImplementation((sql) => {
@@ -150,7 +152,7 @@ describe('D1 Cluster machine checkpoints', () => {
       })
       const batch = vi.spyOn(client, 'batch')
       try {
-        const storage = storageWithClient(client)
+        const storage = yield* storageWithClient(client)
         expect(yield* storage.commit(address(), checkpoint())).toStrictEqual(ClusterMachine.CommitResult.Committed())
         expect(prepare).toHaveBeenCalledTimes(2)
         expect(batch).toHaveBeenCalledTimes(1)
@@ -191,8 +193,10 @@ describe('D1 Cluster machine checkpoints', () => {
           },
         },
       }
-      expect(yield* freshStorage().commit(address(), value)).toStrictEqual(ClusterMachine.CommitResult.Committed())
-      expect(yield* freshStorage().load(address(), request)).toStrictEqual({
+      expect(yield* (yield* freshStorage).commit(address(), value)).toStrictEqual(
+        ClusterMachine.CommitResult.Committed(),
+      )
+      expect(yield* (yield* freshStorage).load(address(), request)).toStrictEqual({
         checkpoint: Option.some(value),
         processed: true,
       })
@@ -202,7 +206,7 @@ describe('D1 Cluster machine checkpoints', () => {
   live('commits exactly once for concurrent deliveries of the same request', () =>
     Effect.gen(function* () {
       const results = yield* Effect.all(
-        [freshStorage().commit(address(), checkpoint()), freshStorage().commit(address(), checkpoint())],
+        [(yield* freshStorage).commit(address(), checkpoint()), (yield* freshStorage).commit(address(), checkpoint())],
         {
           concurrency: 'unbounded',
         },
@@ -229,7 +233,7 @@ describe('D1 Cluster machine checkpoints', () => {
   ] as const)('isolates %s in the full address', ([_label, other]) =>
     Effect.gen(function* () {
       const first = _label === 'delimiter collision' ? address('group', 1, 'machine', 'run:tail') : address()
-      const storage = freshStorage()
+      const storage = yield* freshStorage
       yield* storage.commit(first, checkpoint())
       expect(yield* storage.load(other, request)).toStrictEqual({
         checkpoint: Option.none(),
@@ -252,15 +256,15 @@ describe('D1 Cluster machine checkpoints', () => {
           "CREATE TRIGGER reject_receipt BEFORE INSERT ON cluster_machine_requests BEGIN SELECT RAISE(ABORT, 'receipt rejected'); END",
         ),
       )
-      const error = yield* freshStorage().commit(address(), checkpoint()).pipe(Effect.flip)
+      const error = yield* (yield* freshStorage).commit(address(), checkpoint()).pipe(Effect.flip)
       expect(error).toBeInstanceOf(ClusterError.PersistenceError)
       expect(error.cause).toBeDefined()
-      expect(yield* freshStorage().load(address(), request)).toStrictEqual({
+      expect(yield* (yield* freshStorage).load(address(), request)).toStrictEqual({
         checkpoint: Option.none(),
         processed: false,
       })
       yield* Effect.promise(async () => database.exec('DROP TRIGGER reject_receipt'))
-      expect(yield* freshStorage().commit(address(), checkpoint())).toStrictEqual(
+      expect(yield* (yield* freshStorage).commit(address(), checkpoint())).toStrictEqual(
         ClusterMachine.CommitResult.Committed(),
       )
     }),
@@ -268,20 +272,20 @@ describe('D1 Cluster machine checkpoints', () => {
 
   live('preserves the earlier checkpoint and receipt when a later receipt insert aborts', () =>
     Effect.gen(function* () {
-      yield* freshStorage().commit(address(), checkpoint())
+      yield* (yield* freshStorage).commit(address(), checkpoint())
       yield* Effect.promise(async () =>
         database.exec(
           "CREATE TRIGGER reject_receipt BEFORE INSERT ON cluster_machine_requests BEGIN SELECT RAISE(ABORT, 'receipt rejected'); END",
         ),
       )
       expect(
-        yield* freshStorage().commit(address(), checkpoint(laterRequest, 'advanced')).pipe(Effect.flip),
+        yield* (yield* freshStorage).commit(address(), checkpoint(laterRequest, 'advanced')).pipe(Effect.flip),
       ).toBeInstanceOf(ClusterError.PersistenceError)
-      expect(yield* freshStorage().load(address(), laterRequest)).toStrictEqual({
+      expect(yield* (yield* freshStorage).load(address(), laterRequest)).toStrictEqual({
         checkpoint: Option.some(checkpoint()),
         processed: false,
       })
-      expect(yield* freshStorage().load(address(), request)).toStrictEqual({
+      expect(yield* (yield* freshStorage).load(address(), request)).toStrictEqual({
         checkpoint: Option.some(checkpoint()),
         processed: true,
       })
@@ -291,7 +295,7 @@ describe('D1 Cluster machine checkpoints', () => {
   live('retains native failure causes', () =>
     Effect.gen(function* () {
       yield* Effect.promise(async () => database.exec('DROP TABLE cluster_machine_requests'))
-      const error = yield* freshStorage().commit(address(), checkpoint()).pipe(Effect.flip)
+      const error = yield* (yield* freshStorage).commit(address(), checkpoint()).pipe(Effect.flip)
       expect(error).toBeInstanceOf(ClusterError.PersistenceError)
       expect(error.cause).toBeDefined()
       expect(String(error.cause)).toContain('cluster_machine_requests')
@@ -301,11 +305,11 @@ describe('D1 Cluster machine checkpoints', () => {
   live('retains the exact captured client defect as the persistence cause', () =>
     Effect.gen(function* () {
       const cause = new Error('native batch failure')
-      const storage = storageWithClient({ ...nativeClient(), batch: () => Effect.die(cause) })
+      const storage = yield* storageWithClient({ ...(yield* nativeClient), batch: () => Effect.die(cause) })
       const error = yield* storage.commit(address(), checkpoint()).pipe(Effect.flip)
       expect(error).toBeInstanceOf(ClusterError.PersistenceError)
       expect(error.cause).toBe(cause)
-      expect(yield* freshStorage().load(address(), request)).toStrictEqual({
+      expect(yield* (yield* freshStorage).load(address(), request)).toStrictEqual({
         checkpoint: Option.none(),
         processed: false,
       })
@@ -314,9 +318,9 @@ describe('D1 Cluster machine checkpoints', () => {
 
   live('does not reclassify batch interruption as persistence failure', () =>
     Effect.gen(function* () {
-      const storage = storageWithClient({ ...nativeClient(), batch: () => Effect.interrupt })
+      const storage = yield* storageWithClient({ ...(yield* nativeClient), batch: () => Effect.interrupt })
       expect(Exit.hasInterrupts(yield* isolatedExit(storage.commit(address(), checkpoint())))).toBe(true)
-      expect(yield* freshStorage().load(address(), request)).toStrictEqual({
+      expect(yield* (yield* freshStorage).load(address(), request)).toStrictEqual({
         checkpoint: Option.none(),
         processed: false,
       })
@@ -327,96 +331,134 @@ describe('D1 Cluster machine checkpoints', () => {
     'fails safely on malformed stored snapshot %s',
     (snapshot) =>
       Effect.gen(function* () {
-        yield* freshStorage().commit(address(), checkpoint())
+        yield* (yield* freshStorage).commit(address(), checkpoint())
         yield* Effect.promise(async () =>
           database.prepare('UPDATE cluster_machine_checkpoints SET snapshot_json = ?').bind(snapshot).run(),
         )
-        expect(yield* freshStorage().load(address(), request).pipe(Effect.flip)).toBeInstanceOf(
+        expect(yield* (yield* freshStorage).load(address(), request).pipe(Effect.flip)).toBeInstanceOf(
           ClusterError.PersistenceError,
         )
       }),
   )
 })
 
-// Official TestRunner is the local messaging host, not deployed Cluster acceptance.
-// D1 is real workerd storage. No handler internals or memory checkpoint service are substituted.
-const host = () => {
+// Use actual workerd D1 and the official Cluster messaging test host.
+const openHost = Effect.gen(function* () {
   const machine = ClusterMachine.make('ClusterStorageTest', StorageTestMachine, { version: '1' })
   const dependencies = Layer.merge(storageLayer, TestRunner.layer)
-  const runtime = ManagedRuntime.make(machine.toLayer().pipe(Layer.provideMerge(dependencies)))
-  return {
-    runtime,
-    send: () =>
-      runtime.runPromise(
-        Effect.gen(function* () {
-          const client = yield* machine.entity.client
-          return yield* client('storage-run').send({ _tag: 'Advance' })
-        }),
-      ),
-  }
+  const context = yield* Layer.build(machine.toLayer().pipe(Layer.provideMerge(dependencies)))
+  const send = Effect.gen(function* () {
+    const client = yield* machine.entity.client
+    return yield* client('storage-run').send(Advance.make({}))
+  }).pipe(Effect.provideContext(context))
+  return { send }
+})
+
+interface CheckpointRow {
+  machine_id: string
+  request_id: string
+  snapshot_json: string
+  version: string
 }
-const persisted = () =>
-  database
-    .prepare('SELECT machine_id, version, request_id, snapshot_json FROM cluster_machine_checkpoints')
-    .first<{ machine_id: string; version: string; request_id: string; snapshot_json: string }>()
 
-describe('official Cluster machine with D1 checkpoint storage', () => {
-  test('rejects a failed receipt insert without partial persistence and recovers after host reconstruction', async () => {
-    await database.exec(
-      "CREATE TRIGGER reject_receipt BEFORE INSERT ON cluster_machine_requests BEGIN SELECT RAISE(ABORT, 'receipt rejected'); END",
-    )
-    const failed = host()
-    try {
-      await expect(failed.send()).resolves.toMatchObject({ _tag: 'Rejected', reason: 'PersistenceFailure' })
-      await expect(persisted()).resolves.toBeNull()
-      await expect(
-        database.prepare('SELECT count(*) AS count FROM cluster_machine_requests').first(),
-      ).resolves.toStrictEqual({
-        count: 0,
+const persisted = (): Effect.Effect<CheckpointRow | null> =>
+  Effect.promise(async () =>
+    database
+      .prepare('SELECT machine_id, version, request_id, snapshot_json FROM cluster_machine_checkpoints')
+      .first<CheckpointRow>(),
+  )
+
+class MissingCheckpoint extends Data.TaggedError('MissingCheckpoint')<{ message: string }> {}
+
+const requireCheckpoint = Effect.gen(function* () {
+  const row = yield* persisted()
+  return Predicate.isNotNullish(row)
+    ? row
+    : yield* new MissingCheckpoint({ message: 'Expected a persisted D1 checkpoint' })
+})
+
+const SnapshotPaths = Schema.Struct({
+  active: Schema.Array(Schema.Struct({ path: Schema.String })),
+})
+const decodeSnapshotPaths = Schema.decodeEffect(Schema.fromJsonString(SnapshotPaths))
+
+const acceptInFreshHost = Effect.scoped(
+  Effect.gen(function* () {
+    const host = yield* openHost
+    expect(yield* host.send).toStrictEqual(new ClusterMachine.Accepted({}))
+  }),
+)
+
+describe('cluster receipt rollback and host recovery', () => {
+  live('rejects a failed receipt insert without partial persistence and recovers after host reconstruction', () =>
+    Effect.gen(function* () {
+      yield* Effect.promise(async () =>
+        database.exec(
+          "CREATE TRIGGER reject_receipt BEFORE INSERT ON cluster_machine_requests BEGIN SELECT RAISE(ABORT, 'receipt rejected'); END",
+        ),
+      )
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const failed = yield* openHost
+          const result = yield* failed.send
+          expect(result).toBeInstanceOf(ClusterMachine.Rejected)
+          expect(result).toMatchObject({ reason: 'PersistenceFailure' })
+          expect(yield* persisted()).toBeNull()
+          const count = yield* Effect.promise(async () =>
+            database.prepare('SELECT count(*) AS count FROM cluster_machine_requests').first(),
+          )
+          expect(count).toStrictEqual({ count: 0 })
+        }),
+      )
+      yield* Effect.promise(async () => database.exec('DROP TRIGGER reject_receipt'))
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const recovered = yield* openHost
+          expect(yield* recovered.send).toStrictEqual(new ClusterMachine.Accepted({}))
+          const row = yield* requireCheckpoint
+          expect(row).toMatchObject({ machine_id: StorageTestMachine.id, version: '1' })
+          expect(yield* decodeSnapshotPaths(row.snapshot_json)).toMatchObject({
+            active: [{ path: '' }, { path: 'advanced' }],
+          })
+          const receipts = yield* Effect.promise(async () =>
+            database.prepare('SELECT request_id FROM cluster_machine_requests').all(),
+          )
+          expect(receipts).toMatchObject({ results: [{ request_id: row.request_id }] })
+        }),
+      )
+    }),
+  )
+})
+
+describe('cluster checkpoint restoration', () => {
+  live('resumes after host disposal and accepts final requests as no-ops', () =>
+    Effect.gen(function* () {
+      yield* acceptInFreshHost
+      const afterFirst = yield* requireCheckpoint
+      expect(afterFirst).toMatchObject({ machine_id: StorageTestMachine.id, version: '1' })
+      expect(yield* decodeSnapshotPaths(afterFirst.snapshot_json)).toMatchObject({
+        active: [{ path: '' }, { path: 'advanced' }],
       })
-    } finally {
-      await failed.runtime.dispose()
-    }
-    await database.exec('DROP TRIGGER reject_receipt')
-    const recovered = host()
-    try {
-      await expect(recovered.send()).resolves.toStrictEqual(new ClusterMachine.Accepted({}))
-      const restored = await persisted()
-      expect(restored).toMatchObject({ machine_id: StorageTestMachine.id, version: '1' })
-      expect(JSON.parse(restored!.snapshot_json)).toMatchObject({ active: [{ path: '' }, { path: 'advanced' }] })
-      await expect(database.prepare('SELECT request_id FROM cluster_machine_requests').all()).resolves.toMatchObject({
-        results: [{ request_id: restored!.request_id }],
-      })
-    } finally {
-      await recovered.runtime.dispose()
-    }
-  })
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const second = yield* openHost
+          expect(yield* second.send).toStrictEqual(new ClusterMachine.Accepted({}))
+          const completed = yield* requireCheckpoint
+          expect(yield* decodeSnapshotPaths(completed.snapshot_json)).toMatchObject({
+            active: [{ path: '' }, { path: 'completed' }],
+          })
+          expect(yield* second.send).toStrictEqual(new ClusterMachine.Accepted({}))
+          const noop = yield* requireCheckpoint
+          expect(noop.snapshot_json).toBe(completed.snapshot_json)
+          expect(noop.request_id).not.toBe(completed.request_id)
+        }),
+      )
+    }),
+  )
+})
 
-  test('resumes the data-only machine after host disposal and accepts final requests as no-ops', async () => {
-    const first = host()
-    try {
-      await expect(first.send()).resolves.toStrictEqual(new ClusterMachine.Accepted({}))
-    } finally {
-      await first.runtime.dispose()
-    }
-    const afterFirst = await persisted()
-    expect(afterFirst).toMatchObject({ machine_id: StorageTestMachine.id, version: '1' })
-    expect(JSON.parse(afterFirst!.snapshot_json)).toMatchObject({ active: [{ path: '' }, { path: 'advanced' }] })
-    const second = host()
-    try {
-      await expect(second.send()).resolves.toStrictEqual(new ClusterMachine.Accepted({}))
-      const completed = await persisted()
-      expect(JSON.parse(completed!.snapshot_json)).toMatchObject({ active: [{ path: '' }, { path: 'completed' }] })
-      await expect(second.send()).resolves.toStrictEqual(new ClusterMachine.Accepted({}))
-      const noop = await persisted()
-      expect(noop!.snapshot_json).toBe(completed!.snapshot_json)
-      expect(noop!.request_id).not.toBe(completed!.request_id)
-    } finally {
-      await second.runtime.dispose()
-    }
-  })
-
-  test.each([
+describe('incompatible cluster checkpoints', () => {
+  live.each([
     ['version', 'VersionMismatch', "UPDATE cluster_machine_checkpoints SET version = 'other'"],
     ['identity', 'MachineIdMismatch', "UPDATE cluster_machine_checkpoints SET machine_id = 'other'"],
     [
@@ -424,21 +466,20 @@ describe('official Cluster machine with D1 checkpoint storage', () => {
       'InvalidCheckpoint',
       `UPDATE cluster_machine_checkpoints SET snapshot_json = '{"_tag":"MachineSnapshot","version":2,"active":[{"path":"missing"}]}'`,
     ],
-  ])('rejects incompatible %s without changing persisted state', async (_label, reason, mutation) => {
-    const first = host()
-    try {
-      await expect(first.send()).resolves.toStrictEqual(new ClusterMachine.Accepted({}))
-    } finally {
-      await first.runtime.dispose()
-    }
-    await database.exec(mutation)
-    const before = await persisted()
-    const restored = host()
-    try {
-      await expect(restored.send()).resolves.toMatchObject({ _tag: 'Rejected', reason })
-    } finally {
-      await restored.runtime.dispose()
-    }
-    await expect(persisted()).resolves.toStrictEqual(before)
-  })
+  ] as const)('rejects incompatible %s without changing persisted state', ([_label, reason, mutation]) =>
+    Effect.gen(function* () {
+      yield* acceptInFreshHost
+      yield* Effect.promise(async () => database.exec(mutation))
+      const before = yield* persisted()
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const restored = yield* openHost
+          const result = yield* restored.send
+          expect(result).toBeInstanceOf(ClusterMachine.Rejected)
+          expect(result).toMatchObject({ reason })
+        }),
+      )
+      expect(yield* persisted()).toStrictEqual(before)
+    }),
+  )
 })
