@@ -1,142 +1,71 @@
-import { fileURLToPath } from 'node:url'
+import { live } from '@effect/vitest'
+import { Effect, Schedule, Schema } from 'effect'
+import { describe, expect } from 'vite-plus/test'
 
-import * as NodeServices from '@effect/platform-node/NodeServices'
-import { virtualEntryPlugin } from 'alchemy/Bundle'
-import { makeEffectVirtualEntry } from 'alchemy/Cloudflare/Workers/Sources/Rolldown'
-import { Array, Context, Effect, Option, Schedule } from 'effect'
-import { Miniflare } from 'miniflare'
-import { build } from 'vite-plus'
-import { afterAll, beforeAll, describe, expect, test } from 'vite-plus/test'
+import { openDevelopmentSdk } from './fixtures/development-sdk-host.ts'
 
-import { workspaceProxyBuild } from '@/core/worker/pi/feature/workspace-proxy-build'
-
-const caller = `export default { async fetch(request, env) {
-  const stub = env.PROBE.getByName('test')
-  const path = new URL(request.url).pathname
-  if (path === '/capnweb') {
-    try { await stub.capnwebTarget(); return Response.json({ accepted: true }) }
-    catch (error) { return Response.json({ accepted: false, name: error.name, message: error.message }) }
-  }
-  if (path === '/proxy') return Response.json(await stub.proxyHealth())
-  if (path === '/schedule') return Response.json(await stub.schedule())
-  if (path === '/fetch') return stub.fetch('https://probe/')
-  return Response.json(await stub.inspect())
-} }`
+const startupTimeout = 60_000
+const idle = { jobs: 0, sqlite: 1 }
+const awaitAlarm = { schedule: Schedule.spaced('20 millis'), times: 50 }
+const idleState = Schema.Struct({
+  jobs: Schema.Literal(idle.jobs),
+  sqlite: Schema.Literal(idle.sqlite),
+})
+// oxlint-disable-next-line rules/prefer-non-unknown-decode -- The Miniflare adapter reads raw JSON from the worker.
+const readIdle = Schema.decodeUnknownEffect(idleState)
+const capnwebError = Schema.Struct({
+  accepted: Schema.Literal(false),
+  message: Schema.String,
+  name: Schema.Literal('DataCloneError'),
+})
+// oxlint-disable-next-line rules/prefer-non-unknown-decode -- The native service may return malformed JSON at the RPC boundary.
+const readCapnwebError = Schema.decodeUnknownEffect(capnwebError)
+const exact = { onExcessProperty: 'error' } as const
 
 describe('alchemy Effect DO and official native SDK raw boundary', () => {
-  let miniflare: Miniflare
+  live(
+    'starts the production PiHarness in an Effect DO with SQLite and no external I/O',
+    () =>
+      Effect.gen(function* () {
+        const { read } = yield* openDevelopmentSdk
+        expect(yield* read()).toStrictEqual(idle)
+        expect(yield* read('/fetch')).toStrictEqual({ jobs: 0 })
+      }).pipe(Effect.scoped),
+    startupTimeout,
+  )
 
-  beforeAll(async () => {
-    const virtualEntry = await Effect.runPromise(virtualEntryPlugin.pipe(Effect.provide(NodeServices.layer)))
-    const result = await build({
-      configFile: false,
-      resolve: { tsconfigPaths: true },
-      logLevel: 'silent',
-      plugins: [
-        workspaceProxyBuild(),
-        workspaceProxyBuild(),
-        virtualEntry(
-          makeEffectVirtualEntry(
-            {
-              SdkBoundary: {
-                kind: 'durableObject',
-                services: Context.empty(),
-                constructor: Effect.succeed(Effect.succeed({})),
-              },
-            },
-            { name: 'sdk-boundary', stage: 'test' },
-          ),
-        ),
-      ],
-      build: {
-        target: 'esnext',
-        write: false,
-        minify: false,
-        outDir: fileURLToPath(new URL('../tmp/development-sdk-build', import.meta.url)),
-        lib: {
-          entry: fileURLToPath(new URL('fixtures/development-sdk-worker.ts', import.meta.url)),
-          formats: ['es'],
-        },
-        rolldownOptions: { external: (id) => id.startsWith('cloudflare:') || id.startsWith('node:') },
-      },
-    })
-    const output = Array.isArray(result) ? result[0] : result
-    if (!output || !('output' in output)) {
-      throw new Error('Expected bundled SDK fixture')
-    }
-    const chunks = Array.filter(output.output, (entry) => entry.type === 'chunk')
-    const chunk = Array.findFirst(chunks, (entry) => entry.isEntry)
-    if (Option.isNone(chunk)) {
-      throw new Error('Expected SDK fixture entry chunk')
-    }
-    expect(chunk.value.exports).toStrictEqual(expect.arrayContaining(['SdkBoundary', 'WorkspaceProxy', 'default']))
-    miniflare = new Miniflare({
-      workers: [
-        {
-          name: 'caller',
-          modules: true,
-          script: caller,
-          compatibilityDate: '2026-07-30',
-          durableObjects: { PROBE: { className: 'SdkBoundary', scriptName: 'effect', useSQLite: true } },
-        },
-        {
-          name: 'effect',
-          outboundService: () => {
-            throw new Error('External network access is forbidden in this test')
-          },
-          modules: Array.map(
-            Array.prepend(
-              Array.filter(chunks, (entry) => entry !== chunk.value),
-              chunk.value,
-            ),
-            (entry) => ({ type: 'ESModule' as const, path: entry.fileName, contents: entry.code }),
-          ),
-          compatibilityDate: '2026-07-30',
-          compatibilityFlags: ['nodejs_compat'],
-          bindings: {
-            CLOUDFLARE_ACCOUNT_ID: 'test-account',
-            CLOUDFLARE_AI_GATEWAY_ID: 'test-gateway',
-            CLOUDFLARE_AI_GATEWAY_API_KEY: 'test-key-not-sent',
-          },
-          durableObjects: { PROBE: { className: 'SdkBoundary', useSQLite: true } },
-        },
-      ],
-    })
-  }, 60_000)
+  live(
+    'rejects a Capnweb target sent as a native Cloudflare RPC capability',
+    () =>
+      Effect.gen(function* () {
+        const { read } = yield* openDevelopmentSdk
+        const reply = yield* read('/capnweb')
+        const failure = yield* readCapnwebError(reply, exact)
+        expect(failure.message).toContain('WorkspaceStub')
+      }).pipe(Effect.scoped),
+    startupTimeout,
+  )
 
-  afterAll(async () => {
-    await miniflare?.dispose()
-  })
+  live(
+    'retains WorkspaceProxy in the Effect bundle when the plugin is registered twice',
+    () =>
+      Effect.gen(function* () {
+        const { exports, read } = yield* openDevelopmentSdk
+        expect(exports).toStrictEqual(expect.arrayContaining(['SdkBoundary', 'WorkspaceProxy', 'default']))
+        expect(yield* read('/proxy')).toStrictEqual({ status: 200, text: 'ok\n' })
+      }).pipe(Effect.scoped),
+    startupTimeout,
+  )
 
-  const read = async (path = '/') => {
-    const response = await miniflare.dispatchFetch(`https://probe${path}`)
-    expect(response.status, await response.clone().text()).toBe(200)
-    return response.json()
-  }
-
-  test('starts the production PiHarness in an Effect DO with SQLite and no external I/O', async () => {
-    await expect(read()).resolves.toStrictEqual({ jobs: 0, sqlite: 1 })
-    await expect(read('/fetch')).resolves.toStrictEqual({ jobs: 0 })
-  })
-
-  test('does not mistake the SDK Capnweb target for a native Cloudflare RPC capability', async () => {
-    await expect(read('/capnweb')).resolves.toStrictEqual({
-      accepted: false,
-      name: 'DataCloneError',
-      message: expect.stringContaining('WorkspaceStub'),
-    })
-  })
-
-  test('retains WorkspaceProxy in the generated Effect bundle even when the plugin is registered twice', async () => {
-    await expect(read('/proxy')).resolves.toStrictEqual({ status: 200, text: 'ok\n' })
-  })
-
-  test('forwards a real workerd alarm to the official Lifecycle job queue', async () => {
-    await expect(read('/schedule')).resolves.toStrictEqual({ queued: 1 })
-    await Effect.runPromise(
-      Effect.tryPromise(async () => {
-        await expect(read()).resolves.toStrictEqual({ jobs: 0, sqlite: 1 })
-      }).pipe(Effect.retry({ times: 50, schedule: Schedule.spaced('20 millis') })),
-    )
-  })
+  live(
+    'forwards a real workerd alarm to the official Lifecycle job queue',
+    () =>
+      Effect.gen(function* () {
+        const { read } = yield* openDevelopmentSdk
+        expect(yield* read('/schedule')).toStrictEqual({ queued: 1 })
+        const waitForIdle = read().pipe(Effect.flatMap((reply) => readIdle(reply, exact)))
+        expect(yield* waitForIdle.pipe(Effect.retry(awaitAlarm))).toStrictEqual(idle)
+      }).pipe(Effect.scoped),
+    startupTimeout,
+  )
 })

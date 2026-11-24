@@ -1,102 +1,53 @@
-import { Workspace } from '@cloudflare/computer'
-import type { WorkspaceProxyProps } from '@cloudflare/computer'
-import type { Fetcher } from '@cloudflare/workers-types'
 import { makeDurableObjectBridge } from 'alchemy/Cloudflare/Bridge'
 import { DurableObjectState } from 'alchemy/Cloudflare/Workers/DurableObjectState'
 import { WorkerEnvironment } from 'alchemy/Cloudflare/Workers/WorkerRuntime'
 import { makeWorkerRuntimeContext } from 'alchemy/Cloudflare/Workers/WorkerRuntimeContext'
 import { DurableObject } from 'cloudflare:workers'
-import { Clock, Context, Effect, Layer } from 'effect'
-import { HttpServerResponse } from 'effect/http'
+import { Context, Effect, Layer } from 'effect'
 
 import { Store } from '@/core/feature/workflow/services/store'
 import { makePiSdk } from '@/core/worker/pi/sdk-runtime'
 
-const unexpected = Effect.die(new Error('Unexpected workflow persistence access'))
-const StoreLive = Layer.succeed(
-  Store,
-  Store.of({
-    create: () => unexpected,
-    listRuns: unexpected,
-    getRun: () => unexpected,
-    getGraph: () => unexpected,
-    getEvents: () => unexpected,
-    commit: () => unexpected,
-  }),
-)
+import { exposeSdkMethods } from './development-sdk-operations.ts'
+
+const unexpected = Effect.die('Unexpected workflow persistence access')
+const store = Store.of({
+  commit: () => unexpected,
+  create: () => unexpected,
+  getEvents: () => unexpected,
+  getGraph: () => unexpected,
+  getRun: () => unexpected,
+  listRuns: unexpected,
+})
+const StoreLive = Layer.succeed(Store, store)
 const runtime = makeWorkerRuntimeContext('SdkBoundaryTest')
 
-/** Use Alchemy's real bridge with the production SDK adapter, not a fake native host. */
+const constructor = Effect.gen(function* () {
+  const environment = yield* WorkerEnvironment
+  return Effect.gen(function* () {
+    const state = yield* DurableObjectState
+    const sdk = yield* makePiSdk.pipe(Effect.provide(StoreLive), Effect.provideService(WorkerEnvironment, environment))
+    return yield* exposeSdkMethods(sdk, state.raw)
+  })
+})
+
+// Use Alchemy's real bridge with the production SDK adapter for this workerd fixture.
 export const entrypoint = Effect.gen(function* () {
   yield* runtime.export('SdkBoundary', {
+    constructor,
     kind: 'durableObject',
     services: Context.empty(),
-    constructor: Effect.gen(function* () {
-      const environment = yield* WorkerEnvironment
-      return Effect.gen(function* () {
-        const state = yield* DurableObjectState
-        const sdk = yield* makePiSdk.pipe(
-          Effect.provide(StoreLive),
-          Effect.provideService(WorkerEnvironment, environment),
-        )
-        return {
-          inspect: () =>
-            Effect.promise(async () => {
-              await sdk.lifecycle.start()
-              return {
-                jobs: sdk.lifecycle.jobs.list().length,
-                sqlite: state.raw.storage.sql.exec<{ value: number }>('SELECT 1 AS value').one().value,
-              }
-            }),
-          /*
-           * The SDK stub is a Capnweb target. This deliberately probes its
-           * native wire incompatibility, not a production method or workaround.
-           */
-          capnwebTarget: () =>
-            Effect.promise(async () => {
-              const workspace = new Workspace({ storage: state.raw.storage })
-              await workspace.ready()
-              return workspace.stub()
-            }),
-          proxyHealth: () =>
-            Effect.promise(async () => {
-              /*
-               * The build plugin adds this export to the generated entry, not
-               * this source module. Its real loopback is exercised by workerd.
-               */
-              const exports = state.raw.exports as {
-                WorkspaceProxy: (options: { props: WorkspaceProxyProps }) => Fetcher
-              }
-              const proxy = exports.WorkspaceProxy({
-                props: { binding: 'PROBE', id: state.raw.id.toString() },
-              })
-              const response = await proxy.fetch('https://workspace-proxy/health')
-              return { status: response.status, text: await response.text() }
-            }),
-          schedule: () =>
-            Effect.gen(function* () {
-              yield* Effect.promise(() => sdk.lifecycle.start())
-              const now = yield* Clock.currentTimeMillis
-              yield* Effect.promise(() =>
-                sdk.lifecycle.jobs.push({ id: 'test-alarm', fn: 'unknown-test-job', time: now - 1 }),
-              )
-              return { queued: sdk.lifecycle.jobs.list().length }
-            }),
-          fetch: Effect.gen(function* () {
-            yield* Effect.promise(() => sdk.lifecycle.start())
-            return HttpServerResponse.jsonUnsafe({ jobs: sdk.lifecycle.jobs.list().length })
-          }),
-          alarm: () => Effect.promise(() => sdk.lifecycle.alarm()),
-        }
-      })
-    }),
   })
   return { RuntimeContext: runtime }
 })
 
-export const SdkBoundary = makeDurableObjectBridge(DurableObject, {
+const bridge = makeDurableObjectBridge(DurableObject, {
   entrypoint,
   stack: { name: 'sdk-boundary', stage: 'test' },
-})('SdkBoundary')
+})
 
+// oxlint-disable-next-line typescript/no-unsafe-assignment -- Alchemy's generated Durable Object constructor is typed as any by its public bridge API.
+export const SdkBoundary = bridge('SdkBoundary')
+
+// oxlint-disable-next-line import/no-default-export -- Alchemy's generated Worker entry consumes the Effect as a default export.
 export default entrypoint
