@@ -3,6 +3,7 @@ import type { D1Database } from '@cloudflare/workers-types'
 import { Array, Data, Effect, Layer } from 'effect'
 import { Miniflare } from 'miniflare'
 
+import { D1Client } from '@/core/feature/d1/client'
 import { D1Binding, NativeD1Client } from '@/core/feature/d1/native'
 import { AlchemyQueryExecutorLive } from '@/core/feature/d1/reylo'
 import { D1StoreLive } from '@/core/feature/workflow/services/d1-store'
@@ -38,12 +39,28 @@ const migrate = Effect.fn('flowdeck.test.migrateD1')(function* (database: D1Data
   yield* native('Apply D1 test migrations', async () => database.batch(statements))
 })
 
-const storeServices = (database: D1Database): Layer.Layer<DatabaseQueries> =>
-  DatabaseQueriesLive.pipe(
-    Layer.provide(AlchemyQueryExecutorLive),
-    Layer.provide(NativeD1Client),
-    Layer.provide(Layer.succeed(D1Binding, database)),
-  )
+export const nativeClientLayer = (database: D1Database): Layer.Layer<D1Client> => {
+  const binding = Layer.succeed(D1Binding, database)
+  return NativeD1Client.pipe(Layer.provide(binding))
+}
+
+export const clientForDatabase = (database: D1Database): Effect.Effect<typeof D1Client.Service> =>
+  D1Client.pipe(Effect.provide(nativeClientLayer(database)))
+
+export const databaseQueriesLayer = (client: Layer.Layer<D1Client>): Layer.Layer<DatabaseQueries> =>
+  DatabaseQueriesLive.pipe(Layer.provide(AlchemyQueryExecutorLive), Layer.provide(client))
+
+export const queriesWithClient = (client: typeof D1Client.Service): Effect.Effect<typeof DatabaseQueries.Service> => {
+  const layer = Layer.succeed(D1Client, client)
+  const queries = databaseQueriesLayer(layer)
+  return DatabaseQueries.pipe(Effect.provide(queries))
+}
+
+export const storeWithClient = (client: Layer.Layer<D1Client>): Effect.Effect<StoreService> => {
+  const queries = databaseQueriesLayer(client)
+  const store = D1StoreLive.pipe(Layer.provide(queries))
+  return Store.pipe(Effect.provide(store))
+}
 
 type D1Services = Readonly<{
   freshQueries: Effect.Effect<typeof DatabaseQueries.Service>
@@ -51,7 +68,7 @@ type D1Services = Readonly<{
 }>
 
 const fixtureServices = (database: D1Database): D1Services => {
-  const QueriesLive = storeServices(database)
+  const QueriesLive = databaseQueriesLayer(nativeClientLayer(database))
   const StoreLive = D1StoreLive.pipe(Layer.provide(QueriesLive))
   return {
     freshQueries: DatabaseQueries.pipe(Effect.provide(QueriesLive)),
@@ -59,9 +76,17 @@ const fixtureServices = (database: D1Database): D1Services => {
   }
 }
 
+export const openFixtureBinding = Effect.fn('flowdeck.test.openD1Binding')(function* (
+  miniflare: Miniflare,
+  binding: 'DB' | 'OTHER',
+) {
+  const database = yield* native('Open test D1 binding', async () => miniflare.getD1Database(binding))
+  yield* migrate(database)
+  return database
+})
+
 export const openD1WorkflowTestDatabase = Effect.gen(function* () {
   const miniflare = yield* openDatabase
-  const database = yield* native('Open the primary test D1 database', async () => miniflare.getD1Database('DB'))
-  yield* migrate(database)
+  const database = yield* openFixtureBinding(miniflare, 'DB')
   return { database, miniflare, services: fixtureServices(database) }
 })

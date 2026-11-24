@@ -18,17 +18,25 @@ type WebHandler = Readonly<{
   handler: (request: Request) => Promise<Response>
 }>
 
-export const makeApi = (
+export const workflowsLayer = (
   store: StoreService,
   freshStore: Effect.Effect<StoreService>,
   registry?: Readonly<RegisteredWorkflow[]>,
-): WebHandler => {
+): Layer.Layer<Workflows> => {
   const bindings = Layer.mergeAll(testBinding(freshStore), unavailableDevelopmentBinding)
   const workflows = Predicate.isNullish(registry)
     ? Layer.effect(WorkflowRegistry, makeWorkflowRegistry).pipe(Layer.provide(bindings))
     : Layer.succeed(WorkflowRegistry, registry)
   const services = Layer.mergeAll(workflows, Layer.succeed(Store, store), testCrypto)
-  const work = Layer.effect(Workflows, makeWorkflows).pipe(Layer.provide(services))
+  return Layer.effect(Workflows, makeWorkflows).pipe(Layer.provide(services))
+}
+
+export const makeApi = (
+  store: StoreService,
+  freshStore: Effect.Effect<StoreService>,
+  registry?: Readonly<RegisteredWorkflow[]>,
+): WebHandler => {
+  const work = workflowsLayer(store, freshStore, registry)
   const routes = ApiRoutes.pipe(HttpRouter.provideRequest(work))
   return HttpRouter.toWebHandler(routes)
 }

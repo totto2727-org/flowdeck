@@ -8,6 +8,8 @@ import { demoGraph, encodeDemoSnapshot, initialSnapshot } from '@/user-land/work
 export const version1 = SemVer.parseUnsafe('1.0.0')
 export const version2 = SemVer.parseUnsafe('2.0.0')
 export const now = DateTime.makeUnsafe('2026-10-17T12:00:00.000Z')
+export const primaryGraph = demoGraph(version1)
+export const demoWorkflowName = demoDefinition.summary.name
 export const defaultRunId = 'run_00000000-0000-4000-8000-000000000001'
 
 export const newRun = (runId: string, version: WorkflowVersion = version1): Effect.Effect<Run> =>

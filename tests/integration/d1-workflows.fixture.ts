@@ -13,7 +13,7 @@ import { defaultRunId, seed, version1 } from './d1-workflow-data.fixture.ts'
 import { openD1WorkflowTestDatabase } from './d1-workflow-database.fixture.ts'
 
 export { unavailableDevelopmentBinding } from './d1-workflow-binding.fixture.ts'
-export { command, newRun, now, version1, version2 } from './d1-workflow-data.fixture.ts'
+export { command, demoWorkflowName, newRun, now, primaryGraph, version1, version2 } from './d1-workflow-data.fixture.ts'
 
 const provideTestServices = <A, E>(
   effect: Effect.Effect<A, E, Store | Crypto.Crypto>,
