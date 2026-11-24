@@ -1,9 +1,9 @@
 import { live } from '@effect/vitest'
 import { Array, DateTime, Effect, SemVer } from 'effect'
 import { HttpClient, HttpClientResponse } from 'effect/http'
-import { describe, expect, test } from 'vite-plus/test'
+import { describe, expect, vi } from 'vite-plus/test'
 
-import { makeControlApi } from './control-api.ts'
+import { ControlError, makeControlApi } from './control-api.ts'
 
 /** Transport fixtures exercise the real Effect client and schema boundary, not dashboard data. */
 const clientReturning = (body: unknown, status = 200) =>
@@ -41,20 +41,21 @@ describe('ControlApi', () => {
     }),
   )
 
-  test.each([
+  live.each([
     { runId: '00000000-0000-4000-8000-000000000001' },
     { runId: 'event_00000000-0000-4000-8000-000000000001' },
     { runId: 'run_01890f2e-7b55-7cc1-8c5a-000000000001' },
     { workflowVersion: 'v1' },
     { graphId: 'demo:1.0.0:graph:1' },
-  ])('rejects malformed run response %j at the API boundary', async (invalid) => {
-    const api = await Effect.runPromise(
-      makeControlApi.pipe(
+  ])('rejects malformed run response %j at the API boundary', (invalid) =>
+    Effect.gen(function* () {
+      const api = yield* makeControlApi.pipe(
         Effect.provideService(HttpClient.HttpClient, clientReturning({ runs: [{ ...run, ...invalid }] })),
-      ),
-    )
-    expect((await Effect.runPromise(api.runs.pipe(Effect.result)))._tag).toBe('Failure')
-  })
+      )
+      const error = yield* api.runs.pipe(Effect.flip)
+      expect(error).toBeInstanceOf(ControlError)
+    }),
+  )
 
   live('decodes workflow responses through the supplied Effect HttpClient', () =>
     Effect.gen(function* () {
@@ -76,8 +77,8 @@ describe('ControlApi', () => {
       const api = yield* makeControlApi.pipe(
         Effect.provideService(HttpClient.HttpClient, clientReturning({ runs: [{ runId: 17 }] })),
       )
-      const value = yield* api.runs.pipe(Effect.result)
-      expect(value._tag).toBe('Failure')
+      const error = yield* api.runs.pipe(Effect.flip)
+      expect(error).toBeInstanceOf(ControlError)
     }),
   )
 
@@ -90,6 +91,16 @@ describe('ControlApi', () => {
         Effect.match({ onSuccess: () => '', onFailure: (error) => error.message }),
       )
       expect(message).toContain('control plane')
+    }),
+  )
+  live('returns a typed failure before sending an invalid start request', () =>
+    Effect.gen(function* () {
+      const respond = vi.fn(() => Effect.die('Invalid input must never reach transport'))
+      const api = yield* makeControlApi.pipe(Effect.provideService(HttpClient.HttpClient, HttpClient.make(respond)))
+      const input = { version: SemVer.parseUnsafe('1.0.0'), workflowId: '../invalid' }
+      const error = yield* api.start(input).pipe(Effect.flip)
+      expect(error).toBeInstanceOf(ControlError)
+      expect(respond).not.toHaveBeenCalled()
     }),
   )
 })

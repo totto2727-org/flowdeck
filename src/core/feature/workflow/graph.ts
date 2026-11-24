@@ -1,12 +1,12 @@
 import type { Machine } from '@typeonce/effect-machine'
-import { Array, HashSet, Option, Predicate, Schema, String } from 'effect'
+import { Array, HashSet, Option, Predicate, Result, Schema, String } from 'effect'
 
 import { InvalidSnapshot } from '@/core/feature/workflow/domain/errors'
 import { GraphDefinition } from '@/core/feature/workflow/domain/model'
 
 const metadata = Schema.Struct({ title: Schema.String, description: Schema.Literals(['task', 'checkpoint']) })
 const decodeMetadata = Schema.decodeUnknownOption(metadata)
-const decodeGraph = Schema.decodeUnknownSync(GraphDefinition)
+const decodeGraph = Schema.decodeResult(GraphDefinition)
 
 /** Collapse implementation-only states into their annotated business ancestor.
  * Native introspection remains the only source of nodes and outgoing edges. */
@@ -75,7 +75,7 @@ export const projectMachineGraph = (
     }),
   )
   const pairs = Array.dedupeWith(candidates, (a, b) => a.source === b.source && a.target === b.target)
-  return decodeGraph({
+  const graph = decodeGraph({
     graphId: options.graphId,
     schemaVersion: 1,
     nodes: visible,
@@ -97,4 +97,5 @@ export const projectMachineGraph = (
       ),
     })),
   })
+  return Result.getOrThrow(graph)
 }

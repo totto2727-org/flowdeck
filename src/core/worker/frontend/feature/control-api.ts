@@ -4,7 +4,7 @@ import { HttpClient, HttpClientRequest, HttpClientResponse } from 'effect/http'
 import type { RunId } from '@/core/feature/workflow/domain/identity'
 import { CreateRun, RunDetail, RunsResponse, WorkflowsResponse } from '@/core/feature/workflow/domain/model'
 
-const encodeCreateRun = Schema.encodeSync(Schema.toCodecJson(CreateRun))
+const encodeCreateRun = Schema.encodeEffect(Schema.toCodecJson(CreateRun))
 
 export class ControlError extends Data.TaggedError('ControlError')<
   Readonly<{
@@ -54,9 +54,11 @@ export const makeControlApi = Effect.gen(function* () {
     runs: requestRuns(HttpClientRequest.get(url('/runs'))),
     detail: (runId) => requestRunDetail(HttpClientRequest.get(url(`/runs/${encodeURIComponent(runId)}`))),
     start: (input) =>
-      HttpClientRequest.post(url('/runs')).pipe(
-        HttpClientRequest.bodyJson(encodeCreateRun(input)),
-        Effect.flatMap(requestRunDetail),
+      Effect.gen(function* () {
+        const payload = yield* encodeCreateRun(input)
+        const request = yield* HttpClientRequest.post(url('/runs')).pipe(HttpClientRequest.bodyJson(payload))
+        return yield* requestRunDetail(request)
+      }).pipe(
         Effect.mapError(() => new ControlError({ message: 'The run could not be started. Refresh and try again.' })),
       ),
     resume: (runId) => requestRunDetail(HttpClientRequest.post(url(`/runs/${encodeURIComponent(runId)}/resume`))),
