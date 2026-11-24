@@ -18,24 +18,24 @@ export const WorkflowBindingsLive = Layer.effectContext(
     const demoRpc = makeRpcStub<WireWorkflowExecutor>(environment['DEMO'])
     const developmentRpc = makeRpcStub<WireWorkflowExecutor>(environment['DEVELOPMENT'])
     const demo: WorkflowBinding['Service'] = {
-      start: (runId) =>
-        demoRpc
-          .start(runId)
-          .pipe(rpcCall('DemoWorkflow.start'), Effect.flatMap(rpcCommandResult('DemoWorkflow.start'))),
       resume: (runId) =>
         demoRpc
           .resume(runId)
           .pipe(rpcCall('DemoWorkflow.resume'), Effect.flatMap(rpcCommandResult('DemoWorkflow.resume'))),
+      start: (runId) =>
+        demoRpc
+          .start(runId)
+          .pipe(rpcCall('DemoWorkflow.start'), Effect.flatMap(rpcCommandResult('DemoWorkflow.start'))),
     }
     const development: DevelopmentWorkflowBinding['Service'] = {
-      start: (runId) =>
-        developmentRpc
-          .start(runId)
-          .pipe(rpcCall('DevelopmentWorkflow.start'), Effect.flatMap(rpcCommandResult('DevelopmentWorkflow.start'))),
       resume: (runId) =>
         developmentRpc
           .resume(runId)
           .pipe(rpcCall('DevelopmentWorkflow.resume'), Effect.flatMap(rpcCommandResult('DevelopmentWorkflow.resume'))),
+      start: (runId) =>
+        developmentRpc
+          .start(runId)
+          .pipe(rpcCall('DevelopmentWorkflow.start'), Effect.flatMap(rpcCommandResult('DevelopmentWorkflow.start'))),
     }
     return Context.make(WorkflowBinding, demo).pipe(Context.add(DevelopmentWorkflowBinding, development))
   }),
