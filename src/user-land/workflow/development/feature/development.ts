@@ -3,7 +3,6 @@ import { Context, Effect, Option, Schema } from 'effect'
 
 import { makePiNodeEffects, PiNodeEffects, piNodeEvent } from '@/core/feature/pi/node'
 import { InvalidSnapshot } from '@/core/feature/workflow/domain/errors'
-import type { RunId } from '@/core/feature/workflow/domain/identity'
 import { JsonObject } from '@/core/feature/workflow/domain/model'
 import type { GraphDefinition, Run, RunStatus, WorkflowSummary } from '@/core/feature/workflow/domain/model'
 import { projectMachineGraph } from '@/core/feature/workflow/graph'
@@ -139,10 +138,12 @@ export class DevelopmentExecutor extends Context.Service<
 >()('flowdeck/DevelopmentExecutor') {}
 type DevelopmentRequirements = Effect.Services<typeof makeDevelopmentExecutor>
 
-export const startDevelopmentRun = (runId: RunId): Effect.Effect<undefined, WorkflowFailure, DevelopmentRequirements> =>
+export const startDevelopmentRun = (
+  runId: Run['runId'],
+): Effect.Effect<undefined, WorkflowFailure, DevelopmentRequirements> =>
   Effect.flatMap(makeDevelopmentExecutor, (executor) => executor.start(runId))
 export const resumeDevelopmentRun = (
-  runId: RunId,
+  runId: Run['runId'],
 ): Effect.Effect<undefined, WorkflowFailure, DevelopmentRequirements> =>
   Effect.flatMap(makeDevelopmentExecutor, (executor) => executor.resume(runId))
 

@@ -1,6 +1,7 @@
 import { Machine } from '@typeonce/effect-machine'
 import { Crypto, Effect, Schema } from 'effect'
 
+import type { InvalidSnapshot } from '@/core/feature/workflow/domain/errors'
 import { makeExecutionId } from '@/core/feature/workflow/domain/identity'
 import { JsonObject } from '@/core/feature/workflow/domain/model'
 import { projectMachineGraph } from '@/core/feature/workflow/graph'
@@ -9,7 +10,6 @@ import { ResumeEvent, WorkflowCheckpoint } from '@/core/feature/workflow/managed
 import { demoVersion2 } from './input.ts'
 import {
   approvalData,
-  DemoData,
   demoBoundary,
   demoBoundaryEvents,
   demoStates,
@@ -19,71 +19,77 @@ import {
   nodeEvent,
   publish,
 } from './node.ts'
+import type { DemoData } from './node.ts'
 
 // Crypto failures are infrastructure defects, never business-state transitions.
 const allocateExecution = makeExecutionId.pipe(Effect.orDie)
 export const demoVersion2States = demoStates({ prepare: 'Enrich release', publish: 'Publish enriched release' })
 export const demoVersion2Machine = Machine.make({
-  id: 'demo-2.0.0',
-  root: demoVersion2States,
-  events: Machine.eventsFromSchemas(ResumeEvent),
   effects: {
     allocatePrepare: allocateExecution,
+    allocatePublish: (state: typeof DemoData.cases.allocatingPublish.Type) =>
+      allocateExecution.pipe(Effect.map((publishExecutionId) => ({ ...approvalData(state), publishExecutionId }))),
     prepare: (state: typeof DemoData.cases.prepare.Type) =>
       Effect.gen(function* () {
         const checkpoint = yield* WorkflowCheckpoint
         yield* checkpoint.checkpoint([
-          { type: 'run.started', payload: {} },
+          { payload: {}, type: 'run.started' },
           { type: 'node.started', ...nodeEvent('prepare', state.prepareExecutionId), payload: {} },
         ])
         return {
+          approvalExecutionId: yield* allocateExecution,
           prepareExecutionId: state.prepareExecutionId,
           prepared: 'draft:v2:reviewed',
-          approvalExecutionId: yield* allocateExecution,
         }
       }),
-    allocatePublish: (state: typeof DemoData.cases.allocatingPublish.Type) =>
-      allocateExecution.pipe(Effect.map((publishExecutionId) => ({ ...approvalData(state), publishExecutionId }))),
     publish,
   },
+  events: Machine.eventsFromSchemas(ResumeEvent),
+  id: 'demo-2.0.0',
+  root: demoVersion2States,
 }).handle({
   initial: { target: 'Ready' },
   states: {
     Ready: {
       invoke: {
+        onDone: { data: ({ output }) => ({ prepareExecutionId: output }), target: 'prepare' },
         src: 'allocatePrepare',
-        onDone: { target: 'prepare', data: ({ output }) => ({ prepareExecutionId: output }) },
       },
     },
-    prepare: {
-      invoke: {
-        src: 'prepare',
-        input: ({ state }) => state,
-        onDone: { target: 'approval', data: ({ output }) => output },
-      },
-    },
-    approval: { on: { Resume: { target: 'allocatingPublish', data: ({ state }) => approvalData(state) } } },
     allocatingPublish: {
       invoke: {
-        src: 'allocatePublish',
         input: ({ state }) => state,
-        onDone: { target: 'publish', data: ({ output }) => output },
+        onDone: { data: ({ output }) => output, target: 'publish' },
+        src: 'allocatePublish',
+      },
+    },
+    approval: { on: { Resume: { data: ({ state }) => approvalData(state), target: 'allocatingPublish' } } },
+    completed: {},
+    prepare: {
+      invoke: {
+        input: ({ state }) => state,
+        onDone: { data: ({ output }) => output, target: 'approval' },
+        src: 'prepare',
       },
     },
     publish: {
       invoke: {
-        src: 'publish',
         input: ({ state }) => state,
-        onDone: { target: 'completed', data: ({ output }) => output },
+        onDone: { data: ({ output }) => output, target: 'completed' },
+        src: 'publish',
       },
     },
-    completed: {},
   },
 })
+// oxlint-disable-next-line rules/prefer-non-unknown-decode -- The machine encoder produces an unchecked wire object.
 const decodeJson = Schema.decodeUnknownEffect(JsonObject)
-export const decodeDemoVersion2 = (encoded: JsonObject) =>
+export const decodeDemoVersion2 = (
+  encoded: JsonObject,
+): Effect.Effect<Machine.Snapshot<typeof demoVersion2States>, InvalidSnapshot> =>
   Machine.decodeSnapshot(demoVersion2Machine, encoded).pipe(Effect.mapError(invalidDemoSnapshot))
-export const encodeDemoVersion2 = (state: Machine.Snapshot<typeof demoVersion2States>) =>
+export const encodeDemoVersion2 = (
+  state: Machine.Snapshot<typeof demoVersion2States>,
+): Effect.Effect<JsonObject, InvalidSnapshot> =>
   Machine.encodeSnapshot(demoVersion2Machine, state).pipe(
     Effect.flatMap(decodeJson),
     Effect.mapError(invalidDemoSnapshot),
@@ -93,8 +99,6 @@ export const initialDemoVersion2: Effect.Effect<JsonObject> = Machine.planInitia
   Effect.orDie,
 )
 export const demoVersion2Definition = {
-  workflowId: 'demo',
-  version: demoVersion2,
   graph: projectMachineGraph({
     graphId: 'demo-2_0_0-graph-1',
     nodes: Machine.stateNodes(demoVersion2Machine),
@@ -103,16 +107,18 @@ export const demoVersion2Definition = {
   program: Effect.gen(function* () {
     const crypto = yield* Crypto.Crypto
     return {
+      boundaryEvents: demoBoundaryEvents,
       decode: decodeDemoVersion2,
       encode: encodeDemoVersion2,
-      start: (_state: Machine.Snapshot<typeof demoVersion2States>) =>
-        Machine.start(demoVersion2Machine).pipe(Effect.provideService(Crypto.Crypto, crypto)),
+      isReplyBoundary: demoBoundary,
+      mapError: demoRuntimeError,
       resume: (state: Machine.Snapshot<typeof demoVersion2States>) =>
         Machine.resume(demoVersion2Machine, state).pipe(Effect.provideService(Crypto.Crypto, crypto)),
-      isReplyBoundary: demoBoundary,
+      start: (_state: Machine.Snapshot<typeof demoVersion2States>) =>
+        Machine.start(demoVersion2Machine).pipe(Effect.provideService(Crypto.Crypto, crypto)),
       status: demoStatus,
-      boundaryEvents: demoBoundaryEvents,
-      mapError: demoRuntimeError,
     }
   }),
+  version: demoVersion2,
+  workflowId: 'demo',
 }

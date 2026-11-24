@@ -1,7 +1,6 @@
 import { Context, Effect, Match, Schema, SemVer } from 'effect'
 
 import { InvalidSnapshot } from '@/core/feature/workflow/domain/errors'
-import type { RunId } from '@/core/feature/workflow/domain/identity'
 import type { GraphDefinition, JsonObject, Run, WorkflowSummary } from '@/core/feature/workflow/domain/model'
 import { encodeManagedSnapshot, ManagedSnapshot, makeManagedExecutor } from '@/core/feature/workflow/managed-runtime'
 import type { WorkflowFailure } from '@/core/feature/workflow/services/failures'
@@ -74,21 +73,24 @@ export const makeDemoExecutor = Effect.gen(function* () {
   const v1 = yield* makeManagedExecutor(demoVersion1Definition)
   const v2 = yield* makeManagedExecutor(demoVersion2Definition)
   const store = yield* Store
-  const drive = (runId: RunId, operation: 'start' | 'resume'): Effect.Effect<void, WorkflowFailure> =>
+  const drive = (runId: Run['runId'], operation: 'start' | 'resume'): Effect.Effect<void, WorkflowFailure> =>
     Effect.gen(function* () {
       const run = yield* store.getRun(runId)
       yield* restoreDemo(run)
       const executor = SemVer.equals(run.workflowVersion, demoVersion1) ? v1 : v2
       yield* executor[operation](runId)
     })
-  return { resume: (runId: RunId) => drive(runId, 'resume'), start: (runId: RunId) => drive(runId, 'start') }
+  return {
+    resume: (runId: Run['runId']) => drive(runId, 'resume'),
+    start: (runId: Run['runId']) => drive(runId, 'start'),
+  }
 })
 export class DemoExecutor extends Context.Service<DemoExecutor, Effect.Success<typeof makeDemoExecutor>>()(
   'flowdeck/DemoExecutor',
 ) {}
 type DemoRequirements = Effect.Services<typeof makeDemoExecutor>
 
-export const startRun = (runId: RunId): Effect.Effect<void, WorkflowFailure, DemoRequirements> =>
+export const startRun = (runId: Run['runId']): Effect.Effect<void, WorkflowFailure, DemoRequirements> =>
   Effect.flatMap(makeDemoExecutor, (executor) => executor.start(runId))
-export const resumeRun = (runId: RunId): Effect.Effect<void, WorkflowFailure, DemoRequirements> =>
+export const resumeRun = (runId: Run['runId']): Effect.Effect<void, WorkflowFailure, DemoRequirements> =>
   Effect.flatMap(makeDemoExecutor, (executor) => executor.resume(runId))
