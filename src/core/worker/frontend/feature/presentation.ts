@@ -5,7 +5,7 @@ import type { RunStatus, Shapes } from '@/core/feature/workflow/domain/model'
 
 import type { RunEvent } from './view-model.ts'
 
-type ExecutionEvent = Extract<RunEvent, { type: 'node.started' | 'node.succeeded' | 'node.failed' }>
+export type ExecutionEvent = Extract<RunEvent, { type: 'node.started' | 'node.succeeded' | 'node.failed' }>
 type GraphSize = Readonly<{ height: number; width: number }>
 
 const jsonIndentationSpaces = 2
