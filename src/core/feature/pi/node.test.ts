@@ -1,26 +1,29 @@
 import { BrowserCrypto } from '@effect/platform-browser'
 import { live } from '@effect/vitest'
-import { Effect } from 'effect'
+import { Data, Effect } from 'effect'
 import { describe, expect, test, vi } from 'vite-plus/test'
 
 import { WorkflowCheckpoint } from '@/core/feature/workflow/managed-runtime'
 import { ResourceStore } from '@/core/feature/workflow/resource-store'
 
 import { makePiNodeEffects, piNodeEvent } from './node.ts'
-import type { PiExecution } from './node.ts'
+import type { PiExecution, PiOutcome } from './node.ts'
 import { PiSandbox } from './sandbox.ts'
 
 const execution: PiExecution = {
-  executionId: 'execution_00000000-0000-4000-8000-000000000001',
-  commandId: 'command_00000000-0000-4000-8000-000000000002',
   attempt: 1,
+  commandId: 'command_00000000-0000-4000-8000-000000000002',
+  executionId: 'execution_00000000-0000-4000-8000-000000000001',
 }
 const runId = 'run_00000000-0000-4000-8000-000000000003'
+const outcomes = Data.taggedEnum<PiOutcome>()
+// oxlint-disable-next-line unicorn/no-null -- The native Pi sandbox uses null for authoritative absence.
+const absentTurn = null
 
 describe('shared Pi node effects', () => {
   live('submits a generic turn without selecting workflow nodes or emitting business checkpoints', () =>
     Effect.gen(function* () {
-      const checkpoint = vi.fn(() => Effect.void)
+      const checkpoint = vi.fn<WorkflowCheckpoint['Service']['checkpoint']>(() => Effect.void)
       const submitTurn = vi.fn<PiSandbox['Service']['submitTurn']>(() =>
         Effect.succeed({ commandId: execution.commandId, status: 'running' }),
       )
@@ -29,17 +32,17 @@ describe('shared Pi node effects', () => {
         return yield* effects.submit({ execution, prompt: 'Perform an arbitrary task.' })
       }).pipe(
         Effect.provideService(PiSandbox, {
-          ensureSession: () => Effect.succeed({ sessionId: '1', model: 'test', status: 'active' }),
+          complete: () => Effect.succeed({ model: 'test', sessionId: '1', status: 'completed' }),
+          ensureSession: () => Effect.succeed({ model: 'test', sessionId: '1', status: 'active' }),
+          getTurn: () => Effect.succeed(absentTurn),
           submitTurn,
-          getTurn: () => Effect.succeed(null),
-          complete: () => Effect.succeed({ sessionId: '1', model: 'test', status: 'completed' }),
         }),
-        Effect.provideService(WorkflowCheckpoint, { runId, checkpoint, fail: Effect.die }),
+        Effect.provideService(WorkflowCheckpoint, { checkpoint, fail: Effect.die, runId }),
         Effect.provide(ResourceStore.layer),
         Effect.provide(BrowserCrypto.layer),
         Effect.scoped,
       )
-      expect(result).toStrictEqual({ _tag: 'Waiting' })
+      expect(result).toStrictEqual(outcomes.Waiting())
       expect(checkpoint).not.toHaveBeenCalled()
       expect(submitTurn).toHaveBeenCalledExactlyOnceWith(runId, {
         commandId: execution.commandId,
@@ -52,11 +55,11 @@ describe('shared Pi node effects', () => {
     expect(
       piNodeEvent({ execution, nodeId: 'review-release', payload: { output: 'ready' }, type: 'node.succeeded' }),
     ).toStrictEqual({
-      type: 'node.succeeded',
-      nodeId: 'review-release',
-      executionId: execution.executionId,
       attempt: 1,
+      executionId: execution.executionId,
+      nodeId: 'review-release',
       payload: { output: 'ready' },
+      type: 'node.succeeded',
     })
   })
 })

@@ -14,7 +14,15 @@ const prefixes = ['run', 'execution', 'event', 'commit', 'command', 'repository'
 const repository = makePrefixedUUIDv4('repository')
 const decodeRepositoryId = Schema.decodeResult(repository.schema)
 
-const makeIdentityCase = (kind: string) => {
+type Identity = ReturnType<typeof makePrefixedUUIDv4>
+type IdentityCase = Readonly<{
+  decode: ReturnType<typeof Schema.decodeResult<Identity['schema']>>
+  encode: ReturnType<typeof Schema.encodeResult<Identity['schema']>>
+  identity: Identity
+  kind: string
+}>
+
+const makeIdentityCase = (kind: string): IdentityCase => {
   const identity = makePrefixedUUIDv4(kind)
   // oxlint-disable-next-line rules/require-top-level-decoder -- Cache the decoder once per caller-selected prefix.
   const decode = Schema.decodeResult(identity.schema)
@@ -22,7 +30,7 @@ const makeIdentityCase = (kind: string) => {
   return { decode, encode, identity, kind }
 }
 
-const identityCases = prefixes.map(makeIdentityCase)
+const identityCases = prefixes.map((prefix) => makeIdentityCase(prefix))
 
 describe('user-defined identities', () => {
   test.each(['demo', 'release-checkpoint', 'Review_42', 'a'.repeat(128)])('accepts safe ID %s', (id) => {
@@ -51,7 +59,8 @@ describe('user-defined identities', () => {
     'a'.repeat(129),
   ])('rejects unsafe ID %s without silently changing its identity', (id) => {
     expect(Schema.is(UserDefinedId)(id)).toBe(false)
-    expect([decodeUserDefinedId(id), encodeUserDefinedId(id)].map(Result.isFailure)).toStrictEqual([true, true])
+    const results = [decodeUserDefinedId(id), encodeUserDefinedId(id)]
+    expect(results.map((value) => Result.isFailure(value))).toStrictEqual([true, true])
   })
 })
 
@@ -59,7 +68,7 @@ describe('prefixed cryptographic random identities', () => {
   test.each(['', '../run', 'two words', '日本語'])(
     'rejects unsafe factory prefix %s at schema construction',
     (prefix) => {
-      expect(() => makePrefixedUUIDv4(prefix)).toThrow()
+      expect(() => makePrefixedUUIDv4(prefix)).toThrow(Schema.SchemaError)
     },
   )
 
@@ -77,11 +86,10 @@ describe('prefixed cryptographic random identities', () => {
         Effect.provide(BrowserCrypto.layer),
       )
       expect(first).not.toBe(second)
-      expect(Schema.is(repository.schema)(first)).toBe(true)
-      expect(Schema.is(repository.schema)(second)).toBe(true)
-      expect(Schema.is(task.schema)(taskId)).toBe(true)
-      expect(Schema.is(repository.schema)(taskId)).toBe(false)
-      expect(Schema.is(task.schema)(first)).toBe(false)
+      const repositoryId = Schema.is(repository.schema)
+      const taskIdentity = Schema.is(task.schema)
+      expect([repositoryId(first), repositoryId(second), taskIdentity(taskId)]).toStrictEqual([true, true, true])
+      expect([repositoryId(taskId), taskIdentity(first)]).toStrictEqual([false, false])
     }),
   )
 
@@ -98,11 +106,13 @@ describe('prefixed cryptographic random identities', () => {
       `${kind}_3d360c7a-4b1a-1df3-9633-861a220bf5b7`,
       `${kind}_01890f2e-7b55-7cc1-8c5a-000000000001`,
     ]
-    expect(invalidIds.filter(acceptsId)).toStrictEqual([])
+    expect(invalidIds.filter((invalid) => acceptsId(invalid))).toStrictEqual([])
     expect(invalidIds.filter((invalid) => Result.isSuccess(decode(invalid)))).toStrictEqual([])
     expect(invalidIds.filter((invalid) => Result.isSuccess(encode(invalid)))).toStrictEqual([])
   })
+})
 
+describe('cryptographic identity generation with explicit Effect services', () => {
   live.each(prefixes)('generates valid distinct %s IDs through the real Crypto layer', (kind) =>
     Effect.gen(function* () {
       const { schema, make } = makePrefixedUUIDv4(kind)
@@ -133,7 +143,9 @@ describe('prefixed cryptographic random identities', () => {
     Effect.gen(function* () {
       const { schema, make } = makePrefixedUUIDv4('test')
       const generate = Effect.all([make, make])
-      const runWithSeed = (seed: string) =>
+      const runWithSeed = (
+        seed: string,
+      ): Effect.Effect<Effect.Success<typeof generate>, Effect.Error<typeof generate>> =>
         generate.pipe(Effect.provide(TestCrypto.layer(seed)), Effect.provide(BrowserCrypto.layer))
       const [first, sameSeed, otherSeed] = yield* Effect.all([
         runWithSeed('first-seed'),

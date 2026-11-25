@@ -1,27 +1,34 @@
 import { live } from '@effect/vitest'
-import { ConfigProvider, Effect } from 'effect'
-import { describe, expect, test } from 'vite-plus/test'
+import { ConfigProvider, Effect, Function } from 'effect'
+import { describe, expect } from 'vite-plus/test'
 
 import { developmentAccess, FrontendSecurity, LocalSecurity, RuntimeSecurity } from '@/core/worker/frontend/access'
 import { authorizeAccess } from '@/core/worker/frontend/access-auth'
 import { accessAudienceFromEnvironment } from '@/core/worker/frontend/assembly'
+import { HttpStatus } from '@/share/feature/http/status'
 
 import { applicationMode } from './composition.ts'
 
-const selectedApplication = (values: Record<string, string>): Promise<'development' | 'production'> =>
-  Effect.runPromise(
-    applicationMode.pipe(Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown(values))),
-  )
+const selectedApplication = (
+  values: Record<string, string>,
+): Effect.Effect<Effect.Success<typeof applicationMode>, Effect.Error<typeof applicationMode>> => {
+  const provider = ConfigProvider.fromUnknown(values)
+  return applicationMode.pipe(Effect.provideService(ConfigProvider.ConfigProvider, provider))
+}
 
 describe('final application composition', () => {
-  test('selects development application mode at the composition boundary', async () => {
-    await expect(selectedApplication({ ALCHEMY_DEV: 'true' })).resolves.toBe('development')
-  })
+  live('selects development application mode at the composition boundary', () =>
+    Effect.gen(function* () {
+      expect(yield* selectedApplication({ ALCHEMY_DEV: 'true' })).toBe('development')
+    }),
+  )
 
-  test('selects production application mode by default', async () => {
-    await expect(selectedApplication({})).resolves.toBe('production')
-    await expect(selectedApplication({ ALCHEMY_DEV: 'false' })).resolves.toBe('production')
-  })
+  live('selects production application mode by default', () =>
+    Effect.gen(function* () {
+      expect(yield* selectedApplication({})).toBe('production')
+      expect(yield* selectedApplication({ ALCHEMY_DEV: 'false' })).toBe('production')
+    }),
+  )
 
   live('injects fixed local settings without bypassing the common authorization', () =>
     Effect.gen(function* () {
@@ -35,10 +42,10 @@ describe('final application composition', () => {
       const expected = yield* accessAudienceFromEnvironment(security.env)
       expect(expected).toStrictEqual({ aud: developmentAccess.aud })
       expect(yield* authorizeAccess(expected, Effect.succeed({ aud: developmentAccess.aud }))).toBeUndefined()
-      expect(yield* Effect.flip(authorizeAccess(expected, Effect.succeed(undefined)))).toMatchObject({
-        _tag: 'AccessDenied',
-        status: 401,
-      })
+      const absent = Effect.sync(Function.constUndefined)
+      const denied = yield* authorizeAccess(expected, absent).pipe(Effect.flip)
+      expect(denied).toHaveProperty('_tag', 'AccessDenied')
+      expect(denied).toHaveProperty('status', HttpStatus.unauthorized)
     }),
   )
 

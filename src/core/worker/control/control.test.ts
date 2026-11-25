@@ -7,11 +7,45 @@ import { describe, expect, expectTypeOf, vi } from 'vite-plus/test'
 
 import { makeControl } from './control.ts'
 
-const encodeReply = Schema.encodeSync(
-  Schema.fromJsonString(Schema.toCodecJson(Schema.Result(Schema.Json, Schema.Json))),
-)
-const catalog = (name: string) => ({
-  workflows: [{ workflowId: 'demo', name, versions: ['1.0.0'], inputs: [] }],
+const jsonResult = Schema.Result(Schema.Json, Schema.Json)
+const reply = Schema.fromJsonString(Schema.toCodecJson(jsonResult))
+const encodeReply = Schema.encodeEffect(reply)
+
+const catalog = (name: string): Schema.Json => ({
+  workflows: [{ inputs: [], name, versions: ['1.0.0'], workflowId: 'demo' }],
+})
+
+const rpcReply = Effect.fn('flowdeck.test.prepareWorkflowRpcReply')(function* (body: Schema.Json) {
+  const wire = yield* encodeReply(Result.succeed(body))
+  return vi.fn<() => Promise<string>>().mockResolvedValue(wire)
+})
+
+type WorkflowMethod = () => Promise<string>
+type ControlFetch = Effect.Success<typeof makeControl>['fetch']
+const withWorkflowBinding = (
+  http: ControlFetch,
+  listWorkflows: WorkflowMethod,
+): ReturnType<typeof HttpEffect.toWebHandler> =>
+  HttpEffect.toWebHandler(http.pipe(Effect.provideService(WorkerEnvironment, { WORKFLOW: { listWorkflows } })))
+
+const request = (): Request => new Request('https://control.internal/api/workflows')
+
+const observeCatalog = async (response: Response): Promise<Readonly<{ body: unknown; status: number }>> => ({
+  body: await response.json(),
+  status: response.status,
+})
+
+const queryBindings = Effect.fn('flowdeck.test.queryNativeWorkflowBindings')(function* (
+  firstRpc: WorkflowMethod,
+  secondRpc: WorkflowMethod,
+) {
+  const control = yield* makeControl
+  const first = withWorkflowBinding(control.fetch, firstRpc)
+  const second = withWorkflowBinding(control.fetch, secondRpc)
+  return yield* Effect.promise(async () => {
+    const [one, two, three] = await Promise.all([first(request()), second(request()), first(request())])
+    return Promise.all([observeCatalog(one), observeCatalog(two), observeCatalog(three)])
+  })
 })
 
 describe('control runtime initialization', () => {
@@ -20,32 +54,16 @@ describe('control runtime initialization', () => {
     () =>
       Effect.gen(function* () {
         expectTypeOf<Effect.Services<typeof makeControl>>().toEqualTypeOf<Scope.Scope>()
-        const firstRpc = vi.fn(async () => encodeReply(Result.succeed(catalog('First binding'))))
-        const secondRpc = vi.fn(async () => encodeReply(Result.succeed(catalog('Second binding'))))
-        yield* Effect.scoped(
-          Effect.gen(function* () {
-            const control = yield* makeControl
-            const first = HttpEffect.toWebHandler(
-              control.fetch.pipe(Effect.provideService(WorkerEnvironment, { WORKFLOW: { listWorkflows: firstRpc } })),
-            )
-            const second = HttpEffect.toWebHandler(
-              control.fetch.pipe(Effect.provideService(WorkerEnvironment, { WORKFLOW: { listWorkflows: secondRpc } })),
-            )
-            yield* Effect.promise(async () => {
-              const [firstResponse, secondResponse, firstAgain] = await Promise.all([
-                first(new Request('https://control.internal/api/workflows')),
-                second(new Request('https://control.internal/api/workflows')),
-                first(new Request('https://control.internal/api/workflows')),
-              ])
-              expect(firstResponse.status).toBe(200)
-              expect(secondResponse.status).toBe(200)
-              expect(firstAgain.status).toBe(200)
-              await expect(firstResponse.json()).resolves.toStrictEqual(catalog('First binding'))
-              await expect(secondResponse.json()).resolves.toStrictEqual(catalog('Second binding'))
-              await expect(firstAgain.json()).resolves.toStrictEqual(catalog('First binding'))
-            })
-          }),
-        )
+        const firstCatalog = catalog('First binding')
+        const secondCatalog = catalog('Second binding')
+        const firstRpc = yield* rpcReply(firstCatalog)
+        const secondRpc = yield* rpcReply(secondCatalog)
+        const observed = yield* queryBindings(firstRpc, secondRpc).pipe(Effect.scoped)
+        expect(observed).toStrictEqual([
+          { body: firstCatalog, status: 200 },
+          { body: secondCatalog, status: 200 },
+          { body: firstCatalog, status: 200 },
+        ])
         expect(firstRpc).toHaveBeenCalledTimes(2)
         expect(secondRpc).toHaveBeenCalledOnce()
       }),

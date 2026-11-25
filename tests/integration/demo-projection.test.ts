@@ -9,15 +9,15 @@ import { demoVersion1, demoVersion2 } from '@/user-land/workflow/demo/feature/in
 
 type NodeEventType = Extract<EventType, 'node.started' | 'node.succeeded' | 'node.failed' | 'run.waiting'>
 const event = (sequence: number, nodeId: NodeId, type: NodeEventType): Extract<RunEvent, { type: NodeEventType }> => ({
+  attempt: 1,
+  createdAt: DateTime.makeUnsafe('2026-10-17T12:00:00.000Z'),
   eventId: `event_00000000-0000-4000-8000-00000000000${sequence}`,
+  executionId: `execution_00000000-0000-4000-8000-00000000000${sequence}`,
+  nodeId,
+  payload: {},
   runId: 'run_00000000-0000-4000-8000-000000000001',
   sequence,
-  nodeId,
-  executionId: `execution_00000000-0000-4000-8000-00000000000${sequence}`,
-  attempt: 1,
   type,
-  payload: {},
-  createdAt: DateTime.makeUnsafe('2026-10-17T12:00:00.000Z'),
 })
 
 describe('graph projections', () => {
@@ -55,8 +55,8 @@ describe('graph projections', () => {
       event(3, 'approval', 'run.waiting'),
       {
         ...event(4, 'prepare', 'node.started'),
-        executionId: 'execution_00000000-0000-4000-8000-000000000004',
         attempt: 2,
+        executionId: 'execution_00000000-0000-4000-8000-000000000004',
       },
     ])
     expect(Array.map(shapes.nodes, (node) => node.state)).toStrictEqual(['running', 'waiting', 'idle'])
