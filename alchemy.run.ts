@@ -12,8 +12,9 @@ export const DeploymentState = Layer.unwrap(
   ),
 )
 
+// oxlint-disable-next-line import/no-default-export -- The Alchemy CLI loads the default stack from this config file.
 export default Stack(
   'flowdeck',
-  { state: DeploymentState, providers: providers() },
+  { providers: providers(), state: DeploymentState },
   WorkerResources.pipe(Effect.map(({ frontend }) => ({ frontend: frontend.url }))),
 )

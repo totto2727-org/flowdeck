@@ -8,8 +8,12 @@ import { DevelopmentWorkflow } from '@/user-land/workflow/development/definition
 
 import { ApplicationLayer } from './composition.ts'
 
+export { Workflow } from '@/bridge/workflow/core/definition'
+export { Control } from '@/core/worker/control/definition'
 export { Database } from '@/core/worker/database'
-export { Control, DemoWorkflow, DevelopmentWorkflow, Frontend, Workflow }
+export { Frontend } from '@/core/worker/frontend/definition'
+export { DemoWorkflow } from '@/user-land/workflow/demo/definition'
+export { DevelopmentWorkflow } from '@/user-land/workflow/development/definition'
 
 /** Installed application resources belong to user-land, not the deployment entry. */
 export const WorkerResources = Effect.gen(function* () {
@@ -18,5 +22,5 @@ export const WorkerResources = Effect.gen(function* () {
   const workflows = yield* Workflow
   const control = yield* Control
   const frontend = yield* Frontend
-  return { workflow, development, workflows, control, frontend }
+  return { control, development, frontend, workflow, workflows }
 }).pipe(Effect.provide(ApplicationLayer))
