@@ -46,10 +46,10 @@ interface DocumentFixture {
 interface ThemeBrowser {
   classes: Set<string>
   document: DocumentFixture
+  events: EventTarget
   localStorage: ThemeStorage
   meta: ReturnType<DocumentFixture['querySelector']>
   values: Map<string, string>
-  window: EventTarget & { localStorage: ThemeStorage }
 }
 
 const makeDocument = (classes: Set<string>, meta: ThemeBrowser['meta']): DocumentFixture => ({
@@ -80,8 +80,8 @@ const browser = (stored?: string, denied = false): ThemeBrowser => {
   }
   const document = makeDocument(classes, meta)
   const localStorage = makeStorage(values, denied)
-  const window = Object.assign(new EventTarget(), { localStorage })
-  return { classes, document, localStorage, meta, values, window }
+  const events = new EventTarget()
+  return { classes, document, events, localStorage, meta, values }
 }
 
 const pageState = ({
@@ -139,7 +139,10 @@ const installBrowser = (boundary: ThemeBrowser): Effect.Effect<void, never, Scop
   Effect.acquireRelease(
     Effect.sync(() => {
       vi.stubGlobal('document', boundary.document)
-      vi.stubGlobal('window', boundary.window)
+      vi.stubGlobal('localStorage', boundary.localStorage)
+      vi.stubGlobal('addEventListener', boundary.events.addEventListener.bind(boundary.events))
+      vi.stubGlobal('removeEventListener', boundary.events.removeEventListener.bind(boundary.events))
+      vi.stubGlobal('dispatchEvent', boundary.events.dispatchEvent.bind(boundary.events))
     }),
     () =>
       Effect.sync(() => {
