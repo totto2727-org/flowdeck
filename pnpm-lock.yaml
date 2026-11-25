@@ -101,8 +101,8 @@ importers:
         specifier: ^0.1.0
         version: 0.1.0
       '@totto2727/oxlint':
-        specifier: ^0.1.0
-        version: 0.1.0(oxlint-tsgolint@7.0.2004)(vite-plus@1.4.0(@types/node@24.19.2)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(playwright@1.64.1)(terser@5.51.2)(typescript@7.1.0-dev.20261030.1)(yaml@2.9.1))
+        specifier: ^0.2.0
+        version: 0.2.0(oxlint-tsgolint@7.0.2004)(vite-plus@1.4.0(@types/node@24.19.2)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(playwright@1.64.1)(terser@5.51.2)(typescript@7.1.0-dev.20261030.1)(yaml@2.9.1))
       '@totto2727/reylo-sqlite':
         specifier: ^0.7.1
         version: 0.7.1
@@ -2302,8 +2302,8 @@ packages:
   '@totto2727/gitignore-patterns@0.1.0':
     resolution: {integrity: sha512-hg8SkhlD4pDixWp3EDcsTTXkXM2KKR7H5Xl+ypqC0tced1Z7n3OG+rgBXkemOsgvYBP+TykpKztPyOrAi7ogRA==}
 
-  '@totto2727/oxlint@0.1.0':
-    resolution: {integrity: sha512-2adpCRuDPDrOHHkLZUJYPEpTauKZJp08uRs/UblG1g6rJ5/esoFck3ykwAxueiR4h2+HfwQbwcZz0VU1qdVA3Q==}
+  '@totto2727/oxlint@0.2.0':
+    resolution: {integrity: sha512-agfyNUvoCMFJJnxYTkdCsdrVVt6+qrGYFoOP7Tq9/C/HuLG8oiDor6XTE433bg+MCId5/9fuwBA4qHDyrNiBlQ==}
     engines: {node: '>=24'}
 
   '@totto2727/reylo-sqlite@0.7.1':
@@ -6535,7 +6535,7 @@ snapshots:
     dependencies:
       ignore: 7.0.12
 
-  '@totto2727/oxlint@0.1.0(oxlint-tsgolint@7.0.2004)(vite-plus@1.4.0(@types/node@24.19.2)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(playwright@1.64.1)(terser@5.51.2)(typescript@7.1.0-dev.20261030.1)(yaml@2.9.1))':
+  '@totto2727/oxlint@0.2.0(oxlint-tsgolint@7.0.2004)(vite-plus@1.4.0(@types/node@24.19.2)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(playwright@1.64.1)(terser@5.51.2)(typescript@7.1.0-dev.20261030.1)(yaml@2.9.1))':
     dependencies:
       '@oxlint/plugins': 1.89.0
       effect: 4.0.6
