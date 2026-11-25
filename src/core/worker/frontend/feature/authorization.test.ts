@@ -3,35 +3,36 @@ import { HttpEffect, HttpServerResponse } from 'effect/http'
 import { describe, expect, test } from 'vite-plus/test'
 
 import { AccessDenied } from '@/core/worker/frontend/access-auth'
+import { HttpStatus } from '@/share/feature/http/status'
 
 import { frontendAuthorization } from './authorization.ts'
 
 describe('frontend HTTP authorization middleware', () => {
-  test.each([401, 403, 503] as const)('returns %s without executing the application', async (status) => {
-    let calls = 0
+  const deniedStatuses = [HttpStatus.unauthorized, HttpStatus.forbidden, HttpStatus.serviceUnavailable] as const
+
+  test.each(deniedStatuses)('returns %s without executing the application', async (status) => {
+    const calls: string[] = []
     const application = Effect.sync(() => {
-      calls += 1
+      calls.push('application')
       return HttpServerResponse.text('application')
     })
-    const handler = HttpEffect.toWebHandler(
-      application.pipe(frontendAuthorization(Effect.fail(new AccessDenied({ status, message: 'Access denied.' })))),
-    )
+    const denied = new AccessDenied({ message: 'Access denied.', status })
+    const authorize = frontendAuthorization(Effect.fail(denied))
+    const handler = HttpEffect.toWebHandler(application.pipe(authorize))
 
     const response = await handler(new Request('https://flowdeck.example/'))
     expect(response.status).toBe(status)
     await expect(response.text()).resolves.toBe('Access denied.')
-    expect(calls).toBe(0)
+    expect(calls).toStrictEqual([])
   })
 
   test('passes an admitted request to the application without replacing its response', async () => {
-    const handler = HttpEffect.toWebHandler(
-      Effect.succeed(HttpServerResponse.text('application', { status: 202 })).pipe(
-        frontendAuthorization(Effect.succeed(undefined)),
-      ),
-    )
+    const acceptedStatus = 202
+    const application = Effect.succeed(HttpServerResponse.text('application', { status: acceptedStatus }))
+    const handler = HttpEffect.toWebHandler(application.pipe(frontendAuthorization(Effect.void)))
 
     const response = await handler(new Request('https://flowdeck.example/'))
-    expect(response.status).toBe(202)
+    expect(response.status).toBe(acceptedStatus)
     await expect(response.text()).resolves.toBe('application')
   })
 })

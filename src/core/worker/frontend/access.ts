@@ -19,7 +19,7 @@ export const developmentAccess = {
 }
 
 export const LocalSecurity = Layer.succeed(FrontendSecurity, {
-  dev: { host: '127.0.0.1', port: 4380, strictPort: true, access: developmentAccess },
+  dev: { access: developmentAccess, host: '127.0.0.1', port: 4380, strictPort: true },
   env: {
     FLOWDECK_ACCESS_AUD: developmentAccess.aud,
   },
@@ -31,16 +31,16 @@ export const ProductionSecurity = Layer.effect(
   Effect.gen(function* () {
     const policyId = yield* accessPolicyId
     const access = yield* Application('FrontendAccess', {
-      type: 'self_hosted',
-      name: 'Flowdeck',
-      domain: frontendHostname,
-      sessionDuration: '24h',
       appLauncherVisible: false,
+      domain: frontendHostname,
+      name: 'Flowdeck',
       policies: [{ id: policyId, precedence: 1 }],
+      sessionDuration: '24h',
+      type: 'self_hosted',
     })
     return {
-      domain: { name: frontendHostname, previews: false },
       access,
+      domain: { name: frontendHostname, previews: false },
       env: {
         FLOWDECK_ACCESS_AUD: access.aud,
       },
