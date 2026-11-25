@@ -14,15 +14,57 @@ const decodeWorkflowSummary = Schema.decodeResult(Schema.toCodecJson(DomainWorkf
 const decodeRunDetail = Schema.decodeResult(Schema.toCodecJson(DomainRunDetail))
 
 const runJson = {
+  createdAt: '2026-10-31T00:00:00.000Z',
+  graphId: 'demo-2_13_7-graph-1',
+  revision: 1,
   runId: 'run_00000000-0000-4000-8000-000000000001',
+  snapshot: {},
+  status: 'waiting',
+  updatedAt: '2026-10-31T00:00:00.000Z',
   workflowId: 'demo',
   workflowVersion: '2.13.7-rc.1+build.42',
-  graphId: 'demo-2_13_7-graph-1',
-  status: 'waiting',
-  revision: 1,
-  snapshot: {},
-  createdAt: '2026-10-31T00:00:00.000Z',
-  updatedAt: '2026-10-31T00:00:00.000Z',
+} as const
+
+const detailJson = {
+  events: [
+    {
+      createdAt: runJson.createdAt,
+      eventId: 'event_00000000-0000-4000-8000-000000000001',
+      payload: {},
+      runId: runJson.runId,
+      sequence: 1,
+      type: 'run.started',
+    },
+    {
+      attempt: 1,
+      createdAt: runJson.createdAt,
+      eventId: 'event_00000000-0000-4000-8000-000000000002',
+      executionId: 'execution_00000000-0000-4000-8000-000000000001',
+      nodeId: 'approval',
+      payload: {},
+      runId: runJson.runId,
+      sequence: 2,
+      type: 'run.waiting',
+    },
+  ],
+  graph: { edges: [], graphId: runJson.graphId, nodes: [], schemaVersion: 1 },
+  run: runJson,
+  shapes: {
+    edges: [],
+    nodes: [
+      {
+        id: 'approval',
+        kind: 'checkpoint',
+        label: 'Approval',
+        nodeId: 'approval',
+        position: { x: 40, y: 80 },
+        size: { height: 90, width: 180 },
+        state: 'waiting',
+        type: 'node',
+      },
+    ],
+  },
+  state: { revision: 1, runId: runJson.runId, snapshot: {} },
 } as const
 
 describe('frontend view boundary', () => {
@@ -36,56 +78,15 @@ describe('frontend view boundary', () => {
   })
 
   test('presents all catalog versions as DOM option strings', () => {
-    const json = { workflowId: 'demo', name: 'Demo', versions: ['1.0.0', '2.13.7-rc.1+build.42'], inputs: [] }
+    const json = { inputs: [], name: 'Demo', versions: ['1.0.0', '2.13.7-rc.1+build.42'], workflowId: 'demo' }
     const workflow = Result.getOrThrow(decodeWorkflowSummary(json))
     expect(presentWorkflow(workflow)).toStrictEqual(json)
     expect(SemVer.isSemVer(workflow.versions[0])).toBe(true)
   })
 
   test('presents selected details using the same representation as list entries', () => {
-    const json = {
-      run: runJson,
-      state: { runId: runJson.runId, revision: 1, snapshot: {} },
-      graph: { graphId: runJson.graphId, schemaVersion: 1, nodes: [], edges: [] },
-      events: [
-        {
-          eventId: 'event_00000000-0000-4000-8000-000000000001',
-          runId: runJson.runId,
-          sequence: 1,
-          type: 'run.started',
-          payload: {},
-          createdAt: runJson.createdAt,
-        },
-        {
-          eventId: 'event_00000000-0000-4000-8000-000000000002',
-          runId: runJson.runId,
-          sequence: 2,
-          type: 'run.waiting',
-          nodeId: 'approval',
-          executionId: 'execution_00000000-0000-4000-8000-000000000001',
-          attempt: 1,
-          payload: {},
-          createdAt: runJson.createdAt,
-        },
-      ],
-      shapes: {
-        nodes: [
-          {
-            id: 'approval',
-            nodeId: 'approval',
-            type: 'node',
-            label: 'Approval',
-            kind: 'checkpoint',
-            position: { x: 40, y: 80 },
-            size: { width: 180, height: 90 },
-            state: 'waiting',
-          },
-        ],
-        edges: [],
-      },
-    } as const
-    const detail = Result.getOrThrow(decodeRunDetail(json))
-    expect(presentDetail(detail)).toStrictEqual(json)
+    const detail = Result.getOrThrow(decodeRunDetail(detailJson))
+    expect(presentDetail(detail)).toStrictEqual(detailJson)
     expect(presentDetail(detail).run).toStrictEqual(presentRun(detail.run))
     expect(SemVer.isSemVer(detail.run.workflowVersion)).toBe(true)
   })

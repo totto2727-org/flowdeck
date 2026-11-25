@@ -20,10 +20,10 @@ export const serverTheme = (): Theme => 'dark'
 // React and the DOM/storage APIs meet only at this browser adapter.
 export const browserTheme = (): Theme => (document.documentElement.dataset['theme'] === 'light' ? 'light' : 'dark')
 
-export const subscribeTheme = (notify: () => void) => {
-  window.addEventListener(themeChangeEvent, notify)
+export const subscribeTheme = (notify: () => void): (() => void) => {
+  globalThis.addEventListener(themeChangeEvent, notify)
   return () => {
-    window.removeEventListener(themeChangeEvent, notify)
+    globalThis.removeEventListener(themeChangeEvent, notify)
   }
 }
 
@@ -35,10 +35,10 @@ export const selectTheme = (theme: Theme): Effect.Effect<void> =>
       document
         .querySelector('meta[name="theme-color"]')
         ?.setAttribute('content', theme === 'dark' ? '#101714' : '#f7f9f8')
-      window.dispatchEvent(new Event(themeChangeEvent))
+      globalThis.dispatchEvent(new Event(themeChangeEvent))
     })
     // A denied write must not prevent the current page from switching themes.
     yield* Effect.try(() => {
-      window.localStorage.setItem(themeStorageKey, theme)
+      globalThis.localStorage.setItem(themeStorageKey, theme)
     }).pipe(Effect.ignore)
   })
