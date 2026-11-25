@@ -9,7 +9,7 @@ export const applicationMode = ALCHEMY_DEV.pipe(
 export const applicationDependencies = Effect.gen(function* () {
   const mode = yield* applicationMode
   // Deployment-only providers must not enter the fixed frontend runtime graph.
-  const application = yield* Effect.promise(() => import('./application.ts'))
+  const application = yield* Effect.promise(async () => import('./application.ts'))
   return mode === 'development' ? application.DevelopmentLayer : application.ProductionLayer
 })
 

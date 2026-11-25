@@ -1,3 +1,4 @@
+import type { Output } from 'alchemy'
 import { Application } from 'alchemy/Cloudflare/Access'
 import type { WorkerProps } from 'alchemy/Cloudflare/Workers'
 import { Config, Context, Effect, Layer, Schema } from 'effect'
@@ -7,9 +8,10 @@ export const accessPolicyId = Config.schema(Schema.String.check(Schema.isUUID())
 
 export const frontendHostname = 'flowdeck.totto2727.dev'
 
+type AccessBindings = Readonly<{ FLOWDECK_ACCESS_AUD: string | Output<string> }>
 export class FrontendSecurity extends Context.Service<
   FrontendSecurity,
-  Pick<WorkerProps, 'domain' | 'access' | 'env' | 'dev'>
+  Pick<WorkerProps<AccessBindings>, 'domain' | 'access' | 'env' | 'dev'>
 >()('flowdeck/FrontendSecurity') {}
 
 /** No cloud resources or principal configuration are needed by these implementations. */
