@@ -1,112 +1,174 @@
 import { expect, test } from '@playwright/test'
+import type { Locator, Page, TestInfo } from '@playwright/test'
 import { Array } from 'effect'
 
-test('development task inputs are usable without starting an agent', async ({ page }, info) => {
-  let pageErrors: Readonly<string[]> = []
-  page.on('pageerror', (error) => {
-    pageErrors = Array.append(pageErrors, error.message)
-  })
-  await page.goto('/')
-  await page
-    .getByRole('navigation', { name: 'Registered workflows' })
-    .getByRole('button', { name: 'Pi development' })
-    .click()
-  const repository = page.getByLabel('Public GitHub repository', { exact: true })
-  const task = page.getByLabel('Development task', { exact: true })
-  await expect(repository).toBeVisible()
-  await expect(task).toBeVisible()
-  await repository.fill('https://github.com/totto2727-org/template-vite-plus-lib')
-  await task.fill('Add an add function and run its focused tests in the same checkout.')
-  await expect(repository).toHaveValue('https://github.com/totto2727-org/template-vite-plus-lib')
-  await expect(task).toHaveValue('Add an add function and run its focused tests in the same checkout.')
-  await expect(page.getByLabel('Version', { exact: true }).getByRole('option')).toHaveCount(1)
-  await expect(page.getByLabel('Version', { exact: true })).toHaveValue('1.0.0')
-  await expect(page.getByRole('button', { name: 'Start run', exact: true })).toBeEnabled()
+const noMatches = 0
+const singleVersion = 1
+const releaseVersions = 2
+const approvalNodeIndex = 1
+const developmentVersion = '1.0.0'
+const demoVersions = ['1.0.0', '2.0.0'] as const
+type DemoVersion = (typeof demoVersions)[number]
 
-  await page
-    .getByRole('navigation', { name: 'Registered workflows' })
-    .getByRole('button', { name: 'Release checkpoint' })
-    .click()
-  await expect(repository).toHaveCount(0)
-  await expect(task).toHaveCount(0)
-  await expect(page.getByLabel('Version', { exact: true }).getByRole('option')).toHaveCount(2)
-  await page.getByLabel('Version', { exact: true }).selectOption('2.0.0')
-  await page
-    .getByRole('navigation', { name: 'Registered workflows' })
-    .getByRole('button', { name: 'Pi development' })
-    .click()
-  await expect(repository).toHaveValue('')
-  await expect(task).toHaveValue('')
-  await expect(page.getByLabel('Version', { exact: true })).toHaveValue('1.0.0')
-  await repository.fill('https://github.com/totto2727-org/template-vite-plus-lib')
-  await task.fill('Add an add function and run its focused tests in the same checkout.')
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
-  await page.screenshot({ path: info.outputPath('development-form.png'), fullPage: true })
-  expect(pageErrors).toEqual([])
+const repositoryUrl = 'https://github.com/totto2727-org/template-vite-plus-lib'
+const developmentTask = 'Add an add function and run its focused tests in the same checkout.'
+
+const reportPageErrors = (page: Page): string[] => {
+  const errors: string[] = []
+  page.on('pageerror', (error) => {
+    errors.push(error.message)
+  })
+  return errors
+}
+
+const chooseWorkflow = async (page: Page, name: string): Promise<void> => {
+  const workflows = page.getByRole('navigation', { name: 'Registered workflows' })
+  await workflows.getByRole('button', { name }).click()
+}
+
+const versionInput = (page: Page): Locator => page.getByLabel('Version', { exact: true })
+const startButton = (page: Page): Locator => page.getByRole('button', { exact: true, name: 'Start run' })
+const resumeButton = (page: Page): Locator => page.getByRole('button', { exact: true, name: 'Resume run' })
+
+type DevelopmentControls = Readonly<{ repository: Locator; task: Locator; version: Locator }>
+const developmentControls = (page: Page): DevelopmentControls => ({
+  repository: page.getByLabel('Public GitHub repository', { exact: true }),
+  task: page.getByLabel('Development task', { exact: true }),
+  version: versionInput(page),
 })
 
-// Playwright's Page API is the browser automation boundary, not an application HTTP client.
-Array.map(['1.0.0', '2.0.0'] as const, (version) => {
+const fillDevelopmentForm = async ({ repository, task }: DevelopmentControls): Promise<void> => {
+  await repository.fill(repositoryUrl)
+  await task.fill(developmentTask)
+}
+
+const checkDevelopmentInputs = async (page: Page, controls: DevelopmentControls): Promise<void> => {
+  const { repository, task, version } = controls
+  await expect(repository).toBeVisible()
+  await expect(task).toBeVisible()
+  await fillDevelopmentForm(controls)
+  await expect(repository).toHaveValue(repositoryUrl)
+  await expect(task).toHaveValue(developmentTask)
+  await expect(version.getByRole('option')).toHaveCount(singleVersion)
+  await expect(version).toHaveValue(developmentVersion)
+  await expect(startButton(page)).toBeEnabled()
+}
+
+const checkVersionAndFormReset = async (page: Page, controls: DevelopmentControls): Promise<void> => {
+  const { repository, task, version } = controls
+  await chooseWorkflow(page, 'Release checkpoint')
+  await expect(repository).toHaveCount(noMatches)
+  await expect(task).toHaveCount(noMatches)
+  await expect(version.getByRole('option')).toHaveCount(releaseVersions)
+  await version.selectOption('2.0.0')
+  await chooseWorkflow(page, 'Pi development')
+  await expect(repository).toHaveValue('')
+  await expect(task).toHaveValue('')
+  await expect(version).toHaveValue(developmentVersion)
+}
+
+const recordLayout = async (page: Page, info: TestInfo, image: string): Promise<void> => {
+  const fitsViewport = await page.evaluate(() => document.documentElement.scrollWidth <= globalThis.innerWidth)
+  expect(fitsViewport).toBe(true)
+  await page.screenshot({ fullPage: true, path: info.outputPath(image) })
+}
+
+test('development task inputs are usable without starting an agent', async ({ page }, info) => {
+  const errors = reportPageErrors(page)
+  await page.goto('/')
+  await chooseWorkflow(page, 'Pi development')
+  const controls = developmentControls(page)
+  await checkDevelopmentInputs(page, controls)
+  await checkVersionAndFormReset(page, controls)
+  await fillDevelopmentForm(controls)
+  await recordLayout(page, info, 'development-form.png')
+  expect(errors).toEqual([])
+})
+
+const persistedRuns = (page: Page): Locator => page.getByRole('list', { name: 'Persisted runs' })
+const workflowGraph = (page: Page): Locator => page.getByRole('region', { exact: true, name: 'Workflow graph' })
+const continuation = (page: Page, version: DemoVersion): Locator =>
+  page.getByText(`Resume continues this run with ${version}.`, { exact: false })
+
+const startAndWait = async (page: Page, version: DemoVersion): Promise<string> => {
+  await page.goto('/')
+  await expect(page.getByRole('heading', { exact: true, name: 'Overview' })).toBeVisible()
+  await versionInput(page).selectOption(version)
+  await startButton(page).click()
+  await expect(page.getByText('Waiting for an explicit resume', { exact: true })).toBeVisible()
+  await expect(continuation(page, version)).toBeVisible()
+  const selected = persistedRuns(page).getByRole('button', { pressed: true }).locator('code')
+  // oxlint-disable-next-line unicorn/prefer-dom-node-text-content -- Use the rendered run label that the browser exposes to readers.
+  return selected.innerText()
+}
+
+const checkApprovalNode = async (approval: Locator): Promise<void> => {
+  await expect(approval).toBeFocused()
+  await expect(approval).toHaveAttribute('aria-pressed', 'true')
+  await expect(approval).toHaveAttribute('data-state', 'waiting')
+}
+
+const checkGraphKeyboard = async (page: Page): Promise<void> => {
+  const nodes = workflowGraph(page).getByRole('button')
+  const firstNode = nodes.first()
+  await expect(page.getByRole('main')).toHaveAttribute('aria-busy', 'false')
+  await firstNode.focus()
+  await expect(firstNode).toBeFocused()
+  await firstNode.press('Enter')
+  await expect(firstNode).toHaveAttribute('aria-pressed', 'true')
+  await expect(firstNode).toHaveAttribute('data-state', 'succeeded')
+  await page.keyboard.press('ArrowRight')
+  await checkApprovalNode(nodes.nth(approvalNodeIndex))
+}
+
+const checkCommittedState = async (
+  page: Page,
+  version: DemoVersion,
+  status: 'approval' | 'completed',
+): Promise<void> => {
+  await page.getByRole('button', { name: /^State /u }).click()
+  const state = page.getByLabel('Committed run state')
+  await expect(state).toContainText(`"path": "${status}"`)
+  await expect(state).toContainText(`"version": "${version}"`)
+}
+
+const findRun = (page: Page, runLabel: string): Locator =>
+  persistedRuns(page).getByRole('button').filter({ hasText: runLabel })
+
+const resumePersistedCheckpoint = async (page: Page, runLabel: string, version: DemoVersion): Promise<void> => {
+  // Reloading leaves the checkpoint waiting for an explicit resume.
+  await page.reload()
+  await findRun(page, runLabel).click()
+  await expect(continuation(page, version)).toBeVisible()
+  await checkCommittedState(page, version, 'approval')
+  await resumeButton(page).click()
+  await expect(resumeButton(page)).toHaveCount(noMatches)
+  await expect(page.getByRole('status')).toContainText('completed')
+}
+
+const checkCompletedRun = async (page: Page, runLabel: string, version: DemoVersion): Promise<void> => {
+  // Re-open the same run by its rendered persisted identifier.
+  await page.reload()
+  const run = findRun(page, runLabel)
+  await expect(run.getByText('completed', { exact: true })).toBeVisible()
+  await run.click()
+  await expect(workflowGraph(page).getByRole('button').last()).toHaveAttribute('data-state', 'succeeded')
+  await checkCommittedState(page, version, 'completed')
+  await page.getByRole('button', { name: /^Events /u }).click()
+  const events = page.getByRole('region', { name: 'Persisted events' })
+  await expect(events.getByText('run completed', { exact: true })).toBeVisible()
+}
+
+Array.forEach(demoVersions, (version) => {
   test(`${version} persists its checkpoint and resumes through the real Worker bindings`, async ({ page }, info) => {
-    let pageErrors: Readonly<string[]> = []
-    page.on('pageerror', (error) => {
-      pageErrors = Array.append(pageErrors, error.message)
-    })
-    await page.goto('/')
-    await expect(page.getByRole('heading', { name: 'Overview', exact: true })).toBeVisible()
-    await page.getByLabel('Version', { exact: true }).selectOption(version)
-    await page.getByRole('button', { name: 'Start run', exact: true }).click()
-    await expect(page.getByText('Waiting for an explicit resume', { exact: true })).toBeVisible()
-    await expect(page.getByText(`Resume continues this run with ${version}.`, { exact: false })).toBeVisible()
-
-    const runs = page.getByRole('list', { name: 'Persisted runs' })
-    // oxlint-disable-next-line unicorn/prefer-dom-node-text-content -- Use the rendered run label that the browser exposes to readers.
-    const runLabel = await runs.getByRole('button', { pressed: true }).locator('code').innerText()
-    const graph = page.getByRole('region', { name: 'Workflow graph', exact: true })
-    await expect(page.getByRole('main')).toHaveAttribute('aria-busy', 'false')
-    const firstNode = graph.getByRole('button').first()
-    await firstNode.focus()
-    await expect(firstNode).toBeFocused()
-    await firstNode.press('Enter')
-    await expect(firstNode).toHaveAttribute('aria-pressed', 'true')
-    await expect(firstNode).toHaveAttribute('data-state', 'succeeded')
-    await page.keyboard.press('ArrowRight')
-    await expect(graph.getByRole('button').nth(1)).toBeFocused()
-    await expect(graph.getByRole('button').nth(1)).toHaveAttribute('aria-pressed', 'true')
-    await expect(graph.getByRole('button').nth(1)).toHaveAttribute('data-state', 'waiting')
-
-    await page.getByRole('button', { name: /^State / }).click()
-    await expect(page.getByLabel('Committed run state')).toContainText('"path": "approval"')
-    await expect(page.getByLabel('Committed run state')).toContainText(`"version": "${version}"`)
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
-    await page.screenshot({ path: info.outputPath(`${version}-waiting.png`), fullPage: true })
-
-    // A page reload cannot implicitly resume a checkpoint or lose the selected implementation version.
-    await page.reload()
-    await runs.getByRole('button').filter({ hasText: runLabel }).click()
-    await expect(page.getByText(`Resume continues this run with ${version}.`, { exact: false })).toBeVisible()
-    await page.getByRole('button', { name: /^State / }).click()
-    await expect(page.getByLabel('Committed run state')).toContainText('"path": "approval"')
-    await expect(page.getByLabel('Committed run state')).toContainText(`"version": "${version}"`)
-    await page.getByRole('button', { name: 'Resume run', exact: true }).click()
-    await expect(page.getByRole('button', { name: 'Resume run', exact: true })).toHaveCount(0)
-    await expect(page.getByRole('status')).toContainText('completed')
-
-    // Re-open this exact run, not another completed run retained by a previous test.
-    await page.reload()
-    const persistedRun = runs.getByRole('button').filter({ hasText: runLabel })
-    await expect(persistedRun.getByText('completed', { exact: true })).toBeVisible()
-    await persistedRun.click()
-    await expect(graph.getByRole('button').last()).toHaveAttribute('data-state', 'succeeded')
-    await page.getByRole('button', { name: /^State / }).click()
-    await expect(page.getByLabel('Committed run state')).toContainText('"path": "completed"')
-    await expect(page.getByLabel('Committed run state')).toContainText(`"version": "${version}"`)
-    await page.getByRole('button', { name: /^Events / }).click()
-    await expect(
-      page.getByRole('region', { name: 'Persisted events' }).getByText('run completed', { exact: true }),
-    ).toBeVisible()
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
-    await page.screenshot({ path: info.outputPath(`${version}-completed.png`), fullPage: true })
-    expect(pageErrors, 'The browser must not have uncaught page errors').toEqual([])
+    const errors = reportPageErrors(page)
+    const runLabel = await startAndWait(page, version)
+    await checkGraphKeyboard(page)
+    await checkCommittedState(page, version, 'approval')
+    await recordLayout(page, info, `${version}-waiting.png`)
+    await resumePersistedCheckpoint(page, runLabel, version)
+    await checkCompletedRun(page, runLabel, version)
+    await recordLayout(page, info, `${version}-completed.png`)
+    expect(errors, 'The browser must not have uncaught page errors').toEqual([])
   })
 })
