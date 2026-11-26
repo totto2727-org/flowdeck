@@ -91,7 +91,7 @@ export const alternativeGraph = Machine.make({
   initial: { target: 'approval' },
   states: {
     approval: {
-      // oxlint-disable-next-line eslint/sort-keys -- Native transition order determines the projected combined edge label.
+      // Native transition order determines the projected combined edge label.
       on: { Resume: { target: 'publish' }, Approve: { target: 'publish' } },
     },
     completed: {},

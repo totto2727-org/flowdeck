@@ -7,7 +7,7 @@ import type { RunStatus } from '@/core/feature/workflow/domain/model'
 import { WorkflowCheckpoint } from '@/core/feature/workflow/managed-runtime'
 import type { EventDraft } from '@/core/feature/workflow/managed-runtime'
 
-// oxlint-disable-next-line eslint/sort-keys -- Native approval and publish codecs use this field order in persisted snapshots.
+// Native approval and publish codecs use this field order in persisted snapshots.
 const prepared = {
   prepareExecutionId: ExecutionId,
   approvalExecutionId: ExecutionId,
@@ -24,7 +24,7 @@ export const DemoData = Schema.TaggedUnion({
 type DemoLabels = Readonly<{ prepare: string; publish: string }>
 const stateConfig = (labels: DemoLabels) =>
   ({
-    // oxlint-disable-next-line eslint/sort-keys -- Native document order defines graph node order and snapshot active-state order.
+    // Native document order defines graph node order and snapshot active-state order.
     states: {
       Ready: {},
       prepare: DemoData.cases.prepare.annotate({ description: 'task', title: labels.prepare }),

@@ -7,7 +7,7 @@ export const buttonVariants = cva(
       size: 'default',
       variant: 'default',
     },
-    // oxlint-disable-next-line eslint/sort-keys -- CVA emits classes in variant dimension order.
+    // CVA emits classes in variant dimension order.
     variants: {
       variant: {
         default: 'bg-primary text-primary-foreground hover:bg-primary/80',

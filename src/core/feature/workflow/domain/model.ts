@@ -17,14 +17,14 @@ export type RunStatus = typeof RunStatus.Type
 export const { JsonObject } = Schema
 export type JsonObject = typeof JsonObject.Type
 
-// oxlint-disable-next-line eslint/no-redeclare, eslint/sort-keys -- Keep the public schema and type and the exact graph JSON order required by the immutable D1 graph trigger.
+// oxlint-disable-next-line eslint/no-redeclare -- Keep the public schema and type and the exact graph JSON order required by the immutable D1 graph trigger.
 export const GraphNode = Schema.Struct({
   nodeId: NodeId,
   label: Schema.String,
   kind: Schema.Literals(['task', 'checkpoint']),
 })
 export type GraphNode = typeof GraphNode.Type
-// oxlint-disable-next-line eslint/no-redeclare, eslint/sort-keys -- Keep the public schema and type and the exact graph JSON order required by the immutable D1 graph trigger.
+// oxlint-disable-next-line eslint/no-redeclare -- Keep the public schema and type and the exact graph JSON order required by the immutable D1 graph trigger.
 export const GraphEdge = Schema.Struct({
   edgeId: EdgeId,
   source: NodeId,
@@ -32,7 +32,7 @@ export const GraphEdge = Schema.Struct({
   label: Schema.String,
 })
 export type GraphEdge = typeof GraphEdge.Type
-// oxlint-disable-next-line eslint/no-redeclare, eslint/sort-keys -- Keep the public schema and type and the exact graph JSON order required by the immutable D1 graph trigger.
+// oxlint-disable-next-line eslint/no-redeclare -- Keep the public schema and type and the exact graph JSON order required by the immutable D1 graph trigger.
 export const GraphDefinition = Schema.Struct({
   graphId: GraphId,
   schemaVersion: Schema.Literal(graphSchemaVersion),
@@ -89,13 +89,13 @@ export const EventType = Schema.Literals([
   'run.failed',
 ])
 export type EventType = typeof EventType.Type
-// oxlint-disable-next-line eslint/sort-keys -- D1 matches retried commits against the exact serialized event property order.
+// D1 matches retried commits against the exact serialized event property order.
 export const EventFields = {
   eventId: EventId,
   payload: JsonObject,
   createdAt: Schema.DateTimeUtc,
 }
-// oxlint-disable-next-line eslint/sort-keys -- D1 matches retried commits against the exact serialized event property order.
+// D1 matches retried commits against the exact serialized event property order.
 export const NodeEventFields = {
   nodeId: NodeId,
   executionId: ExecutionId,

@@ -75,7 +75,7 @@ type ProblemSchema<Title extends string, Status extends number, Detail extends s
 const problem = <const Title extends string, const Status extends number, const Detail extends string>(
   fields: DefinedProblem<Title, Status, Detail>,
 ): ProblemSchema<Title, Status, Detail> =>
-  // oxlint-disable-next-line eslint/sort-keys -- Retain the published RPC Problem Details serialization order.
+  // Retain the published RPC Problem Details serialization order.
   Schema.Struct({
     type: Schema.Literal(fields.type),
     title: Schema.Literal(fields.title),

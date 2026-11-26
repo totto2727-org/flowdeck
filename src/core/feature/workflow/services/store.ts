@@ -16,7 +16,7 @@ export type EventRange = Data.TaggedEnum<{
   ThroughRevision: Readonly<{ revision: number }>
 }>
 export const EventRange = Data.taggedEnum<EventRange>()
-// oxlint-disable-next-line eslint/no-redeclare, eslint/sort-keys -- Keep both schema and type exports and the exact serialized field order used for D1 receipt matching.
+// oxlint-disable-next-line eslint/no-redeclare -- Keep both schema and type exports and the exact serialized field order used for D1 receipt matching.
 export const CommitCommand = Schema.Struct({
   commitId: CommitId,
   runId: RunId,

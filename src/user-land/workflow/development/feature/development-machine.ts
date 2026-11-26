@@ -11,22 +11,22 @@ import { DevelopmentCreateRun, DevelopmentTask, DevelopmentWorkflowVersion, Publ
 const executionState = { fields: PiExecutionFields }
 const resultState = { fields: { ...PiExecutionFields, result: Schema.String } }
 const taskAnnotations = (title: string): Readonly<{ description: 'task'; title: string }> =>
-  // oxlint-disable-next-line eslint/sort-keys -- Preserve the annotation order exposed by the native manifest.
+  // Preserve the annotation order exposed by the native manifest.
   ({ title, description: 'task' })
 
 export const DevelopmentStates = Machine.state({
-  // oxlint-disable-next-line eslint/sort-keys -- These fields define the stored native root snapshot order.
+  // These fields define the stored native root snapshot order.
   fields: {
     version: DevelopmentWorkflowVersion,
     runtime: Schema.Literal('pi-harness'),
     repository: PublicRepository,
     task: DevelopmentTask,
   },
-  // oxlint-disable-next-line eslint/sort-keys -- The native graph iterates states in declaration order.
+  // The native graph iterates states in declaration order.
   states: {
     implement: {
       annotations: taskAnnotations('Implement task'),
-      // oxlint-disable-next-line eslint/sort-keys -- Preserve the native implementation transition order.
+      // Preserve the native implementation transition order.
       states: {
         allocate: {},
         intent: executionState,
@@ -37,7 +37,7 @@ export const DevelopmentStates = Machine.state({
     },
     verify: {
       annotations: taskAnnotations('Verify and fix'),
-      // oxlint-disable-next-line eslint/sort-keys -- Preserve the native verification transition order.
+      // Preserve the native verification transition order.
       states: {
         allocate: {},
         intent: executionState,
@@ -48,7 +48,7 @@ export const DevelopmentStates = Machine.state({
     },
     completed: { ...resultState, type: 'final' },
     failed: {
-      // oxlint-disable-next-line eslint/sort-keys -- Preserve the stored terminal failure field order.
+      // Preserve the stored terminal failure field order.
       fields: { ...PiExecutionFields, nodeId: Schema.Literals(['implement', 'verify']), message: Schema.String },
     },
   },
@@ -70,7 +70,7 @@ const failedState = (
   nodeId: DevelopmentNode,
   message: string,
 ): PiExecution & Readonly<{ message: string; nodeId: DevelopmentNode }> =>
-  // oxlint-disable-next-line eslint/sort-keys -- Preserve the order of fields in the native failure state.
+  // Preserve the order of fields in the native failure state.
   ({ ...piExecutionData(state), nodeId, message })
 
 const pi = {
@@ -105,13 +105,13 @@ const pi = {
  * The shared Pi effects contain no transition dispatcher or independent PiPhase. */
 // oxlint-disable-next-line eslint/no-redeclare -- Keep the machine and its inferred type paired for callers.
 export const DevelopmentMachine = Machine.make({
-  // oxlint-disable-next-line eslint/sort-keys -- Keep native branch definitions in workflow execution order.
+  // Keep native branch definitions in workflow execution order.
   branches: {
     implementationSubmission: {
       awaiting: { target: 'implement.awaiting' },
       failed: { target: 'failed' },
     },
-    // oxlint-disable-next-line eslint/sort-keys -- The native manifest enumerates implementation receipt alternatives in this order.
+    // The native manifest enumerates implementation receipt alternatives in this order.
     implementationReceipt: {
       running: { target: 'implement.awaiting' },
       'implementation complete': { target: 'implement.accepted' },
@@ -122,7 +122,7 @@ export const DevelopmentMachine = Machine.make({
       awaiting: { target: 'verify.awaiting' },
       failed: { target: 'failed' },
     },
-    // oxlint-disable-next-line eslint/sort-keys -- The native manifest enumerates verification receipt alternatives in this order.
+    // The native manifest enumerates verification receipt alternatives in this order.
     verificationReceipt: {
       running: { target: 'verify.awaiting' },
       completed: { target: 'verify.completing' },
@@ -146,18 +146,18 @@ export const DevelopmentMachine = Machine.make({
   root: DevelopmentStates,
 }).handle({
   initial: { target: 'implement' },
-  // oxlint-disable-next-line eslint/sort-keys -- Match the field order of the persisted development root state.
+  // Match the field order of the persisted development root state.
   root: ({ input }) => ({
     version: input.version,
     runtime: 'pi-harness',
     repository: input.repository,
     task: input.task,
   }),
-  // oxlint-disable-next-line eslint/sort-keys -- Keep handlers aligned with the native state order in the graph.
+  // Keep handlers aligned with the native state order in the graph.
   states: {
     implement: {
       initial: { target: 'implement.allocate' },
-      // oxlint-disable-next-line eslint/sort-keys -- Keep the order of native implementation handlers.
+      // Keep the order of native implementation handlers.
       states: {
         allocate: { invoke: { onDone: { data: ({ output }) => output, target: 'implement.intent' }, src: 'allocate' } },
         intent: {
@@ -210,7 +210,7 @@ export const DevelopmentMachine = Machine.make({
     },
     verify: {
       initial: { target: 'verify.allocate' },
-      // oxlint-disable-next-line eslint/sort-keys -- Keep the order of native verification handlers.
+      // Keep the order of native verification handlers.
       states: {
         allocate: { invoke: { onDone: { data: ({ output }) => output, target: 'verify.intent' }, src: 'allocate' } },
         intent: {

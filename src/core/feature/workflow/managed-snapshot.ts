@@ -6,7 +6,7 @@ import type { GraphDefinition, Run, RunStatus } from '@/core/feature/workflow/do
 import type { WorkflowFailure } from '@/core/feature/workflow/services/failures'
 
 const snapshotSchemaVersion = 1
-// oxlint-disable-next-line eslint/no-redeclare, eslint/sort-keys -- Keep the schema and type exports and preserve the encoded property order of stored snapshots.
+// oxlint-disable-next-line eslint/no-redeclare -- Keep the schema and type exports and preserve the encoded property order of stored snapshots.
 export const ManagedSnapshot = Schema.Struct({
   schemaVersion: Schema.Literal(snapshotSchemaVersion),
   version: WorkflowVersion,

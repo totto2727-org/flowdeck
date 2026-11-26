@@ -136,7 +136,7 @@ describe('display formatting', () => {
   })
 
   test('preserves payload property order in formatted JSON', () => {
-    // oxlint-disable-next-line eslint/sort-keys -- Exercise the insertion order seen in the event payload.
+    // Exercise the insertion order seen in the event payload.
     expect(renderJson({ state: 'Waiting', revision: 2 })).toBe('{\n  "state": "Waiting",\n  "revision": 2\n}')
   })
 })

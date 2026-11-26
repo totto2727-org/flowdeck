@@ -13,7 +13,7 @@ import { PiSandbox } from './sandbox.ts'
 const initialAttempt = 1
 const isOriginalSession = Schema.is(SessionId)
 
-// oxlint-disable-next-line eslint/sort-keys -- Preserve the field encoding order in persisted development snapshots.
+// Preserve the field encoding order in persisted development snapshots.
 export const PiExecutionFields = {
   executionId: ExecutionId,
   commandId: CommandId,
@@ -22,7 +22,7 @@ export const PiExecutionFields = {
 // oxlint-disable-next-line eslint/no-redeclare -- Preserve the schema and inferred type exports.
 export const PiExecution = Schema.Struct(PiExecutionFields)
 export type PiExecution = typeof PiExecution.Type
-// oxlint-disable-next-line eslint/sort-keys -- Preserve the execution field order used in persisted development snapshots.
+// Preserve the execution field order used in persisted development snapshots.
 export const piExecutionData = (execution: PiExecution): PiExecution => ({
   executionId: execution.executionId,
   commandId: execution.commandId,
@@ -151,7 +151,7 @@ export const makePiNodeEffects = Effect.gen(function* () {
     Effect.gen(function* () {
       const execution = yield* executionId()
       const command = yield* commandId()
-      // oxlint-disable-next-line eslint/sort-keys -- The allocation fields enter persisted development snapshots in this order.
+      // The allocation fields enter persisted development snapshots in this order.
       return { executionId: execution, commandId: command, attempt: initialAttempt } satisfies PiExecution
     }),
   )
