@@ -1,76 +1,41 @@
-import { fileURLToPath } from 'node:url'
+import { layer } from '@effect/vitest'
+import { Effect, Schema } from 'effect'
+import { expect } from 'vite-plus/test'
 
-import { Array } from 'effect'
-import { Miniflare } from 'miniflare'
-import { build } from 'vite-plus'
-import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test'
+import { WorkerShellHost } from './worker-shell-host.fixture.ts'
 
-describe('official DO-only Pi workspace', () => {
-  let miniflare: Miniflare
+const shellResult = Schema.Struct({ exitCode: Schema.Number, stderr: Schema.String, stdout: Schema.String })
+// oxlint-disable-next-line rules/prefer-non-unknown-decode -- Workerd returns untyped JSON over the native service boundary.
+const decodeShellResult = Schema.decodeUnknownEffect(shellResult)
+const persisted = { text: 'durable workspace' }
+const ready = { fetchStatus: 404, jobs: 0 }
 
-  beforeAll(async () => {
-    const result = await build({
-      configFile: false,
-      resolve: { tsconfigPaths: true },
-      logLevel: 'silent',
-      build: {
-        target: 'esnext',
-        write: false,
-        outDir: fileURLToPath(new URL('../../../../tmp/worker-shell-build', import.meta.url)),
-        lib: { entry: fileURLToPath(new URL('./worker-shell.fixture.ts', import.meta.url)), formats: ['es'] },
-        rolldownOptions: { external: (id) => id.startsWith('cloudflare:') || id.startsWith('node:') },
-      },
-    })
-    const output = Array.isArray(result) ? result[0] : result
-    if (!output || !('output' in output)) throw new Error('Expected Worker-shell fixture bundle')
-    const chunks = Array.filter(output.output, (entry) => entry.type === 'chunk')
-    const main = Array.findFirst(chunks, (entry) => entry.isEntry)
-    if (main._tag === 'None') throw new Error('Expected Worker-shell fixture entry')
-    miniflare = new Miniflare({
-      modules: Array.map(
-        Array.prepend(
-          Array.filter(chunks, (entry) => entry !== main.value),
-          main.value,
-        ),
-        (entry) => ({ type: 'ESModule' as const, path: entry.fileName, contents: entry.code }),
-      ),
-      compatibilityDate: '2026-07-30',
-      compatibilityFlags: ['nodejs_compat'],
-      durableObjects: { PROBE: { className: 'DevelopmentRun', useSQLite: true } },
-      // No Container, Loader, Gateway credentials or inference endpoint exists.
-      outboundService: () => {
-        throw new Error('Unexpected external network access')
-      },
-    })
-  }, 60_000)
+layer(WorkerShellHost.layer, { timeout: '60 seconds' })('official DO-only Pi workspace', (it) => {
+  it.effect('initializes the real PiHarness without Container or Gateway provisioning', () =>
+    Effect.gen(function* () {
+      const { read } = yield* WorkerShellHost
+      expect(yield* read('/sdk')).toStrictEqual(ready)
+      expect(yield* read('/sdk')).toStrictEqual(ready)
+    }),
+  )
 
-  afterAll(async () => {
-    await miniflare?.dispose()
-  })
+  it.effect('reaches durable files through the native Alchemy bridge after the previous Scope closes', () =>
+    Effect.gen(function* () {
+      const { read } = yield* WorkerShellHost
+      expect(yield* read('/write')).toStrictEqual({ written: true })
+      expect(yield* read('/read')).toStrictEqual(persisted)
+      expect(yield* read('/exec')).toMatchObject({ exitCode: 0, stderr: '', stdout: persisted.text })
+      expect(yield* read('/read')).toStrictEqual(persisted)
+    }),
+  )
 
-  const read = async (path: string) => {
-    const response = await miniflare.dispatchFetch(`https://workspace${path}`)
-    expect(response.status, await response.clone().text()).toBe(200)
-    return response.json()
-  }
-
-  it('initializes the real PiHarness without Container or Gateway provisioning', async () => {
-    expect(await read('/sdk')).toEqual({ jobs: 0, fetchStatus: 404 })
-    expect(await read('/sdk')).toEqual({ jobs: 0, fetchStatus: 404 })
-  })
-
-  it('reaches durable files through the outer Alchemy PiRun bridge after the previous Scope closes', async () => {
-    expect(await read('/write')).toEqual({ written: true })
-    expect(await read('/read')).toEqual({ text: 'durable workspace' })
-    expect(await read('/exec')).toMatchObject({ exitCode: 0, stdout: 'durable workspace', stderr: '' })
-    expect(await read('/read')).toEqual({ text: 'durable workspace' })
-  })
-
-  it('does not claim Node process support from the DO-local shell', async () => {
-    expect(await read('/unsupported')).toMatchObject({
-      exitCode: 127,
-      stdout: '',
-      stderr: expect.stringContaining('node'),
-    })
-  })
+  it.effect('reports an unsupported Node command in the DO-local shell', () =>
+    Effect.gen(function* () {
+      const { read } = yield* WorkerShellHost
+      const response = yield* read('/unsupported')
+      const { exitCode, stderr, stdout } = yield* decodeShellResult(response)
+      expect({ exitCode, stdout }).toStrictEqual({ exitCode: 127, stdout: '' })
+      expect(stderr).toContain('node')
+    }),
+  )
 })

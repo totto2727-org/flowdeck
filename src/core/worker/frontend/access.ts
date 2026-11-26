@@ -1,3 +1,4 @@
+import type { Output } from 'alchemy'
 import { Application } from 'alchemy/Cloudflare/Access'
 import type { WorkerProps } from 'alchemy/Cloudflare/Workers'
 import { Config, Context, Effect, Layer, Schema } from 'effect'
@@ -7,9 +8,10 @@ export const accessPolicyId = Config.schema(Schema.String.check(Schema.isUUID())
 
 export const frontendHostname = 'flowdeck.totto2727.dev'
 
+type AccessBindings = Readonly<{ FLOWDECK_ACCESS_AUD: string | Output<string> }>
 export class FrontendSecurity extends Context.Service<
   FrontendSecurity,
-  Pick<WorkerProps, 'domain' | 'access' | 'env' | 'dev'>
+  Pick<WorkerProps<AccessBindings>, 'domain' | 'access' | 'env' | 'dev'>
 >()('flowdeck/FrontendSecurity') {}
 
 /** No cloud resources or principal configuration are needed by these implementations. */
@@ -19,7 +21,7 @@ export const developmentAccess = {
 }
 
 export const LocalSecurity = Layer.succeed(FrontendSecurity, {
-  dev: { host: '127.0.0.1', port: 4380, strictPort: true, access: developmentAccess },
+  dev: { access: developmentAccess, host: '127.0.0.1', port: 4380, strictPort: true },
   env: {
     FLOWDECK_ACCESS_AUD: developmentAccess.aud,
   },
@@ -31,16 +33,16 @@ export const ProductionSecurity = Layer.effect(
   Effect.gen(function* () {
     const policyId = yield* accessPolicyId
     const access = yield* Application('FrontendAccess', {
-      type: 'self_hosted',
-      name: 'Flowdeck',
-      domain: frontendHostname,
-      sessionDuration: '24h',
       appLauncherVisible: false,
+      domain: frontendHostname,
+      name: 'Flowdeck',
       policies: [{ id: policyId, precedence: 1 }],
+      sessionDuration: '24h',
+      type: 'self_hosted',
     })
     return {
-      domain: { name: frontendHostname, previews: false },
       access,
+      domain: { name: frontendHostname, previews: false },
       env: {
         FLOWDECK_ACCESS_AUD: access.aud,
       },

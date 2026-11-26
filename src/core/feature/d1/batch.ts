@@ -1,7 +1,7 @@
 import type { PreparedStatement } from 'alchemy/Cloudflare/D1'
 import { Effect } from 'effect'
 
-import { D1Client } from './client'
+import { D1Client } from './client.ts'
 
 export const makeD1Batch = Effect.gen(function* () {
   const database = yield* D1Client

@@ -1,24 +1,6 @@
-import { Data } from 'effect'
-
-export class NotFound extends Data.TaggedError('NotFound')<{
-  readonly resource: string
-}> {}
-export class Conflict extends Data.TaggedError('Conflict')<{
-  readonly message: string
-}> {}
-export class StorageConflict extends Data.TaggedError('StorageConflict')<{
-  readonly message: string
-  readonly operation: string
-  readonly cause: unknown
-}> {}
-export class InvalidOperation extends Data.TaggedError('InvalidOperation')<{
-  readonly message: string
-}> {}
-export class InvalidSnapshot extends Data.TaggedError('InvalidSnapshot')<{
-  readonly message: string
-}> {}
-export class ExternalError extends Data.TaggedError('ExternalError')<{
-  readonly cause: unknown
-  readonly operation: string
-  readonly kind: 'storage' | 'service'
-}> {}
+export { NotFound } from './errors/not-found.ts'
+export { Conflict } from './errors/conflict.ts'
+export { StorageConflict } from './errors/storage-conflict.ts'
+export { InvalidOperation } from './errors/invalid-operation.ts'
+export { InvalidSnapshot } from './errors/invalid-snapshot.ts'
+export { ExternalError } from './errors/external-error.ts'

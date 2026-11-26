@@ -4,12 +4,12 @@ import type { RegisteredWorkflow } from '@/core/feature/workflow/services/workfl
 import { demoDefinition } from '@/user-land/workflow/demo/feature/definition'
 import { developmentDefinition } from '@/user-land/workflow/development/feature/definition'
 
-import { DevelopmentWorkflowBinding, WorkflowBinding } from './workflow-binding'
+import { DevelopmentWorkflowBinding, WorkflowBinding } from './workflow-binding.ts'
 
 /** The only composition feature that knows which workflow applications are installed. */
 export const makeWorkflowRegistry = Effect.gen(function* () {
   return [
     { ...demoDefinition, binding: yield* WorkflowBinding },
     { ...developmentDefinition, binding: yield* DevelopmentWorkflowBinding },
-  ] satisfies ReadonlyArray<RegisteredWorkflow>
+  ] satisfies Readonly<RegisteredWorkflow[]>
 })

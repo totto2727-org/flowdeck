@@ -1,47 +1,57 @@
-import { ConfigProvider, Effect } from 'effect'
-import { describe, expect, it } from 'vite-plus/test'
+import { live } from '@effect/vitest'
+import { ConfigProvider, Effect, Function } from 'effect'
+import { describe, expect } from 'vite-plus/test'
 
 import { developmentAccess, FrontendSecurity, LocalSecurity, RuntimeSecurity } from '@/core/worker/frontend/access'
 import { authorizeAccess } from '@/core/worker/frontend/access-auth'
 import { accessAudienceFromEnvironment } from '@/core/worker/frontend/assembly'
+import { HttpStatus } from '@/share/feature/http/status'
 
-import { applicationMode } from './composition'
+import { applicationMode } from './composition.ts'
 
-const selectedApplication = (values: Record<string, string>) =>
-  Effect.runPromise(
-    applicationMode.pipe(Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown(values))),
-  )
+const selectedApplication = (
+  values: Record<string, string>,
+): Effect.Effect<Effect.Success<typeof applicationMode>, Effect.Error<typeof applicationMode>> => {
+  const provider = ConfigProvider.fromUnknown(values)
+  return applicationMode.pipe(Effect.provideService(ConfigProvider.ConfigProvider, provider))
+}
 
 describe('final application composition', () => {
-  it('selects development application mode at the composition boundary', async () => {
-    expect(await selectedApplication({ ALCHEMY_DEV: 'true' })).toBe('development')
-  })
+  live('selects development application mode at the composition boundary', () =>
+    Effect.gen(function* () {
+      expect(yield* selectedApplication({ ALCHEMY_DEV: 'true' })).toBe('development')
+    }),
+  )
 
-  it('selects production application mode by default', async () => {
-    expect(await selectedApplication({})).toBe('production')
-    expect(await selectedApplication({ ALCHEMY_DEV: 'false' })).toBe('production')
-  })
+  live('selects production application mode by default', () =>
+    Effect.gen(function* () {
+      expect(yield* selectedApplication({})).toBe('production')
+      expect(yield* selectedApplication({ ALCHEMY_DEV: 'false' })).toBe('production')
+    }),
+  )
 
-  it('injects fixed local settings without bypassing the common authorization', async () => {
-    const security = await Effect.runPromise(FrontendSecurity.pipe(Effect.provide(LocalSecurity)))
-    expect(security.dev).toEqual({
-      host: '127.0.0.1',
-      port: 4380,
-      strictPort: true,
-      access: developmentAccess,
-    })
-    const expected = await Effect.runPromise(accessAudienceFromEnvironment(security.env))
-    expect(expected).toEqual({ aud: developmentAccess.aud })
-    await expect(
-      Effect.runPromise(authorizeAccess(expected, Effect.succeed({ aud: developmentAccess.aud }))),
-    ).resolves.toBeUndefined()
-    await expect(Effect.runPromise(authorizeAccess(expected, Effect.succeed(undefined)))).rejects.toMatchObject({
-      _tag: 'AccessDenied',
-      status: 401,
-    })
-  })
+  live('injects fixed local settings without bypassing the common authorization', () =>
+    Effect.gen(function* () {
+      const security = yield* FrontendSecurity.pipe(Effect.provide(LocalSecurity))
+      expect(security.dev).toStrictEqual({
+        access: developmentAccess,
+        host: '127.0.0.1',
+        port: 4380,
+        strictPort: true,
+      })
+      const expected = yield* accessAudienceFromEnvironment(security.env)
+      expect(expected).toStrictEqual({ aud: developmentAccess.aud })
+      expect(yield* authorizeAccess(expected, Effect.succeed({ aud: developmentAccess.aud }))).toBeUndefined()
+      const absent = Effect.sync(Function.constUndefined)
+      const denied = yield* authorizeAccess(expected, absent).pipe(Effect.flip)
+      expect(denied).toHaveProperty('_tag', 'AccessDenied')
+      expect(denied).toHaveProperty('status', HttpStatus.unauthorized)
+    }),
+  )
 
-  it('provides no deployment resource props at the fixed runtime capture boundary', async () => {
-    await expect(Effect.runPromise(FrontendSecurity.pipe(Effect.provide(RuntimeSecurity)))).resolves.toEqual({})
-  })
+  live('provides no deployment resource props at the fixed runtime capture boundary', () =>
+    Effect.gen(function* () {
+      expect(yield* FrontendSecurity.pipe(Effect.provide(RuntimeSecurity))).toStrictEqual({})
+    }),
+  )
 })

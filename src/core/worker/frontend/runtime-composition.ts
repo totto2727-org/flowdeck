@@ -1,7 +1,7 @@
 import { Layer } from 'effect'
 
-import { RuntimeSecurity } from './access'
-import FrontendLive from './frontend'
+import { RuntimeSecurity } from './access.ts'
+import FrontendLive from './frontend.ts'
 
 /**
  * The native Effront bridge imports a runtime-only entry, not the deployment graph.

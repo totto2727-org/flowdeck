@@ -2,7 +2,7 @@ import { ALCHEMY_DEV, localState, Stack } from 'alchemy'
 import { providers, state as cloudflareState } from 'alchemy/Cloudflare'
 import { Effect, Layer } from 'effect'
 
-import { WorkerResources } from './alchemy'
+import { WorkerResources } from './alchemy.ts'
 
 /** Select infrastructure state only at the deployment entry point. */
 export const DeploymentState = Layer.unwrap(
@@ -12,8 +12,9 @@ export const DeploymentState = Layer.unwrap(
   ),
 )
 
+// oxlint-disable-next-line import/no-default-export -- The Alchemy CLI loads the default stack from this config file.
 export default Stack(
   'flowdeck',
-  { state: DeploymentState, providers: providers() },
+  { providers: providers(), state: DeploymentState },
   WorkerResources.pipe(Effect.map(({ frontend }) => ({ frontend: frontend.url }))),
 )

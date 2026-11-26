@@ -1,30 +1,54 @@
 import { BrowserCrypto } from '@effect/platform-browser'
-import { Effect, Schema } from 'effect'
+import { live } from '@effect/vitest'
+import { Effect, Result, Schema } from 'effect'
 import { TestCrypto } from 'effect/testing'
-import { describe, expect, it } from 'vite-plus/test'
+import { describe, expect, test } from 'vite-plus/test'
 
-import { makePrefixedUUIDv4, UserDefinedId } from './id'
+import { makePrefixedUUIDv4, UserDefinedId } from './id.ts'
+
+const decodeUserDefinedId = Schema.decodeResult(UserDefinedId)
+const encodeUserDefinedId = Schema.encodeResult(UserDefinedId)
 
 const uuid = '3d360c7a-4b1a-4df3-9633-861a220bf5b7'
 const prefixes = ['run', 'execution', 'event', 'commit', 'command', 'repository']
+const repository = makePrefixedUUIDv4('repository')
+const decodeRepositoryId = Schema.decodeResult(repository.schema)
+
+type Identity = ReturnType<typeof makePrefixedUUIDv4>
+type IdentityCase = Readonly<{
+  decode: ReturnType<typeof Schema.decodeResult<Identity['schema']>>
+  encode: ReturnType<typeof Schema.encodeResult<Identity['schema']>>
+  identity: Identity
+  kind: string
+}>
+
+const makeIdentityCase = (kind: string): IdentityCase => {
+  const identity = makePrefixedUUIDv4(kind)
+  // oxlint-disable-next-line rules/require-top-level-decoder -- Cache the decoder once per caller-selected prefix.
+  const decode = Schema.decodeResult(identity.schema)
+  const encode = Schema.encodeResult(identity.schema)
+  return { decode, encode, identity, kind }
+}
+
+const identityCases = prefixes.map((prefix) => makeIdentityCase(prefix))
 
 describe('user-defined identities', () => {
-  it.each(['demo', 'release-checkpoint', 'Review_42', 'a'.repeat(128)])('accepts safe ID %s', (id) => {
-    expect(Schema.decodeUnknownSync(UserDefinedId)(id)).toBe(id)
+  test.each(['demo', 'release-checkpoint', 'Review_42', 'a'.repeat(128)])('accepts safe ID %s', (id) => {
+    expect(decodeUserDefinedId(id)).toStrictEqual(Result.succeed(id))
   })
 
-  it.each([
+  test.each([
     '',
     '../run',
     'a/b',
-    'a\\b',
+    String.raw`a\b`,
     'two words',
     ' run',
     'run ',
     '\trun',
     'run\t',
-    '\u00a0run',
-    'run\u00a0',
+    '\u00A0run',
+    'run\u00A0',
     'a\n',
     'a\r\n',
     'a\u2028',
@@ -35,85 +59,103 @@ describe('user-defined identities', () => {
     'a'.repeat(129),
   ])('rejects unsafe ID %s without silently changing its identity', (id) => {
     expect(Schema.is(UserDefinedId)(id)).toBe(false)
-    expect(() => Schema.decodeUnknownSync(UserDefinedId)(id)).toThrow()
-    expect(() => Schema.encodeSync(UserDefinedId)(id)).toThrow()
+    const results = [decodeUserDefinedId(id), encodeUserDefinedId(id)]
+    expect(results.map((value) => Result.isFailure(value))).toStrictEqual([true, true])
   })
 })
 
 describe('prefixed cryptographic random identities', () => {
-  it.each(['', '../run', 'two words', '日本語'])('rejects unsafe factory prefix %s at schema construction', (prefix) =>
-    expect(() => makePrefixedUUIDv4(prefix)).toThrow(),
+  test.each(['', '../run', 'two words', '日本語'])(
+    'rejects unsafe factory prefix %s at schema construction',
+    (prefix) => {
+      expect(() => makePrefixedUUIDv4(prefix)).toThrow(Schema.SchemaError)
+    },
   )
 
-  it('supports a caller-selected safe prefix without changing the factory', () => {
-    const { schema } = makePrefixedUUIDv4('repository')
-    expect(Schema.decodeUnknownSync(schema)(`repository_${uuid}`)).toBe(`repository_${uuid}`)
-    expect(Schema.is(schema)(`run_${uuid}`)).toBe(false)
+  test('supports a caller-selected safe prefix without changing the factory', () => {
+    const id = `repository_${uuid}`
+    expect(decodeRepositoryId(id)).toStrictEqual(Result.succeed(id))
+    expect(Schema.is(repository.schema)(`run_${uuid}`)).toBe(false)
   })
 
-  it('keeps factories independent and generates a fresh ID when their Effects are rerun', async () => {
-    const repository = makePrefixedUUIDv4('repository')
-    const task = makePrefixedUUIDv4('task')
-    const nextRepository = repository.make
-    const [first, second, taskId] = await Effect.runPromise(
-      Effect.all([nextRepository, nextRepository, task.make]).pipe(Effect.provide(BrowserCrypto.layer)),
-    )
-    expect(first).not.toBe(second)
-    expect(Schema.is(repository.schema)(first)).toBe(true)
-    expect(Schema.is(repository.schema)(second)).toBe(true)
-    expect(Schema.is(task.schema)(taskId)).toBe(true)
-    expect(Schema.is(repository.schema)(taskId)).toBe(false)
-    expect(Schema.is(task.schema)(first)).toBe(false)
-  })
+  live('keeps factories independent and generates a fresh ID when their Effects are rerun', () =>
+    Effect.gen(function* () {
+      const task = makePrefixedUUIDv4('task')
+      const nextRepository = repository.make
+      const [first, second, taskId] = yield* Effect.all([nextRepository, nextRepository, task.make]).pipe(
+        Effect.provide(BrowserCrypto.layer),
+      )
+      expect(first).not.toBe(second)
+      const repositoryId = Schema.is(repository.schema)
+      const taskIdentity = Schema.is(task.schema)
+      expect([repositoryId(first), repositoryId(second), taskIdentity(taskId)]).toStrictEqual([true, true, true])
+      expect([repositoryId(taskId), taskIdentity(first)]).toStrictEqual([false, false])
+    }),
+  )
 
-  it.each(prefixes)('round-trips %s and uses the official v4 check for its suffix', (kind) => {
-    const { schema } = makePrefixedUUIDv4(kind)
+  test.each(identityCases)('round-trips $kind and uses the official v4 check for its suffix', (scenario) => {
+    const { decode, encode, identity, kind } = scenario
     const id = `${kind}_${uuid}`
-    expect(Schema.decodeUnknownSync(schema)(id)).toBe(id)
-    expect(Schema.encodeSync(schema)(id)).toBe(id)
-    for (const invalid of [
+    expect([decode(id), encode(id)]).toStrictEqual([Result.succeed(id), Result.succeed(id)])
+    const acceptsId = Schema.is(identity.schema)
+    const invalidIds = [
       uuid,
       `other_${uuid}`,
       `${id}_extra`,
       `${kind}_not-a-uuid`,
       `${kind}_3d360c7a-4b1a-1df3-9633-861a220bf5b7`,
       `${kind}_01890f2e-7b55-7cc1-8c5a-000000000001`,
-    ]) {
-      expect(Schema.is(schema)(invalid)).toBe(false)
-      expect(() => Schema.decodeUnknownSync(schema)(invalid)).toThrow()
-      expect(() => Schema.encodeSync(schema)(invalid)).toThrow()
-    }
+    ]
+    expect(invalidIds.filter((invalid) => acceptsId(invalid))).toStrictEqual([])
+    expect(invalidIds.filter((invalid) => Result.isSuccess(decode(invalid)))).toStrictEqual([])
+    expect(invalidIds.filter((invalid) => Result.isSuccess(encode(invalid)))).toStrictEqual([])
   })
+})
 
-  it.each(prefixes)('generates valid distinct %s IDs through the real Crypto layer', async (kind) => {
-    const { schema, make } = makePrefixedUUIDv4(kind)
-    const ids = await Effect.runPromise(Effect.all([make, make]).pipe(Effect.provide(BrowserCrypto.layer)))
-    expect(ids[0]).not.toBe(ids[1])
-    expect(Schema.is(schema)(ids[0])).toBe(true)
-    expect(Schema.is(schema)(ids[1])).toBe(true)
-  })
+describe('cryptographic identity generation with explicit Effect services', () => {
+  live.each(prefixes)('generates valid distinct %s IDs through the real Crypto layer', (kind) =>
+    Effect.gen(function* () {
+      const { schema, make } = makePrefixedUUIDv4(kind)
+      const [first, second] = yield* Effect.all([make, make]).pipe(Effect.provide(BrowserCrypto.layer))
+      expect(first).not.toBe(second)
+      expect([first, second].every(Schema.is(schema))).toBe(true)
+    }),
+  )
 
-  it.each(prefixes)('keeps the constructed %s generator usable without a caller Crypto service', async (kind) => {
-    const { schema, makeGenerator } = makePrefixedUUIDv4(kind)
-    const generate = await Effect.runPromise(makeGenerator.pipe(Effect.provide(BrowserCrypto.layer)))
-    const first = await Effect.runPromise(generate())
-    const second = await Effect.runPromise(generate())
-    expect(first).not.toBe(second)
-    expect(Schema.decodeUnknownSync(schema)(first)).toBe(first)
-    expect(Schema.decodeUnknownSync(schema)(second)).toBe(second)
-    expect(Schema.encodeSync(schema)(first)).toBe(first)
-    expect(Schema.encodeSync(schema)(second)).toBe(second)
-  })
+  live.each(identityCases)('keeps the constructed $kind generator usable without a caller Crypto service', (scenario) =>
+    Effect.gen(function* () {
+      const { decode, encode, identity } = scenario
+      const { makeGenerator } = identity
+      const generate = yield* makeGenerator.pipe(Effect.provide(BrowserCrypto.layer))
+      const first = yield* generate()
+      const second = yield* generate()
+      expect(first).not.toBe(second)
+      expect([decode(first), decode(second), encode(first), encode(second)]).toStrictEqual([
+        Result.succeed(first),
+        Result.succeed(second),
+        Result.succeed(first),
+        Result.succeed(second),
+      ])
+    }),
+  )
 
-  it('uses the Crypto service supplied at execution time and supports deterministic TestCrypto', async () => {
-    const { schema, make } = makePrefixedUUIDv4('test')
-    const generate = Effect.all([make, make])
-    const runWithSeed = (seed: string) =>
-      Effect.runPromise(generate.pipe(Effect.provide(TestCrypto.layer(seed)), Effect.provide(BrowserCrypto.layer)))
-    const first = await runWithSeed('first-seed')
-    expect(await runWithSeed('first-seed')).toEqual(first)
-    expect(await runWithSeed('other-seed')).not.toEqual(first)
-    expect(first[0]).not.toBe(first[1])
-    for (const id of first) expect(Schema.is(schema)(id)).toBe(true)
-  })
+  live('uses the Crypto service supplied at execution time and supports deterministic TestCrypto', () =>
+    Effect.gen(function* () {
+      const { schema, make } = makePrefixedUUIDv4('test')
+      const generate = Effect.all([make, make])
+      const runWithSeed = (
+        seed: string,
+      ): Effect.Effect<Effect.Success<typeof generate>, Effect.Error<typeof generate>> =>
+        generate.pipe(Effect.provide(TestCrypto.layer(seed)), Effect.provide(BrowserCrypto.layer))
+      const [first, sameSeed, otherSeed] = yield* Effect.all([
+        runWithSeed('first-seed'),
+        runWithSeed('first-seed'),
+        runWithSeed('other-seed'),
+      ])
+      expect(sameSeed).toStrictEqual(first)
+      expect(otherSeed).not.toStrictEqual(first)
+      expect(first[0]).not.toBe(first[1])
+      expect(first.every(Schema.is(schema))).toBe(true)
+    }),
+  )
 })

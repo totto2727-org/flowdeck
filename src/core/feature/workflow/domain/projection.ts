@@ -1,14 +1,14 @@
 import { Array, HashMap, Match, Number, Option, Order } from 'effect'
 
-import type { NodeId } from './identity'
-import type { GraphDefinition, NodeVisualState, RunEvent, Shapes } from './model'
+import type { NodeId } from './identity.ts'
+import type { GraphDefinition, NodeVisualState, RunEvent, Shapes } from './model.ts'
 
 const LAYOUT_ORIGIN = { x: 48, y: 72 }
-const NODE_SIZE = { width: 224, height: 100 }
+const NODE_SIZE = { height: 100, width: 224 }
 const NODE_HORIZONTAL_STEP = 280
 
-/** Event order is durable sequence order, independent of wall-clock timestamps. */
-export const projectEvents = (events: ReadonlyArray<RunEvent>) =>
+// Event order follows the persisted sequence independently of wall-clock timestamps.
+export const projectEvents = (events: Readonly<RunEvent[]>): HashMap.HashMap<NodeId, NodeVisualState> =>
   Array.reduce(
     Array.sort(
       events,
@@ -16,42 +16,45 @@ export const projectEvents = (events: ReadonlyArray<RunEvent>) =>
     ),
     HashMap.empty<NodeId, NodeVisualState>(),
     (states, event) => {
-      if (!('nodeId' in event)) return states
+      if (!('nodeId' in event)) {
+        return states
+      }
       const visual = Match.value(event.type).pipe(
         Match.when('node.started', () => 'running' as const),
         Match.when('node.succeeded', () => 'succeeded' as const),
         Match.when('node.failed', () => 'failed' as const),
         Match.when('run.waiting', () => 'waiting' as const),
-        Match.orElse(() => undefined),
+        Match.option,
       )
-      return visual === undefined ? states : HashMap.set(states, event.nodeId, visual)
+      return Option.isNone(visual) ? states : HashMap.set(states, event.nodeId, visual.value)
     },
   )
 
-/** Layout is a pure graph projection. Selection belongs exclusively to the UI. */
-export const graphToShapes = (graph: GraphDefinition, events: ReadonlyArray<RunEvent> = []): Shapes => {
+// The UI owns selection independently of the graph layout.
+export const graphToShapes = (graph: GraphDefinition, events: Readonly<RunEvent[]> = []): Shapes => {
   const states = projectEvents(events)
-  const state = (nodeId: NodeId) => HashMap.get(states, nodeId).pipe(Option.getOrElse(() => 'idle' as const))
+  const state = (nodeId: NodeId): NodeVisualState =>
+    HashMap.get(states, nodeId).pipe(Option.getOrElse(() => 'idle' as const))
   return {
-    nodes: Array.map(graph.nodes, (node, index) => ({
-      id: node.nodeId,
-      nodeId: node.nodeId,
-      type: 'node' as const,
-      label: node.label,
-      kind: node.kind,
-      position: { x: LAYOUT_ORIGIN.x + index * NODE_HORIZONTAL_STEP, y: LAYOUT_ORIGIN.y },
-      size: NODE_SIZE,
-      state: state(node.nodeId),
-    })),
     edges: Array.map(graph.edges, (edge) => ({
       id: edge.edgeId,
-      type: 'edge' as const,
+      label: edge.label,
       source: edge.source,
       target: edge.target,
-      label: edge.label,
       traversed:
         Array.some(events, (event) => event.type === 'node.succeeded' && event.nodeId === edge.source) &&
         Array.some(events, (event) => event.type === 'node.started' && event.nodeId === edge.target),
+      type: 'edge',
+    })),
+    nodes: Array.map(graph.nodes, (node, index) => ({
+      id: node.nodeId,
+      kind: node.kind,
+      label: node.label,
+      nodeId: node.nodeId,
+      position: { x: LAYOUT_ORIGIN.x + index * NODE_HORIZONTAL_STEP, y: LAYOUT_ORIGIN.y },
+      size: NODE_SIZE,
+      state: state(node.nodeId),
+      type: 'node',
     })),
   }
 }

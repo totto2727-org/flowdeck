@@ -68,7 +68,7 @@ The supported model IDs are:
 - `@cf/meta/llama-3.3-70b-instruct-fp8-fast`, the default exported as `workersAiTextModel`.
 - `@cf/meta/llama-3.1-8b-instruct-fp8`.
 
-The `WorkersAiTextModel` Schema also validates a model ID received at an external boundary.
+Use `WorkersAiTextModelSchema` to validate a model ID received at an external boundary.
 The service always sends `stream: false`.
 A Machine invoke can then call the captured service without native Worker runtime requirements:
 

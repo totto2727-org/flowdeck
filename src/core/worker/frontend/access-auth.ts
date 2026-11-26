@@ -1,26 +1,43 @@
 import type { WorkerExecutionContextAccess } from 'alchemy/Cloudflare/Workers'
-import { Context, Data, Effect } from 'effect'
+import { Data, Effect, Predicate } from 'effect'
 
-export class ExpectedAccessAudience extends Context.Service<ExpectedAccessAudience, { readonly aud: string }>()(
-  'flowdeck/ExpectedAccessAudience',
-) {}
+import { HttpStatus } from '@/share/feature/http/status'
 
-export class AccessDenied extends Data.TaggedError('AccessDenied')<{
-  readonly status: 401 | 403 | 503
-  readonly message: string
-}> {}
+type ExpectedAccessAudience = Readonly<{ aud: string }>
 
-/** Compare trusted platform admission with an already decoded, injected application audience. */
+export class AccessDenied extends Data.TaggedError('AccessDenied')<
+  Readonly<{
+    status: typeof HttpStatus.unauthorized | typeof HttpStatus.forbidden | typeof HttpStatus.serviceUnavailable
+    message: string
+  }>
+> {}
+
+/**
+ * Checks the trusted platform admission against the configured audience.
+ * @param {ExpectedAccessAudience} expected The decoded audience for this application.
+ * @param {Effect.Effect<Pick<WorkerExecutionContextAccess, 'aud'> | undefined, never, R>} admission The platform admission for the current request.
+ * @returns {Effect.Effect<void, AccessDenied, R>} A checked failure if the request cannot enter this application.
+ */
 export const authorizeAccess = <R>(
-  expected: ExpectedAccessAudience['Service'],
+  expected: ExpectedAccessAudience,
   admission: Effect.Effect<Pick<WorkerExecutionContextAccess, 'aud'> | undefined, never, R>,
-) =>
-  Effect.gen(function* () {
-    const access = yield* admission
-    if (access === undefined) {
-      return yield* new AccessDenied({ status: 401, message: 'Cloudflare Access authentication is required.' })
+): Effect.Effect<void, AccessDenied, R> =>
+  Effect.flatMap(admission, (access) => {
+    if (Predicate.isNullish(access)) {
+      return Effect.fail(
+        new AccessDenied({
+          message: 'Cloudflare Access authentication is required.',
+          status: HttpStatus.unauthorized,
+        }),
+      )
     }
     if (access.aud !== expected.aud) {
-      return yield* new AccessDenied({ status: 403, message: 'This Access application is not authorized.' })
+      return Effect.fail(
+        new AccessDenied({
+          message: 'This Access application is not authorized.',
+          status: HttpStatus.forbidden,
+        }),
+      )
     }
+    return Effect.void
   })

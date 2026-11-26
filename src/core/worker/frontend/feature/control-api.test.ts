@@ -1,88 +1,120 @@
+import { live } from '@effect/vitest'
 import { Array, DateTime, Effect, SemVer } from 'effect'
 import { HttpClient, HttpClientResponse } from 'effect/http'
-import { describe, expect, it } from 'vite-plus/test'
+import { describe, expect, vi } from 'vite-plus/test'
 
-import { makeControlApi } from './control-api'
+import { ControlError, makeControlApi } from './control-api.ts'
 
-/** Transport fixtures exercise the real Effect client and schema boundary, not dashboard data. */
-const clientReturning = (body: unknown, status = 200) =>
+/**
+ * Supplies a JSON response to the real Effect HTTP client.
+ * @param {unknown} body The transport payload before schema decoding.
+ * @param {number} status The HTTP status returned to the client.
+ * @returns {HttpClient.HttpClient} The client with this response.
+ */
+const clientReturning = (body: unknown, status = 200): HttpClient.HttpClient =>
   HttpClient.make((request) => Effect.succeed(HttpClientResponse.fromWeb(request, Response.json(body, { status }))))
 
 const run = {
+  createdAt: '2026-10-31T00:00:00.000Z',
+  graphId: 'demo-1_0_0-graph-1',
+  revision: 1,
   runId: 'run_00000000-0000-4000-8000-000000000001',
+  snapshot: {},
+  status: 'waiting',
+  updatedAt: '2026-10-31T00:00:00.000Z',
   workflowId: 'demo',
   workflowVersion: '1.0.0',
-  graphId: 'demo-1_0_0-graph-1',
-  status: 'waiting',
-  revision: 1,
-  snapshot: {},
-  createdAt: '2026-10-31T00:00:00.000Z',
-  updatedAt: '2026-10-31T00:00:00.000Z',
 }
 
-describe('ControlApi', () => {
-  it('decodes valid prefixed run identities and named graph identities', async () => {
-    const api = await Effect.runPromise(
-      makeControlApi.pipe(Effect.provideService(HttpClient.HttpClient, clientReturning({ runs: [run] }))),
-    )
-    const value = await Effect.runPromise(api.runs)
-    const decoded = Array.getUnsafe(value.runs, 0)
-    expect(SemVer.isSemVer(decoded.workflowVersion)).toBe(true)
-    expect(DateTime.isUtc(decoded.createdAt)).toBe(true)
-    expect(DateTime.isUtc(decoded.updatedAt)).toBe(true)
-    expect({
-      ...decoded,
-      workflowVersion: SemVer.format(decoded.workflowVersion),
-      createdAt: DateTime.formatIso(decoded.createdAt),
-      updatedAt: DateTime.formatIso(decoded.updatedAt),
-    }).toEqual(run)
-  })
+describe('control api run decoding', () => {
+  live('decodes valid prefixed run identities and named graph identities', () =>
+    Effect.gen(function* () {
+      const api = yield* makeControlApi.pipe(
+        Effect.provideService(HttpClient.HttpClient, clientReturning({ runs: [run] })),
+      )
+      const value = yield* api.runs
+      const decoded = Array.getUnsafe(value.runs, 0)
+      expect(SemVer.isSemVer(decoded.workflowVersion)).toBe(true)
+      expect(DateTime.isUtc(decoded.createdAt)).toBe(true)
+      expect(DateTime.isUtc(decoded.updatedAt)).toBe(true)
+      expect({
+        ...decoded,
+        createdAt: DateTime.formatIso(decoded.createdAt),
+        updatedAt: DateTime.formatIso(decoded.updatedAt),
+        workflowVersion: SemVer.format(decoded.workflowVersion),
+      }).toStrictEqual(run)
+    }),
+  )
+})
 
-  it.each([
+describe('control api workflow catalog', () => {
+  live.each([
     { runId: '00000000-0000-4000-8000-000000000001' },
     { runId: 'event_00000000-0000-4000-8000-000000000001' },
     { runId: 'run_01890f2e-7b55-7cc1-8c5a-000000000001' },
     { workflowVersion: 'v1' },
     { graphId: 'demo:1.0.0:graph:1' },
-  ])('rejects malformed run response %j at the API boundary', async (invalid) => {
-    const api = await Effect.runPromise(
-      makeControlApi.pipe(
+  ])('rejects malformed run response %j at the API boundary', (invalid) =>
+    Effect.gen(function* () {
+      const api = yield* makeControlApi.pipe(
         Effect.provideService(HttpClient.HttpClient, clientReturning({ runs: [{ ...run, ...invalid }] })),
-      ),
-    )
-    expect((await Effect.runPromise(api.runs.pipe(Effect.result)))._tag).toBe('Failure')
-  })
+      )
+      const error = yield* api.runs.pipe(Effect.flip)
+      expect(error).toBeInstanceOf(ControlError)
+    }),
+  )
 
-  it('decodes workflow responses through the supplied Effect HttpClient', async () => {
-    const api = await Effect.runPromise(
-      makeControlApi.pipe(
+  live('decodes workflow responses through the supplied Effect HttpClient', () =>
+    Effect.gen(function* () {
+      const api = yield* makeControlApi.pipe(
         Effect.provideService(
           HttpClient.HttpClient,
           clientReturning({
-            workflows: [{ workflowId: 'review', name: 'Review', versions: ['1.0.0', '2.0.0'], inputs: [] }],
+            workflows: [{ inputs: [], name: 'Review', versions: ['1.0.0', '2.0.0'], workflowId: 'review' }],
           }),
         ),
-      ),
-    )
-    const value = await Effect.runPromise(api.workflows)
-    expect(Array.map(Array.getUnsafe(value.workflows, 0).versions, SemVer.format)).toEqual(['1.0.0', '2.0.0'])
-  })
+      )
+      const value = yield* api.workflows
+      expect(Array.map(Array.getUnsafe(value.workflows, 0).versions, SemVer.format)).toStrictEqual(['1.0.0', '2.0.0'])
+    }),
+  )
+})
 
-  it('does not pass malformed control responses to the dashboard', async () => {
-    const api = await Effect.runPromise(
-      makeControlApi.pipe(Effect.provideService(HttpClient.HttpClient, clientReturning({ runs: [{ runId: 17 }] }))),
-    )
-    const value = await Effect.runPromise(api.runs.pipe(Effect.result))
-    expect(value._tag).toBe('Failure')
-  })
+describe('recoverable control api responses', () => {
+  live('does not pass malformed control responses to the dashboard', () =>
+    Effect.gen(function* () {
+      const api = yield* makeControlApi.pipe(
+        Effect.provideService(HttpClient.HttpClient, clientReturning({ runs: [{ runId: 17 }] })),
+      )
+      const error = yield* api.runs.pipe(Effect.flip)
+      expect(error).toBeInstanceOf(ControlError)
+    }),
+  )
 
-  it('turns unavailable control responses into a recoverable error', async () => {
-    const api = await Effect.runPromise(
-      makeControlApi.pipe(Effect.provideService(HttpClient.HttpClient, clientReturning({ error: 'unavailable' }, 503))),
-    )
-    const message = await Effect.runPromise(
-      api.workflows.pipe(Effect.match({ onSuccess: () => '', onFailure: (error) => error.message })),
-    )
-    expect(message).toContain('control plane')
-  })
+  live('turns unavailable control responses into a recoverable error', () =>
+    Effect.gen(function* () {
+      const api = yield* makeControlApi.pipe(
+        Effect.provideService(HttpClient.HttpClient, clientReturning({ error: 'unavailable' }, 503)),
+      )
+      const message = yield* api.workflows.pipe(
+        Effect.match({ onFailure: (error) => error.message, onSuccess: () => '' }),
+      )
+      expect(message).toContain('control plane')
+    }),
+  )
+})
+
+describe('control api outgoing commands', () => {
+  live('returns a typed failure before sending an invalid start request', () =>
+    Effect.gen(function* () {
+      const respond = vi.fn<Parameters<typeof HttpClient.make>[0]>(() =>
+        Effect.die('Invalid input must never reach transport'),
+      )
+      const api = yield* makeControlApi.pipe(Effect.provideService(HttpClient.HttpClient, HttpClient.make(respond)))
+      const input = { version: SemVer.parseUnsafe('1.0.0'), workflowId: '../invalid' }
+      const error = yield* api.start(input).pipe(Effect.flip)
+      expect(error).toBeInstanceOf(ControlError)
+      expect(respond).not.toHaveBeenCalled()
+    }),
+  )
 })

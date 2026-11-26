@@ -1,88 +1,116 @@
 import type { Machine } from '@typeonce/effect-machine'
-import { Array, HashSet, Option, Schema, String } from 'effect'
+import { Array, HashSet, Option, Predicate, Result, Schema, String } from 'effect'
 
 import { InvalidSnapshot } from '@/core/feature/workflow/domain/errors'
 import { GraphDefinition } from '@/core/feature/workflow/domain/model'
 
-const metadata = Schema.Struct({ title: Schema.String, description: Schema.Literals(['task', 'checkpoint']) })
+const metadata = Schema.Struct({ description: Schema.Literals(['task', 'checkpoint']), title: Schema.String })
 const decodeMetadata = Schema.decodeUnknownOption(metadata)
-const decodeGraph = Schema.decodeUnknownSync(GraphDefinition)
+const decodeGraph = Schema.decodeResult(GraphDefinition)
 
-/** Collapse implementation-only states into their annotated business ancestor.
- * Native introspection remains the only source of nodes and outgoing edges. */
-export const projectMachineGraph = (options: {
-  readonly graphId: string
-  readonly nodes: ReadonlyArray<Machine.Machine.StateNode>
-  readonly transitions: ReadonlyArray<Machine.Machine.TransitionDefinition>
-}): GraphDefinition => {
-  const visible = Array.flatMap(options.nodes, (node) =>
-    Option.match(decodeMetadata(node.annotations), {
-      onNone: () => [],
-      onSome: (annotation) => [{ nodeId: node.path, label: annotation.title, kind: annotation.description }],
-    }),
-  )
-  if (visible.length === 0) throw new InvalidSnapshot({ message: 'A workflow graph needs annotated business nodes' })
-  const owner = (path: string) =>
-    Array.findLast(visible, (node) => path === node.nodeId || String.startsWith(`${node.nodeId}.`)(path))
-  // Allocation-only states can sit between visible nodes. Follow their static
-  // native edges without evaluating guards, resolvers, or invoked work.
-  const destinations = (path: string, visited: HashSet.HashSet<string>): ReadonlyArray<string> => {
-    const visibleOwner = owner(path)
-    if (Option.isSome(visibleOwner)) return [visibleOwner.value.nodeId]
-    if (HashSet.has(visited, path)) return []
+type NativeGraph = Readonly<{
+  graphId: string
+  nodes: Readonly<Machine.Machine.StateNode[]>
+  transitions: Readonly<Machine.Machine.TransitionDefinition[]>
+}>
+type VisibleNodes = GraphDefinition['nodes']
+type Transition = NativeGraph['transitions'][number]
+type Edge = Omit<GraphDefinition['edges'][number], 'edgeId'>
+
+const findOwner = (visible: VisibleNodes, path: string): Option.Option<VisibleNodes[number]> =>
+  Array.findLast(visible, (node) => path === node.nodeId || String.startsWith(`${node.nodeId}.`)(path))
+
+// Follow the static edges of allocation-only states without evaluating their native behavior.
+const makeDestinationFinder = (
+  options: NativeGraph,
+  visible: VisibleNodes,
+): ((target: string) => Readonly<string[]>) => {
+  const visit = (path: string, visited: HashSet.HashSet<string>): Readonly<string[]> => {
+    const owner = findOwner(visible, path)
+    if (Option.isSome(owner)) {
+      return [owner.value.nodeId]
+    }
+    if (HashSet.has(visited, path)) {
+      return []
+    }
     const seen = HashSet.add(visited, path)
     const node = Array.findFirst(options.nodes, (candidate) => candidate.path === path)
-    const initial = Option.isSome(node) && node.value.type === 'compound' ? destinations(node.value.initial, seen) : []
-    return Array.appendAll(
-      initial,
-      Array.flatMap(
-        Array.filter(options.transitions, (transition) => transition.source === path),
-        (transition: Machine.Machine.TransitionDefinition) =>
-          Array.flatMap(transition.branches, (branch) =>
-            branch.target === undefined ? [] : destinations(branch.target, seen),
-          ),
-      ),
+    const initial = Option.isSome(node) && node.value.type === 'compound' ? visit(node.value.initial, seen) : []
+    const successors = Array.filter(options.transitions, (transition) => transition.source === path).flatMap(
+      (transition) =>
+        Array.flatMap(transition.branches, ({ target }) => (Predicate.isNullish(target) ? [] : visit(target, seen))),
     )
+    return Array.appendAll(initial, successors)
   }
-  const candidates = Array.flatMap(options.transitions, (transition) =>
-    Array.flatMap(transition.branches, (branch) => {
-      if (branch.target === undefined) return []
-      const source = owner(transition.source)
-      if (Option.isNone(source)) return []
-      const label =
-        branch.type === 'branch'
-          ? branch.title
-          : transition.trigger.type === 'event'
-            ? globalThis.String(transition.trigger.event)
-            : transition.trigger.type === 'invoke'
-              ? transition.trigger.outcome
-              : transition.trigger.type
-      return Array.flatMap(destinations(branch.target, HashSet.empty()), (target) =>
-        target === source.value.nodeId ? [] : [{ source: source.value.nodeId, target, label }],
+  return (target) => visit(target, HashSet.empty())
+}
+
+const transitionLabel = (transition: Transition, branch: Transition['branches'][number]): string => {
+  if (branch.type === 'branch') {
+    return branch.title
+  }
+  const { trigger } = transition
+  if (trigger.type === 'event') {
+    return globalThis.String(trigger.event)
+  }
+  return trigger.type === 'invoke' ? trigger.outcome : trigger.type
+}
+
+const edgeCandidates = (options: NativeGraph, visible: VisibleNodes): Edge[] => {
+  const destinations = makeDestinationFinder(options, visible)
+  return Array.flatMap(options.transitions, (transition) => {
+    const owner = findOwner(visible, transition.source)
+    if (Option.isNone(owner)) {
+      return []
+    }
+    const { nodeId: source } = owner.value
+    return Array.flatMap(transition.branches, (branch) => {
+      if (Predicate.isNullish(branch.target)) {
+        return []
+      }
+      const label = transitionLabel(transition, branch)
+      return Array.flatMap(destinations(branch.target), (target) =>
+        target === source ? [] : [{ label, source, target }],
       )
-    }),
-  )
-  const pairs = Array.dedupeWith(candidates, (a, b) => a.source === b.source && a.target === b.target)
-  return decodeGraph({
-    graphId: options.graphId,
-    schemaVersion: 1,
-    nodes: visible,
-    edges: Array.map(pairs, (edge) => ({
+    })
+  })
+}
+
+const sameEndpoints = (first: Edge, second: Edge): boolean =>
+  first.source === second.source && first.target === second.target
+
+const projectEdges = (candidates: Edge[]): GraphDefinition['edges'] =>
+  Array.map(Array.dedupeWith(candidates, sameEndpoints), (edge) => {
+    const matches = Array.filter(candidates, (candidate) => sameEndpoints(candidate, edge))
+    const labels = Array.dedupe(Array.map(matches, ({ label }) => label))
+    return {
       edgeId: `${edge.source}-${edge.target}`,
+      label: Array.join(labels, ', '),
       source: edge.source,
       target: edge.target,
-      label: Array.join(
-        Array.dedupe(
-          Array.map(
-            Array.filter(
-              candidates,
-              (candidate) => candidate.source === edge.source && candidate.target === edge.target,
-            ),
-            (candidate) => candidate.label,
-          ),
-        ),
-        ', ',
-      ),
-    })),
+    }
   })
+
+/**
+ * Collapses implementation-only states into their annotated business ancestor.
+ * @param {NativeGraph} options Native introspection for the immutable workflow graph.
+ * @returns {GraphDefinition} The business nodes and their outgoing edges, in native order.
+ */
+export const projectMachineGraph = (options: NativeGraph): GraphDefinition => {
+  const nodes = Array.flatMap(options.nodes, (node) =>
+    Option.match(decodeMetadata(node.annotations), {
+      onNone: () => [],
+      onSome: (annotation) => [{ kind: annotation.description, label: annotation.title, nodeId: node.path }],
+    }),
+  )
+  if (Array.isArrayEmpty(nodes)) {
+    throw new InvalidSnapshot({ message: 'A workflow graph needs annotated business nodes' })
+  }
+  const graph = decodeGraph({
+    edges: projectEdges(edgeCandidates(options, nodes)),
+    graphId: options.graphId,
+    nodes,
+    schemaVersion: 1,
+  })
+  return Result.getOrThrow(graph)
 }

@@ -1,203 +1,217 @@
+import { live } from '@effect/vitest'
 import { Machine } from '@typeonce/effect-machine'
 import { AIBinding, WorkerEnvironment, WorkersAIError } from 'alchemy/Cloudflare/Workers'
 import { makeWorkerRuntimeContext } from 'alchemy/Cloudflare/Workers/WorkerRuntimeContext'
 import { RuntimeContext } from 'alchemy/RuntimeContext'
-import { Deferred, Effect, Exit, Fiber, Result, Schema } from 'effect'
-import { describe, expect, expectTypeOf, it, vi } from 'vite-plus/test'
+import { Context, Data, Deferred, Effect, Exit, Fiber, Schema } from 'effect'
+import { describe, expect, expectTypeOf, vi } from 'vite-plus/test'
 
-import { makeWorkersAiText, WorkersAiText, WorkersAiTextModel, workersAiTextModel } from './workers-ai-text'
+import { makeWorkersAiText, WorkersAiText, WorkersAiTextModelSchema, workersAiTextModel } from './workers-ai-text.ts'
 
-// Only inference is synthetic. Alchemy's actual AIBinding and native Machine runtime execute below.
-const makeText = (run: (model: string, inputs: unknown) => Promise<unknown>) =>
-  Effect.runPromise(
-    makeWorkersAiText.pipe(
-      Effect.provide(AIBinding),
-      Effect.provideService(WorkerEnvironment, { AI: { run } }),
-      Effect.provideService(RuntimeContext, makeWorkerRuntimeContext('synthetic-ai')),
-    ),
+type Inference = (model: string, inputs: unknown, options?: unknown) => Promise<unknown>
+type Review = (text: string) => void
+
+const ReviewObserver = Context.Service<Review>('flowdeck/test/ReviewObserver')
+class InferenceFailure extends Data.TaggedError('InferenceFailure')<{ message: string }> {}
+
+const makeText = (run: Inference): Effect.Effect<WorkersAiText['Service']> => {
+  const runtime = makeWorkerRuntimeContext('synthetic-ai')
+  return makeWorkersAiText.pipe(
+    Effect.provide(AIBinding),
+    Effect.provideService(WorkerEnvironment, { AI: { run } }),
+    Effect.provideService(RuntimeContext, runtime),
   )
+}
 
 const states = Machine.state({
   states: {
-    generate: {},
-    review: Schema.TaggedStruct('review', { text: Schema.String }),
     completed: { type: 'final' },
     failed: { type: 'final' },
+    generate: {},
+    review: Schema.TaggedStruct('review', { text: Schema.String }),
   },
 })
-const makeMachine = (review: (text: string) => void) =>
-  Machine.make({
-    id: 'workers-ai-text-test',
-    root: states,
-    events: Machine.events({}),
-    effects: {
-      generate: Effect.gen(function* () {
-        return yield* (yield* WorkersAiText).generate({ prompt: 'Summarize the run' })
+const machine = Machine.make({
+  effects: {
+    generate: Effect.gen(function* () {
+      const text = yield* WorkersAiText
+      return yield* text.generate({ prompt: 'Summarize the run' })
+    }),
+    review: (text: string) =>
+      Effect.gen(function* () {
+        const notify = yield* ReviewObserver
+        notify(text)
       }),
-      review: (text: string) => Effect.sync(() => review(text)),
-    },
-  }).handle({
-    initial: { target: 'generate' },
-    states: {
-      generate: {
-        invoke: {
-          src: 'generate',
-          onDone: { target: 'review', data: ({ output }) => ({ text: output }) },
-          onFailure: { target: 'failed' },
-        },
+  },
+  events: Machine.events({}),
+  id: 'workers-ai-text-test',
+  root: states,
+}).handle({
+  initial: { target: 'generate' },
+  states: {
+    completed: {},
+    failed: {},
+    generate: {
+      invoke: {
+        onDone: { data: ({ output }) => ({ text: output }), target: 'review' },
+        onFailure: { target: 'failed' },
+        src: 'generate',
       },
-      review: { invoke: { src: 'review', input: ({ state }) => state.text, onDone: { target: 'completed' } } },
-      completed: {},
-      failed: {},
     },
-  })
+    review: { invoke: { input: ({ state }) => state.text, onDone: { target: 'completed' }, src: 'review' } },
+  },
+})
 
-describe('Workers AI text (synthetic inference)', () => {
-  it.each(WorkersAiTextModel.literals)('runs the caller-selected compatible model %s', async (model) => {
-    const run = vi.fn(async () => ({ response: 'selected model output' }))
-    const text = await makeText(run)
-    expect(await Effect.runPromise(text.generate({ prompt: 'Write', max_tokens: 20 }, model))).toBe(
-      'selected model output',
-    )
-    expect(run).toHaveBeenCalledExactlyOnceWith(model, { prompt: 'Write', max_tokens: 20, stream: false }, undefined)
+const stoppedText: WorkersAiText['Service'] = { generate: () => Effect.never }
+const runMachine = Effect.fn(function* (text: WorkersAiText['Service'], review: Review) {
+  const run = Effect.gen(function* () {
+    const ref = yield* Machine.start(machine)
+    yield* ref.join
+    return yield* ref.state
   })
+  return yield* run.pipe(
+    Effect.scoped,
+    Effect.provideService(WorkersAiText, text),
+    Effect.provideService(ReviewObserver, review),
+    Effect.timeout('2 seconds'),
+  )
+})
 
-  it('uses the native model contract, forces nonstreaming and returns generated text', async () => {
-    const run = vi.fn(async () => ({ response: 'A concise summary' }))
-    const text = await makeText(run)
-    const result = text.generate({ prompt: 'Summarize', max_tokens: 40, temperature: 0.2 })
-    expectTypeOf<Effect.Services<typeof result>>().toEqualTypeOf<never>()
-    expect(await Effect.runPromise(result)).toBe('A concise summary')
-    expect(run).toHaveBeenCalledExactlyOnceWith(
-      workersAiTextModel,
-      {
-        prompt: 'Summarize',
-        max_tokens: 40,
-        temperature: 0.2,
-        stream: false,
-      },
-      undefined,
-    )
-  })
+describe('workers AI model selection', () => {
+  live.each(WorkersAiTextModelSchema.literals)('runs the caller-selected compatible model %s', (model) =>
+    Effect.gen(function* () {
+      const run = vi.fn<Inference>().mockResolvedValue({ response: 'selected model output' })
+      const text = yield* makeText(run)
+      const output = yield* text.generate({ max_tokens: 20, prompt: 'Write' }, model)
+      expect(output).toBe('selected model output')
+      expect(run.mock.calls).toStrictEqual([[model, { max_tokens: 20, prompt: 'Write', stream: false }, undefined]])
+    }),
+  )
 
-  it('accepts the native string output alternative', async () => {
-    const text = await makeText(async () => 'Plain generated text')
-    expect(await Effect.runPromise(text.generate({ prompt: 'Write' }))).toBe('Plain generated text')
-  })
+  live('uses the native model contract, forces nonstreaming and returns generated text', () =>
+    Effect.gen(function* () {
+      const run = vi.fn<Inference>().mockResolvedValue({ response: 'A concise summary' })
+      const text = yield* makeText(run)
+      const result = text.generate({ max_tokens: 40, prompt: 'Summarize', temperature: 0.2 })
+      expectTypeOf<Effect.Services<typeof result>>().toEqualTypeOf<never>()
+      expect(yield* result).toBe('A concise summary')
+      expect(run.mock.calls).toStrictEqual([
+        [workersAiTextModel, { max_tokens: 40, prompt: 'Summarize', stream: false, temperature: 0.2 }, undefined],
+      ])
+    }),
+  )
 
-  it.each([
+  live('accepts the native string output alternative', () =>
+    Effect.gen(function* () {
+      const text = yield* makeText(vi.fn<Inference>().mockResolvedValue('Plain generated text'))
+      expect(yield* text.generate({ prompt: 'Write' })).toBe('Plain generated text')
+    }),
+  )
+})
+
+describe('workers AI failure handling and runtime capture', () => {
+  live.each([
     { name: 'async receipts', output: { request_id: 'pending' } },
     { name: 'tool-only responses', output: { tool_calls: [] } },
     { name: 'nontext responses', output: { response: 42 } },
-  ])('rejects $name instead of treating them as completed text', async ({ output }) => {
-    const text = await makeText(async () => output)
-    const result = await Effect.runPromise(Effect.result(text.generate({ prompt: 'Write' })))
-    expect(Result.isFailure(result)).toBe(true)
-    if (Result.isFailure(result)) expect(result.failure._tag).toBe('SchemaError')
-  })
+  ])('rejects $name instead of treating them as completed text', ({ output }) =>
+    Effect.gen(function* () {
+      const text = yield* makeText(vi.fn<Inference>().mockResolvedValue(output))
+      const result = text.generate({ prompt: 'Write' })
+      expect(Schema.isSchemaError(yield* Effect.flip(result))).toBe(true)
+    }),
+  )
 
-  it('retains the original native inference error as the WorkersAIError cause', async () => {
-    const cause = new Error('synthetic binding failure')
-    const text = await makeText(async () => {
-      throw cause
-    })
-    const result = await Effect.runPromise(Effect.result(text.generate({ prompt: 'Write' })))
-    expect(Result.isFailure(result)).toBe(true)
-    if (Result.isFailure(result)) {
-      expect(result.failure).toBeInstanceOf(WorkersAIError)
-      if (result.failure instanceof WorkersAIError) expect(result.failure.cause).toBe(cause)
-    }
-  })
+  live('retains the original native inference error as the WorkersAIError cause', () =>
+    Effect.gen(function* () {
+      const cause = new InferenceFailure({ message: 'synthetic binding failure' })
+      const text = yield* makeText(vi.fn<Inference>().mockRejectedValue(cause))
+      const error = yield* Effect.flip(text.generate({ prompt: 'Write' }))
+      expect(error).toBeInstanceOf(WorkersAIError)
+      expect(error).toHaveProperty('cause', cause)
+    }),
+  )
 
-  it('does not let a caller replace the captured native binding', async () => {
-    const text = await makeText(async () => ({ response: 'original' }))
-    const unexpected = vi.fn(async () => ({ response: 'replacement' }))
-    const result = await Effect.runPromise(
-      text
+  live('does not let a caller replace the captured native binding', () =>
+    Effect.gen(function* () {
+      const text = yield* makeText(vi.fn<Inference>().mockResolvedValue({ response: 'original' }))
+      const unexpected = vi.fn<Inference>().mockResolvedValue({ response: 'replacement' })
+      const runtime = makeWorkerRuntimeContext('replacement')
+      const result = yield* text
         .generate({ prompt: 'Write' })
         .pipe(
           Effect.provideService(WorkerEnvironment, { AI: { run: unexpected } }),
-          Effect.provideService(RuntimeContext, makeWorkerRuntimeContext('replacement')),
-        ),
-    )
-    expect(result).toBe('original')
-    expect(unexpected).not.toHaveBeenCalled()
-  })
-
-  it('preserves interruption while inference is pending', async () => {
-    const started = Deferred.makeUnsafe<void>()
-    const text = await makeText(() => {
-      Effect.runSync(Deferred.succeed(started, undefined))
-      return new Promise<never>(() => {})
-    })
-    const exit = await Effect.runPromise(
-      Effect.gen(function* () {
-        const fiber = yield* Effect.forkChild(text.generate({ prompt: 'Write' }))
-        yield* Deferred.await(started)
-        yield* Fiber.interrupt(fiber)
-        return yield* Fiber.await(fiber)
-      }),
-    )
-    expect(Exit.hasInterrupts(exit)).toBe(true)
-  })
-
-  it('ordinary Machine.start automatically invokes generation and the next node', async () => {
-    const text = await makeText(async () => ({ response: 'generated' }))
-    const review = vi.fn()
-    const machine = makeMachine(review)
-    await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const ref = yield* Machine.start(machine)
-          yield* ref.join
-          expect(states.matches(yield* ref.state, 'completed')).toBe(true)
-        }),
-      ).pipe(Effect.provideService(WorkersAiText, text), Effect.timeout('2 seconds')),
-    )
-    expect(review).toHaveBeenCalledExactlyOnceWith('generated')
-  })
-
-  it('ordinary Machine.invoke routes a typed inference failure without invoking the success node', async () => {
-    const text = await makeText(async () => {
-      throw new Error('synthetic failure')
-    })
-    const review = vi.fn()
-    await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const ref = yield* Machine.start(makeMachine(review))
-          yield* ref.join
-          expect(states.matches(yield* ref.state, 'failed')).toBe(true)
-        }),
-      ).pipe(Effect.provideService(WorkersAiText, text), Effect.timeout('2 seconds')),
-    )
-    expect(review).not.toHaveBeenCalled()
-  })
-
-  it('ordinary Machine.resume reacquires a new text service and progresses from the saved invoke state', async () => {
-    const machine = makeMachine(vi.fn())
-    const snapshot = await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const text = awaitNeverText
-          const ref = yield* Machine.start(machine).pipe(Effect.provideService(WorkersAiText, text))
-          return yield* ref.state
-        }),
-      ),
-    )
-    const text = await makeText(async () => ({ response: 'resumed' }))
-    const review = vi.fn()
-    await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const ref = yield* Machine.resume(makeMachine(review), snapshot)
-          yield* ref.join
-          expect(states.matches(yield* ref.state, 'completed')).toBe(true)
-        }),
-      ).pipe(Effect.provideService(WorkersAiText, text), Effect.timeout('2 seconds')),
-    )
-    expect(review).toHaveBeenCalledExactlyOnceWith('resumed')
-  })
+          Effect.provideService(RuntimeContext, runtime),
+        )
+      expect(result).toBe('original')
+      expect(unexpected).not.toHaveBeenCalled()
+    }),
+  )
 })
 
-const awaitNeverText: WorkersAiText['Service'] = { generate: () => Effect.never }
+describe('workers AI interruption', () => {
+  live('preserves interruption while inference is pending', () =>
+    Effect.gen(function* () {
+      const started = yield* Deferred.make<true>()
+      const { promise } = Promise.withResolvers<never>()
+      const run = vi.fn<Inference>().mockImplementation(async () => {
+        Deferred.doneUnsafe(started, Effect.succeed(true))
+        return promise
+      })
+      const text = yield* makeText(run)
+      const fiber = yield* Effect.forkChild(text.generate({ prompt: 'Write' }))
+      yield* Deferred.await(started)
+      yield* Fiber.interrupt(fiber)
+      expect(Exit.hasInterrupts(yield* Fiber.await(fiber))).toBe(true)
+    }),
+  )
+})
+
+describe('machine invocation of workers AI', () => {
+  live('ordinary Machine.start automatically invokes generation and the next node', () =>
+    Effect.gen(function* () {
+      const text = yield* makeText(vi.fn<Inference>().mockResolvedValue({ response: 'generated' }))
+      const review = vi.fn<Review>()
+      const state = yield* runMachine(text, review)
+      expect(states.matches(state, 'completed')).toBe(true)
+      expect(review).toHaveBeenCalledExactlyOnceWith('generated')
+    }),
+  )
+
+  live('ordinary Machine.invoke routes a typed inference failure without invoking the success node', () =>
+    Effect.gen(function* () {
+      const cause = new InferenceFailure({ message: 'synthetic failure' })
+      const text = yield* makeText(vi.fn<Inference>().mockRejectedValue(cause))
+      const review = vi.fn<Review>()
+      const state = yield* runMachine(text, review)
+      expect(states.matches(state, 'failed')).toBe(true)
+      expect(review).not.toHaveBeenCalled()
+    }),
+  )
+
+  live('ordinary Machine.resume reacquires a new text service and progresses from the saved invoke state', () =>
+    Effect.gen(function* () {
+      const snapshot = yield* Machine.start(machine).pipe(
+        Effect.flatMap((ref) => ref.state),
+        Effect.scoped,
+        Effect.provideService(WorkersAiText, stoppedText),
+        Effect.provideService(ReviewObserver, vi.fn<Review>()),
+      )
+      const text = yield* makeText(vi.fn<Inference>().mockResolvedValue({ response: 'resumed' }))
+      const review = vi.fn<Review>()
+      const resume = Effect.gen(function* () {
+        const ref = yield* Machine.resume(machine, snapshot)
+        yield* ref.join
+        return yield* ref.state
+      })
+      const state = yield* resume.pipe(
+        Effect.scoped,
+        Effect.provideService(WorkersAiText, text),
+        Effect.provideService(ReviewObserver, review),
+        Effect.timeout('2 seconds'),
+      )
+      expect(states.matches(state, 'completed')).toBe(true)
+      expect(review).toHaveBeenCalledExactlyOnceWith('resumed')
+    }),
+  )
+})

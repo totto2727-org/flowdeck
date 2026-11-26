@@ -1,132 +1,184 @@
-import { DateTime, Effect, Schema, SemVer } from 'effect'
-import { describe, expect, it } from 'vite-plus/test'
+import { live } from '@effect/vitest'
+import { Data, DateTime, Effect, Schema, SemVer } from 'effect'
+import { describe, expect } from 'vite-plus/test'
 
-import { GraphDefinition, type Run } from '@/core/feature/workflow/domain/model'
+import { InvalidSnapshot } from '@/core/feature/workflow/domain/errors'
+import { GraphDefinition } from '@/core/feature/workflow/domain/model'
+import type { Run } from '@/core/feature/workflow/domain/model'
 
-import { demoDefinition } from './definition'
-import { demoGraph, DemoSnapshot, encodeDemoSnapshot, initialSnapshot, restoreDemo } from './demo'
-import { DemoCreateRun, demoVersion1, demoVersion2 } from './input'
-import { DemoData } from './node'
+import { demoDefinition } from './definition.ts'
+import { demoGraph, DemoSnapshot, encodeDemoSnapshot, initialSnapshot, restoreDemo } from './demo.ts'
+import { DemoCreateRun, demoVersion1, demoVersion2 } from './input.ts'
+import { DemoData } from './node.ts'
 
+// oxlint-disable-next-line rules/prefer-non-unknown-decode -- The request fixture contains invalid versions, identities and excess JSON fields.
+const decodeDemoCreateRun = Schema.decodeUnknownEffect(DemoCreateRun)
 const snapshotCodec = Schema.toCodecJson(DemoSnapshot)
-const fixture = (version: typeof demoVersion1): Run => ({
-  runId: 'run_00000000-0000-4000-8000-000000000001',
-  workflowId: 'demo',
-  workflowVersion: version,
-  graphId: demoGraph(version).graphId,
-  status: 'pending',
-  revision: 0,
-  snapshot: Effect.runSync(encodeDemoSnapshot(initialSnapshot(version))),
-  createdAt: DateTime.makeUnsafe('2026-10-31T00:00:00.000Z'),
-  updatedAt: DateTime.makeUnsafe('2026-10-31T00:00:00.000Z'),
-})
+// oxlint-disable-next-line rules/prefer-non-unknown-decode -- Decode persisted records that predate the native snapshot schema.
+const decodeSnapshotCodec = Schema.decodeUnknownEffect(snapshotCodec)
+const decodePrepare = Schema.decodeEffect(DemoData.cases.prepare)
+const isGraph = Schema.is(GraphDefinition)
+
+const executionIds = {
+  approval: 'execution_00000000-0000-4000-8000-000000000002',
+  prepare: 'execution_00000000-0000-4000-8000-000000000001',
+  publish: 'execution_00000000-0000-4000-8000-000000000003',
+}
+
+type WireExecutionData = Data.TaggedEnum<{
+  approval: { approvalExecutionId: string; prepareExecutionId: string; prepared: string }
+  prepare: { prepareExecutionId: string }
+  publish: { approvalExecutionId: string; prepareExecutionId: string; prepared: string; publishExecutionId: string }
+}>
+const wireData = Data.taggedEnum<WireExecutionData>()
+type NativeNode = Readonly<{ path: string; value?: WireExecutionData }>
+const legacyReady = Data.taggedEnum<Data.TaggedEnum<{ Ready: { schemaVersion: 1; version: string } }>>().Ready
+type WireMachineSnapshot = Data.TaggedEnum<{ MachineSnapshot: { active: NativeNode[]; version: 2 } }>
+const machineSnapshot = Data.taggedEnum<WireMachineSnapshot>().MachineSnapshot
+const initialNodes = [{ path: '' }, { path: 'Ready' }]
+
+const fixture = (version: typeof demoVersion1): Effect.Effect<Run> =>
+  Effect.gen(function* () {
+    const initial = yield* initialSnapshot(version)
+    const snapshot = yield* encodeDemoSnapshot(initial)
+    const timestamp = DateTime.makeUnsafe('2026-10-31T00:00:00.000Z')
+    return {
+      createdAt: timestamp,
+      graphId: demoGraph(version).graphId,
+      revision: 0,
+      runId: 'run_00000000-0000-4000-8000-000000000001',
+      snapshot,
+      status: 'pending',
+      updatedAt: timestamp,
+      workflowId: 'demo',
+      workflowVersion: version,
+    }
+  })
 
 describe('demo definition', () => {
-  it.each([demoVersion1, demoVersion2])('keeps the published definition %s stable', async (version) => {
-    const prepared = await Effect.runPromise(demoDefinition.prepare({ workflowId: 'demo', version }))
-    expect(prepared).toMatchSnapshot(`demo ${SemVer.format(version)}`)
-  })
-  it.each([demoVersion1, demoVersion2])(
-    'prepares and restores the selected implementation without Crypto %s',
-    async (version) => {
-      const prepared = await Effect.runPromise(demoDefinition.prepare({ workflowId: 'demo', version }))
-      expect(prepared).toEqual({
+  live.each([demoVersion1, demoVersion2])('keeps the published definition %s stable', (version) =>
+    Effect.gen(function* () {
+      const prepared = yield* demoDefinition.prepare({ version, workflowId: 'demo' })
+      expect(prepared).toMatchSnapshot(`demo ${SemVer.format(version)}`)
+    }),
+  )
+
+  live.each([
+    { graphId: 'demo-1_0_0-graph-1', version: demoVersion1 },
+    { graphId: 'demo-2_0_0-graph-1', version: demoVersion2 },
+  ])('prepares and restores the selected implementation without Crypto $graphId', ({ graphId, version }) =>
+    Effect.gen(function* () {
+      const prepared = yield* demoDefinition.prepare({ version, workflowId: 'demo' })
+      expect(prepared).toStrictEqual({
         graph: demoGraph(version),
         snapshot: {
+          machine: machineSnapshot({ active: initialNodes, version: 2 }),
           schemaVersion: 1,
           version: SemVer.format(version),
-          machine: { _tag: 'MachineSnapshot', version: 2, active: [{ path: '' }, { path: 'Ready' }] },
         },
       })
-      expect(Schema.is(GraphDefinition)(prepared.graph)).toBe(true)
-      expect(prepared.graph.graphId).toBe(
-        SemVer.equals(version, demoVersion1) ? 'demo-1_0_0-graph-1' : 'demo-2_0_0-graph-1',
-      )
-      expect(await Effect.runPromise(restoreDemo(fixture(version)))).toEqual(initialSnapshot(version))
-    },
+      expect({ graphId: prepared.graph.graphId, validGraph: isGraph(prepared.graph) }).toStrictEqual({
+        graphId,
+        validGraph: true,
+      })
+      const run = yield* fixture(version)
+      const initial = yield* initialSnapshot(version)
+      expect(yield* restoreDemo(run)).toStrictEqual(initial)
+    }),
   )
-  it.each(['v1', 'v2'])('rejects legacy snapshot version %s', async (version) => {
-    await expect(
-      Effect.runPromise(Schema.decodeUnknownEffect(snapshotCodec)({ _tag: 'Ready', schemaVersion: 1, version })),
-    ).rejects.toThrow()
-  })
-  it.each([
+})
+
+describe('demo persisted snapshot validation', () => {
+  live.each(['v1', 'v2'])('rejects legacy snapshot version %s', (version) =>
+    Effect.gen(function* () {
+      const legacy = legacyReady({ schemaVersion: 1, version })
+      const failure = yield* Effect.flip(decodeSnapshotCodec(legacy))
+      expect(failure).toBeInstanceOf(Schema.SchemaError)
+    }),
+  )
+
+  live.each([
     { workflowId: 'other' },
     { graphId: 'other-graph' },
     { workflowVersion: demoVersion2 },
     { status: 'running' },
-    { snapshot: { schemaVersion: 1, version: '1.0.0', machine: {} } },
-  ] as const)('rejects inconsistent persisted identity or native state %j', async (change) => {
-    await expect(Effect.runPromise(restoreDemo({ ...fixture(demoVersion1), ...change }))).rejects.toThrow()
-  })
-  it('requires native execution identities to use the owned execution schema', () => {
-    const prepare = Schema.decodeUnknownSync(DemoData.cases.prepare)
-    expect(prepare({ _tag: 'prepare', prepareExecutionId: 'execution_00000000-0000-4000-8000-000000000001' })).toEqual({
-      _tag: 'prepare',
-      prepareExecutionId: 'execution_00000000-0000-4000-8000-000000000001',
-    })
-    expect(() => prepare({ _tag: 'prepare', prepareExecutionId: 'run:prepare:1' })).toThrow()
-  })
-  it.each([
-    {
-      path: 'prepare',
-      status: 'running',
-      value: { _tag: 'prepare', prepareExecutionId: 'execution_00000000-0000-4000-8000-000000000001' },
-    },
-    {
-      path: 'approval',
-      status: 'waiting',
-      value: {
-        _tag: 'approval',
-        prepareExecutionId: 'execution_00000000-0000-4000-8000-000000000001',
-        approvalExecutionId: 'execution_00000000-0000-4000-8000-000000000002',
-        prepared: 'draft:v1',
-      },
-    },
-    {
-      path: 'publish',
-      status: 'running',
-      value: {
-        _tag: 'publish',
-        prepareExecutionId: 'execution_00000000-0000-4000-8000-000000000001',
-        approvalExecutionId: 'execution_00000000-0000-4000-8000-000000000002',
-        publishExecutionId: 'execution_00000000-0000-4000-8000-000000000003',
-        prepared: 'draft:v1',
-      },
-    },
-  ] as const)(
-    'restores $path native execution identity without Crypto and rejects malformed identity',
-    async ({ path, status, value }) => {
-      const snapshot = {
-        schemaVersion: 1,
-        version: '1.0.0',
-        machine: { _tag: 'MachineSnapshot', version: 2, active: [{ path: '' }, { path, value }] },
-      }
-      const run = { ...fixture(demoVersion1), status, snapshot }
-      expect(await Effect.runPromise(restoreDemo(run))).toEqual({ ...snapshot, version: demoVersion1 })
-      const corrupted = {
-        ...snapshot,
-        machine: {
-          ...snapshot.machine,
-          active: [{ path: '' }, { path, value: { ...value, prepareExecutionId: 'checkpoint' } }],
-        },
-      }
-      await expect(Effect.runPromise(restoreDemo({ ...run, snapshot: corrupted }))).rejects.toThrow()
-    },
+    { snapshot: { machine: {}, schemaVersion: 1, version: '1.0.0' } },
+  ] as const)('rejects inconsistent persisted identity or native state %j', (change) =>
+    Effect.gen(function* () {
+      const run = yield* fixture(demoVersion1)
+      expect(yield* Effect.flip(restoreDemo({ ...run, ...change }))).toBeInstanceOf(InvalidSnapshot)
+    }),
   )
-  it.each([
-    { workflowId: 'demo', version: 'v1' },
-    { workflowId: 'demo', version: 'v2' },
-    { workflowId: 'demo', version: SemVer.make({ major: 3, minor: 0, patch: 0 }) },
-    { workflowId: 'demo', version: demoVersion1, task: 'unexpected' },
-    { workflowId: 'other', version: demoVersion1 },
-  ])('rejects unsupported or excess input %j', async (input) => {
-    await expect(
-      Effect.runPromise(
-        Schema.decodeUnknownEffect(DemoCreateRun)(input, { onExcessProperty: 'error' }).pipe(
-          Effect.flatMap(demoDefinition.prepare),
-        ),
-      ),
-    ).rejects.toThrow()
-  })
+})
+
+const preparedExecution = {
+  approvalExecutionId: executionIds.approval,
+  prepareExecutionId: executionIds.prepare,
+  prepared: 'draft:v1',
+}
+const executionStates = [
+  {
+    path: 'prepare',
+    status: 'running',
+    value: wireData.prepare({ prepareExecutionId: executionIds.prepare }),
+  },
+  {
+    path: 'approval',
+    status: 'waiting',
+    value: wireData.approval(preparedExecution),
+  },
+  {
+    path: 'publish',
+    status: 'running',
+    value: wireData.publish({ ...preparedExecution, publishExecutionId: executionIds.publish }),
+  },
+] as const
+
+describe('demo native execution identities', () => {
+  live('requires the owned execution schema when decoding prepare state', () =>
+    Effect.gen(function* () {
+      const input = wireData.prepare({ prepareExecutionId: executionIds.prepare })
+      expect(yield* decodePrepare(input)).toStrictEqual(input)
+      const checkpoint = wireData.prepare({ prepareExecutionId: 'run:prepare:1' })
+      expect(yield* Effect.flip(decodePrepare(checkpoint))).toBeInstanceOf(Schema.SchemaError)
+    }),
+  )
+
+  live.each(executionStates)(
+    'restores $path native execution identity without Crypto and rejects malformed identity',
+    ({ path, status, value }) =>
+      Effect.gen(function* () {
+        const snapshot = {
+          machine: machineSnapshot({ active: [{ path: '' }, { path, value }], version: 2 }),
+          schemaVersion: 1,
+          version: '1.0.0',
+        }
+        const seed = yield* fixture(demoVersion1)
+        const run = { ...seed, snapshot, status }
+        expect(yield* restoreDemo(run)).toStrictEqual({ ...snapshot, version: demoVersion1 })
+        const invalid = { ...value, prepareExecutionId: 'checkpoint' }
+        const corrupted = {
+          ...snapshot,
+          machine: machineSnapshot({ active: [{ path: '' }, { path, value: invalid }], version: 2 }),
+        }
+        expect(yield* Effect.flip(restoreDemo({ ...run, snapshot: corrupted }))).toBeInstanceOf(InvalidSnapshot)
+      }),
+  )
+})
+
+describe('demo request decoder', () => {
+  live.each([
+    { version: 'v1', workflowId: 'demo' },
+    { version: 'v2', workflowId: 'demo' },
+    { version: SemVer.make({ major: 3, minor: 0, patch: 0 }), workflowId: 'demo' },
+    { task: 'unexpected', version: demoVersion1, workflowId: 'demo' },
+    { version: demoVersion1, workflowId: 'other' },
+  ])('rejects unsupported or excess input %j', (input) =>
+    Effect.gen(function* () {
+      const prepared = decodeDemoCreateRun(input, { onExcessProperty: 'error' }).pipe(
+        Effect.flatMap(demoDefinition.prepare),
+      )
+      expect(yield* Effect.flip(prepared)).toBeInstanceOf(Schema.SchemaError)
+    }),
+  )
 })

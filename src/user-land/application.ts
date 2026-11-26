@@ -8,15 +8,10 @@ import DemoWorkflowLive from '@/user-land/workflow/demo/worker'
 import DevelopmentWorkflowLive from '@/user-land/workflow/development/worker'
 
 /** Assemble the complete application graph once, in static binding dependency order. */
-const ApplicationLive = FrontendLive.pipe(
-  Layer.provideMerge(
-    ControlLive.pipe(
-      Layer.provideMerge(
-        WorkflowLive.pipe(Layer.provideMerge(Layer.mergeAll(DemoWorkflowLive, DevelopmentWorkflowLive))),
-      ),
-    ),
-  ),
-)
+const UserWorkflows = Layer.mergeAll(DemoWorkflowLive, DevelopmentWorkflowLive)
+const WorkflowDependencies = WorkflowLive.pipe(Layer.provideMerge(UserWorkflows))
+const ControlDependencies = ControlLive.pipe(Layer.provideMerge(WorkflowDependencies))
+const ApplicationLive = FrontendLive.pipe(Layer.provideMerge(ControlDependencies))
 
 export const DevelopmentLayer = ApplicationLive.pipe(Layer.provide(LocalSecurity))
 export const ProductionLayer = ApplicationLive.pipe(Layer.provide(ProductionSecurity))

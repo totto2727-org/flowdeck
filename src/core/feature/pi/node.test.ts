@@ -1,58 +1,65 @@
 import { BrowserCrypto } from '@effect/platform-browser'
-import { Effect } from 'effect'
-import { describe, expect, it, vi } from 'vite-plus/test'
+import { live } from '@effect/vitest'
+import { Data, Effect } from 'effect'
+import { describe, expect, test, vi } from 'vite-plus/test'
 
 import { WorkflowCheckpoint } from '@/core/feature/workflow/managed-runtime'
 import { ResourceStore } from '@/core/feature/workflow/resource-store'
 
-import { makePiNodeEffects, piNodeEvent, type PiExecution } from './node'
-import { PiSandbox } from './sandbox'
+import { makePiNodeEffects, piNodeEvent } from './node.ts'
+import type { PiExecution, PiOutcome } from './node.ts'
+import { PiSandbox } from './sandbox.ts'
 
 const execution: PiExecution = {
-  executionId: 'execution_00000000-0000-4000-8000-000000000001',
-  commandId: 'command_00000000-0000-4000-8000-000000000002',
   attempt: 1,
+  commandId: 'command_00000000-0000-4000-8000-000000000002',
+  executionId: 'execution_00000000-0000-4000-8000-000000000001',
 }
 const runId = 'run_00000000-0000-4000-8000-000000000003'
+const outcomes = Data.taggedEnum<PiOutcome>()
+// oxlint-disable-next-line unicorn/no-null -- The native Pi sandbox uses null for authoritative absence.
+const absentTurn = null
 
 describe('shared Pi node effects', () => {
-  it('submits a generic turn without selecting workflow nodes or emitting business checkpoints', async () => {
-    const checkpoint = vi.fn(() => Effect.void)
-    const submitTurn = vi.fn<PiSandbox['Service']['submitTurn']>(() =>
-      Effect.succeed({ commandId: execution.commandId, status: 'running' }),
-    )
-    const result = await Effect.runPromise(
-      Effect.gen(function* () {
+  live('submits a generic turn without selecting workflow nodes or emitting business checkpoints', () =>
+    Effect.gen(function* () {
+      const checkpoint = vi.fn<WorkflowCheckpoint['Service']['checkpoint']>(() => Effect.void)
+      const submitTurn = vi.fn<PiSandbox['Service']['submitTurn']>(() =>
+        Effect.succeed({ commandId: execution.commandId, status: 'running' }),
+      )
+      const result = yield* Effect.gen(function* () {
         const effects = yield* makePiNodeEffects
         return yield* effects.submit({ execution, prompt: 'Perform an arbitrary task.' })
       }).pipe(
         Effect.provideService(PiSandbox, {
-          ensureSession: () => Effect.succeed({ sessionId: '1', model: 'test', status: 'active' }),
+          complete: () => Effect.succeed({ model: 'test', sessionId: '1', status: 'completed' }),
+          ensureSession: () => Effect.succeed({ model: 'test', sessionId: '1', status: 'active' }),
+          getTurn: () => Effect.succeed(absentTurn),
           submitTurn,
-          getTurn: () => Effect.succeed(null),
-          complete: () => Effect.succeed({ sessionId: '1', model: 'test', status: 'completed' }),
         }),
-        Effect.provideService(WorkflowCheckpoint, { runId, checkpoint, fail: Effect.die }),
+        Effect.provideService(WorkflowCheckpoint, { checkpoint, fail: Effect.die, runId }),
         Effect.provide(ResourceStore.layer),
         Effect.provide(BrowserCrypto.layer),
         Effect.scoped,
-      ),
-    )
-    expect(result).toEqual({ _tag: 'Waiting' })
-    expect(checkpoint).not.toHaveBeenCalled()
-    expect(submitTurn).toHaveBeenCalledExactlyOnceWith(runId, {
-      commandId: execution.commandId,
-      prompt: 'Perform an arbitrary task.',
-    })
-  })
+      )
+      expect(result).toStrictEqual(outcomes.Waiting())
+      expect(checkpoint).not.toHaveBeenCalled()
+      expect(submitTurn).toHaveBeenCalledExactlyOnceWith(runId, {
+        commandId: execution.commandId,
+        prompt: 'Perform an arbitrary task.',
+      })
+    }),
+  )
 
-  it('preserves caller-owned node identity in event drafts', () => {
-    expect(piNodeEvent('review-release', execution, 'node.succeeded', { output: 'ready' })).toEqual({
-      type: 'node.succeeded',
-      nodeId: 'review-release',
-      executionId: execution.executionId,
+  test('preserves caller-owned node identity in event drafts', () => {
+    expect(
+      piNodeEvent({ execution, nodeId: 'review-release', payload: { output: 'ready' }, type: 'node.succeeded' }),
+    ).toStrictEqual({
       attempt: 1,
+      executionId: execution.executionId,
+      nodeId: 'review-release',
       payload: { output: 'ready' },
+      type: 'node.succeeded',
     })
   })
 })

@@ -8,78 +8,93 @@ import { HttpServerResponse } from 'effect/http'
 
 import { Store } from '@/core/feature/workflow/services/store'
 
-import { makeWorkerShellWorkspace } from './feature/worker-shell'
-import { makeWorkerShellPiSdk } from './worker-shell-runtime'
+import { makeWorkerShellWorkspace } from './feature/worker-shell.ts'
+import { makeWorkerShellPiSdk } from './worker-shell-runtime.ts'
 
-const unexpected = Effect.die(new Error('Unexpected workflow persistence access'))
+const unexpected = Effect.die('Unexpected workflow persistence access')
 const store = Store.of({
-  create: () => unexpected,
-  listRuns: unexpected,
-  getRun: () => unexpected,
-  getGraph: () => unexpected,
-  getEvents: () => unexpected,
   commit: () => unexpected,
+  create: () => unexpected,
+  getEvents: () => unexpected,
+  getGraph: () => unexpected,
+  getRun: () => unexpected,
+  listRuns: unexpected,
 })
 const runtime = makeWorkerRuntimeContext('WorkerShellProbe')
+const persistedPath = '/persist.txt'
+type WorkspaceClient = Effect.Success<typeof makeWorkerShellWorkspace>['workspace']
 
-const handle = (request: globalThis.Request) =>
-  Effect.gen(function* () {
-    const path = new URL(request.url).pathname
-    if (path === '/sdk') {
-      const sdk = yield* makeWorkerShellPiSdk({
-        models: createModels(),
-        model: { id: 'test-no-inference', provider: 'test' },
-      })
-      yield* Effect.promise(() => sdk.lifecycle.start())
-      const response = yield* sdk.fetch(request)
-      return Response.json({ jobs: sdk.lifecycle.jobs.list().length, fetchStatus: response.status })
-    }
-    const { workspace } = yield* makeWorkerShellWorkspace
-    if (path === '/write') {
-      yield* Effect.promise(() => workspace.fs.writeFile('/persist.txt', 'durable workspace'))
-      return Response.json({ written: true })
-    }
-    if (path === '/read') {
-      return Response.json({ text: yield* Effect.promise(() => workspace.fs.readFile('/persist.txt', 'utf8')) })
-    }
-    const exec = yield* Effect.acquireRelease(
-      Effect.promise(() =>
-        workspace.runtime.exec(path === '/unsupported' ? 'node --version' : 'cat /persist.txt', { encoding: 'utf8' }),
-      ),
-      (execution) => Effect.sync(() => execution[Symbol.dispose]()),
-    )
-    return Response.json(yield* Effect.promise(() => exec.result()))
+const sdkReadiness = Effect.fn('flowdeck.test.checkNativeShellSdk')(function* (request: globalThis.Request) {
+  const sdk = yield* makeWorkerShellPiSdk({
+    model: { id: 'test-no-inference', provider: 'test' },
+    models: createModels(),
   })
+  yield* Effect.promise(async () => sdk.lifecycle.start())
+  const response = yield* sdk.fetch(request)
+  return Response.json({ fetchStatus: response.status, jobs: sdk.lifecycle.jobs.list().length })
+})
 
-/** Alchemy's real outer bridge supplies the native state used by the production
- * backend. Nothing exports a Capnweb stub across Workers RPC or fakes a DO host. */
+const shellResult = Effect.fn('flowdeck.test.runLocalShellProbe')(function* (workspace: WorkspaceClient, path: string) {
+  const command = path === '/unsupported' ? 'node --version' : `cat ${persistedPath}`
+  const execution = yield* Effect.acquireRelease(
+    Effect.promise(async () => workspace.runtime.exec(command, { encoding: 'utf8' })),
+    (active) =>
+      Effect.sync(() => {
+        active[Symbol.dispose]()
+      }),
+  )
+  const result = yield* Effect.promise(async () => execution.result())
+  return Response.json(result)
+})
+
+const workspaceResponse = Effect.fn('flowdeck.test.exerciseNativeShellWorkspace')(function* (path: string) {
+  const { workspace } = yield* makeWorkerShellWorkspace
+  if (path === '/write') {
+    yield* Effect.promise(async () => workspace.fs.writeFile(persistedPath, 'durable workspace'))
+    return Response.json({ written: true })
+  }
+  if (path === '/read') {
+    const text = yield* Effect.promise(async () => workspace.fs.readFile(persistedPath, 'utf8'))
+    return Response.json({ text })
+  }
+  return yield* shellResult(workspace, path)
+})
+
+const handle = Effect.fn('flowdeck.test.dispatchWorkerShellProbe')((request: globalThis.Request) => {
+  const path = new URL(request.url).pathname
+  return path === '/sdk' ? sdkReadiness(request) : workspaceResponse(path)
+})
+const fetch = Request.pipe(
+  Effect.flatMap(handle),
+  Effect.map(HttpServerResponse.fromWeb),
+  Effect.provideService(Store, store),
+  Effect.scoped,
+)
+
+// Alchemy's outer bridge supplies the native state for the production shell.
 export const entrypoint = Effect.gen(function* () {
   yield* runtime.export('DevelopmentRun', {
+    constructor: Effect.succeed(Effect.succeed({ fetch })),
     kind: 'durableObject',
     services: Context.empty(),
-    constructor: Effect.succeed(
-      Effect.succeed({
-        fetch: Request.pipe(
-          Effect.flatMap(handle),
-          Effect.map(HttpServerResponse.fromWeb),
-          Effect.provideService(Store, store),
-          Effect.scoped,
-        ),
-      }),
-    ),
   })
   return { RuntimeContext: runtime }
 })
 
-// Use the existing PiRun native binding identity with the same official bridge
-// construction used by its generated Alchemy entry, without provisioning infra.
-export const DevelopmentRun = makeDurableObjectBridge(DurableObject, {
+const bridge = makeDurableObjectBridge(DurableObject, {
   entrypoint,
   stack: { name: 'worker-shell-boundary', stage: 'test' },
-})('DevelopmentRun')
+})
 
-export default {
-  fetch(request: globalThis.Request, env: { PROBE: DurableObjectNamespace }) {
-    return env.PROBE.get(env.PROBE.idFromName('workspace')).fetch(request)
+// oxlint-disable-next-line typescript/no-unsafe-assignment -- The public Alchemy bridge returns its generated native class as any.
+export const DevelopmentRun = bridge('DevelopmentRun')
+
+const probeWorker = {
+  async fetch(request: globalThis.Request, env: { PROBE: DurableObjectNamespace }): Promise<Response> {
+    const id = env.PROBE.idFromName('workspace')
+    return env.PROBE.get(id).fetch(request)
   },
 }
+
+// oxlint-disable-next-line import/no-default-export -- Workerd dispatches requests to the default fixture Worker.
+export default probeWorker

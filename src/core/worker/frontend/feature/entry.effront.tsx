@@ -1,12 +1,16 @@
 import { Array, Effect, Layer } from 'effect'
 
-import { ControlApi } from './control-api'
-import { Dashboard } from './dashboard'
-import { EFFRONT } from './effront'
-import { themeBootstrap } from './theme'
-import { presentRun, presentWorkflow } from './view-model'
+import { ControlApi } from './control-api.ts'
+import { Dashboard } from './dashboard.tsx'
+import { EFFRONT } from './effront.ts'
+import type { DashboardData } from './server.ts'
+import { themeBootstrap } from './theme.ts'
+import { presentRun, presentWorkflow } from './view-model.ts'
 
+// oxlint-disable-next-line import/no-unassigned-import -- Vite extracts the dashboard stylesheet from this application entry.
 import './styles/app.css'
+
+const themeScript = { __html: themeBootstrap }
 
 const layout = EFFRONT.Layout.make({
   render: ({ children }) =>
@@ -18,11 +22,12 @@ const layout = EFFRONT.Layout.make({
         suppressHydrationWarning
       >
         <head>
-          <meta charSet='UTF-8' />
+          <meta charSet='utf-8' />
           <meta name='viewport' content='width=device-width,initial-scale=1' />
           <meta name='description' content='Flowdeck workflow execution, graphs, committed state and events.' />
           <meta name='theme-color' content='#101714' suppressHydrationWarning />
-          <script dangerouslySetInnerHTML={{ __html: themeBootstrap }} />
+          {/* oxlint-disable-next-line rules/no-jsx-script-tag, react/no-danger -- This static script uses no request data and sets the theme before the first paint. */}
+          <script dangerouslySetInnerHTML={themeScript} />
           <title>Overview · Flowdeck</title>
         </head>
         <body>{children}</body>
@@ -30,27 +35,35 @@ const layout = EFFRONT.Layout.make({
     ),
 })
 
+// oxlint-disable-next-line unicorn/no-null -- The dashboard uses the Server Function's encoded unselected state.
+const noSelection = null
+
+const loadOverview = Effect.gen(function* () {
+  const api = yield* ControlApi
+  const [workflows, runs] = yield* Effect.all([api.workflows, api.runs], { concurrency: 2 })
+  return {
+    runs: Array.map(runs.runs, (run) => presentRun(run)),
+    selected: noSelection,
+    workflows: Array.map(workflows.workflows, (workflow) => presentWorkflow(workflow)),
+  } satisfies DashboardData
+})
+
+const renderOverview = Effect.fn('Flowdeck.overview')(function* () {
+  const initial = yield* loadOverview
+  return <Dashboard initial={initial} />
+})
+
 const overview = EFFRONT.Page.make({
-  render: Effect.fn('Flowdeck.overview')(function* () {
-    const api = yield* ControlApi
-    return yield* Effect.all([api.workflows, api.runs], { concurrency: 2 }).pipe(
-      Effect.map(([workflows, runs]) => (
-        <Dashboard
-          initial={{
-            workflows: Array.map(workflows.workflows, (workflow) => presentWorkflow(workflow)),
-            runs: Array.map(runs.runs, (run) => presentRun(run)),
-            selected: null,
-          }}
-        />
-      )),
-      Effect.catchTag('ControlError', (error) =>
+  render: () =>
+    renderOverview().pipe(
+      Effect.catchTag('ControlError', ({ message }) =>
         Effect.succeed(
           <main className='mx-auto my-[15vh] max-w-[600px] p-[30px]'>
             <h1 className='text-[30px] leading-[1.35] font-[650] tracking-[-1px] max-[620px]:text-[27px]'>
               Control plane unavailable
             </h1>
             <p className='my-[18px]' role='alert'>
-              {error.message}
+              {message}
             </p>
             <a className='text-primary underline' href='/'>
               Retry dashboard
@@ -58,11 +71,13 @@ const overview = EFFRONT.Page.make({
           </main>,
         ),
       ),
-    )
-  }),
+    ),
 })
 
-export default EFFRONT.make({
+const application = EFFRONT.make({
   layer: Layer.effect(ControlApi, ControlApi),
   routes: EFFRONT.Routes.make({ layout }).page('/', overview),
 })
+
+// oxlint-disable-next-line import/no-default-export -- Effront discovers the application through the default entry export.
+export default application

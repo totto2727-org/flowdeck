@@ -102,7 +102,7 @@ The official root session remains `ROOT_SESSION = '1'`, scoped to each run Durab
 The HTTP failure-logging middleware remains one shared module because another service or feature abstraction adds no capability.
 The [feature-boundary tests](../tests/feature-boundaries.test.ts) parse TypeScript and TSX imports with the installed TypeScript compiler.
 They enforce ownership and feature boundaries, including tests, type-only imports, dynamic imports, and re-exports.
-Cross-layer workflow tests live in `tests/integration/d1-workflows.test.ts`, `operation-logging.test.ts`, and `demo-projection.test.ts`, not in core.
+The cross-layer workflow tests are in [tests/integration](../tests/integration).
 Keep the SQL statements and persistence codecs with workflow storage rather than moving all database-adjacent code into D1.
 The shared `Workflows` service is Control's only workflow dependency.
 The application follows modular-monolith boundaries: each workflow is an independent application module behind a shared interface.

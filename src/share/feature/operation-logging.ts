@@ -1,5 +1,6 @@
 import { Cause, Effect } from 'effect'
-import { HttpMiddleware, type HttpServerResponse } from 'effect/http'
+import { HttpMiddleware } from 'effect/http'
+import type { HttpServerResponse } from 'effect/http'
 
 /** Install once before HTTP error translation so the original cause remains observable. */
 export const operationFailureLogging = HttpMiddleware.make(

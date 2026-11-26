@@ -1,6 +1,7 @@
 import type { RpcCallError, RpcDecodeError } from 'alchemy/Rpc'
-import { Effect, Layer, Match, Schema } from 'effect'
-import { Headers, HttpBody, HttpRouter, HttpServerError, HttpServerRequest, HttpServerResponse } from 'effect/http'
+import { Effect, Layer, Option, Record, Schema } from 'effect'
+import { Headers, HttpRouter, HttpServerRequest, HttpServerResponse } from 'effect/http'
+import type { HttpBody, HttpServerError } from 'effect/http'
 
 import { ExternalError } from '@/core/feature/workflow/domain/errors'
 import { RunId } from '@/core/feature/workflow/domain/identity'
@@ -11,9 +12,13 @@ import {
   RunsResponse,
   WorkflowsResponse,
 } from '@/core/feature/workflow/domain/model'
-import type { WorkflowFailure } from '@/core/feature/workflow/services/failures'
+import { RpcProblem } from '@/core/feature/workflow/rpc/problem'
+import type { Rfc9457ProblemDetails } from '@/core/feature/workflow/rpc/problem'
 import { Workflows } from '@/core/feature/workflow/services/workflows'
+import { HttpStatus } from '@/share/feature/http/status'
 import { operationFailureLogging } from '@/share/feature/operation-logging'
+
+type WorkflowFailure = Effect.Error<ReturnType<Workflows['Service']['createRun']>>
 
 type ApiFailure =
   | WorkflowFailure
@@ -25,65 +30,70 @@ const respondApiError = HttpServerResponse.schemaJson(Schema.toCodecJson(ApiErro
 const respondWorkflows = HttpServerResponse.schemaJson(Schema.toCodecJson(WorkflowsResponse))
 const respondRuns = HttpServerResponse.schemaJson(Schema.toCodecJson(RunsResponse))
 const respondRunDetail = HttpServerResponse.schemaJson(Schema.toCodecJson(RunDetail))
+// oxlint-disable-next-line rules/prefer-non-unknown-decode -- Native route parameters may omit a run ID or contain an invalid string.
 const decodeRunParams = Schema.decodeUnknownEffect(Schema.Struct({ runId: RunId }))
 const createRunBody = HttpServerRequest.schemaBodyJson(Schema.toCodecJson(CreateRun), {
   onExcessProperty: 'error',
 })
-const errorResponse = (status: number, error: string, message: string) =>
+const errorResponse = (
+  status: number,
+  error: string,
+  message: string,
+): Effect.Effect<HttpServerResponse.HttpServerResponse, HttpBody.HttpBodyError> =>
   respondApiError({ error, message }, { status })
+
+const problemErrorCode = {
+  [RpcProblem.conflict.type]: 'Conflict',
+  [RpcProblem.internal.type]: 'ExternalError',
+  [RpcProblem.invalidOperation.type]: 'InvalidOperation',
+  [RpcProblem.invalidRequest.type]: 'InvalidRequest',
+  [RpcProblem.invalidSnapshot.type]: 'InvalidSnapshot',
+  [RpcProblem.notFound.type]: 'NotFound',
+  [RpcProblem.service.type]: 'ExternalError',
+  [RpcProblem.storage.type]: 'ExternalError',
+} satisfies globalThis.Record<Rfc9457ProblemDetails['type'], string>
+
+const unavailableWorkflow = (cause: RpcCallError | RpcDecodeError): Effect.Effect<never, ExternalError> =>
+  Effect.fail(new ExternalError({ cause, kind: 'service', operation: 'call workflow worker' }))
+
+const conflict = (): Effect.Effect<HttpServerResponse.HttpServerResponse, HttpBody.HttpBodyError> =>
+  errorResponse(HttpStatus.conflict, 'Conflict', 'Run changed concurrently or a delivery ID was reused')
 
 const ApiErrors = HttpRouter.middleware<{ handles: ApiFailure }>()((handler) =>
   handler.pipe(
     operationFailureLogging,
     // The RPC client's declared service shape does not include its transport failures.
+    Effect.catchTags({ RpcCallError: unavailableWorkflow, RpcDecodeError: unavailableWorkflow }),
     Effect.catchTags({
-      RpcCallError: (cause) =>
-        Effect.fail(new ExternalError({ operation: 'call workflow worker', cause, kind: 'service' })),
-      RpcDecodeError: (cause) =>
-        Effect.fail(new ExternalError({ operation: 'call workflow worker', cause, kind: 'service' })),
-    }),
-    Effect.catchTags({
-      RemoteWorkerError: (error) =>
-        errorResponse(
-          error.cause.status,
-          Match.value(error.cause.type).pipe(
-            Match.when(
-              'https://github.com/totto2727-org/flowdeck/blob/main/docs/rpc-boundaries.md#not-found',
-              () => 'NotFound',
-            ),
-            Match.when(
-              'https://github.com/totto2727-org/flowdeck/blob/main/docs/rpc-boundaries.md#conflict',
-              () => 'Conflict',
-            ),
-            Match.when(
-              'https://github.com/totto2727-org/flowdeck/blob/main/docs/rpc-boundaries.md#invalid-operation',
-              () => 'InvalidOperation',
-            ),
-            Match.when(
-              'https://github.com/totto2727-org/flowdeck/blob/main/docs/rpc-boundaries.md#invalid-snapshot',
-              () => 'InvalidSnapshot',
-            ),
-            Match.when(
-              'https://github.com/totto2727-org/flowdeck/blob/main/docs/rpc-boundaries.md#invalid-request',
-              () => 'InvalidRequest',
-            ),
-            Match.orElse(() => 'ExternalError'),
-          ),
-          error.cause.detail,
-        ),
-      NotFound: () => errorResponse(404, 'NotFound', 'Run or graph not found'),
-      Conflict: () => errorResponse(409, 'Conflict', 'Run changed concurrently or a delivery ID was reused'),
-      StorageConflict: () => errorResponse(409, 'Conflict', 'Run changed concurrently or a delivery ID was reused'),
-      InvalidOperation: (error) => errorResponse(409, 'InvalidOperation', error.message),
-      InvalidSnapshot: () => errorResponse(409, 'InvalidSnapshot', 'Persisted workflow state is invalid'),
-      PlatformError: () => errorResponse(500, 'PlatformError', 'Run identity could not be generated'),
+      Conflict: conflict,
       ExternalError: (error) =>
         error.kind === 'storage'
-          ? errorResponse(500, 'ExternalError', 'Persistence operation failed')
-          : errorResponse(502, 'ExternalError', 'Workflow worker is unavailable. The run remains persisted'),
-      SchemaError: () => errorResponse(400, 'InvalidRequest', 'Request does not match the API schema'),
-      HttpServerError: () => errorResponse(400, 'InvalidRequest', 'Request body could not be read'),
-      HttpBodyError: () => errorResponse(500, 'EncodingError', 'Response could not be encoded'),
+          ? errorResponse(HttpStatus.internalServerError, 'ExternalError', 'Persistence operation failed')
+          : errorResponse(
+              HttpStatus.badGateway,
+              'ExternalError',
+              'Workflow worker is unavailable. The run remains persisted',
+            ),
+      HttpBodyError: () =>
+        errorResponse(HttpStatus.internalServerError, 'EncodingError', 'Response could not be encoded'),
+      HttpServerError: () => errorResponse(HttpStatus.badRequest, 'InvalidRequest', 'Request body could not be read'),
+      InvalidOperation: (error) => errorResponse(HttpStatus.conflict, 'InvalidOperation', error.message),
+      InvalidSnapshot: () =>
+        errorResponse(HttpStatus.conflict, 'InvalidSnapshot', 'Persisted workflow state is invalid'),
+      NotFound: () => errorResponse(HttpStatus.notFound, 'NotFound', 'Run or graph not found'),
+      PlatformError: () =>
+        errorResponse(HttpStatus.internalServerError, 'PlatformError', 'Run identity could not be generated'),
+      RemoteWorkerError: ({ cause }) => {
+        const code = Record.get(problemErrorCode, cause.type)
+        return errorResponse(
+          cause.status,
+          Option.getOrElse(code, () => 'ExternalError'),
+          cause.detail,
+        )
+      },
+      SchemaError: () =>
+        errorResponse(HttpStatus.badRequest, 'InvalidRequest', 'Request does not match the API schema'),
+      StorageConflict: conflict,
     }),
   ),
 )
@@ -93,7 +103,11 @@ const ServerMutations = HttpRouter.middleware((handler) =>
   Effect.gen(function* () {
     const request = yield* HttpServerRequest.HttpServerRequest
     if (request.method === 'POST' && Headers.has(request.headers, 'origin')) {
-      return yield* errorResponse(403, 'Forbidden', 'Browser-originated control mutations are not allowed')
+      return yield* errorResponse(
+        HttpStatus.forbidden,
+        'Forbidden',
+        'Browser-originated control mutations are not allowed',
+      )
     }
     return yield* handler
   }),
@@ -104,8 +118,32 @@ const runId = HttpRouter.params.pipe(
   Effect.map((params) => params.runId),
 )
 
-export const ApiRoutes = HttpRouter.use((router) =>
-  router.addAll([
+const apiMiddleware = ApiErrors.combine(ServerMutations).layer
+
+const createRun = Effect.gen(function* () {
+  const input = yield* createRunBody
+  const workflows = yield* Workflows
+  const detail = yield* workflows.createRun(input)
+  return yield* respondRunDetail(detail, { status: HttpStatus.created })
+})
+
+const getRun = Effect.gen(function* () {
+  const workflows = yield* Workflows
+  const id = yield* runId
+  const detail = yield* workflows.getRunDetail(id)
+  return yield* respondRunDetail(detail)
+})
+
+const resumeRun = Effect.gen(function* () {
+  const workflows = yield* Workflows
+  const id = yield* runId
+  const detail = yield* workflows.resumeRun(id)
+  return yield* respondRunDetail(detail)
+})
+
+// oxlint-disable-next-line react-hooks/rules-of-hooks -- Effect HttpRouter.use registers HTTP routes.
+export const ApiRoutes = HttpRouter.use((router) => {
+  const routes = [
     HttpRouter.route(
       'GET',
       '/api/workflows',
@@ -122,33 +160,9 @@ export const ApiRoutes = HttpRouter.use((router) =>
         Effect.flatMap(respondRuns),
       ),
     ),
-    HttpRouter.route(
-      'POST',
-      '/api/runs',
-      Effect.gen(function* () {
-        const input = yield* createRunBody
-        const workflows = yield* Workflows
-        return yield* respondRunDetail(yield* workflows.createRun(input), {
-          status: 201,
-        })
-      }),
-    ),
-    HttpRouter.route(
-      'GET',
-      '/api/runs/:runId',
-      Effect.gen(function* () {
-        const workflows = yield* Workflows
-        return yield* respondRunDetail(yield* workflows.getRunDetail(yield* runId))
-      }),
-    ),
-    HttpRouter.route(
-      'POST',
-      '/api/runs/:runId/resume',
-      Effect.gen(function* () {
-        const workflows = yield* Workflows
-        return yield* respondRunDetail(yield* workflows.resumeRun(yield* runId))
-      }),
-    ),
-  ]),
-).pipe(Layer.provide(ApiErrors.combine(ServerMutations).layer))
-export const routesLayer = ApiRoutes
+    HttpRouter.route('POST', '/api/runs', createRun),
+    HttpRouter.route('GET', '/api/runs/:runId', getRun),
+    HttpRouter.route('POST', '/api/runs/:runId/resume', resumeRun),
+  ]
+  return router.addAll(routes)
+}).pipe(Layer.provide(apiMiddleware))

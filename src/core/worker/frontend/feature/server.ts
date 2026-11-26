@@ -1,59 +1,56 @@
 'use server'
 
-import { Array, Effect, Schema } from 'effect'
+import { Array, Effect, Predicate, Schema } from 'effect'
 
 import { RunId } from '@/core/feature/workflow/domain/identity'
 import { CreateRun } from '@/core/feature/workflow/domain/model'
 
-import { ControlApi, type ControlError } from './control-api'
-import { EFFRONT } from './effront'
-import {
-  presentDetail,
-  presentRun,
-  presentWorkflow,
-  type Run,
-  type RunDetail,
-  type WorkflowSummary,
-} from './view-model'
+import { ControlApi } from './control-api.ts'
+import type { ControlError } from './control-api.ts'
+import { EFFRONT } from './effront.ts'
+import { presentDetail, presentRun, presentWorkflow } from './view-model.ts'
+import type { Run, RunDetail, WorkflowSummary } from './view-model.ts'
 
-export interface DashboardData {
-  readonly workflows: ReadonlyArray<WorkflowSummary>
-  readonly runs: ReadonlyArray<Run>
-  readonly selected: RunDetail | null
-}
-export type Result<A> = { readonly ok: true; readonly value: A } | { readonly ok: false; readonly message: string }
+export type DashboardData = Readonly<{
+  runs: Readonly<Run[]>
+  selected: RunDetail | null
+  workflows: Readonly<WorkflowSummary[]>
+}>
+export type Result<A> = Readonly<{ ok: true; value: A }> | Readonly<{ ok: false; message: string }>
 
-const result = <A, R>(effect: Effect.Effect<A, ControlError, R>) =>
+const result = <A, R>(effect: Effect.Effect<A, ControlError, R>): Effect.Effect<Result<A>, never, R> =>
   effect.pipe(
     Effect.map((value): Result<A> => ({ ok: true, value })),
-    Effect.catchTag('ControlError', (error) => Effect.succeed<Result<A>>({ ok: false, message: error.message })),
+    Effect.catchTag('ControlError', ({ message }) => Effect.succeed<Result<A>>({ message, ok: false })),
   )
 
+// oxlint-disable-next-line unicorn/no-null -- The public Server Function uses null for the unselected dashboard.
+const noSelection = null
+
 export const loadDashboard = EFFRONT.ServerFn.make({
-  input: Schema.NullOr(RunId),
   handler: (selected: RunId | null) =>
     result(
       Effect.gen(function* () {
         const api = yield* ControlApi
         const [workflows, runs] = yield* Effect.all([api.workflows, api.runs], { concurrency: 2 })
-        const detail = selected === null ? null : yield* api.detail(selected)
+        const detail = Predicate.isNullish(selected) ? noSelection : yield* api.detail(selected)
         return {
-          workflows: Array.map(workflows.workflows, (workflow) => presentWorkflow(workflow)),
           runs: Array.map(runs.runs, (run) => presentRun(run)),
-          selected: detail === null ? null : presentDetail(detail),
+          selected: Predicate.isNullish(detail) ? noSelection : presentDetail(detail),
+          workflows: Array.map(workflows.workflows, (workflow) => presentWorkflow(workflow)),
         } satisfies DashboardData
       }),
     ),
+  input: Schema.NullOr(RunId),
 })
 
 export const selectRun = EFFRONT.ServerFn.make({
-  input: RunId,
   handler: (runId: RunId) =>
     result(Effect.flatMap(ControlApi, (api) => api.detail(runId)).pipe(Effect.map(presentDetail))),
+  input: RunId,
 })
 
 export const startRun = EFFRONT.ServerFn.make({
-  input: Schema.toCodecJson(CreateRun),
   handler: (input: CreateRun) =>
     result(
       Effect.gen(function* () {
@@ -63,10 +60,10 @@ export const startRun = EFFRONT.ServerFn.make({
         return { detail: presentDetail(detail), runs: Array.map(runs.runs, (run) => presentRun(run)) }
       }),
     ),
+  input: Schema.toCodecJson(CreateRun),
 })
 
 export const resumeRun = EFFRONT.ServerFn.make({
-  input: RunId,
   handler: (runId: RunId) =>
     result(
       Effect.gen(function* () {
@@ -76,4 +73,5 @@ export const resumeRun = EFFRONT.ServerFn.make({
         return { detail: presentDetail(detail), runs: Array.map(runs.runs, (run) => presentRun(run)) }
       }),
     ),
+  input: RunId,
 })
