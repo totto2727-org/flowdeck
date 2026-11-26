@@ -34,8 +34,7 @@ const noVersions: WorkflowSummary['versions'] = []
 
 type WorkflowLaunchProps = LaunchControls & Readonly<{ workflow: WorkflowSummary | undefined }>
 
-// oxlint-disable-next-line eslint/func-style -- The shared React rule requires a declaration for named components.
-export function WorkflowLaunch({
+export const WorkflowLaunch = ({
   canStart,
   inputs,
   onInput,
@@ -44,7 +43,7 @@ export function WorkflowLaunch({
   pending,
   version,
   workflow,
-}: WorkflowLaunchProps): ReactElement {
+}: WorkflowLaunchProps): ReactElement => {
   const hasInputs = Predicate.isNotNullish(workflow) && Array.isReadonlyArrayNonEmpty(workflow.inputs)
   return (
     <section

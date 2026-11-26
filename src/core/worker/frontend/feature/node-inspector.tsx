@@ -67,8 +67,7 @@ const inspectorHeading = (node: typeof NodeShape.Type): ReactElement => {
   )
 }
 
-// oxlint-disable-next-line eslint/func-style -- The shared React rule requires a declaration for named components.
-export function NodeInspector({ detail, nodeId }: InspectorProps): ReactElement {
+export const NodeInspector = ({ detail, nodeId }: InspectorProps): ReactElement => {
   const selected = Array.findFirst(detail.shapes.nodes, (item) => item.nodeId === nodeId)
   if (Option.isNone(selected)) {
     return empty

@@ -66,8 +66,7 @@ const controls = ({ count, onEvents, onState, revision, view }: TraceHeadingProp
   )
 }
 
-// oxlint-disable-next-line eslint/func-style -- The shared React rule requires a declaration for named components.
-export function RunTraceHeading(props: TraceHeadingProps): ReactElement {
+export const RunTraceHeading = (props: TraceHeadingProps): ReactElement => {
   return (
     <div className='flex items-center justify-between gap-3.5'>
       {title}

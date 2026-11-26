@@ -48,13 +48,12 @@ type DashboardNavigationProps = Readonly<{
   workflows: Readonly<WorkflowSummary[]>
 }>
 
-// oxlint-disable-next-line eslint/func-style -- The shared React rule requires a declaration for named components.
-export function DashboardNavigation({
+export const DashboardNavigation = ({
   onChoose,
   pending,
   workflowId,
   workflows,
-}: DashboardNavigationProps): ReactElement {
+}: DashboardNavigationProps): ReactElement => {
   return (
     <aside
       className='flex flex-col border-r border-border bg-[#f0f5f2] px-4 pt-[25px] pb-5 dark:bg-[#141e18] max-[800px]:flex-row max-[800px]:items-center max-[800px]:gap-5 max-[800px]:border-r-0 max-[800px]:border-b max-[800px]:px-5 max-[800px]:py-[15px] max-[620px]:gap-2.5 max-[620px]:px-4 max-[620px]:py-3.5'

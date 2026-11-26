@@ -14,8 +14,7 @@ type RunEventsProps = Readonly<{
   selectedNode: NodeId | null | undefined
 }>
 
-// oxlint-disable-next-line eslint/func-style -- The shared React rule requires a declaration for named components.
-export function RunEvents({ events, selectedNode }: RunEventsProps): ReactElement {
+export const RunEvents = ({ events, selectedNode }: RunEventsProps): ReactElement => {
   const [nodeOnly, setNodeOnly] = useState(false)
   const visible =
     nodeOnly && Predicate.isNotNullish(selectedNode) && String.isNonEmpty(selectedNode)

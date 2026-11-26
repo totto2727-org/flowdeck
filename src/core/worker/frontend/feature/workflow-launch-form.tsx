@@ -49,8 +49,7 @@ type LaunchFormProps = LaunchControls &
     versions: WorkflowSummary['versions']
   }>
 
-// oxlint-disable-next-line eslint/func-style -- The shared React rule requires a declaration for named components.
-export function LaunchForm({
+export const LaunchForm = ({
   canStart,
   fields,
   hasInputs,
@@ -62,7 +61,7 @@ export function LaunchForm({
   version,
   versionDisabled,
   versions,
-}: LaunchFormProps): ReactElement {
+}: LaunchFormProps): ReactElement => {
   const submit = useCallback(
     (event: SubmitEvent<HTMLFormElement>): void => {
       event.preventDefault()

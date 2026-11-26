@@ -3,11 +3,11 @@ import type { ComponentProps, JSX } from 'react'
 import { cn } from '@/core/worker/frontend/feature/lib/utils'
 
 // oxlint-disable-next-line eslint/func-style -- Keep the named React component declaration required by the shared preset.
-export function Card({
+export const Card = ({
   className,
   size = 'default',
   ...props
-}: ComponentProps<'div'> & { size?: 'default' | 'sm' }): JSX.Element {
+}: ComponentProps<'div'> & { size?: 'default' | 'sm' }): JSX.Element => {
   return (
     <div
       data-slot='card'

@@ -99,8 +99,7 @@ type DashboardOverviewProps = RefreshProps &
     message: string
   }>
 
-// oxlint-disable-next-line eslint/func-style -- The shared React rule requires a declaration for named components.
-export function DashboardOverview({
+export const DashboardOverview = ({
   completed,
   error,
   message,
@@ -109,7 +108,7 @@ export function DashboardOverview({
   runCount,
   waiting,
   workflowCount,
-}: DashboardOverviewProps): ReactElement {
+}: DashboardOverviewProps): ReactElement => {
   return (
     <>
       {overviewHeading({ onRefresh, pending })}

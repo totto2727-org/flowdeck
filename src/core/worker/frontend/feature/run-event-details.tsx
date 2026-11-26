@@ -4,8 +4,7 @@ import { detailField } from './detail-field.tsx'
 import { eventLabel, renderJson } from './presentation.ts'
 import type { RunEvent } from './view-model.ts'
 
-// oxlint-disable-next-line eslint/func-style -- The shared React rule requires a declaration for named components.
-export function RunEventDetails({ event }: Readonly<{ event: RunEvent }>): ReactElement {
+export const RunEventDetails = ({ event }: Readonly<{ event: RunEvent }>): ReactElement => {
   const summary = (
     <summary>
       <span className='mr-2.5 font-[550] text-[#526c5b] capitalize dark:text-foreground'>{eventLabel(event.type)}</span>

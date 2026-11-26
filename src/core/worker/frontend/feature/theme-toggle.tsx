@@ -8,8 +8,7 @@ import type { ReactElement } from 'react'
 import { Button } from './components/generated/button.tsx'
 import { browserTheme, selectTheme, serverTheme, subscribeTheme } from './theme.ts'
 
-// oxlint-disable-next-line eslint/func-style -- The React preset requires named component declarations.
-export function ThemeToggle({ disabled }: Readonly<{ disabled: boolean }>): ReactElement {
+export const ThemeToggle = ({ disabled }: Readonly<{ disabled: boolean }>): ReactElement => {
   const theme = useSyncExternalStore(subscribeTheme, browserTheme, serverTheme)
   const toggleTheme = useCallback(() => {
     // oxlint-disable-next-line rules/no-effect-runtime-run -- The click starts an independent browser theme update before the next paint.

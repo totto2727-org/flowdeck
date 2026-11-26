@@ -11,8 +11,7 @@ type Edge = typeof EdgeShape.Type
 type Node = typeof NodeShape.Type
 type GraphEdgeProps = Readonly<{ edge: Edge; source: Node; target: Node }>
 
-// oxlint-disable-next-line eslint/func-style -- The shared React rule requires a declaration for named components.
-export function GraphEdge({ edge, source, target }: GraphEdgeProps): ReactElement {
+export const GraphEdge = ({ edge, source, target }: GraphEdgeProps): ReactElement => {
   const x1 = source.position.x + source.size.width
   const y1 = source.position.y + source.size.height / midpointDivisor
   const x2 = target.position.x

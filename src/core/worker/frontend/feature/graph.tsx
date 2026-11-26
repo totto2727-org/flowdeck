@@ -54,8 +54,7 @@ const useGraphNavigation = (
   return { navigate, register }
 }
 
-// oxlint-disable-next-line eslint/func-style -- The shared React rule requires a declaration for named components.
-export function RunGraph({ detail, onSelect, selectedNode }: RunGraphProps): ReactElement {
+export const RunGraph = ({ detail, onSelect, selectedNode }: RunGraphProps): ReactElement => {
   const { shapes } = detail
   const { nodes } = shapes
   const size = useMemo(() => graphSize(shapes), [shapes])

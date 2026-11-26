@@ -13,8 +13,7 @@ type WorkflowChoiceProps = Readonly<{
   selected: boolean
 }>
 
-// oxlint-disable-next-line eslint/func-style -- The shared React rule requires a declaration for named components.
-export function WorkflowChoice({ item, onChoose, pending, selected }: WorkflowChoiceProps): ReactElement {
+export const WorkflowChoice = ({ item, onChoose, pending, selected }: WorkflowChoiceProps): ReactElement => {
   const choose = useCallback(() => {
     onChoose(item)
   }, [item, onChoose])

@@ -9,8 +9,7 @@ const runStatusStyle = cn(
 )
 const dot = <span className='inline-block size-[5px] rounded-full bg-current' />
 
-// oxlint-disable-next-line eslint/func-style -- The shared React rule requires a declaration for named components.
-export function RunStatus({ value }: Readonly<{ value: string }>): ReactElement {
+export const RunStatus = ({ value }: Readonly<{ value: string }>): ReactElement => {
   return (
     <span data-slot='badge' data-variant='outline' className={runStatusStyle} data-state={value}>
       {dot}

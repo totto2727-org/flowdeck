@@ -8,8 +8,7 @@ const noEvents = (
   <p className='py-5 text-[11px] text-[#82988a] dark:text-muted-foreground'>No events for this selection.</p>
 )
 
-// oxlint-disable-next-line eslint/func-style -- The shared React rule requires a declaration for named components.
-export function RunEventList({ events }: Readonly<{ events: Readonly<RunEvent[]> }>): ReactElement {
+export const RunEventList = ({ events }: Readonly<{ events: Readonly<RunEvent[]> }>): ReactElement => {
   return Array.isReadonlyArrayEmpty(events) ? (
     noEvents
   ) : (

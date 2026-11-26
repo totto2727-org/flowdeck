@@ -19,8 +19,7 @@ const graph = (id: string): ReactElement => (
   </span>
 )
 
-// oxlint-disable-next-line eslint/func-style -- The shared React rule requires a declaration for named components.
-export function SelectedRunMetadata({
+export const SelectedRunMetadata = ({
   graphId,
   revision,
   workflowId,
@@ -28,7 +27,7 @@ export function SelectedRunMetadata({
   graphId: RunDetail['run']['graphId']
   revision: RunDetail['state']['revision']
   workflowId: RunDetail['run']['workflowId']
-}>): ReactElement {
+}>): ReactElement => {
   return (
     <div className='flex flex-wrap gap-4 px-[23px] pb-5 text-[10px] text-[#7a8b80] dark:text-muted-foreground [&>span]:inline-flex [&>span]:items-center [&>span]:gap-1.25'>
       {workflow(workflowId)}

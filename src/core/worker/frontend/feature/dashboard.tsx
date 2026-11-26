@@ -101,8 +101,7 @@ const dashboardMain = (controller: DashboardController): ReactElement => {
   )
 }
 
-// oxlint-disable-next-line eslint/func-style -- The shared React rule requires a declaration for named components.
-export function Dashboard({ initial }: Readonly<{ initial: DashboardData }>): ReactElement {
+export const Dashboard = ({ initial }: Readonly<{ initial: DashboardData }>): ReactElement => {
   const controller = useDashboard(initial)
   const { chooseWorkflow, data, hydrated, pending, workflowId } = controller
   return (

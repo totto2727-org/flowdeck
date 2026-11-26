@@ -37,11 +37,10 @@ export default defineConfig({
     singleQuote: true,
   },
   lint: {
-    ...oxlintPreset,
+    extends: [oxlintPreset],
     ignorePatterns,
     options: { ...oxlintPreset.options, typeCheck: true },
     overrides: [
-      ...(oxlintPreset.overrides ?? []),
       { env: { worker: true }, files: ['src/**/*.{ts,tsx}', 'tests/**/*.{ts,tsx}'] },
       {
         env: { browser: true },

@@ -11,8 +11,7 @@ const heading = (revision: number): ReactElement => (
   </div>
 )
 
-// oxlint-disable-next-line eslint/func-style -- The shared React rule requires a declaration for named components.
-export function RunState({ state }: Readonly<{ state: RunDetail['state'] }>): ReactElement {
+export const RunState = ({ state }: Readonly<{ state: RunDetail['state'] }>): ReactElement => {
   return (
     <div className='[&>div:first-child]:mb-4 [&>div:first-child]:items-start [&_p]:text-[10px]'>
       {heading(state.revision)}

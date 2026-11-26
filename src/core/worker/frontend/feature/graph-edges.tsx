@@ -22,8 +22,7 @@ const arrow = (
   </defs>
 )
 
-// oxlint-disable-next-line eslint/func-style -- The shared React rule requires a declaration for named components.
-export function GraphEdges({ shapes, size }: Readonly<{ shapes: Shapes; size: Size }>): ReactElement {
+export const GraphEdges = ({ shapes, size }: Readonly<{ shapes: Shapes; size: Size }>): ReactElement => {
   const edges = Array.flatMap(shapes.edges, (edge) => {
     const source = Option.getOrUndefined(Array.findFirst(shapes.nodes, (node) => node.nodeId === edge.source))
     const target = Option.getOrUndefined(Array.findFirst(shapes.nodes, (node) => node.nodeId === edge.target))

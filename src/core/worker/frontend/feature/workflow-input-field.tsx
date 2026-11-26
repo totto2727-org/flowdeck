@@ -12,8 +12,7 @@ type WorkflowInputFieldProps = Readonly<{
   value: string
 }>
 
-// oxlint-disable-next-line eslint/func-style -- The shared React rule requires a declaration for named components.
-export function WorkflowInputField({ input, onChange, pending, value }: WorkflowInputFieldProps): ReactElement {
+export const WorkflowInputField = ({ input, onChange, pending, value }: WorkflowInputFieldProps): ReactElement => {
   const change = useCallback(
     (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       onChange(input.name, event.target.value)

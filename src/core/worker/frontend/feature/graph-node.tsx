@@ -42,8 +42,7 @@ const useNodeCallbacks = ({ nodeId, onNavigate, onRegister, onSelect }: NodeCall
   return { navigate, register, select }
 }
 
-// oxlint-disable-next-line eslint/func-style -- The shared React rule requires a declaration for named components.
-export function GraphNode({ node, number, onNavigate, onRegister, onSelect, selected }: NodeControls): ReactElement {
+export const GraphNode = ({ node, number, onNavigate, onRegister, onSelect, selected }: NodeControls): ReactElement => {
   const { nodeId, position, size } = node
   const { navigate, register, select } = useNodeCallbacks({ nodeId, onNavigate, onRegister, onSelect })
   const geometry = useMemo(

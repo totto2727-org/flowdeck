@@ -54,13 +54,12 @@ const runList = ({ onChoose, pending, selectedRunId, visibleRuns }: DashboardRun
   </ul>
 )
 
-// oxlint-disable-next-line eslint/func-style -- The shared React rule requires a declaration for named components.
-export function DashboardRunHistory({
+export const DashboardRunHistory = ({
   onChoose,
   pending,
   selectedRunId,
   visibleRuns,
-}: DashboardRunHistoryProps): ReactElement {
+}: DashboardRunHistoryProps): ReactElement => {
   return (
     <section
       className='min-w-0 overflow-hidden rounded-[10px] border border-border bg-card [&>div:first-child]:border-b [&>div:first-child]:border-[#edf0ee] [&>div:first-child]:px-[18px] [&>div:first-child]:pt-5 [&>div:first-child]:pb-4 dark:[&>div:first-child]:border-border'

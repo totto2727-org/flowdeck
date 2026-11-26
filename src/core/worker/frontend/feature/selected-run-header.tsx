@@ -29,8 +29,7 @@ const badges = (run: RunDetail['run']): ReactElement => (
   </div>
 )
 
-// oxlint-disable-next-line eslint/func-style -- The shared React rule requires a declaration for named components.
-export function SelectedRunHeader({ run }: Readonly<{ run: RunDetail['run'] }>): ReactElement {
+export const SelectedRunHeader = ({ run }: Readonly<{ run: RunDetail['run'] }>): ReactElement => {
   return (
     <div className='flex items-center justify-between gap-3.5 px-[23px] pt-[22px] pb-2.5 max-[1100px]:flex-wrap max-[1100px]:items-start max-[800px]:px-[17px]'>
       {heading(run.runId)}

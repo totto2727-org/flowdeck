@@ -7,8 +7,7 @@ type HeadingProps = Readonly<{
   onChange: (event: ChangeEvent<HTMLInputElement>) => void
 }>
 
-// oxlint-disable-next-line eslint/func-style -- The shared React rule requires a declaration for named components.
-export function RunEventsHeading({ checked, count, disabled, onChange }: HeadingProps): ReactElement {
+export const RunEventsHeading = ({ checked, count, disabled, onChange }: HeadingProps): ReactElement => {
   const filter = (
     <label className='flex items-center gap-1.5 text-[9px] whitespace-nowrap text-[#788d7e] dark:text-muted-foreground'>
       <input className='accent-primary' type='checkbox' checked={checked} disabled={disabled} onChange={onChange} />

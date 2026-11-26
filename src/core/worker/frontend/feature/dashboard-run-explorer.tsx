@@ -29,8 +29,7 @@ type DashboardRunExplorerProps = Readonly<{
   selected: RunDetail | null
 }>
 
-// oxlint-disable-next-line eslint/func-style -- The shared React rule requires a declaration for named components.
-export function DashboardRunExplorer({ onResume, pending, selected }: DashboardRunExplorerProps): ReactElement {
+export const DashboardRunExplorer = ({ onResume, pending, selected }: DashboardRunExplorerProps): ReactElement => {
   return (
     <div className='min-w-0'>
       {Predicate.isNotNullish(selected) ? (

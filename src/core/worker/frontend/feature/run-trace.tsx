@@ -10,8 +10,7 @@ import { RunTraceHeading } from './run-trace-heading.tsx'
 import type { TraceView } from './run-trace-heading.tsx'
 import type { RunDetail } from './view-model.ts'
 
-// oxlint-disable-next-line eslint/func-style -- The shared React rule requires a declaration for named components.
-export function RunTrace({ detail, node }: Readonly<{ detail: RunDetail; node: NodeId | undefined }>): ReactElement {
+export const RunTrace = ({ detail, node }: Readonly<{ detail: RunDetail; node: NodeId | undefined }>): ReactElement => {
   const [view, setView] = useState<TraceView>('events')
   const showEvents = useCallback(() => {
     setView('events')

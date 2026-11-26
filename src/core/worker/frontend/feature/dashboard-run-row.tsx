@@ -30,8 +30,7 @@ type RunRowProps = Readonly<{
   selected: boolean
 }>
 
-// oxlint-disable-next-line eslint/func-style -- The shared React rule requires a declaration for named components.
-export function RunRow({ onChoose, pending, run, selected }: RunRowProps): ReactElement {
+export const RunRow = ({ onChoose, pending, run, selected }: RunRowProps): ReactElement => {
   const choose = useCallback(() => {
     onChoose(run.runId)
   }, [onChoose, run.runId])

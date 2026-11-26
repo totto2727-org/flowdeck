@@ -17,8 +17,7 @@ type SelectedRunProps = Readonly<{
   pending: boolean
 }>
 
-// oxlint-disable-next-line eslint/func-style -- The shared React rule requires a declaration for named components.
-export function SelectedRun({ detail, onResume, pending }: SelectedRunProps): ReactElement {
+export const SelectedRun = ({ detail, onResume, pending }: SelectedRunProps): ReactElement => {
   const [node, setNode] = useState<RunDetail['shapes']['nodes'][number]['nodeId']>()
   const recoveryAction = runRecoveryAction(detail.run.status)
   const recovery = Predicate.isNotNullish(recoveryAction) && (
