@@ -59,16 +59,14 @@ export const DashboardRunHistory = ({
   pending,
   selectedRunId,
   visibleRuns,
-}: DashboardRunHistoryProps): ReactElement => {
-  return (
-    <section
-      className='min-w-0 overflow-hidden rounded-[10px] border border-border bg-card [&>div:first-child]:border-b [&>div:first-child]:border-[#edf0ee] [&>div:first-child]:px-[18px] [&>div:first-child]:pt-5 [&>div:first-child]:pb-4 dark:[&>div:first-child]:border-border'
-      aria-labelledby='runs-heading'
-    >
-      {historyHeading(Array.length(visibleRuns))}
-      {Array.isReadonlyArrayNonEmpty(visibleRuns)
-        ? runList({ onChoose, pending, selectedRunId, visibleRuns })
-        : emptyHistory()}
-    </section>
-  )
-}
+}: DashboardRunHistoryProps): ReactElement => (
+  <section
+    className='min-w-0 overflow-hidden rounded-[10px] border border-border bg-card [&>div:first-child]:border-b [&>div:first-child]:border-[#edf0ee] [&>div:first-child]:px-[18px] [&>div:first-child]:pt-5 [&>div:first-child]:pb-4 dark:[&>div:first-child]:border-border'
+    aria-labelledby='runs-heading'
+  >
+    {historyHeading(Array.length(visibleRuns))}
+    {Array.isReadonlyArrayNonEmpty(visibleRuns)
+      ? runList({ onChoose, pending, selectedRunId, visibleRuns })
+      : emptyHistory()}
+  </section>
+)

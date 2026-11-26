@@ -29,14 +29,12 @@ type DashboardRunExplorerProps = Readonly<{
   selected: RunDetail | null
 }>
 
-export const DashboardRunExplorer = ({ onResume, pending, selected }: DashboardRunExplorerProps): ReactElement => {
-  return (
-    <div className='min-w-0'>
-      {Predicate.isNotNullish(selected) ? (
-        <SelectedRun key={selected.run.runId} detail={selected} pending={pending} onResume={onResume} />
-      ) : (
-        emptyExplorer()
-      )}
-    </div>
-  )
-}
+export const DashboardRunExplorer = ({ onResume, pending, selected }: DashboardRunExplorerProps): ReactElement => (
+  <div className='min-w-0'>
+    {Predicate.isNotNullish(selected) ? (
+      <SelectedRun key={selected.run.runId} detail={selected} pending={pending} onResume={onResume} />
+    ) : (
+      emptyExplorer()
+    )}
+  </div>
+)

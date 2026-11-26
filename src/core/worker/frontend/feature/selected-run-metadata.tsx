@@ -27,12 +27,10 @@ export const SelectedRunMetadata = ({
   graphId: RunDetail['run']['graphId']
   revision: RunDetail['state']['revision']
   workflowId: RunDetail['run']['workflowId']
-}>): ReactElement => {
-  return (
-    <div className='flex flex-wrap gap-4 px-[23px] pb-5 text-[10px] text-[#7a8b80] dark:text-muted-foreground [&>span]:inline-flex [&>span]:items-center [&>span]:gap-1.25'>
-      {workflow(workflowId)}
-      <span>Revision {revision}</span>
-      {graph(graphId)}
-    </div>
-  )
-}
+}>): ReactElement => (
+  <div className='flex flex-wrap gap-4 px-[23px] pb-5 text-[10px] text-[#7a8b80] dark:text-muted-foreground [&>span]:inline-flex [&>span]:items-center [&>span]:gap-1.25'>
+    {workflow(workflowId)}
+    <span>Revision {revision}</span>
+    {graph(graphId)}
+  </div>
+)

@@ -66,11 +66,9 @@ const controls = ({ count, onEvents, onState, revision, view }: TraceHeadingProp
   )
 }
 
-export const RunTraceHeading = (props: TraceHeadingProps): ReactElement => {
-  return (
-    <div className='flex items-center justify-between gap-3.5'>
-      {title}
-      {controls(props)}
-    </div>
-  )
-}
+export const RunTraceHeading = (props: TraceHeadingProps): ReactElement => (
+  <div className='flex items-center justify-between gap-3.5'>
+    {title}
+    {controls(props)}
+  </div>
+)

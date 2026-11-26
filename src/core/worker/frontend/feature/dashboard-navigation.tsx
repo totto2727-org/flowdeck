@@ -53,40 +53,38 @@ export const DashboardNavigation = ({
   pending,
   workflowId,
   workflows,
-}: DashboardNavigationProps): ReactElement => {
-  return (
-    <aside
-      className='flex flex-col border-r border-border bg-[#f0f5f2] px-4 pt-[25px] pb-5 dark:bg-[#141e18] max-[800px]:flex-row max-[800px]:items-center max-[800px]:gap-5 max-[800px]:border-r-0 max-[800px]:border-b max-[800px]:px-5 max-[800px]:py-[15px] max-[620px]:gap-2.5 max-[620px]:px-4 max-[620px]:py-3.5'
-      aria-label='Workflow navigation'
+}: DashboardNavigationProps): ReactElement => (
+  <aside
+    className='flex flex-col border-r border-border bg-[#f0f5f2] px-4 pt-[25px] pb-5 dark:bg-[#141e18] max-[800px]:flex-row max-[800px]:items-center max-[800px]:gap-5 max-[800px]:border-r-0 max-[800px]:border-b max-[800px]:px-5 max-[800px]:py-[15px] max-[620px]:gap-2.5 max-[620px]:px-4 max-[620px]:py-3.5'
+    aria-label='Workflow navigation'
+  >
+    {workspaceBrand()}
+    {workspaceDetails()}
+    <div className='flex items-center justify-between px-2.5 pb-2.5 text-[9px] font-semibold tracking-[1px] text-[#7b8b81] uppercase dark:text-muted-foreground max-[800px]:hidden'>
+      Workspace
+    </div>
+    <a
+      className='flex w-full items-center gap-2.5 rounded-md border-0 bg-[#e0ebe3] px-3 py-2.5 text-left text-[12px] font-medium text-[#23553b] dark:bg-secondary dark:text-[#b0e6c6] max-[800px]:hidden [&>svg:last-child]:ml-auto'
+      href='#main-content'
     >
-      {workspaceBrand()}
-      {workspaceDetails()}
-      <div className='flex items-center justify-between px-2.5 pb-2.5 text-[9px] font-semibold tracking-[1px] text-[#7b8b81] uppercase dark:text-muted-foreground max-[800px]:hidden'>
-        Workspace
-      </div>
-      <a
-        className='flex w-full items-center gap-2.5 rounded-md border-0 bg-[#e0ebe3] px-3 py-2.5 text-left text-[12px] font-medium text-[#23553b] dark:bg-secondary dark:text-[#b0e6c6] max-[800px]:hidden [&>svg:last-child]:ml-auto'
-        href='#main-content'
-      >
-        <Activity size={17} />
-        Overview
-        <ChevronRight size={14} />
-      </a>
-      <div className='mt-[30px] flex items-center justify-between px-2.5 pb-2.5 text-[9px] font-semibold tracking-[1px] text-[#7b8b81] uppercase dark:text-muted-foreground max-[800px]:hidden'>
-        Workflows <span>{Array.length(workflows)}</span>
-      </div>
-      <nav className='max-[800px]:ml-auto max-[800px]:flex max-[800px]:flex-wrap' aria-label='Registered workflows'>
-        {Array.map(workflows, (item) => (
-          <WorkflowChoice
-            key={item.workflowId}
-            item={item}
-            onChoose={onChoose}
-            pending={pending}
-            selected={workflowId === item.workflowId}
-          />
-        ))}
-      </nav>
-      {controlBinding()}
-    </aside>
-  )
-}
+      <Activity size={17} />
+      Overview
+      <ChevronRight size={14} />
+    </a>
+    <div className='mt-[30px] flex items-center justify-between px-2.5 pb-2.5 text-[9px] font-semibold tracking-[1px] text-[#7b8b81] uppercase dark:text-muted-foreground max-[800px]:hidden'>
+      Workflows <span>{Array.length(workflows)}</span>
+    </div>
+    <nav className='max-[800px]:ml-auto max-[800px]:flex max-[800px]:flex-wrap' aria-label='Registered workflows'>
+      {Array.map(workflows, (item) => (
+        <WorkflowChoice
+          key={item.workflowId}
+          item={item}
+          onChoose={onChoose}
+          pending={pending}
+          selected={workflowId === item.workflowId}
+        />
+      ))}
+    </nav>
+    {controlBinding()}
+  </aside>
+)

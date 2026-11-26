@@ -19,13 +19,11 @@ const colorKey = (
   </div>
 )
 
-export const RunTopologyLegend = (): ReactElement => {
-  return (
-    <div className='flex items-center justify-between gap-3 border-t border-[#edf1ee] px-[22px] pt-4 pb-2.5 dark:border-border max-[1100px]:flex-col max-[1100px]:items-start [&>span]:mb-0'>
-      <span className='mb-1.25 text-[10px] font-[650] tracking-[1.15px] text-[#78867f] uppercase dark:text-muted-foreground'>
-        Workflow topology
-      </span>
-      {colorKey}
-    </div>
-  )
-}
+export const RunTopologyLegend = (): ReactElement => (
+  <div className='flex items-center justify-between gap-3 border-t border-[#edf1ee] px-[22px] pt-4 pb-2.5 dark:border-border max-[1100px]:flex-col max-[1100px]:items-start [&>span]:mb-0'>
+    <span className='mb-1.25 text-[10px] font-[650] tracking-[1.15px] text-[#78867f] uppercase dark:text-muted-foreground'>
+      Workflow topology
+    </span>
+    {colorKey}
+  </div>
+)

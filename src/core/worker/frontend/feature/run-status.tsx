@@ -9,11 +9,9 @@ const runStatusStyle = cn(
 )
 const dot = <span className='inline-block size-[5px] rounded-full bg-current' />
 
-export const RunStatus = ({ value }: Readonly<{ value: string }>): ReactElement => {
-  return (
-    <span data-slot='badge' data-variant='outline' className={runStatusStyle} data-state={value}>
-      {dot}
-      {value}
-    </span>
-  )
-}
+export const RunStatus = ({ value }: Readonly<{ value: string }>): ReactElement => (
+  <span data-slot='badge' data-variant='outline' className={runStatusStyle} data-state={value}>
+    {dot}
+    {value}
+  </span>
+)

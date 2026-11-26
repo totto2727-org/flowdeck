@@ -11,16 +11,14 @@ const heading = (revision: number): ReactElement => (
   </div>
 )
 
-export const RunState = ({ state }: Readonly<{ state: RunDetail['state'] }>): ReactElement => {
-  return (
-    <div className='[&>div:first-child]:mb-4 [&>div:first-child]:items-start [&_p]:text-[10px]'>
-      {heading(state.revision)}
-      <pre
-        className='mt-3.5 max-h-[400px] overflow-auto rounded-md border border-[#e7eee9] bg-[#f6f9f7] p-[15px] font-mono text-[10px] whitespace-pre-wrap wrap-anywhere text-[#537360] dark:border-border dark:bg-[#101a14] dark:text-[#b5e4c6]'
-        aria-label='Committed run state'
-      >
-        {renderJson(state.snapshot)}
-      </pre>
-    </div>
-  )
-}
+export const RunState = ({ state }: Readonly<{ state: RunDetail['state'] }>): ReactElement => (
+  <div className='[&>div:first-child]:mb-4 [&>div:first-child]:items-start [&_p]:text-[10px]'>
+    {heading(state.revision)}
+    <pre
+      className='mt-3.5 max-h-[400px] overflow-auto rounded-md border border-[#e7eee9] bg-[#f6f9f7] p-[15px] font-mono text-[10px] whitespace-pre-wrap wrap-anywhere text-[#537360] dark:border-border dark:bg-[#101a14] dark:text-[#b5e4c6]'
+      aria-label='Committed run state'
+    >
+      {renderJson(state.snapshot)}
+    </pre>
+  </div>
+)

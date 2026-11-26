@@ -29,11 +29,9 @@ const badges = (run: RunDetail['run']): ReactElement => (
   </div>
 )
 
-export const SelectedRunHeader = ({ run }: Readonly<{ run: RunDetail['run'] }>): ReactElement => {
-  return (
-    <div className='flex items-center justify-between gap-3.5 px-[23px] pt-[22px] pb-2.5 max-[1100px]:flex-wrap max-[1100px]:items-start max-[800px]:px-[17px]'>
-      {heading(run.runId)}
-      {badges(run)}
-    </div>
-  )
-}
+export const SelectedRunHeader = ({ run }: Readonly<{ run: RunDetail['run'] }>): ReactElement => (
+  <div className='flex items-center justify-between gap-3.5 px-[23px] pt-[22px] pb-2.5 max-[1100px]:flex-wrap max-[1100px]:items-start max-[800px]:px-[17px]'>
+    {heading(run.runId)}
+    {badges(run)}
+  </div>
+)

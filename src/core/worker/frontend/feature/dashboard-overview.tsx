@@ -108,15 +108,13 @@ export const DashboardOverview = ({
   runCount,
   waiting,
   workflowCount,
-}: DashboardOverviewProps): ReactElement => {
-  return (
-    <>
-      {overviewHeading({ onRefresh, pending })}
-      <output aria-live='polite' className='sr-only'>
-        {pending ? 'Request in progress.' : message}
-      </output>
-      {Predicate.isNotNullish(error) && String.isNonEmpty(error) && requestAlert({ error, onRefresh, pending })}
-      {overviewMetrics({ completed, runCount, waiting, workflowCount })}
-    </>
-  )
-}
+}: DashboardOverviewProps): ReactElement => (
+  <>
+    {overviewHeading({ onRefresh, pending })}
+    <output aria-live='polite' className='sr-only'>
+      {pending ? 'Request in progress.' : message}
+    </output>
+    {Predicate.isNotNullish(error) && String.isNonEmpty(error) && requestAlert({ error, onRefresh, pending })}
+    {overviewMetrics({ completed, runCount, waiting, workflowCount })}
+  </>
+)
