@@ -6,7 +6,6 @@ import { cn } from '@/core/worker/frontend/feature/lib/utils'
 
 import { buttonVariants } from './button-variants.ts'
 
-// oxlint-disable-next-line eslint/func-style -- Keep the named React component declaration required by the shared preset.
 export const Button = ({
   className,
   variant = 'default',
